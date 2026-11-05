@@ -1,37 +1,37 @@
-import { defineConfig, loadEnv } from 'vite';
-import react from '@vitejs/plugin-react';
-import { resolve } from 'path';
-import fs from 'fs/promises';
-import svgr from '@svgr/rollup';
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import svgr from "@svgr/rollup";
+import react from "@vitejs/plugin-react";
+import { defineConfig, loadEnv } from "vite";
 
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+const root = dirname(fileURLToPath(import.meta.url));
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-    const env = loadEnv(mode, resolve(__dirname, '../..'), '');
-    return {
-    envDir: resolve(__dirname, '../..'),
-    // Same-origin requests through the dev proxy avoid CORS preflight entirely.
-    define: {
-        'import.meta.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL || ''),
-        'import.meta.env.VITE_CONSOLE_TOKEN': JSON.stringify(env.VITE_CONSOLE_TOKEN || env.CONSOLE_TOKEN || ''),
-    },
-    server: {
-        proxy: {
-            '/api': 'http://127.0.0.1:3000',
-            '/webhooks': 'http://127.0.0.1:3000',
-        },
-    },
-    resolve: {
-        alias: {
-            src: resolve(__dirname, 'src'),
-            '@': resolve(__dirname, 'src'),
-        },
-    },
-    plugins: [svgr(), react()],
-    };
+	const env = loadEnv(mode, resolve(root, "../.."), "");
+
+	return {
+		envDir: resolve(root, "../.."),
+		// Same-origin requests through the dev proxy avoid CORS preflight.
+		define: {
+			"import.meta.env.VITE_API_BASE_URL": JSON.stringify(
+				env.VITE_API_BASE_URL || "",
+			),
+			"import.meta.env.VITE_CONSOLE_TOKEN": JSON.stringify(
+				env.VITE_CONSOLE_TOKEN || env.CONSOLE_TOKEN || "",
+			),
+		},
+		server: {
+			proxy: {
+				"/api": "http://127.0.0.1:3000",
+				"/webhooks": "http://127.0.0.1:3000",
+			},
+		},
+		resolve: {
+			alias: {
+				src: resolve(root, "src"),
+				"@": resolve(root, "src"),
+			},
+		},
+		plugins: [svgr(), react()],
+	};
 });
