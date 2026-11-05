@@ -1,0 +1,30 @@
+{
+	"name": "ad-pluse",
+	"private": true,
+	"description": "主动发现市场信号，辅助下一步投放决策。",
+	"version": "0.0.0",
+	"type": "module",
+	"packageManager": "bun@1.4.4",
+	"workspaces": [
+		"packages/*",
+		"apps/*"
+	],
+	"scripts": {
+		"typecheck": "tsc -b",
+		"build": "tsc -b",
+		"test": "bun run build && node --test tests/*.test.mjs",
+		"sdk:generate": "openapi-typescript contracts/openapi.json -o apps/console/src/generated/api.d.ts",
+		"sdk:check": "node scripts/check-sdk.mjs",
+		"start": "node --env-file=.env apps/api/dist/index.js",
+		"worker": "node --env-file=.env apps/worker/dist/index.js",
+		"demo": "node --env-file=.env scripts/demo.mjs"
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.6",
+		"openapi-typescript": "^7.13.0",
+		"typescript": "^5.6.0"
+	},
+	"engines": {
+		"node": ">=20"
+	}
+}

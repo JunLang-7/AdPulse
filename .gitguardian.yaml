@@ -1,0 +1,6 @@
+version: 2
+paths-ignore:
+  - bun.lock
+  - "**/*.lock"
+  - .env.example
+  - "tests/**"
