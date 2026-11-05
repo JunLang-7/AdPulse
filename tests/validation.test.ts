@@ -5,15 +5,22 @@ import {
 	Orchestrator,
 	Worker,
 } from "../packages/core/dist/index.js";
-import { fixture, proposal } from "./helpers.mjs";
+import type {
+	ChoiceCommand,
+	Limits,
+	OutboundChannel,
+	Strategy,
+	StrategyChange,
+} from "../packages/core/dist/index.js";
+import { fixture, proposal } from "./helpers.ts";
 
-const strategy = {
+const strategy: Strategy = {
 	objective: "leads",
 	audience: [],
 	channels: { ads: { budget: 100, bidCpc: 2 } },
 	sellingPoints: [],
 };
-const limits = { maxBudgetChangeRatio: 0.2, maxBidChangeRatio: 0.2 };
+const limits: Limits = { maxBudgetChangeRatio: 0.2, maxBidChangeRatio: 0.2 };
 
 test("model changes cannot bypass limits through repeated fields or unsupported kinds", () => {
 	assert.throws(
@@ -35,14 +42,16 @@ test("model changes cannot bypass limits through repeated fields or unsupported 
 		{ kind: "bidCpc", channelId: "ads", from: 2, to: NaN },
 		{ kind: "enabled", channelId: "ads", to: "true" },
 		null,
-	])
-		assert.throws(() => applyChanges(strategy, [change], limits));
+	] as unknown[])
+		assert.throws(() =>
+			applyChanges(strategy, [change as StrategyChange], limits),
+		);
 	assert.equal(strategy.channels.ads.budget, 100);
 });
 
 test("inbox event identity is scoped to each connection", async () => {
 	const f = fixture();
-	const command = {
+	const command: ChoiceCommand = {
 		sourceId: "account-a",
 		eventId: "same-event",
 		actionRef: "opaque",
@@ -60,12 +69,12 @@ test("inbox event identity is scoped to each connection", async () => {
 test("slow proposal is discarded if the session changes while the policy runs", async () => {
 	const f = fixture();
 	const session = await f.start();
-	let release;
-	const blocked = new Promise((resolve) => {
+	let release!: () => void;
+	const blocked = new Promise<void>((resolve) => {
 		release = resolve;
 	});
-	let entered;
-	const started = new Promise((resolve) => {
+	let entered!: () => void;
+	const started = new Promise<void>((resolve) => {
 		entered = resolve;
 	});
 	const decisions = new Orchestrator(
@@ -83,6 +92,7 @@ test("slow proposal is discarded if the session changes while the policy runs", 
 	await started;
 	await f.storage.transaction(async (tx) => {
 		const current = await tx.sessions.get(session.id);
+		assert.ok(current);
 		await tx.sessions.put({ ...current, status: "cancelled" });
 	});
 	release();
@@ -100,7 +110,7 @@ test("slow proposal is discarded if the session changes while the policy runs", 
 test("non-terminal decision produces next round using the updated strategy", async () => {
 	const f = fixture();
 	const session = await f.start();
-	const seen = [];
+	const seen: Strategy[] = [];
 	const decisions = new Orchestrator(
 		f.storage,
 		{
@@ -146,18 +156,18 @@ test("an expired worker cannot overwrite the receipt committed by the new lease 
 	const f = fixture();
 	await f.start();
 	await f.worker.runOnce();
-	let release;
-	let entered;
-	const blocked = new Promise((resolve) => {
+	let release!: () => void;
+	let entered!: () => void;
+	const blocked = new Promise<void>((resolve) => {
 		release = resolve;
 	});
-	const started = new Promise((resolve) => {
+	const started = new Promise<void>((resolve) => {
 		entered = resolve;
 	});
 	const oldWorker = new Worker(
 		f.storage,
 		f.decisions,
-		new Map([
+		new Map<string, OutboundChannel>([
 			[
 				"account-a",
 				{
@@ -177,7 +187,7 @@ test("an expired worker cannot overwrite the receipt committed by the new lease 
 	const newWorker = new Worker(
 		f.storage,
 		f.decisions,
-		new Map([
+		new Map<string, OutboundChannel>([
 			[
 				"account-a",
 				{
@@ -199,6 +209,7 @@ test("an expired worker cannot overwrite the receipt committed by the new lease 
 	const sendJob = (await f.storage.transaction((tx) => tx.jobs.all())).find(
 		(j) => j.task.kind === "send_delivery",
 	);
+	assert.ok(sendJob);
 	assert.equal(sendJob.status, "done");
 	assert.equal(sendJob.attempts, 2);
 });

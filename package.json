@@ -10,9 +10,9 @@
 		"apps/*"
 	],
 	"scripts": {
-		"typecheck": "tsc -b",
+		"typecheck": "tsc -b && tsc -p tests/tsconfig.json",
 		"build": "tsc -b",
-		"test": "bun run build && node --test tests/*.test.mjs",
+		"test": "bun run build && node --test tests/*.test.ts",
 		"sdk:generate": "openapi-typescript contracts/openapi.json -o apps/console/src/generated/api.d.ts",
 		"sdk:check": "node scripts/check-sdk.mjs",
 		"start": "node --env-file=.env apps/api/dist/index.js",
@@ -25,6 +25,6 @@
 		"typescript": "^5.6.0"
 	},
 	"engines": {
-		"node": ">=20"
+		"node": ">=24"
 	}
 }

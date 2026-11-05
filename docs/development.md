@@ -3,7 +3,8 @@
 ## 1. 环境
 
 - Bun 1.4.4：依赖、workspace 与脚本入口。
-- Node.js：实际运行 API、worker、测试与 SDK 校验；CI 使用 Node.js 24。
+- Node.js 24+（`engines.node >= 24`）：实际运行 API、worker、测试与 SDK 校验；CI 使用 Node.js 24。
+- 测试文件为 TypeScript（`tests/*.test.ts`），由 `node --test` 直接运行：Node 的类型剔除非编译，只执行可擦除语法。
 - PostgreSQL 16：持久化运行与集成测试；本地内存演示可不安装。
 
 ```bash
@@ -17,7 +18,7 @@ bun run --cwd apps/console build
 ```
 
 只维护 bun.lock；不要使用 bun --bun 将服务切换到 Bun 运行时。
-根目录 typecheck/build 通过 TypeScript project references 检查并生成后端产物；控制台的类型检查与 Vite bundle 构建需单独执行，CI 同样检查这两项，不能只用后端构建代替前端验证。修改 OpenAPI 后运行 bun run sdk:generate，再运行 sdk:check。
+根目录 typecheck/build 通过 TypeScript project references 检查并生成后端产物；`tests/tsconfig.json` 额外对测试代码做一次不产物（`noEmit`）的类型检查，关闭 `noUncheckedIndexedAccess`、其余保持 strict。控制台的类型检查与 Vite bundle 构建需单独执行，CI 同样检查这两项，不能只用后端构建代替前端验证。修改 OpenAPI 后运行 bun run sdk:generate，再运行 sdk:check。
 
 ## 2. 不接真实 IM 的本地演示
 

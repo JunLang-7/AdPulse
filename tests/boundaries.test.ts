@@ -4,8 +4,8 @@ import { dirname, relative, resolve } from "node:path";
 import test from "node:test";
 import ts from "typescript";
 
-function files(dir) {
-	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+function files(dir: string): string[] {
+	return readdirSync(dir, { withFileTypes: true }).flatMap((entry): string[] => {
 		const path = resolve(dir, entry.name);
 		return entry.isDirectory()
 			? files(path)
@@ -15,7 +15,7 @@ function files(dir) {
 	});
 }
 test("source dependencies respect core/infrastructure/composition boundaries", () => {
-	const modules = {
+	const modules: Record<string, string[]> = {
 		"packages/core": [],
 		"packages/channels": ["@adpluse/core"],
 		"packages/storage": ["@adpluse/core"],
@@ -37,7 +37,7 @@ test("source dependencies respect core/infrastructure/composition boundaries", (
 				ts.ScriptTarget.Latest,
 				true,
 			);
-			const check = (specifier) => {
+			const check = (specifier: string) => {
 				const label = `${relative(process.cwd(), path)} -> ${specifier}`;
 				if (specifier.startsWith(".")) {
 					assert.ok(
@@ -54,7 +54,7 @@ test("source dependencies respect core/infrastructure/composition boundaries", (
 					);
 				}
 			};
-			const visit = (node) => {
+			const visit = (node: ts.Node) => {
 				if (
 					(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
 					node.moduleSpecifier &&
@@ -65,11 +65,10 @@ test("source dependencies respect core/infrastructure/composition boundaries", (
 					ts.isCallExpression(node) &&
 					node.expression.kind === ts.SyntaxKind.ImportKeyword
 				) {
-					assert.ok(
-						node.arguments[0] && ts.isStringLiteral(node.arguments[0]),
-						"dynamic import must be statically inspectable",
-					);
-					check(node.arguments[0].text);
+					const specifier = node.arguments[0];
+					if (!specifier || !ts.isStringLiteral(specifier))
+						assert.fail("dynamic import must be statically inspectable");
+					check(specifier.text);
 				}
 				ts.forEachChild(node, visit);
 			};

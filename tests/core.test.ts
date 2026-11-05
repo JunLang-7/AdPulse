@@ -1,21 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Orchestrator, Worker } from "../packages/core/dist/index.js";
+import type {
+	ActionRef,
+	ChoiceCommand,
+	Entities,
+	OutboundChannel,
+	Storage,
+	StrategySnapshot,
+} from "../packages/core/dist/index.js";
 import { MemoryStorage } from "../packages/storage/dist/memory.js";
 
-import { fixture, proposal } from "./helpers.mjs";
+import { fixture, proposal } from "./helpers.ts";
+import type { Fixture } from "./helpers.ts";
 
-async function rows(f, name) {
+async function rows<K extends keyof Entities>(
+	f: Fixture,
+	name: K,
+): Promise<Entities[K][]> {
 	return f.storage.transaction((tx) => tx[name].all());
 }
-async function open(f) {
+async function open(f: Fixture) {
 	const session = await f.start();
 	await f.worker.runOnce(); // propose -> round + actions + delivery + job
 	await f.worker.runOnce(); // deliver
 	const actions = await rows(f, "actions");
 	return { session, actions };
 }
-const choice = (action, overrides = {}) => ({
+const choice = (
+	action: ActionRef,
+	overrides: Partial<ChoiceCommand> = {},
+): ChoiceCommand => ({
 	sourceId: "account-a",
 	eventId: crypto.randomUUID(),
 	actionRef: action.id,
@@ -28,7 +43,7 @@ test("first round is persisted; terminal choice applies patch and creates confir
 	const { session, actions } = await open(f);
 	assert.equal((await rows(f, "sessions"))[0].roundNo, 1);
 	const inbox = await f.decisions.receiveChoice(
-		choice(actions.find((a) => a.optionId === "adjust")),
+		choice(actions.find((a) => a.optionId === "adjust")!),
 	);
 	await f.decisions.processInbox(inbox.id);
 	const saved = (await rows(f, "sessions"))[0];
@@ -43,13 +58,13 @@ test("first round is persisted; terminal choice applies patch and creates confir
 test("duplicate events and concurrent different choices advance a round only once", async () => {
 	const f = fixture();
 	const { actions } = await open(f);
-	const command = choice(actions.find((a) => a.optionId === "observe"));
+	const command = choice(actions.find((a) => a.optionId === "observe")!);
 	const same = await Promise.all(
 		Array.from({ length: 20 }, () => f.decisions.receiveChoice(command)),
 	);
 	assert.equal(new Set(same.map((x) => x.id)).size, 1);
 	const other = await f.decisions.receiveChoice(
-		choice(actions.find((a) => a.optionId === "adjust")),
+		choice(actions.find((a) => a.optionId === "adjust")!),
 	);
 	await Promise.all([
 		f.decisions.processInbox(same[0].id),
@@ -83,18 +98,20 @@ test("expired, wrong-account, unauthorized, unknown and cancelled actions are re
 		},
 		{ actor: { kind: "console", userId: "stranger" } },
 		{ actionRef: "nonexistent" },
-	]) {
+	] as Partial<ChoiceCommand>[]) {
 		const inbox = await f.decisions.receiveChoice(choice(action, overrides));
 		await f.decisions.processInbox(inbox.id);
 	}
 	await f.storage.transaction(async (tx) => {
 		const s = await tx.sessions.get(session.id);
+		assert.ok(s);
 		await tx.sessions.put({ ...s, status: "cancelled" });
 	});
 	const cancelled = await f.decisions.receiveChoice(choice(action));
 	await f.decisions.processInbox(cancelled.id);
 	await f.storage.transaction(async (tx) => {
 		const s = await tx.sessions.get(session.id);
+		assert.ok(s);
 		await tx.sessions.put({ ...s, status: "awaiting_input" });
 	});
 	f.advance(); // not yet expired
@@ -104,7 +121,7 @@ test("expired, wrong-account, unauthorized, unknown and cancelled actions are re
 	assert.equal((await rows(f, "sessions"))[0].version, 0);
 	assert.ok((await rows(f, "inbox")).every((x) => x.status === "rejected"));
 	assert.equal(
-		(await rows(f, "inbox")).find((x) => x.id === expired.id).reason,
+		(await rows(f, "inbox")).find((x) => x.id === expired.id)!.reason,
 		"expired",
 	);
 });
@@ -112,15 +129,15 @@ test("expired, wrong-account, unauthorized, unknown and cancelled actions are re
 test("failure mid-transaction rolls back event consumption and patch; retry succeeds", async () => {
 	const base = new MemoryStorage();
 	let fail = false;
-	const storage = {
-		claimJob: (...args) => base.claimJob(...args),
+	const storage: Storage = {
+		claimJob: (now, leaseMs) => base.claimJob(now, leaseMs),
 		transaction: (work) =>
 			base.transaction((tx) =>
 				work({
 					...tx,
 					snapshots: {
 						...tx.snapshots,
-						async put(snapshot) {
+						async put(snapshot: StrategySnapshot) {
 							if (fail && snapshot.version === 1)
 								throw new Error("database failure");
 							await tx.snapshots.put(snapshot);
@@ -160,12 +177,12 @@ test("worker retries with a stable delivery ID and exposes exhausted jobs", asyn
 	const f = fixture();
 	await f.start();
 	await f.worker.runOnce();
-	const attemptedIds = [];
+	const attemptedIds: string[] = [];
 	let fail = true;
 	const worker = new Worker(
 		f.storage,
 		f.decisions,
-		new Map([
+		new Map<string, OutboundChannel>([
 			[
 				"account-a",
 				{
@@ -190,7 +207,13 @@ test("worker retries with a stable delivery ID and exposes exhausted jobs", asyn
 	const g = fixture();
 	await g.start();
 	await g.worker.runOnce();
-	const broken = new Worker(g.storage, g.decisions, new Map(), g.now, 1);
+	const broken = new Worker(
+		g.storage,
+		g.decisions,
+		new Map<string, OutboundChannel>(),
+		g.now,
+		1,
+	);
 	await broken.runOnce();
 	assert.equal((await rows(g, "deliveries"))[0].status, "failed");
 	assert.ok((await rows(g, "jobs")).some((j) => j.status === "failed"));
@@ -203,6 +226,7 @@ test("expired worker leases are reclaimed with a new fencing token", async () =>
 	assert.equal(await f.storage.claimJob(f.now(), 1000), null);
 	f.advance();
 	const second = await f.storage.claimJob(f.now(), 1000);
+	assert.ok(first && second);
 	assert.equal(first.id, second.id);
 	assert.notEqual(first.leaseToken, second.leaseToken);
 	assert.equal(second.attempts, 2);

@@ -1,12 +1,16 @@
 import test from "node:test";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createApi } from "../apps/api/dist/server.js";
 import { compose } from "../packages/runtime/dist/index.js";
 import { MemoryStorage } from "../packages/storage/dist/index.js";
-import { proposal } from "./helpers.mjs";
+import { proposal } from "./helpers.ts";
 
 const token = "xxxxxxxxxxxxxxxxxxxxxxxx";
-async function serve(t, options = {}) {
+async function serve(
+  t: TestContext,
+  options: { failReceive?: boolean } = {},
+) {
   const runtime = compose(new MemoryStorage(), [
     {
       id: "account-a",
@@ -29,9 +33,13 @@ async function serve(t, options = {}) {
   ], { propose: async () => structuredClone(proposal) });
   if (options.failReceive) runtime.decisions.receiveChoice = async () => { throw new Error("database offline"); };
   const server = createApi(runtime, { token, userId: "owner" });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const url = `http://127.0.0.1:${server.address().port}`;
+  await new Promise<void>((resolve) =>
+    server.listen(0, "127.0.0.1", () => resolve()),
+  );
+  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const url = `http://127.0.0.1:${address.port}`;
   const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
   return { runtime, url, headers };
 }
@@ -67,7 +75,9 @@ test("HTTP flow drives create -> card -> console choice -> strategy snapshot", a
   const details = await detailsRes.json();
   assert.equal(details.rounds.length, 1);
   assert.equal(details.deliveries[0].status, "sent");
-  const action = details.actions.find((a) => a.optionId === "adjust");
+  const action = details.actions.find(
+    (a: { optionId: string }) => a.optionId === "adjust",
+  );
   const choiceRes = await fetch(`${url}/api/choices`, {
     method: "POST",
     headers: { ...headers, "idempotency-key": crypto.randomUUID() },

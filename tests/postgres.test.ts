@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { ChoiceCommand } from "../packages/core/dist/index.js";
 import { PostgresStorage } from "../packages/storage/dist/index.js";
-import { fixture } from "./helpers.mjs";
+import { fixture } from "./helpers.ts";
 
 // Use a dedicated, disposable database. Normal unit tests require no database.
 test("PostgreSQL: serializable decisions, rollback, reconnect and SKIP LOCKED claims", {
 	skip: !process.env.TEST_DATABASE_URL,
 }, async (t) => {
-	const storage = PostgresStorage.connect(process.env.TEST_DATABASE_URL);
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const storage = PostgresStorage.connect(databaseUrl);
 	t.after(() => storage.close());
 	await storage.initialize();
 	const f = fixture(storage);
@@ -16,7 +18,7 @@ test("PostgreSQL: serializable decisions, rollback, reconnect and SKIP LOCKED cl
 	const actions = await storage.transaction(async (tx) =>
 		(await tx.actions.all()).filter((a) => a.roundId === `${session.id}:1`),
 	);
-	const command = {
+	const command: ChoiceCommand = {
 		sourceId: "account-a",
 		eventId: crypto.randomUUID(),
 		actionRef: actions[0].id,
@@ -36,27 +38,29 @@ test("PostgreSQL: serializable decisions, rollback, reconnect and SKIP LOCKED cl
 		f.decisions.processInbox(other.id),
 	]);
 	const saved = await storage.transaction((tx) => tx.sessions.get(session.id));
+	assert.ok(saved);
 	assert.equal(saved.version, 1);
 	const outcomes = await storage.transaction(async (tx) => [
 		await tx.inbox.get(duplicate[0].id),
 		await tx.inbox.get(other.id),
 	]);
-	assert.deepEqual(outcomes.map((x) => x.status).sort(), [
+	assert.deepEqual(outcomes.map((x) => x!.status).sort(), [
 		"processed",
 		"rejected",
 	]);
 	await assert.rejects(
 		storage.transaction(async (tx) => {
 			const current = await tx.sessions.get(session.id);
+			assert.ok(current);
 			await tx.sessions.put({ ...current, version: 999 });
 			throw new Error("rollback test");
 		}),
 		/rollback test/,
 	);
-	const reconnected = PostgresStorage.connect(process.env.TEST_DATABASE_URL);
+	const reconnected = PostgresStorage.connect(databaseUrl);
 	try {
 		assert.equal(
-			(await reconnected.transaction((tx) => tx.sessions.get(session.id)))
+			(await reconnected.transaction((tx) => tx.sessions.get(session.id)))!
 				.version,
 			1,
 		);
@@ -68,5 +72,5 @@ test("PostgreSQL: serializable decisions, rollback, reconnect and SKIP LOCKED cl
 		storage.claimJob(f.now(), 60_000),
 	]);
 	assert.ok(claims.every(Boolean));
-	assert.notEqual(claims[0].id, claims[1].id);
+	assert.notEqual(claims[0]!.id, claims[1]!.id);
 });
