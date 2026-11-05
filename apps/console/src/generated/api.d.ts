@@ -227,7 +227,7 @@ export interface components {
             id: string;
             command: components["schemas"]["Command"];
             /** @enum {string} */
-            status: "pending" | "processed" | "rejected";
+            status: "pending" | "processed" | "rejected" | "failed";
             reason?: string;
             receivedAt: string;
         };
@@ -246,6 +246,9 @@ export interface components {
             externalMessageId?: string;
             sentAt?: string;
             lastError?: string;
+            /** @enum {string} */
+            purpose: "decision" | "confirmation";
+            expiresAt: string;
         };
         Snapshot: {
             id: string;

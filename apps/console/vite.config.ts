@@ -15,8 +15,9 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, resolve(__dirname, '../..'), '');
     return {
     envDir: resolve(__dirname, '../..'),
+    // Same-origin requests through the dev proxy avoid CORS preflight entirely.
     define: {
-        'import.meta.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL || env.API_BASE_URL || 'http://127.0.0.1:3000'),
+        'import.meta.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL || ''),
         'import.meta.env.VITE_CONSOLE_TOKEN': JSON.stringify(env.VITE_CONSOLE_TOKEN || env.CONSOLE_TOKEN || ''),
     },
     server: {
