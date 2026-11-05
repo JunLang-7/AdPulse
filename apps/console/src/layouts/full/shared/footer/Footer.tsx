@@ -1,9 +1,9 @@
 const links = [
 	{
 		title: "文档",
-		href: "https://github.com/JunLang-7/AdPulse/blob/main/docs/development.md",
+		href: "https://github.com/JunLang-7/AdPulse/wiki/development",
 	},
-	{ title: "Issues", href: "https://github.com/JunLang-7/AdPulse/issues" },
+	{ title: "Wiki", href: "https://github.com/JunLang-7/AdPulse/wiki" },
 ];
 
 export default function Footer() {

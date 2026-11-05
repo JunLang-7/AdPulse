@@ -10,12 +10,12 @@ import {
 const navItems = [
 	{
 		title: "开发文档",
-		url: "https://github.com/JunLang-7/AdPulse/blob/main/docs/development.md",
+		url: "https://github.com/JunLang-7/AdPulse/wiki/development",
 		icon: LifeBuoy,
 	},
 	{
 		title: "架构说明",
-		url: "https://github.com/JunLang-7/AdPulse/blob/main/docs/architecture.md",
+		url: "https://github.com/JunLang-7/AdPulse/wiki/architecture",
 		icon: BookOpen,
 	},
 ];

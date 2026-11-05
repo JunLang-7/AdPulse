@@ -2,13 +2,13 @@ import { BookOpen, LifeBuoy } from "lucide-react";
 
 const links = [
 	{
-		href: "https://github.com/JunLang-7/AdPulse/blob/main/docs/development.md",
+		href: "https://github.com/JunLang-7/AdPulse/wiki/development",
 		label: "使用文档",
 		icon: BookOpen,
 	},
 	{
-		href: "https://github.com/JunLang-7/AdPulse/issues",
-		label: "问题反馈",
+		href: "https://github.com/JunLang-7/AdPulse/wiki",
+		label: "项目 Wiki",
 		icon: LifeBuoy,
 	},
 ];
