@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import fs from 'fs/promises';
@@ -11,7 +11,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+    const env = loadEnv(mode, resolve(__dirname, '../..'), '');
+    return {
+    envDir: resolve(__dirname, '../..'),
+    define: {
+        'import.meta.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL || env.API_BASE_URL || 'http://127.0.0.1:3000'),
+        'import.meta.env.VITE_CONSOLE_TOKEN': JSON.stringify(env.VITE_CONSOLE_TOKEN || env.CONSOLE_TOKEN || ''),
+    },
     resolve: {
         alias: {
             src: resolve(__dirname, 'src'),
@@ -38,4 +45,5 @@ export default defineConfig({
     },
 
     plugins: [svgr(), react()],
+    };
 });
