@@ -98,6 +98,24 @@ https://你的域名/webhooks/feishu-internal
 
 当前已用合成签名、AES 密文和模拟 HTTP API 测试协议；尚无真实凭据的真机联调证据。
 
+### 真机联调自检
+
+```bash
+bun run build
+bun run feishu:acceptance -- --public-url https://你的域名/webhooks/feishu-internal \
+  --chat-id oc_xxx --open-id ou_xxx
+```
+
+只读、脱敏探测：本地配置项、离线协议自检（真实 encrypt key 构造的验签/解密/身份拒绝/卡片动作）、
+平台连通（`tenant_access_token`、租户匹配、机器人启用状态、时钟偏差）、可选收件人、本机 `/healthz`，
+以及公网回调的 401 与自签 challenge 往返。它不发送业务消息、不写业务数据，也**不能替代真机验收**：
+平台触发的 challenge、单聊/群聊点击链路、失败与拒绝场景仍需人工执行。
+
+`fail` 需先处理，`skip` 不计入验收，退出码非 0 表示存在 `fail`。
+加 `--write` 会在 `docs/acceptance/records/` 生成验收记录骨架（该目录默认不入库）。
+操作步骤与判读标准见[飞书真机联调 runbook](acceptance/feishu-e2e.md)。
+服务端尚无专用的回调 ACK 时延指标，需按 runbook 第 9 节用代理日志等替代取数。
+
 ## 5. Web 控制台与接口
 
 保持上述 API 在 127.0.0.1:3000 运行，另一个终端启动控制台：

@@ -5,5 +5,7 @@ dist/
 .env.*
 !.env.example
 .local/
+# 真机联调记录含真实环境信息，默认不入库；复核脱敏后用 git add -f 显式提交。
+docs/acceptance/records/
 *.swp
 .DS_Store
