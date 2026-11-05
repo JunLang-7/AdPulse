@@ -1224,7 +1224,8 @@
             "enum": [
               "pending",
               "processed",
-              "rejected"
+              "rejected",
+              "failed"
             ]
           },
           "reason": {
@@ -1295,6 +1296,16 @@
           },
           "lastError": {
             "type": "string"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "decision",
+              "confirmation"
+            ]
+          },
+          "expiresAt": {
+            "type": "string"
           }
         },
         "required": [
@@ -1304,7 +1315,9 @@
           "actions",
           "sessionId",
           "roundId",
-          "status"
+          "status",
+          "purpose",
+          "expiresAt"
         ],
         "additionalProperties": false
       },
