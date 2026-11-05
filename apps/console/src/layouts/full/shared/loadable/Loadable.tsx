@@ -1,16 +1,10 @@
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-
-import { Suspense, ComponentType, FC } from 'react';
-import Spinner from '../../../../views/spinner/Spinner';
-
-// ===========================|| LOADABLE - LAZY LOADING ||=========================== //
+import { Suspense, ComponentType, FC } from "react";
 
 const Loadable =
   <P extends object>(Component: ComponentType<P>): FC<P> =>
   (props: P) =>
     (
-      <Suspense fallback={<Spinner />}>
+      <Suspense fallback={<div className="p-6">加载中…</div>}>
         <Component {...props} />
       </Suspense>
     );
