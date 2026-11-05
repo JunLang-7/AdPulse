@@ -2,7 +2,6 @@ import type { FC } from "react";
 import { Outlet } from "react-router";
 import { SidebarInset, SidebarProvider } from "src/components/ui/sidebar";
 import { cn } from "src/lib/utils";
-import Footer from "./shared/footer/Footer";
 import Header from "./vertical/header/Header";
 import Sidebar from "./vertical/sidebar/Sidebar";
 
@@ -23,9 +22,6 @@ const FullLayout: FC = () => {
 					<div className={cn("w-full mx-auto", "container")}>
 						<div className=" min-h-[calc(100vh-140px)]">
 							<Outlet />
-						</div>
-						<div className="pt-6">
-							<Footer />
 						</div>
 					</div>
 				</div>
