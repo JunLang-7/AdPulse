@@ -19,6 +19,12 @@ export default defineConfig(({ mode }) => {
         'import.meta.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL || env.API_BASE_URL || 'http://127.0.0.1:3000'),
         'import.meta.env.VITE_CONSOLE_TOKEN': JSON.stringify(env.VITE_CONSOLE_TOKEN || env.CONSOLE_TOKEN || ''),
     },
+    server: {
+        proxy: {
+            '/api': 'http://127.0.0.1:3000',
+            '/webhooks': 'http://127.0.0.1:3000',
+        },
+    },
     resolve: {
         alias: {
             src: resolve(__dirname, 'src'),

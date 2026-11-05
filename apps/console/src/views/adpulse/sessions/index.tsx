@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui
 import { createConsoleClient } from "../../../adpulse-client";
 
 const client = createConsoleClient(
-  import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3000",
+  import.meta.env.VITE_API_BASE_URL ?? "",
   import.meta.env.VITE_CONSOLE_TOKEN ?? "",
 );
 
