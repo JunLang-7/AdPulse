@@ -5,7 +5,7 @@ import {
 	Orchestrator,
 	Worker,
 } from "../packages/core/dist/index.js";
-import { fixture, proposal } from "./helpers.mjs";
+import { fixture, proposal } from "./helpers.ts";
 
 const strategy = {
 	objective: "leads",

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createApi } from "../apps/api/dist/server.js";
 import { compose } from "../packages/runtime/dist/index.js";
 import { MemoryStorage } from "../packages/storage/dist/index.js";
-import { proposal } from "./helpers.mjs";
+import { proposal } from "./helpers.ts";
 
 const token = "xxxxxxxxxxxxxxxxxxxxxxxx";
 async function serve(t, options = {}) {

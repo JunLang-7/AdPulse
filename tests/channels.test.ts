@@ -7,7 +7,7 @@ import {
 	FeishuOutbound,
 	toFeishuCard,
 } from "../packages/channels/dist/index.js";
-import { fixture } from "./helpers.mjs";
+import { fixture } from "./helpers.ts";
 
 const config = {
 	accountId: "account-a",

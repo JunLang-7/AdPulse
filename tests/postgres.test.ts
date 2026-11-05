@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PostgresStorage } from "../packages/storage/dist/index.js";
-import { fixture } from "./helpers.mjs";
+import { fixture } from "./helpers.ts";
 
 // Use a dedicated, disposable database. Normal unit tests require no database.
 test("PostgreSQL: serializable decisions, rollback, reconnect and SKIP LOCKED claims", {

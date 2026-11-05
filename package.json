@@ -12,7 +12,7 @@
 	"scripts": {
 		"typecheck": "tsc -b",
 		"build": "tsc -b",
-		"test": "bun run build && node --test tests/*.test.mjs",
+		"test": "bun run build && node --test tests/*.test.ts",
 		"sdk:generate": "openapi-typescript contracts/openapi.json -o apps/console/src/generated/api.d.ts",
 		"sdk:check": "node scripts/check-sdk.mjs",
 		"start": "node --env-file=.env apps/api/dist/index.js",

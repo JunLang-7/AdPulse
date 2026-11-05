@@ -3,7 +3,7 @@ import test from "node:test";
 import { Orchestrator, Worker } from "../packages/core/dist/index.js";
 import { MemoryStorage } from "../packages/storage/dist/memory.js";
 
-import { fixture, proposal } from "./helpers.mjs";
+import { fixture, proposal } from "./helpers.ts";
 
 async function rows(f, name) {
 	return f.storage.transaction((tx) => tx[name].all());
