@@ -283,7 +283,7 @@ html[data-card-shadow="false"] [data-slot="card"] {
 
 
 
-      /* Inner alignment for NavUser and NavSecondary to match standard items */
+      /* Inner alignment for sidebar links */
       [data-sidebar="menu-button"] .flex.items-center {
         padding: 8px 12px !important;
         width: 100% !important;

@@ -38,7 +38,6 @@ import { House, type LucideIcon } from "lucide-react";
 
 const SidebarContent: MenuItem[] = [
 	{
-		heading: "决策",
 		items: [
 			{
 				id: "sessions",

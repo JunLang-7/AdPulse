@@ -1,6 +1,5 @@
 import type React from "react";
 import SimpleBar from "simplebar-react";
-import { Badge } from "src/components/ui/badge";
 import {
 	Sidebar,
 	SidebarContent,
@@ -9,9 +8,8 @@ import {
 	SidebarHeader,
 } from "src/components/ui/sidebar";
 import FullLogo from "../../shared/logo/FullLogo";
-import { NavSecondary } from "./NavSecondary";
-import { NavUser } from "./NavUser";
 import NavCollapse from "./nav-collapse";
+import { SidebarLinks } from "./SidebarLinks";
 import sidebaritems from "./sidebaritems";
 
 const SidebarLayout = ({ ...props }: React.ComponentProps<typeof Sidebar>) => {
@@ -23,14 +21,8 @@ const SidebarLayout = ({ ...props }: React.ComponentProps<typeof Sidebar>) => {
 			className="sidebar-box **:data-[slot=sidebar-inner]:bg-background **:data-[slot=sidebar-inner]:border **:data-[slot=sidebar-inner]:border-border group-data-[state=collapsed]:hover:shadow-xl"
 			side="left"
 		>
-			<SidebarHeader className="p-3 group-data-[state=collapsed]:px-2.5 flex flex-row items-center justify-between border-b border-border">
+			<SidebarHeader className="p-3 group-data-[state=collapsed]:px-2.5 flex flex-row items-center border-b border-border">
 				<FullLogo />
-				<Badge
-					className="group-data-[state=collapsed]:hidden"
-					variant={"secondary"}
-				>
-					V.1.0
-				</Badge>
 			</SidebarHeader>
 
 			<SidebarContent>
@@ -43,11 +35,8 @@ const SidebarLayout = ({ ...props }: React.ComponentProps<typeof Sidebar>) => {
 				</SimpleBar>
 			</SidebarContent>
 
-			<SidebarFooter className="p-4">
-				<div className="hide-menu flex flex-col gap-2">
-					<NavSecondary />
-					<NavUser />
-				</div>
+			<SidebarFooter className="p-0">
+				<SidebarLinks />
 			</SidebarFooter>
 		</Sidebar>
 	);
