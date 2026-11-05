@@ -1,0 +1,209 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Job, Transaction } from "@adpluse/core";
+import type { Runtime } from "@adpluse/runtime";
+import { z } from "zod";
+import { HttpError, json, readJson } from "../http.js";
+
+const amount = z.number().finite().nonnegative();
+const strategy = z
+	.object({
+		objective: z.string().max(2000),
+		audience: z.array(z.string()).max(100),
+		channels: z.record(
+			z.string().min(1).max(128),
+			z
+				.object({
+					budget: amount.optional(),
+					bidCpc: amount.optional(),
+					enabled: z.boolean().optional(),
+				})
+				.strict()
+				.transform(({ budget, bidCpc, enabled }) => ({
+					...(budget === undefined ? {} : { budget }),
+					...(bidCpc === undefined ? {} : { bidCpc }),
+					...(enabled === undefined ? {} : { enabled }),
+				})),
+		),
+		sellingPoints: z.array(z.string()).max(100),
+	})
+	.strict();
+const sessionInput = z
+	.object({
+		recipient: z
+			.object({
+				accountId: z.string().min(1).max(128),
+				kind: z.enum(["user", "group"]),
+				externalId: z.string().min(1).max(256),
+			})
+			.strict(),
+		allowedActorIds: z.array(z.string().min(1).max(256)).min(1).max(100),
+		strategy,
+		limits: z
+			.object({
+				maxBudgetChangeRatio: z.number().min(0).max(1),
+				maxBidChangeRatio: z.number().min(0).max(1),
+			})
+			.strict(),
+		signal: z
+			.object({
+				id: z.string().min(1).max(128),
+				title: z.string().min(1).max(200),
+				summary: z.string().max(10000),
+				evidence: z
+					.array(
+						z
+							.object({
+								label: z.string().max(200),
+								value: z.string().max(2000),
+								sourceUrl: z.string().url().optional(),
+							})
+							.strict()
+							.transform(({ label, value, sourceUrl }) => ({
+								label,
+								value,
+								...(sourceUrl === undefined ? {} : { sourceUrl }),
+							})),
+					)
+					.max(6),
+			})
+			.strict(),
+		expiresAt: z.iso.datetime(),
+	})
+	.strict();
+const choiceInput = z
+	.object({ actionRef: z.string().min(1).max(128) })
+	.strict();
+const requestId = (req: IncomingMessage): string =>
+	z.uuid().parse(req.headers["idempotency-key"]);
+
+async function sessionForJob(
+	tx: Transaction,
+	job: Job,
+): Promise<string | null> {
+	if (job.task.kind === "prepare_round") return job.task.sessionId;
+	if (job.task.kind === "send_delivery")
+		return (await tx.deliveries.get(job.task.deliveryId))?.sessionId ?? null;
+	const inbox = await tx.inbox.get(job.task.inboxId);
+	const action = inbox && (await tx.actions.get(inbox.command.actionRef));
+	return action
+		? ((await tx.rounds.get(action.roundId))?.sessionId ?? null)
+		: null;
+}
+
+export async function handleAdmin(
+	req: IncomingMessage,
+	res: ServerResponse,
+	runtime: Runtime,
+	userId: string,
+	path: string,
+): Promise<void> {
+	if (path === "/api/sessions" && req.method === "POST") {
+		const input = sessionInput.parse(await readJson(req));
+		if (!runtime.channels.has(input.recipient.accountId))
+			throw new HttpError(400, "unknown recipient account");
+		if (Date.parse(input.expiresAt) <= Date.now())
+			throw new HttpError(400, "expiry must be in the future");
+		const session = await runtime.decisions.startSession({
+			...input,
+			requestId: requestId(req),
+			ownerId: userId,
+		});
+		return json(res, 201, session);
+	}
+	if (path === "/api/sessions" && req.method === "GET") {
+		const items = await runtime.storage.transaction(async (tx) =>
+			(await tx.sessions.all()).filter((s) => s.ownerId === userId),
+		);
+		return json(res, 200, { items });
+	}
+	if (path.startsWith("/api/sessions/") && req.method === "GET") {
+		const id = decodeURIComponent(path.slice("/api/sessions/".length));
+		const detail = await runtime.storage.transaction(async (tx) => {
+			const session = await tx.sessions.get(id);
+			if (!session || session.ownerId !== userId)
+				throw new HttpError(404, "session not found");
+			const rounds = (await tx.rounds.all())
+				.filter((r) => r.sessionId === id)
+				.sort((a, b) => a.roundNo - b.roundNo);
+			const roundIds = new Set(rounds.map((r) => r.id));
+			const actions = (await tx.actions.all()).filter((a) =>
+				roundIds.has(a.roundId),
+			);
+			const actionIds = new Set(actions.map((a) => a.id));
+			const inbox = (await tx.inbox.all()).filter((i) =>
+				actionIds.has(i.command.actionRef),
+			);
+			const inboxIds = new Set(inbox.map((i) => i.id));
+			const deliveries = (await tx.deliveries.all()).filter(
+				(d) => d.sessionId === id,
+			);
+			const deliveryIds = new Set(deliveries.map((d) => d.id));
+			const jobs = (await tx.jobs.all()).filter((j) =>
+				j.task.kind === "prepare_round"
+					? j.task.sessionId === id
+					: j.task.kind === "process_inbox"
+						? inboxIds.has(j.task.inboxId)
+						: deliveryIds.has(j.task.deliveryId),
+			);
+			return {
+				session,
+				rounds,
+				actions,
+				inbox,
+				deliveries,
+				jobs,
+				snapshots: (await tx.snapshots.all())
+					.filter((s) => s.sessionId === id)
+					.sort((a, b) => a.version - b.version),
+			};
+		});
+		return json(res, 200, detail);
+	}
+	if (path === "/api/choices" && req.method === "POST") {
+		const input = choiceInput.parse(await readJson(req));
+		const inbox = await runtime.decisions.receiveChoice({
+			sourceId: `console:${userId}`,
+			eventId: requestId(req),
+			actionRef: input.actionRef,
+			actor: { kind: "console", userId },
+		});
+		return json(res, 202, { inboxId: inbox.id, status: inbox.status });
+	}
+	if (path.startsWith("/api/choices/") && req.method === "GET") {
+		const id = decodeURIComponent(path.slice("/api/choices/".length));
+		const inbox = await runtime.storage.transaction((tx) => tx.inbox.get(id));
+		if (
+			inbox?.command.actor.kind !== "console" ||
+			inbox.command.actor.userId !== userId
+		) {
+			throw new HttpError(404, "choice not found");
+		}
+		return json(res, 200, inbox);
+	}
+	const retry = path.match(/^\/api\/jobs\/([^/]+)\/retry$/);
+	if (retry?.[1] && req.method === "POST") {
+		const id = decodeURIComponent(retry[1]);
+		await runtime.storage.transaction(async (tx) => {
+			const job = await tx.jobs.get(id);
+			const sessionId = job && (await sessionForJob(tx, job));
+			const session = sessionId && (await tx.sessions.get(sessionId));
+			if (!job || !session || session.ownerId !== userId)
+				throw new HttpError(404, "job not found");
+			if (job.status !== "failed")
+				throw new HttpError(409, "only failed jobs may be retried");
+			await tx.jobs.put({
+				...job,
+				attempts: 0,
+				status: "pending",
+				runAt: new Date().toISOString(),
+			});
+			if (job.task.kind === "send_delivery") {
+				const delivery = await tx.deliveries.get(job.task.deliveryId);
+				if (delivery && delivery.status !== "sent")
+					await tx.deliveries.put({ ...delivery, status: "pending" });
+			}
+		});
+		return json(res, 200, { ok: true });
+	}
+	throw new HttpError(404, "route not found");
+}

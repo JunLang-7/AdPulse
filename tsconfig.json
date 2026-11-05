@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/channels" },
+    { "path": "./packages/storage" },
+    { "path": "./packages/runtime" },
+    { "path": "./apps/console" },
+    { "path": "./apps/api" },
+    { "path": "./apps/worker" }
+  ]
+}

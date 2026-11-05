@@ -1,0 +1,7 @@
+[install]
+# Preserve workspace dependency isolation; do not rely on undeclared dependencies.
+linker = "isolated"
+
+[run]
+# Respect Node shebangs. Bun manages packages/scripts, not the service runtime.
+bun = false

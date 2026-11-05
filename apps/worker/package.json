@@ -1,0 +1,16 @@
+{
+	"name": "@adpluse/worker",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"typecheck": "tsc -b",
+		"dev": "bun run --cwd ../.. build && node dist/index.js"
+	},
+	"dependencies": {
+		"@adpluse/runtime": "workspace:*"
+	},
+	"devDependencies": {
+		"typescript": "^5.6.0"
+	}
+}
