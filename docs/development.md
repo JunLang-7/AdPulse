@@ -8,13 +8,16 @@
 
 ```bash
 bun install --frozen-lockfile
+bun run typecheck
 bun run build
 bun run test
 bun run sdk:check
+bun run --cwd apps/console typecheck
+bun run --cwd apps/console build
 ```
 
 只维护 bun.lock；不要使用 bun --bun 将服务切换到 Bun 运行时。
-typecheck/build 都通过 TypeScript project references 检查并生成产物。修改 OpenAPI 后运行 bun run sdk:generate，再运行 sdk:check。
+根目录 typecheck/build 通过 TypeScript project references 检查并生成后端产物；控制台的类型检查与 Vite bundle 构建需单独执行，CI 同样检查这两项，不能只用后端构建代替前端验证。修改 OpenAPI 后运行 bun run sdk:generate，再运行 sdk:check。
 
 ## 2. 不接真实 IM 的本地演示
 
@@ -31,8 +34,8 @@ bun run start
 bun run demo
 ```
 
-Bun 会为脚本加载 .env；Node 子进程继承环境变量。
-demo 脚本调用生成契约的 SDK，固定使用 demo 收件账户：
+start、worker、demo 脚本均显式使用 `node --env-file=.env` 加载仓库根目录的 .env；实际运行时是 Node.js。
+demo 脚本直接调用 HTTP API，固定使用 demo 收件账户；控制台页面则使用生成类型的客户端：
 创建会话 → 第一轮选择继续观察 → 第二轮确认 → 收到结束确认。
 成功时打印 completed、2 个轮次、3 个策略快照和 3 次模拟投递。
 
@@ -94,20 +97,35 @@ https://你的域名/webhooks/feishu-internal
 
 当前已用合成签名、AES 密文和模拟 HTTP API 测试协议；尚无真实凭据的真机联调证据。
 
-## 5. 控制台接口
+## 5. Web 控制台与接口
 
-接口清单见 contracts/openapi.json；业务层调用示例见 scripts/demo.mjs。
-前端通过 apps/console 导出的 createConsoleClient 使用生成类型，不手写另一套 HTTP 契约。
+保持上述 API 在 127.0.0.1:3000 运行，另一个终端启动控制台：
+
+```bash
+cd apps/console
+bun run dev
+# 默认 http://localhost:5173/sessions
+```
+
+已有会话列表与详情，可查看轮次、选项、投递和快照摘要，并提交选择。当前没有创建会话表单，可先运行 `bun run demo` 生成演示记录；该脚本生成的是已完成会话。创建可操作的会话可参考脚本中的 POST /api/sessions 调用。
+
+Vite 将同源 `/api`、`/webhooks` 请求代理到 127.0.0.1:3000，默认不需要 CORS 配置。改 API 端口时需同时调整 Vite proxy 目标与 demo 的 API_BASE_URL；API_BASE_URL 不会自动修改 proxy。`VITE_API_BASE_URL` 可单独覆盖浏览器请求地址，跨域部署需另行配置。
+
+控制台从根目录 .env 读取配置，`VITE_CONSOLE_TOKEN` 未设置时使用 CONSOLE_TOKEN。**该 token 会进入浏览器与构建产物，只适用于受控开发环境，禁止把带真实 token 的静态产物公开发布。** API 的静态 token 不是正式登录系统。
+
+接口清单见 contracts/openapi.json；HTTP 调用示例见 scripts/demo.mjs。页面通过 apps/console/src/adpulse-client.ts 的 consoleClient 使用生成类型，不手写另一套 HTTP 契约。
 
 - /api/* 要求 Authorization: Bearer <CONSOLE_TOKEN>。
 - 创建与选择要求 UUID 格式 Idempotency-Key。
-- 同一幂等键重试返回原操作；新操作使用新键。
-- POST /api/choices 返回 202 仅表示已接收；查询 inbox 或会话详情获知 processed/rejected。
+- 创建会话：同 owner 的已有 requestId 返回原会话，目前不比较新旧创建请求体。
+- 提交选择：同一 sourceId + eventId、同规范化内容返回原 inbox；同键不同内容返回 409。一次操作的网络重试应复用键，新操作用新键。
+- POST /api/choices 返回 202 仅表示已接收；查询 GET /api/choices/{inboxId} 或会话详情获知 processed/rejected/failed。路径中的 inboxId 需 URL 编码。
+- 当前 Web 提交后只触发一次查询失效，尚未跟踪异步终态，必要时刷新详情核对。此限制由 [#11](https://github.com/JunLang-7/AdPulse/issues/11) 跟进；不能把按钮请求成功视为策略已变更。
 - 会话详情包含轮次、actionRef、策略快照、投递和失败任务。
 - POST /api/jobs/{jobId}/retry 仅允许所属用户重试 failed 任务。
 - /healthz 只证明 HTTP 进程可响应，不是数据库/worker 就绪检查。
 
-这是单一固定控制台用户的开发认证方案，没有完整页面、登录/SSO、RBAC 或多租户能力。
+这是单一固定控制台用户的开发认证方案。已有最小会话页面，尚无登录/SSO、RBAC、多租户、完整策略差异或任务恢复界面；任务重试目前通过 API。sent 只代表渠道发送回执，不代表用户已读。
 
 ## 6. PostgreSQL 集成测试
 
@@ -140,6 +158,6 @@ CI 会启动 PostgreSQL service 并设置此变量，避免把跳过误判为完
 更换策略：实现 PolicyEngine 并通过 compose 注入。候选必须带冻结的 changes 和 complete 标志；内核不信任模型的边界判断，会重复校验变更和操作者。
 
 生产前仍需：
-真实平台验收、正式认证、数据保留策略、版本化数据库迁移、分页、限流/监控、过期投递抑制和长任务租约续期。消息端到端不承诺 exactly-once。
+真实平台验收、正式认证、数据保留策略、版本化数据库迁移、分页、限流/监控、失效原因提示和长任务租约续期。发送前已有过期/失效投递抑制，但不撤回已送达卡片，也不能完全消除检查与发送间的竞态。消息端到端不承诺 exactly-once。
 
-设计过程草稿遵循 XEngineer 规范：本地评审稿保存在被忽略的 .local/designs 中，确认后归档到 Issue；本次未自动发布 Issue 或执行 PR 合并。
+设计过程遵循 XEngineer 规范：工程提案与设计澄清由 Issue 承载，进入开发即定稿只读，变更新开增量说明；本文仅随实现维护使用方式。当前已合并交互内核与最小控制台，下一阶段待评审提案见 [#6](https://github.com/JunLang-7/AdPulse/issues/6)。
