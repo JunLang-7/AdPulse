@@ -11,18 +11,19 @@ import {
 } from "src/components/ui/sheet";
 import { cn } from "src/lib/utils";
 import { profileDD } from "./data";
+
+const isExternal = (href: string) => href.startsWith("http");
+
 export default function ProfileSheet() {
 	return (
 		<Sheet>
-			{/* Trigger Button */}
 			<SheetTrigger className="cursor-pointer hover:bg-primary/5 flex items-center justify-center rounded-full h-10 w-10">
 				<Avatar className="h-8 w-8">
 					<AvatarImage src="" alt="profile" />
-					<AvatarFallback>CM</AvatarFallback>
+					<AvatarFallback>AD</AvatarFallback>
 				</Avatar>
 			</SheetTrigger>
 
-			{/* Drawer Panel */}
 			<SheetContent
 				showCloseButton={false}
 				side="right"
@@ -31,14 +32,13 @@ export default function ProfileSheet() {
 				<SheetClose className="absolute top-5 end-5 p-2 hover:bg-primary/5 hover:text-primary rounded-full">
 					<Icon icon="tabler:x" width={20} height={20} />
 				</SheetClose>
-				{/* Top Profile Section */}
-				<div className="p-6 py-6">
-					<div className="flex flex-col gap-4 justify-center items-center pt-10">
+
+				<div className="flex flex-col gap-6 py-6">
+					<div className="flex flex-col items-center gap-3">
 						<Avatar className="h-16 w-16">
-							<AvatarImage src="" alt="Profile" width={30} height={30} />
+							<AvatarImage src="" alt="profile" />
 							<AvatarFallback>AD</AvatarFallback>
 						</Avatar>
-
 						<div className="text-center">
 							<h6 className="text-lg font-semibold">AdPulse 操作员</h6>
 							<div className="flex items-center gap-2 justify-center">
@@ -49,43 +49,48 @@ export default function ProfileSheet() {
 							</div>
 						</div>
 					</div>
-				</div>
 
-				{/* Menu List */}
-				<div className="border-t  border-border">
-					<ul className="flex flex-col gap-2 p-6">
-						{profileDD.map((item) => (
-							<li key={item.title} className="group">
-								<Link
-									to={item.href}
-									className={cn(
-										"flex gap-3 py-2 px-3 rounded-md group-hover:bg-primary/5 text-muted-foreground",
-									)}
-								>
-									<item.avatar
-										width={20}
-										height={20}
-										className="group-hover:text-primary"
-									/>
-
-									<div className="flex gap-3 items-center">
+					<div className="border-t border-border pt-4">
+						<ul className="flex flex-col gap-1">
+							{profileDD.map((item) => {
+								const content = (
+									<>
+										<item.avatar
+											width={20}
+											height={20}
+											className="group-hover:text-primary"
+										/>
 										<h6 className="text-sm group-hover:text-primary">
 											{item.title}
 										</h6>
-
-										{item.badge && (
-											<span className="h-5 w-6 text-sm flex justify-center items-center text-primary rounded-sm bg-primary/5">
-												4
-											</span>
+									</>
+								);
+								const className = cn(
+									"flex items-center gap-3 py-2 px-3 rounded-md group-hover:bg-primary/5 text-muted-foreground",
+								);
+								return (
+									<li key={item.title} className="group">
+										{isExternal(item.href) ? (
+											<a
+												href={item.href}
+												target="_blank"
+												rel="noreferrer"
+												className={className}
+											>
+												{content}
+											</a>
+										) : (
+											<Link to={item.href} className={className}>
+												{content}
+											</Link>
 										)}
-									</div>
-								</Link>
-							</li>
-						))}
-					</ul>
+									</li>
+								);
+							})}
+						</ul>
+					</div>
 				</div>
 
-				{/* Footer */}
 				<SheetFooter className="px-0 pb-6">
 					<div className="rounded-sm pt-6 text-center text-sm text-muted-foreground">
 						AdPulse 控制台 · 开发版本
