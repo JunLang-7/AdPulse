@@ -6,55 +6,69 @@ export type SessionStatus =
 
 export type RoundStatus = "open" | "answered";
 
-const sessionLabels: Record<
-	SessionStatus,
-	{ label: string; className: string }
-> = {
-	planning: {
-		label: "规划中",
-		className: "bg-muted text-muted-foreground",
-	},
-	awaiting_input: {
-		label: "待选择",
-		className: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-	},
-	completed: {
-		label: "已完成",
-		className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-	},
-	cancelled: {
-		label: "已取消",
-		className: "bg-destructive/10 text-destructive",
-	},
+type Tone = {
+	label: string;
+	variant: "outline" | "secondary" | "destructive";
+	className: string;
 };
 
-const roundLabels: Record<RoundStatus, { label: string; className: string }> = {
-	open: {
-		label: "等待选择",
-		className: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+const tones = {
+	pending: {
+		label: "待选择",
+		variant: "outline",
+		className:
+			"border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+	},
+	done: {
+		label: "已完成",
+		variant: "outline",
+		className:
+			"border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+	},
+	idle: {
+		label: "规划中",
+		variant: "outline",
+		className: "border-border bg-muted text-muted-foreground",
+	},
+	stop: {
+		label: "已取消",
+		variant: "outline",
+		className: "border-destructive/40 bg-destructive/10 text-destructive",
 	},
 	answered: {
 		label: "已处理",
-		className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+		variant: "outline",
+		className:
+			"border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
 	},
+	open: {
+		label: "等待选择",
+		variant: "outline",
+		className:
+			"border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+	},
+} satisfies Record<string, Tone>;
+
+const sessionTones: Record<SessionStatus, Tone> = {
+	planning: { ...tones.idle, label: "规划中" },
+	awaiting_input: { ...tones.pending },
+	completed: { ...tones.done },
+	cancelled: { ...tones.stop },
 };
 
-export function sessionStatus(status: string) {
+const roundTones: Record<RoundStatus, Tone> = {
+	open: { ...tones.open },
+	answered: { ...tones.answered },
+};
+
+export function sessionStatus(status: string): Tone {
 	return (
-		sessionLabels[status as SessionStatus] ?? {
-			label: status,
-			className: "bg-muted text-muted-foreground",
-		}
+		sessionTones[status as SessionStatus] ?? { ...tones.idle, label: status }
 	);
 }
 
-export function roundStatus(status: string) {
-	return (
-		roundLabels[status as RoundStatus] ?? {
-			label: status,
-			className: "bg-muted text-muted-foreground",
-		}
-	);
+export function roundStatus(status: string): Tone {
+	return roundTones[status as RoundStatus] ?? { ...tones.idle, label: status };
 }
 
 export function formatTime(value?: string): string {

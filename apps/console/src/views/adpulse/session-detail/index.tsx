@@ -3,14 +3,13 @@ import { ArrowLeft, Check, CircleDot } from "lucide-react";
 import { Link, useParams } from "react-router";
 import { consoleClient } from "../../../adpulse-client";
 import { Badge } from "../../../components/ui/badge";
-import { Button } from "../../../components/ui/button";
 import {
 	Card,
 	CardContent,
 	CardHeader,
 	CardTitle,
 } from "../../../components/ui/card";
-import { Separator } from "../../../components/ui/separator";
+import { cn } from "../../../lib/utils";
 import { formatTime, isExpired, roundStatus, sessionStatus } from "../status";
 
 export default function SessionDetailPage() {
@@ -49,7 +48,9 @@ export default function SessionDetailPage() {
 			<div className="space-y-2">
 				<div className="flex flex-wrap items-center gap-2">
 					<h1 className="text-2xl font-bold">{session.signal.title}</h1>
-					<Badge className={status.className}>{status.label}</Badge>
+					<Badge variant={status.variant} className={status.className}>
+						{status.label}
+					</Badge>
 					{expired ? <Badge variant="destructive">已过期</Badge> : null}
 				</div>
 				<p className="text-sm text-muted-foreground">
@@ -92,7 +93,9 @@ export default function SessionDetailPage() {
 									<div className="flex items-center gap-2">
 										<CircleDot className="size-4 text-muted-foreground" />
 										<span className="font-medium">第 {round.roundNo} 轮</span>
-										<Badge className={state.className}>{state.label}</Badge>
+										<Badge variant={state.variant} className={state.className}>
+											{state.label}
+										</Badge>
 										{isCurrent ? <Badge variant="secondary">当前</Badge> : null}
 									</div>
 									<span className="text-xs text-muted-foreground">
@@ -118,38 +121,25 @@ export default function SessionDetailPage() {
 									) : null}
 								</div>
 
-								<Separator />
-
-								<ul className="space-y-2">
+								<div className="flex flex-wrap gap-2">
 									{candidates.map((candidate) => {
 										const action = actions.find(
 											(a) => a.optionId === candidate.id,
 										);
-										const selected = round.selectedOptionId === candidate.id;
 										return (
-											<li
+											<OptionChip
 												key={candidate.id}
-												className="flex items-center justify-between gap-3"
-											>
-												<span className="flex items-center gap-2 text-sm">
-													{selected ? (
-														<Check className="size-4 text-emerald-600" />
-													) : (
-														<span className="size-4" />
-													)}
-													{candidate.label}
-												</span>
-												{round.status === "open" && !expired && action ? (
-													<ChoiceButton actionRef={action.id} />
-												) : (
-													<span className="text-xs text-muted-foreground">
-														{selected ? "已选择" : "未选择"}
-													</span>
-												)}
-											</li>
+												label={candidate.label}
+												selected={round.selectedOptionId === candidate.id}
+												actionRef={
+													round.status === "open" && !expired
+														? action?.id
+														: undefined
+												}
+											/>
 										);
 									})}
-								</ul>
+								</div>
 							</div>
 						);
 					})}
@@ -233,18 +223,38 @@ function deliveryVariant(
 	return "outline";
 }
 
-function ChoiceButton({ actionRef }: { actionRef: string }) {
-	const { mutate, isPending, error } = useChoice(actionRef);
+function OptionChip({
+	label,
+	selected,
+	actionRef,
+}: {
+	label: string;
+	selected: boolean;
+	actionRef?: string;
+}) {
+	const { mutate, isPending, error } = useChoice(actionRef ?? "");
+	const clickable = Boolean(actionRef) && !isPending;
+
 	return (
-		<div className="flex items-center gap-2">
-			<Button
-				size="sm"
-				variant="outline"
-				disabled={isPending}
-				onClick={() => mutate()}
+		<div className="flex flex-col gap-1">
+			<button
+				type="button"
+				disabled={!clickable}
+				onClick={() => actionRef && mutate()}
+				className={cn(
+					"inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition",
+					selected
+						? "border-emerald-500/60 bg-emerald-500/15 font-medium text-emerald-700 dark:text-emerald-400"
+						: "border-border bg-background",
+					clickable
+						? "cursor-pointer hover:border-emerald-500/40 hover:bg-emerald-500/5"
+						: "cursor-default",
+					!selected && !clickable && "text-muted-foreground",
+				)}
 			>
-				{isPending ? "提交中…" : "在控制台选择"}
-			</Button>
+				{selected ? <Check className="size-3.5 shrink-0" /> : null}
+				{isPending ? "提交中…" : label}
+			</button>
 			{error ? (
 				<span className="text-xs text-red-600">{String(error)}</span>
 			) : null}
