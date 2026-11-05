@@ -34,7 +34,6 @@ export interface MenuItem {
 	isPro?: boolean;
 }
 
-import { uniqueId } from "lodash";
 import { House, type LucideIcon } from "lucide-react";
 
 const SidebarContent: MenuItem[] = [
@@ -42,7 +41,7 @@ const SidebarContent: MenuItem[] = [
 		heading: "决策",
 		items: [
 			{
-				id: uniqueId(),
+				id: "sessions",
 				name: "会话列表",
 				icon: House,
 				url: "/sessions",
