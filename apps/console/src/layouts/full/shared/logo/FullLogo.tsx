@@ -1,13 +1,11 @@
 import { Link } from "react-router";
-import Logo from "src/assets/images/logos/darklogo.svg";
-import Logowhite from "src/assets/images/logos/whitelogo.svg";
 
 const FullLogo = () => {
   return (
     <Link to={'/'} className="max-w-[40px] block lg:max-w-[120px] overflow-hidden">
       {/* Dark Logo   */}
       <img
-        src={Logo}
+        src=""
         alt='logo'
         width={100}
         height={32}
@@ -15,7 +13,7 @@ const FullLogo = () => {
       />
       {/* Light Logo  */}
       <img
-        src={Logowhite}
+        src=""
         alt='logo'
         width={100}
         height={32}

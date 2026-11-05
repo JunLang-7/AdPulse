@@ -16,8 +16,6 @@ import { Mailbox } from 'lucide-react';
 
 import { profileDD } from "./data";
 import { Link } from "react-router";
-import avatar from '@/assets/images/profile/avtar.webp';
-import Buynow from '@/assets/images/backgrounds/sidebarbuynow.svg';
 export default function ProfileSheet() {
 
 
@@ -26,7 +24,7 @@ export default function ProfileSheet() {
       {/* Trigger Button */}
       <SheetTrigger className="cursor-pointer hover:bg-primary/5 flex items-center justify-center rounded-full h-10 w-10">
         <Avatar className="h-8 w-8">
-          <AvatarImage src={avatar} alt="profile" />
+          <AvatarImage src="" alt="profile" />
           <AvatarFallback>CM</AvatarFallback>
         </Avatar>
       </SheetTrigger>
@@ -45,7 +43,7 @@ export default function ProfileSheet() {
           <div className="flex flex-col gap-4 justify-center items-center pt-10">
             <Avatar className="h-16 w-16">
               <AvatarImage
-                src={avatar}
+                src=""
                 alt="Profile"
                 width={30}
                 height={30}
@@ -107,7 +105,7 @@ export default function ProfileSheet() {
             <div className="rounded-sm pt-6 flex flex-col justify-center items-center gap-3">
               <div>
                 <img
-                  src={Buynow}
+                  src=""
                   alt="login-bg"
                 />
               </div>
