@@ -1,0 +1,11 @@
+{
+	"extends": "../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"types": ["node"],
+		// 断言风格为主：数组下标访问由断言/长度检查覆盖。
+		"noUncheckedIndexedAccess": false
+	},
+	"include": ["./**/*.ts"]
+}

@@ -27,7 +27,7 @@
 | [console](../apps/console/src/) | Vite/React 控制台，通过 OpenAPI 生成类型与 openapi-fetch 调用 API |
 
 编译期依赖：channels/storage → core；runtime → core/channels/storage；应用入口 → runtime。
-core 不依赖具体 IM、HTTP、数据库驱动或应用入口。依赖边界由 [测试](../tests/boundaries.test.mjs) 检查。
+core 不依赖具体 IM、HTTP、数据库驱动或应用入口。依赖边界由 [测试](../tests/boundaries.test.ts) 检查。
 
 ## 出入站适配
 

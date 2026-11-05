@@ -1,7 +1,15 @@
 import { Orchestrator, Worker } from "../packages/core/dist/index.js";
+import type {
+	CardDelivery,
+	OutboundChannel,
+	Proposal,
+	Session,
+	StartSession,
+	Storage,
+} from "../packages/core/dist/index.js";
 import { MemoryStorage } from "../packages/storage/dist/memory.js";
 
-export const proposal = {
+export const proposal: Proposal = {
 	card: {
 		title: "复核出价",
 		summary: "仅调整方案草案",
@@ -17,10 +25,21 @@ export const proposal = {
 		{ id: "observe", label: "继续观察", changes: [], complete: false },
 	],
 };
-export function fixture(storage = new MemoryStorage()) {
+
+export interface Fixture {
+	storage: Storage;
+	decisions: Orchestrator;
+	worker: Worker;
+	sent: Map<string, CardDelivery>;
+	now: () => string;
+	advance(): void;
+	start(overrides?: Partial<StartSession>): Promise<Session>;
+}
+
+export function fixture(storage: Storage = new MemoryStorage()): Fixture {
 	let clock = "2026-01-01T00:00:00.000Z";
 	const now = () => clock;
-	const sent = new Map();
+	const sent = new Map<string, CardDelivery>();
 	const decisions = new Orchestrator(
 		storage,
 		{ propose: async () => structuredClone(proposal) },
@@ -29,7 +48,7 @@ export function fixture(storage = new MemoryStorage()) {
 	const worker = new Worker(
 		storage,
 		decisions,
-		new Map([
+		new Map<string, OutboundChannel>([
 			[
 				"account-a",
 				{

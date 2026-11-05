@@ -103,7 +103,7 @@ AdPulse 希望帮助用户回答：
 
 ## 开发环境
 
-工程骨架使用 **Bun 1.4.4 管理依赖与 workspace，Node.js 运行服务和测试**。Bun 不作为服务运行时；请勿使用 `bun --bun` 启动服务。
+工程骨架使用 **Bun 1.4.4 管理依赖与 workspace，Node.js 24+ 运行服务和测试**。Bun 不作为服务运行时；请勿使用 `bun --bun` 启动服务。测试为 TypeScript，由 `node --test` 直接运行（类型剥离，不额外编译）。
 
 ```bash
 bun install --frozen-lockfile
