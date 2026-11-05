@@ -110,6 +110,8 @@ bun install --frozen-lockfile
 bun run typecheck
 bun run test
 bun run sdk:check
+bun run --cwd apps/console typecheck
+bun run --cwd apps/console build
 ```
 
 - 仓库仅维护 `bun.lock`，不再使用 pnpm/npm 锁文件。
@@ -123,5 +125,6 @@ bun run sdk:check
 
 ## 产品提案
 
+- [效果证据闭环修订规格](docs/proposals/effect-evidence-loop.md)：#6–#12 的边界、契约与验收，待评审；含 #13/#14 的结项证据。
 - [下一阶段：从导入效果证据到人工决策的最小业务闭环（Issue #6）](https://github.com/JunLang-7/AdPulse/issues/6)：待评审，含开发拆解与依赖；建议先验证自身效果异常场景，不代表已实现。
 - [观策AI：面向当前投放任务的市场信号提醒](docs/proposals/market-signal-alerts.md)：提醒场景、数据口径、搜索范围变更处理与验收标准，待访谈和原型验证。
