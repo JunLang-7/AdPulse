@@ -1,42 +1,30 @@
-import { Link } from "react-router";
-
-
-type SearchType = {
-    title: string;
-    href: string;
-};
-
-const searchSugg: SearchType[] = [
-    { title: "Support", href: "https://shadcndashboard.dev/support" },
-    { title: "License", href: "https://shadcndashboard.dev/license" },
+const links = [
+	{
+		title: "文档",
+		href: "https://github.com/JunLang-7/AdPulse/blob/main/docs/development.md",
+	},
+	{ title: "Issues", href: "https://github.com/JunLang-7/AdPulse/issues" },
 ];
 
 export default function Footer() {
-    return (
-        <div className="flex md:flex-row flex-col items-center justify-between gap-3 text-center">
-            <p className="text-sm text-muted-foreground">
-                © 2026 by{" "}
-                <Link
-                    to="https://www.wrappixel.com/" target="_blank"
-                    className="hover:text-primary text-muted-foreground"
-                >
-                    shadcndashboard
-                </Link>
-                , creating a better web for you.
-            </p>
-
-            <div className="flex gap-4">
-                {searchSugg.map((item, index) => (
-                    <Link
-                        key={index}
-                        target="_blank"
-                        to={item.href}
-                        className="text-sm hover:text-primary text-muted-foreground"
-                    >
-                        {item.title}
-                    </Link>
-                ))}
-            </div>
-        </div>
-    );
+	return (
+		<div className="flex md:flex-row flex-col items-center justify-between gap-3 text-center">
+			<p className="text-sm text-muted-foreground">
+				AdPulse · 主动发现市场信号，辅助投放决策
+			</p>
+			<div className="flex gap-4">
+				{links.map((item) => (
+					<a
+						key={item.href}
+						href={item.href}
+						target="_blank"
+						rel="noreferrer"
+						className="text-sm hover:text-primary text-muted-foreground"
+					>
+						{item.title}
+					</a>
+				))}
+			</div>
+		</div>
+	);
 }

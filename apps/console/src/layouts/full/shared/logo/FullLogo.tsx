@@ -1,27 +1,11 @@
 import { Link } from "react-router";
 
 const FullLogo = () => {
-  return (
-    <Link to={'/'} className="max-w-[40px] block lg:max-w-[120px] overflow-hidden">
-      {/* Dark Logo   */}
-      <img
-        src=""
-        alt='logo'
-        width={100}
-        height={32}
-        className='block dark:hidden max-w-[120px] rtl:scale-x-[-1]'
-      />
-      {/* Light Logo  */}
-      <img
-        src=""
-        alt='logo'
-        width={100}
-        height={32}
-        className='hidden dark:block max-w-[120px] rtl:scale-x-[-1]'
-      />
-    </Link>
-
-  );
+	return (
+		<Link to="/" className="block overflow-hidden">
+			<span className="text-lg font-semibold tracking-tight">AdPulse</span>
+		</Link>
+	);
 };
 
 export default FullLogo;
