@@ -667,15 +667,16 @@ async function checkPublicWebhook() {
 		);
 		return;
 	}
-	const rejected = unsigned.response.status === 401;
+	// 未鉴权请求只要求被拒绝且不回 challenge：缺签名头为 401，无签名又未加密的 challenge 为 403。
+	const rejected = [401, 403].includes(unsigned.response.status);
 	record(
 		"webhook.reachability",
 		"公网回调可达",
 		rejected ? "ok" : "fail",
 		`无签名请求 → HTTP ${unsigned.response.status} ${maskBody(unsigned.body)}`,
 		rejected
-			? "反向代理已把原始请求体送到服务端"
-			: "预期 401：检查路径是否指向 /webhooks/<FEISHU_ACCOUNT_ID>，以及代理是否改写了请求体",
+			? "未鉴权请求被拒绝且未返回 challenge，反向代理已把原始请求体送到服务端"
+			: "预期被拒绝（401/403）：检查路径是否指向 /webhooks/<FEISHU_ACCOUNT_ID>，以及代理是否改写了请求体",
 	);
 
 	// 自签 challenge 只证明链路与签名逻辑一致；飞书后台触发的 challenge 仍需人工验证。
