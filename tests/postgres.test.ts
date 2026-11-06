@@ -1,8 +1,41 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import test from "node:test";
+import { promisify } from "node:util";
 import type { ChoiceCommand } from "../packages/core/dist/index.js";
 import { PostgresStorage } from "../packages/storage/dist/index.js";
 import { fixture } from "./helpers.ts";
+
+// Isolate the process: an unhandled Pool error must fail the test, not the runner.
+test("PostgreSQL: idle connection termination does not crash and pool reconnects", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async () => {
+	const script = `
+		import { createRequire } from "node:module";
+		import { PostgresStorage } from "./packages/storage/dist/index.js";
+		const { Pool } = createRequire(new URL("./packages/storage/package.json", import.meta.url))("pg");
+		const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+		const admin = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+		const storage = new PostgresStorage(pool);
+		try {
+			await storage.initialize();
+			const result = await pool.query("SELECT pg_backend_pid() AS pid");
+			const disconnected = new Promise((resolve, reject) => {
+				const timer = setTimeout(() => reject(new Error("idle error not observed")), 5000);
+				pool.once("error", () => { clearTimeout(timer); resolve(); });
+			});
+			await admin.query("SELECT pg_terminate_backend($1)", [result.rows[0].pid]);
+			await disconnected;
+			await storage.transaction(async (tx) => { await tx.sessions.all(); });
+		} finally {
+			await storage.close();
+			await admin.end();
+		}
+	`;
+	await promisify(execFile)(process.execPath, ["--input-type=module", "-e", script], {
+		timeout: 15_000,
+	});
+});
 
 // Use a dedicated, disposable database. Normal unit tests require no database.
 test("PostgreSQL: serializable decisions, rollback, reconnect and SKIP LOCKED claims", {
