@@ -1,3 +1,30 @@
+export class SaveResponseError extends Error {
+	readonly status: number;
+
+	constructor(status: number, detail: unknown) {
+		const message =
+			typeof detail === "string" ? detail : JSON.stringify(detail) ?? "";
+		super(`HTTP ${status}: ${message}`);
+		this.name = "SaveResponseError";
+		this.status = status;
+	}
+}
+
+export function operationAfterSaveError<Operation>(
+	current: Operation | null,
+	failed: Operation,
+	error: unknown,
+): Operation | null {
+	if (current !== failed) return current;
+	if (
+		error instanceof SaveResponseError &&
+		error.status >= 400 &&
+		error.status < 500
+	)
+		return null;
+	return current;
+}
+
 export interface TaskEditorState<Form> {
 	form: Form;
 	version: number | null;

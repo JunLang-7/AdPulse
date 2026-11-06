@@ -10,7 +10,12 @@ import {
 	CardTitle,
 } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
-import { reduceTaskEditorState, reuseOperation } from "./editor-state.js";
+import {
+	operationAfterSaveError,
+	reduceTaskEditorState,
+	reuseOperation,
+	SaveResponseError,
+} from "./editor-state.js";
 
 type TaskInput = components["schemas"]["TaskInput"];
 type TaskRules = components["schemas"]["TaskRules"];
@@ -193,7 +198,8 @@ export default function TaskEditorPage() {
 					body: request.body,
 					params: { header: { "Idempotency-Key": request.key } },
 				});
-				if (!result.data) throw new Error(JSON.stringify(result.error));
+				if (!result.data)
+					throw new SaveResponseError(result.response.status, result.error);
 				return result.data;
 			}
 			const result = await consoleClient.PATCH("/api/tasks/{taskId}", {
@@ -203,7 +209,8 @@ export default function TaskEditorPage() {
 				},
 				body: request.body,
 			});
-			if (!result.data) throw new Error(JSON.stringify(result.error));
+			if (!result.data)
+				throw new SaveResponseError(result.response.status, result.error);
 			return result.data;
 		},
 		onSuccess: async (saved, request) => {
@@ -219,7 +226,14 @@ export default function TaskEditorPage() {
 			await queryClient.invalidateQueries({ queryKey: ["task", taskId] });
 			if (creating) navigate(`/tasks/${saved.taskId}`);
 		},
-		onError: (error) => setFormError(String(error)),
+		onError: (error, request) => {
+			operation.current = operationAfterSaveError(
+				operation.current,
+				request,
+				error,
+			);
+			setFormError(String(error));
+		},
 	});
 
 	function submit(event: FormEvent<HTMLFormElement>) {

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+	operationAfterSaveError,
 	reduceTaskEditorState,
 	reuseOperation,
+	SaveResponseError,
 	type TaskEditorState,
 } from "../apps/console/src/views/adpulse/tasks/editor-state.ts";
 
@@ -67,6 +69,74 @@ test("save advances the edit baseline without discarding changes made in flight"
 		dirty: true,
 		remoteVersion: null,
 	});
+});
+
+test("correcting a rejected create starts a new operation with the corrected form", () => {
+	const failed = {
+		kind: "create" as const,
+		key: "create-invalid",
+		body: { product: "", observation: { startsAt: "2026-02-02", endsAt: "2026-02-01" } },
+	};
+	const corrected = {
+		kind: "create" as const,
+		key: "create-corrected",
+		body: { product: "有效任务", observation: { startsAt: "2026-02-01", endsAt: "2026-02-02" } },
+	};
+	const afterRejection = operationAfterSaveError(
+		failed,
+		failed,
+		new SaveResponseError(400, { error: "observation.startsAt" }),
+	);
+	const next = reuseOperation(afterRejection, () => corrected);
+
+	assert.equal(afterRejection, null);
+	assert.notEqual(next.key, failed.key);
+	assert.deepEqual(next.body, corrected.body);
+});
+
+test("correcting a rejected revision starts a new operation with the corrected form", () => {
+	const failed = {
+		kind: "revise" as const,
+		key: "revise-invalid",
+		taskId: "task-1",
+		body: { expectedTaskVersion: 2, task: { product: "有效任务", channels: { ads: { budget: -1 } } } },
+	};
+	const corrected = {
+		kind: "revise" as const,
+		key: "revise-corrected",
+		taskId: "task-1",
+		body: { expectedTaskVersion: 2, task: { product: "有效任务", channels: { ads: { budget: 0 } } } },
+	};
+	const afterRejection = operationAfterSaveError(
+		failed,
+		failed,
+		new SaveResponseError(400, { error: "strategy.channels.ads.budget" }),
+	);
+	const next = reuseOperation(afterRejection, () => corrected);
+
+	assert.equal(afterRejection, null);
+	assert.notEqual(next.key, failed.key);
+	assert.equal(next.body.expectedTaskVersion, 2);
+	assert.equal(next.body.task.channels.ads.budget, 0);
+});
+
+test("unknown failures keep the frozen operation for a safe retry", () => {
+	const original = {
+		key: "operation-key",
+		body: { expectedTaskVersion: 2, task: { product: "original" } },
+	};
+	assert.equal(
+		operationAfterSaveError(original, original, new TypeError("fetch failed")),
+		original,
+	);
+	assert.equal(
+		operationAfterSaveError(
+			original,
+			original,
+			new SaveResponseError(503, { error: "temporarily unavailable" }),
+		),
+		original,
+	);
 });
 
 test("retry reuses the same idempotency key and frozen request body", () => {
