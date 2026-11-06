@@ -94,7 +94,7 @@ const config = {
 function mask(value, head = 6, tail = 2) {
 	if (!value) return "(缺失)";
 	if (value.length <= head + tail) return "*".repeat(value.length);
-	return `${value.slice(0, head)}***${value.slice(-tail)}`;
+	return `${value.slice(0, head)}***${tail > 0 ? value.slice(-tail) : ""}`;
 }
 /** 公网地址只保留路径与脱敏后的主机名，避免把内部域名完整写进记录。 */
 function maskUrl(value) {
@@ -464,7 +464,10 @@ async function checkPlatform() {
 	const tenant = await call(`${PLATFORM}/open-apis/tenant/v2/tenant/query`, {
 		headers: authorization,
 	});
-	const tenantKey = tenant.body?.tenant?.tenant_key;
+	// 飞书接口的成功响应存在两种层级：部分接口把业务字段放在 data 下，部分放在顶层。
+	// 两种都读，避免因层级变化把正确配置误报为不匹配。
+	const payloadOf = (body, key) => body?.[key] ?? body?.data?.[key];
+	const tenantKey = payloadOf(tenant.body, "tenant")?.tenant_key;
 	if (tenant.body?.code !== 0) {
 		record(
 			"platform.tenant",
@@ -472,6 +475,14 @@ async function checkPlatform() {
 			"fail",
 			`code=${tenant.body?.code ?? "-"} msg=${tenant.body?.msg ?? "-"}`,
 			hintForCode(tenant.body?.code),
+		);
+	} else if (!tenantKey) {
+		record(
+			"platform.tenant",
+			"tenant / app 匹配",
+			"fail",
+			"响应中没有 tenant_key（接口结构可能变化）",
+			"手动核对 /open-apis/tenant/v2/tenant/query 的返回字段，并更新本脚本",
 		);
 	} else if (tenantKey !== config.tenantKey) {
 		record(
@@ -502,13 +513,13 @@ async function checkPlatform() {
 			hintForCode(bot.body?.code),
 		);
 	} else {
-		const info = bot.body?.bot ?? {};
+		const info = payloadOf(bot.body, "bot") ?? {};
 		const active = info.activate_status === 2 || info.activate_status === "2";
 		record(
 			"platform.bot",
 			"机器人可用性",
 			active ? "ok" : "warn",
-			`app=${mask(info.app_name ?? "", 2, 0)} 启用状态=${info.activate_status ?? "-"} 白名单=${(info.ip_white_list ?? []).length} 项`,
+			`app=${mask(info.app_name ?? "", 1, 0)} 启用状态=${info.activate_status ?? "-"} 白名单=${(info.ip_white_list ?? []).length} 项`,
 			active ? "发送权限仍需真机发送验证" : "机器人未启用：后台启用应用能力后重新发布",
 		);
 	}
