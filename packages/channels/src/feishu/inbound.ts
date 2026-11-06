@@ -31,12 +31,13 @@ export class FeishuInbound implements InboundChannel {
 		// so a missing signature is only acceptable for that challenge (see below).
 		const signed = Boolean(timestamp || nonce || signature);
 		if (signed) {
+			const timestampMs = timestamp ? parseTimestamp(timestamp) : undefined;
 			if (
 				!timestamp ||
 				!nonce ||
 				!signature ||
-				!/^\d+$/.test(timestamp) ||
-				Math.abs(this.now() / 1000 - Number(timestamp)) > 300
+				timestampMs === undefined ||
+				Math.abs(this.now() - timestampMs) > 300_000
 			) {
 				throw new WebhookError(401, "invalid signature timestamp");
 			}
@@ -143,6 +144,37 @@ export class FeishuInbound implements InboundChannel {
 			}),
 		};
 	}
+}
+// Accept documented Unix seconds and the signed Go time.Time string observed on
+// card callbacks. The original header, not this parsed value, is used for signing.
+function parseTimestamp(value: string): number | undefined {
+	if (/^\d+$/.test(value)) {
+		const ms = Number(value) * 1000;
+		return Number.isSafeInteger(ms) ? ms : undefined;
+	}
+	const match =
+		/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))? ([+-])(\d{2})(\d{2}) [A-Za-z]{1,10}(?: m=[+-]\d+\.\d+)?$/.exec(
+			value,
+		);
+	if (!match) return undefined;
+	const [, date, time, fraction, sign, hours, minutes] = match;
+	if (
+		!date ||
+		!time ||
+		!sign ||
+		!hours ||
+		!minutes ||
+		Number(hours) > 23 ||
+		Number(minutes) > 59
+	)
+		return undefined;
+	const millis = (fraction ?? "").padEnd(3, "0").slice(0, 3);
+	const local = `${date}T${time}.${millis}Z`;
+	const localMs = Date.parse(local);
+	if (!Number.isFinite(localMs) || new Date(localMs).toISOString() !== local)
+		return undefined;
+	const offset = (Number(hours) * 60 + Number(minutes)) * 60_000;
+	return localMs + (sign === "+" ? -offset : offset);
 }
 function object(value: unknown): Record<string, unknown> {
 	if (!value || typeof value !== "object" || Array.isArray(value))
