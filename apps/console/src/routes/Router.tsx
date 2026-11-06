@@ -3,6 +3,8 @@ import { Link } from "react-router";
 import FullLayout from "../layouts/full/FullLayout";
 import SessionDetailPage from "../views/adpulse/session-detail";
 import SessionsPage from "../views/adpulse/sessions";
+import TaskEditorPage from "../views/adpulse/tasks/editor";
+import TasksPage from "../views/adpulse/tasks";
 
 function RouteError({ error }: { error: unknown }): ReactNode {
 	return (
@@ -25,6 +27,8 @@ const Router = [
 			{ path: "/", element: <SessionsPage /> },
 			{ path: "/sessions", element: <SessionsPage /> },
 			{ path: "/sessions/:sessionId", element: <SessionDetailPage /> },
+			{ path: "/tasks", element: <TasksPage /> },
+			{ path: "/tasks/:taskId", element: <TaskEditorPage /> },
 		],
 	},
 ];

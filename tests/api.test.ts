@@ -95,6 +95,118 @@ test("HTTP flow drives create -> card -> console choice -> strategy snapshot", a
   assert.equal(final.snapshots.length, 2);
 });
 
+test("task API preserves unknown versus zero, enforces idempotency/versioning, and scopes access", async (t) => {
+  const { url, headers } = await serve(t);
+  const body = {
+    product: "产品 A",
+    strategy: {
+      objective: "咨询",
+      audience: ["小企业"],
+      channels: { ads: {} },
+      sellingPoints: [],
+    },
+    observation: {},
+    rules: { minimumSpendMinor: 0 },
+  };
+  const createKey = crypto.randomUUID();
+  const create = async (input: unknown, key = createKey) => fetch(`${url}/api/tasks`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": key },
+    body: JSON.stringify(input),
+  });
+  const firstResponse = await create(body);
+  assert.equal(firstResponse.status, 201);
+  const first = await firstResponse.json();
+  assert.equal(first.rules.minimumSpendMinor, 0);
+  assert.equal(first.rules.alertThresholdMinor, undefined);
+  assert.equal(first.strategy.channels.ads.budget, undefined);
+  assert.equal((await (await create(body)).json()).taskId, first.taskId);
+  assert.equal((await create({ ...body, product: "不同内容" })).status, 409);
+
+  const revisionKey = crypto.randomUUID();
+  const revisionBody = { ...body, product: "产品 B" };
+  const revise = (expectedTaskVersion: number, input: unknown, key = revisionKey) => fetch(`${url}/api/tasks/${first.taskId}`, {
+    method: "PATCH",
+    headers: { ...headers, "idempotency-key": key },
+    body: JSON.stringify({ expectedTaskVersion, task: input }),
+  });
+  const secondResponse = await revise(1, revisionBody);
+  assert.equal(secondResponse.status, 200);
+  assert.equal((await secondResponse.json()).version, 2);
+  assert.equal((await revise(1, revisionBody)).status, 200);
+  assert.equal((await revise(1, { ...body, product: "过期写入" }, crypto.randomUUID())).status, 409);
+
+  const detailResponse = await fetch(`${url}/api/tasks/${first.taskId}`, { headers });
+  const detail = await detailResponse.json();
+  assert.equal(detail.task.version, 2);
+  assert.deepEqual(detail.versions.map((version: { version: number }) => version.version), [1, 2]);
+  const stranger = await fetch(`${url}/api/tasks/${first.taskId}`, {
+    headers: { ...headers, authorization: "Bearer yyyyyyyyyyyyyyyyyyyyyyyy" },
+  });
+  assert.equal(stranger.status, 401);
+  const invalid = await create({ ...body, rules: { maxPushRounds: 0 } }, crypto.randomUUID());
+  assert.equal(invalid.status, 400);
+  assert.match((await invalid.json()).error, /rules.maxPushRounds/);
+});
+
+test("sessions freeze the referenced task version and incomplete rules disable monetary suggestions", async (t) => {
+  const { runtime, url, headers } = await serve(t);
+  const taskBody = {
+    product: "产品 A",
+    strategy: startInput().strategy,
+    observation: {},
+    rules: {},
+  };
+  const taskResponse = await fetch(`${url}/api/tasks`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify(taskBody),
+  });
+  const task = await taskResponse.json();
+  const taskRef = { taskId: task.taskId, taskVersion: 1 };
+  const mismatchedResponse = await fetch(`${url}/api/sessions`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify({ ...startInput(), strategy: { ...startInput().strategy, objective: "别的策略" }, taskRef }),
+  });
+  assert.equal(mismatchedResponse.status, 400);
+  const sessionBody = { ...startInput(), taskRef };
+  const sessionResponse = await fetch(`${url}/api/sessions`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify(sessionBody),
+  });
+  assert.equal(sessionResponse.status, 201);
+  const session = await sessionResponse.json();
+  assert.deepEqual(session.taskRef, { taskId: task.taskId, taskVersion: 1 });
+  assert.equal(session.monetarySuggestionsAllowed, false);
+  const saved = await runtime.storage.transaction((tx) => tx.sessions.get(session.id));
+  assert.deepEqual(saved?.taskRef, { taskId: task.taskId, taskVersion: 1 });
+  const revision = await fetch(`${url}/api/tasks/${task.taskId}`, {
+    method: "PATCH",
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify({
+      expectedTaskVersion: 1,
+      task: {
+        ...taskBody,
+        rules: {
+          metricDefinition: "咨询成本",
+          currency: "CNY",
+          unit: "分",
+          statWindowDays: 7,
+          alertThresholdMinor: 10000,
+          minimumSpendMinor: 50000,
+          minimumConsultations: 3,
+        },
+      },
+    }),
+  });
+  assert.equal(revision.status, 200);
+  await runtime.worker.runOnce();
+  const rounds = await runtime.storage.transaction((tx) => tx.rounds.all());
+  assert.equal(rounds.length, 0, "unconfirmed task rules must block monetary proposals");
+});
+
 test("HTTP validates authentication, unknown accounts and payloads", async (t) => {
   const { url } = await serve(t);
   assert.equal((await fetch(`${url}/api/sessions`)).status, 401);

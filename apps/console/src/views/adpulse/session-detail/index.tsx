@@ -63,6 +63,11 @@ export default function SessionDetailPage() {
 						{session.recipient.kind === "group" ? "群聊" : "单聊"}
 					</Badge>
 					<Badge variant="outline">到期 {formatTime(session.expiresAt)}</Badge>
+					{session.taskRef ? (
+						<Link to={`/tasks/${session.taskRef.taskId}`}>
+							<Badge variant="outline">任务基线 v{session.taskRef.taskVersion}</Badge>
+						</Link>
+					) : null}
 				</div>
 			</div>
 

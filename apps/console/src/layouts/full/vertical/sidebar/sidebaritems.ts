@@ -34,7 +34,7 @@ export interface MenuItem {
 	isPro?: boolean;
 }
 
-import { House, type LucideIcon } from "lucide-react";
+import { ClipboardList, House, type LucideIcon } from "lucide-react";
 
 const SidebarContent: MenuItem[] = [
 	{
@@ -44,6 +44,12 @@ const SidebarContent: MenuItem[] = [
 				name: "会话列表",
 				icon: House,
 				url: "/sessions",
+			},
+			{
+				id: "tasks",
+				name: "推广任务",
+				icon: ClipboardList,
+				url: "/tasks",
 			},
 		],
 	},

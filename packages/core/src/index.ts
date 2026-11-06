@@ -1,6 +1,7 @@
 export * from "./domain/decisionCard.js";
 export * from "./domain/strategy.js";
 export * from "./orchestrator.js";
+export * from "./tasks.js";
 export * from "./ports/channel.js";
 export * from "./ports/policyEngine.js";
 export * from "./ports/storage.js";

@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/api/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listTasks"];
+        put?: never;
+        post: operations["createTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{taskId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getTask"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["reviseTask"];
+        trace?: never;
+    };
     "/api/sessions": {
         parameters: {
             query?: never;
@@ -91,6 +125,49 @@ export interface components {
         Error: {
             error: string;
         };
+        TaskObservation: {
+            scope?: string;
+            /** Format: date-time */
+            startsAt?: string;
+            /** Format: date-time */
+            endsAt?: string;
+        };
+        TaskRules: {
+            metricDefinition?: string;
+            currency?: string;
+            unit?: string;
+            statWindowDays?: number;
+            alertThresholdMinor?: number;
+            minimumSpendMinor?: number;
+            minimumConsultations?: number;
+            handlingDeadlineHours?: number;
+            maxPushRounds?: number;
+        };
+        TaskInput: {
+            product: string;
+            strategy: components["schemas"]["Strategy"];
+            observation: components["schemas"]["TaskObservation"];
+            rules: components["schemas"]["TaskRules"];
+        };
+        TaskVersion: {
+            id: string;
+            taskId: string;
+            version: number;
+            product: string;
+            strategy: components["schemas"]["Strategy"];
+            observation: components["schemas"]["TaskObservation"];
+            rules: components["schemas"]["TaskRules"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        TaskRevision: {
+            expectedTaskVersion: number;
+            task: components["schemas"]["TaskInput"];
+        };
+        TaskDetail: {
+            task: components["schemas"]["TaskVersion"];
+            versions: components["schemas"]["TaskVersion"][];
+        };
         Strategy: {
             objective: string;
             audience: string[];
@@ -175,6 +252,10 @@ export interface components {
             userId: string;
         };
         StartSession: {
+            taskRef?: {
+                taskId: string;
+                taskVersion: number;
+            };
             recipient: components["schemas"]["Recipient"];
             allowedActorIds: string[];
             strategy: components["schemas"]["Strategy"];
@@ -186,6 +267,11 @@ export interface components {
         Session: {
             id: string;
             ownerId: string;
+            taskRef?: {
+                taskId: string;
+                taskVersion: number;
+            };
+            monetarySuggestionsAllowed?: boolean;
             recipient: components["schemas"]["Recipient"];
             allowedActorIds: string[];
             strategy: components["schemas"]["Strategy"];
@@ -306,6 +392,194 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listTasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["TaskVersion"][];
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createTask: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskVersion"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDetail"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviseTask: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskRevision"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskVersion"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Idempotency or task version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     listSessions: {
         parameters: {
             query?: never;
