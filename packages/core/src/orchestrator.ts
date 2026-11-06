@@ -105,6 +105,7 @@ export class Orchestrator {
 			const session: Session = {
 				id: input.requestId,
 				ownerId: input.ownerId,
+				deliveryMode: "channel",
 				...(input.taskRef ? { taskRef: input.taskRef } : {}),
 				...(input.taskRef ? { monetarySuggestionsAllowed } : {}),
 				recipient: input.recipient,
@@ -178,10 +179,14 @@ export class Orchestrator {
 			const authorized =
 				actor.kind === "console"
 					? actor.userId === session.ownerId
-					: actor.accountId === session.recipient.accountId &&
+					: session.deliveryMode !== "web" &&
+						session.recipient?.accountId === actor.accountId &&
 						session.allowedActorIds.includes(actor.externalId);
 			if (!authorized) return reject("forbidden");
-			if (session.expiresAt <= this.now() || round.expiresAt <= this.now())
+			if (
+				(session.expiresAt && session.expiresAt <= this.now()) ||
+				(round.expiresAt && round.expiresAt <= this.now())
+			)
 				return reject("expired");
 			if (
 				session.status !== "awaiting_input" ||
@@ -194,6 +199,23 @@ export class Orchestrator {
 				(option) => option.id === action.optionId,
 			);
 			if (!candidate) return reject("unknown_option");
+			let investigationAlert = null;
+			if (session.investigationAlertId) {
+				investigationAlert = await tx.investigationAlerts.get(session.investigationAlertId);
+				const task = session.taskRef
+					? await tx.tasks.get(session.taskRef.taskId)
+					: null;
+				if (
+					!investigationAlert ||
+					investigationAlert.status !== "open" ||
+					!session.alertEvidenceRef ||
+					investigationAlert.current.evidence.evidenceId !== session.alertEvidenceRef.evidenceId ||
+					investigationAlert.current.evidence.version !== session.alertEvidenceRef.version ||
+					!task ||
+					task.currentVersion !== session.taskRef?.taskVersion
+				)
+					return reject("stale_evidence_or_task_rules");
+			}
 			if (
 				session.taskRef &&
 				!session.monetarySuggestionsAllowed &&
@@ -229,20 +251,42 @@ export class Orchestrator {
 				version,
 				status: candidate.complete ? "completed" : "planning",
 			});
+			if (investigationAlert) {
+				const deferred = candidate.id === "await_evidence";
+				const at = this.now();
+				await tx.investigationAlerts.put({
+					...investigationAlert,
+					status: deferred ? "awaiting_evidence" : "handled",
+					statusReason: deferred ? "awaiting_new_evidence" : `choice:${candidate.id}`,
+					updatedAt: at,
+					events: [
+						...investigationAlert.events,
+						{
+							type: deferred ? "deferred" : "handled",
+							at,
+						comparisonResultId: investigationAlert.current.comparisonResultId,
+							evidence: investigationAlert.current.evidence,
+							reason: candidate.id,
+						},
+					],
+				});
+			}
 			if (candidate.complete) {
-				await this.queueDelivery(
-					tx,
-					session,
-					round,
-					{
-						title: "已记录决策",
-						summary: `已选择：${candidate.label}。仅更新系统内方案，未执行广告平台操作。`,
-						evidence: [],
-						options: [],
-					},
-					[],
-					"confirmation",
-				);
+				if (session.deliveryMode !== "web") {
+					await this.queueDelivery(
+						tx,
+						session,
+						round,
+						{
+							title: "已记录决策",
+							summary: `已选择：${candidate.label}。仅更新系统内方案，未执行广告平台操作。`,
+							evidence: [],
+							options: [],
+						},
+						[],
+						"confirmation",
+					);
+				}
 			} else {
 				await this.enqueue(tx, {
 					kind: "prepare_round",
@@ -261,23 +305,36 @@ export class Orchestrator {
 		if (
 			snapshot?.status !== "planning" ||
 			snapshot.version !== version ||
-			snapshot.expiresAt <= this.now()
+			(snapshot.expiresAt && snapshot.expiresAt <= this.now())
 		)
 			return;
 		// Slow model calls outside the transaction; commit only if the input version is still current.
-		const proposal = await this.policy.propose({
-			strategy: snapshot.strategy,
-			limits: snapshot.limits,
-			signal: snapshot.signal,
-			roundNo: snapshot.roundNo + 1,
-		});
+		const proposal = snapshot.investigationAlertId
+			? {
+					card: {
+						title: snapshot.signal.title,
+						summary: snapshot.signal.summary,
+						evidence: snapshot.signal.evidence,
+					},
+					candidates: [
+						{ id: "handled", label: "确认已处理", changes: [], complete: true },
+						{ id: "await_evidence", label: "待补证后再评估", changes: [], complete: true },
+						{ id: "ignore", label: "忽略此提醒", changes: [], complete: true },
+					],
+				}
+			: await this.policy.propose({
+					strategy: snapshot.strategy,
+					limits: snapshot.limits,
+					signal: snapshot.signal,
+					roundNo: snapshot.roundNo + 1,
+				});
 		this.validateProposal(proposal, snapshot);
 		await this.storage.transaction(async (tx) => {
 			const session = await tx.sessions.get(sessionId);
 			if (
 				session?.status !== "planning" ||
 				session.version !== version ||
-				session.expiresAt <= this.now()
+				(session.expiresAt && session.expiresAt <= this.now())
 			)
 				return;
 			const roundNo = session.roundNo + 1;
@@ -285,13 +342,25 @@ export class Orchestrator {
 				...proposal.card,
 				options: proposal.candidates.map(({ id, label }) => ({ id, label })),
 			};
+			if (session.investigationAlertId) {
+				const alert = await tx.investigationAlerts.get(session.investigationAlertId);
+				if (
+					!alert ||
+					alert.status !== "open" ||
+					!session.alertEvidenceRef ||
+					alert.current.evidence.evidenceId !== session.alertEvidenceRef.evidenceId ||
+					alert.current.evidence.version !== session.alertEvidenceRef.version ||
+					alert.logicalRounds >= alert.maxPushRounds
+				)
+					return;
+			}
 			const round: Round = {
 				id: `${session.id}:${roundNo}`,
 				sessionId,
 				roundNo,
 				strategyVersion: version,
 				status: "open",
-				expiresAt: session.expiresAt,
+				...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
 				card,
 				candidates: proposal.candidates,
 			};
@@ -306,8 +375,26 @@ export class Orchestrator {
 				});
 				actions.push({ optionId: candidate.id, actionRef });
 			}
-			await this.queueDelivery(tx, session, round, card, actions);
+			if (session.deliveryMode !== "web")
+				await this.queueDelivery(tx, session, round, card, actions);
 			await tx.sessions.put({ ...session, roundNo, status: "awaiting_input" });
+			if (session.investigationAlertId) {
+				const alert = await tx.investigationAlerts.get(session.investigationAlertId);
+				if (alert) {
+					const at = this.now();
+					await tx.investigationAlerts.put({
+						...alert,
+						logicalRounds: alert.logicalRounds + 1,
+						updatedAt: at,
+						events: [...alert.events, {
+							type: "candidate_created",
+							at,
+							comparisonResultId: alert.current.comparisonResultId,
+							evidence: alert.current.evidence,
+						}],
+					});
+				}
+			}
 		});
 	}
 
@@ -354,6 +441,8 @@ export class Orchestrator {
 		actions: Delivery["actions"],
 		purpose: Delivery["purpose"] = "decision",
 	): Promise<void> {
+		if (!session.recipient || !round.expiresAt)
+			throw new Error("channel delivery requires a recipient and expiry");
 		const delivery: Delivery = {
 			id: this.id(),
 			recipient: session.recipient,

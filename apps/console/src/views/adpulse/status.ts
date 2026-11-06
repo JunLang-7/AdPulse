@@ -2,9 +2,10 @@ export type SessionStatus =
 	| "planning"
 	| "awaiting_input"
 	| "completed"
-	| "cancelled";
+	| "cancelled"
+	| "stale";
 
-export type RoundStatus = "open" | "answered";
+export type RoundStatus = "open" | "answered" | "invalidated";
 
 type Tone = {
 	label: string;
@@ -41,6 +42,11 @@ const tones = {
 		className:
 			"border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
 	},
+	invalidated: {
+		label: "已失效",
+		variant: "destructive",
+		className: "border-destructive/40 bg-destructive/10 text-destructive",
+	},
 	open: {
 		label: "等待选择",
 		variant: "outline",
@@ -54,11 +60,13 @@ const sessionTones: Record<SessionStatus, Tone> = {
 	awaiting_input: { ...tones.pending },
 	completed: { ...tones.done },
 	cancelled: { ...tones.stop },
+	stale: { ...tones.stop, label: "已失效" },
 };
 
 const roundTones: Record<RoundStatus, Tone> = {
 	open: { ...tones.open },
 	answered: { ...tones.answered },
+	invalidated: { ...tones.invalidated },
 };
 
 export function sessionStatus(status: string): Tone {

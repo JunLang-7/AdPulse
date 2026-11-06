@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Storage, Transaction } from "./ports/storage.js";
+import { invalidateAlertsForEvidenceUpdate } from "./investigation-alerts.js";
 import type {
 	EvidenceImportRecord,
 	EvidenceRef,
@@ -400,6 +401,12 @@ export class EvidenceService {
 				digest: requestDigest,
 				results,
 			});
+			await invalidateAlertsForEvidenceUpdate(
+				tx,
+				ownerId,
+				results.filter((result) => result.status !== "reused"),
+				this.now,
+			);
 			return results;
 		});
 	}
@@ -488,6 +495,7 @@ export class EvidenceService {
 				digest: requestDigest,
 				results: [result],
 			});
+			await invalidateAlertsForEvidenceUpdate(tx, ownerId, [result], this.now);
 			return result;
 		});
 	}

@@ -129,6 +129,17 @@
         }
       }
     },
+    "/api/tasks/{taskId}/investigation-alerts": {
+      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "listTaskInvestigationAlerts",
+        "responses": {
+          "200": { "description": "Web-only investigation reminders and history", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvestigationAlertList" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Task not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/api/comparisons/evaluate": {
       "post": {
         "operationId": "evaluateComparison",
@@ -1292,6 +1303,9 @@
             "additionalProperties": false
           },
           "monetarySuggestionsAllowed": { "type": "boolean" },
+          "deliveryMode": { "type": "string", "enum": ["channel", "web"] },
+          "investigationAlertId": { "type": "string" },
+          "alertEvidenceRef": { "$ref": "#/components/schemas/EvidenceRef" },
           "recipient": {
             "$ref": "#/components/schemas/Recipient"
           },
@@ -1322,7 +1336,8 @@
               "planning",
               "awaiting_input",
               "completed",
-              "cancelled"
+              "cancelled",
+              "stale"
             ]
           },
           "expiresAt": {
@@ -1335,7 +1350,6 @@
         "required": [
           "id",
           "ownerId",
-          "recipient",
           "allowedActorIds",
           "strategy",
           "limits",
@@ -1343,7 +1357,6 @@
           "version",
           "roundNo",
           "status",
-          "expiresAt",
           "createdAt"
         ],
         "additionalProperties": false
@@ -1367,9 +1380,11 @@
             "type": "string",
             "enum": [
               "open",
-              "answered"
+              "answered",
+              "invalidated"
             ]
           },
+          "invalidationReason": { "type": "string" },
           "expiresAt": {
             "type": "string"
           },
@@ -1398,7 +1413,6 @@
           "roundNo",
           "strategyVersion",
           "status",
-          "expiresAt",
           "card",
           "candidates"
         ],
@@ -1636,6 +1650,20 @@
               "sessionId",
               "version"
             ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "prepare_investigation_alert_session"
+                ]
+              },
+              "alertId": { "type": "string" }
+            },
+            "required": ["kind", "alertId"],
             "additionalProperties": false
           },
           {
@@ -2032,6 +2060,60 @@
       },
       "ComparisonFollowUpList": {
         "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/ComparisonFollowUp" } } },
+        "required": ["items"], "additionalProperties": false
+      },
+      "InvestigationAlertEvidence": {
+        "type": "object",
+        "properties": {
+          "comparisonResultId": { "type": "string" },
+          "evidence": { "$ref": "#/components/schemas/ComparisonEvidenceRef" },
+          "source": { "type": "object", "properties": { "platform": { "type": "string" }, "accountRef": { "type": "string" } }, "required": ["platform", "accountRef"], "additionalProperties": false },
+          "scope": { "$ref": "#/components/schemas/EvidenceScope" },
+          "period": { "$ref": "#/components/schemas/EvidencePeriod" },
+          "metric": { "type": "string", "enum": ["cost_per_consultation"] },
+          "metricDefinition": { "type": "string" }, "metricFormula": { "type": "string" },
+          "spendMinor": { "type": ["integer", "null"], "minimum": 0 },
+          "consultations": { "type": ["integer", "null"], "minimum": 0 },
+          "currency": { "$ref": "#/components/schemas/EvidenceCurrency" },
+          "thresholdMinor": { "type": "integer", "minimum": 0 },
+          "comparisonStatus": { "type": "string", "enum": ["comparable", "incomparable", "awaiting_supplementation", "missing_baseline", "temporarily_uncomputable"] },
+          "canComparePeriods": { "type": "boolean" },
+          "limitations": { "type": "array", "items": { "type": "string" } },
+          "handlingDeadlineHours": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["comparisonResultId", "evidence", "source", "scope", "period", "metric", "metricDefinition", "metricFormula", "currency", "comparisonStatus", "canComparePeriods", "limitations"],
+        "additionalProperties": false
+      },
+      "InvestigationAlertEvent": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "enum": ["opened", "observed", "candidate_created", "deferred", "handled", "cleared", "invalidated", "capped"] },
+          "at": { "type": "string", "format": "date-time" },
+          "comparisonResultId": { "type": "string" },
+          "evidence": { "$ref": "#/components/schemas/ComparisonEvidenceRef" },
+          "reason": { "type": "string" }
+        },
+        "required": ["type", "at", "comparisonResultId", "evidence"],
+        "additionalProperties": false
+      },
+      "InvestigationAlert": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "ownerId": { "type": "string" }, "taskId": { "type": "string" },
+          "logicalKey": { "type": "string" }, "sessionId": { "type": "string" },
+          "status": { "type": "string", "enum": ["open", "awaiting_evidence", "handled", "cleared", "stale", "capped"] },
+          "statusReason": { "type": "string" },
+          "current": { "$ref": "#/components/schemas/InvestigationAlertEvidence" },
+          "comparisonResultIds": { "type": "array", "items": { "type": "string" } },
+          "maxPushRounds": { "type": "integer", "minimum": 1 }, "logicalRounds": { "type": "integer", "minimum": 0 },
+          "events": { "type": "array", "items": { "$ref": "#/components/schemas/InvestigationAlertEvent" } },
+          "createdAt": { "type": "string", "format": "date-time" }, "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "ownerId", "taskId", "logicalKey", "sessionId", "status", "current", "comparisonResultIds", "maxPushRounds", "logicalRounds", "events", "createdAt", "updatedAt"],
+        "additionalProperties": false
+      },
+      "InvestigationAlertList": {
+        "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/InvestigationAlert" } } },
         "required": ["items"], "additionalProperties": false
       },
       "FollowUpResolutionInput": {

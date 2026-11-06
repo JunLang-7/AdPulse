@@ -1,4 +1,5 @@
 import type { Orchestrator } from "./orchestrator.js";
+import type { InvestigationAlertService } from "./investigation-alerts.js";
 import type { OutboundChannel } from "./ports/channel.js";
 import type { Storage } from "./ports/storage.js";
 import type { Job } from "./state/model.js";
@@ -11,6 +12,7 @@ export class Worker {
 		private channels: ReadonlyMap<string, OutboundChannel>,
 		private now: () => string = () => new Date().toISOString(),
 		private maxAttempts = 5,
+		private investigationAlerts?: InvestigationAlertService,
 	) {}
 
 	async runOnce(): Promise<boolean> {
@@ -26,6 +28,11 @@ export class Worker {
 						job.task.sessionId,
 						job.task.version,
 					);
+					break;
+				case "prepare_investigation_alert_session":
+					if (!this.investigationAlerts)
+						throw new Error("investigation alert service is not configured");
+					await this.investigationAlerts.prepareSession(job.task.alertId);
 					break;
 				case "send_delivery":
 					await this.send(job);
@@ -102,7 +109,10 @@ export class Worker {
 			: null;
 		const now = this.now();
 		const expired =
-			!round || !session || session.expiresAt <= now || round.expiresAt <= now;
+			!round ||
+			!session ||
+			(Boolean(session.expiresAt) && session.expiresAt! <= now) ||
+			(Boolean(round.expiresAt) && round.expiresAt! <= now);
 		const staleDecision =
 			delivery.purpose === "decision" &&
 			(expired ||
