@@ -10,7 +10,13 @@ const retryable = (error: unknown): boolean =>
 
 /** Seven fixed tables: SQL identifiers never come from a request. */
 export class PostgresStorage implements Storage {
-	constructor(private pool: Pool) {}
+	constructor(private pool: Pool) {
+		// Idle clients can fail outside a query; without a listener pg emits an
+		// unhandled error and terminates the process. Do not log client details.
+		this.pool.on("error", () => {
+			console.error("PostgreSQL idle connection failed; pool will reconnect");
+		});
+	}
 
 	static connect(connectionString: string): PostgresStorage {
 		return new PostgresStorage(new Pool({ connectionString }));
