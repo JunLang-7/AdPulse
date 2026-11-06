@@ -38,6 +38,76 @@ export interface paths {
         patch: operations["reviseTask"];
         trace?: never;
     };
+    "/api/evidence/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importEvidence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{taskId}/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["listTaskEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/evidence/{evidenceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evidenceId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/evidence/{evidenceId}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evidenceId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reviseEvidence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions": {
         parameters: {
             query?: never;
@@ -378,6 +448,125 @@ export interface components {
             jobs: components["schemas"]["Job"][];
             snapshots: components["schemas"]["Snapshot"][];
         };
+        EvidenceImportInput: {
+            /** @enum {integer} */
+            schemaVersion: 1;
+            taskRef: components["schemas"]["TaskRef"];
+            records: components["schemas"]["EvidenceRecordInput"][];
+        };
+        TaskRef: {
+            taskId: string;
+            taskVersion: number;
+        };
+        EvidenceRecordInput: {
+            source: components["schemas"]["EvidenceSourceInput"];
+            scope: components["schemas"]["EvidenceScope"];
+            period: components["schemas"]["EvidencePeriod"];
+            metricsContract: components["schemas"]["EvidenceMetricsContract"];
+            currency: components["schemas"]["EvidenceCurrency"];
+            attribution: components["schemas"]["EvidenceAttribution"];
+            /** @enum {string} */
+            callbackStatus: "complete" | "pending" | "not_applicable" | "unknown";
+            rawValues: components["schemas"]["EvidenceRawValues"];
+            values: components["schemas"]["EvidenceValues"];
+        };
+        EvidenceSourceInput: {
+            platform: string;
+            accountRef: string;
+            reportRef: string;
+            /** Format: uri */
+            sourceUri?: string;
+        };
+        EvidenceScope: {
+            planRef: string;
+            campaignRefs: string[];
+        };
+        EvidencePeriod: {
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            timeZone: string;
+            /** @enum {string} */
+            completeness: "complete" | "partial";
+        };
+        EvidenceMetricDefinition: {
+            definition: string;
+            formula: string;
+            sourceField: string;
+        };
+        EvidenceMetricsContract: {
+            spendMinor: components["schemas"]["EvidenceMetricDefinition"];
+            consultations: components["schemas"]["EvidenceMetricDefinition"];
+        };
+        EvidenceCurrency: {
+            code: string;
+            minorUnit: string;
+            minorUnitsPerMajor: number;
+        };
+        EvidenceAttribution: {
+            model: string;
+            windowDays?: number;
+        };
+        EvidenceRawValues: {
+            spend?: string | number | null;
+            consultations?: string | number | null;
+        };
+        EvidenceValues: {
+            spendMinor?: number | null;
+            consultations?: number | null;
+        };
+        EvidenceVersion: {
+            id: string;
+            evidenceId: string;
+            ownerId: string;
+            taskId: string;
+            taskVersion: number;
+            version: number;
+            businessKey: string;
+            contentDigest: string;
+            scope: components["schemas"]["EvidenceScope"];
+            period: components["schemas"]["EvidencePeriod"];
+            metricsContract: components["schemas"]["EvidenceMetricsContract"];
+            currency: components["schemas"]["EvidenceCurrency"];
+            attribution: components["schemas"]["EvidenceAttribution"];
+            /** @enum {string} */
+            callbackStatus: "complete" | "pending" | "not_applicable" | "unknown";
+            values: components["schemas"]["EvidenceValues"];
+            /** Format: date-time */
+            createdAt: string;
+            reason?: string;
+        };
+        EvidenceSource: {
+            id: string;
+            ownerId: string;
+            evidenceId: string;
+            evidenceVersion: number;
+            source: components["schemas"]["EvidenceSourceInput"];
+            rawValues: components["schemas"]["EvidenceRawValues"];
+            digest: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        EvidenceDetail: {
+            current: components["schemas"]["EvidenceVersion"];
+            versions: components["schemas"]["EvidenceVersion"][];
+            sources: components["schemas"]["EvidenceSource"][];
+        };
+        EvidenceImportResult: {
+            evidenceId: string;
+            version: number;
+            /** @enum {string} */
+            status: "created" | "reused" | "revised";
+        };
+        EvidenceImportResultList: {
+            items: components["schemas"]["EvidenceImportResult"][];
+        };
+        EvidenceRevision: {
+            expectedEvidenceVersion: number;
+            reason: string;
+            record: components["schemas"]["EvidenceRecordInput"];
+        };
         ChoiceReceipt: {
             inboxId: string;
             /** @enum {string} */
@@ -570,6 +759,214 @@ export interface operations {
                 };
             };
             /** @description Idempotency or task version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    importEvidence: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvidenceImportInput"];
+            };
+        };
+        responses: {
+            /** @description Evidence reused */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceImportResultList"];
+                };
+            };
+            /** @description Evidence imported */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceImportResultList"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Idempotency or content conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listTaskEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current evidence for the task */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["EvidenceVersion"][];
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Task not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evidenceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Evidence detail and immutable revisions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceDetail"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Evidence not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviseEvidence: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                evidenceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvidenceRevision"];
+            };
+        };
+        responses: {
+            /** @description New immutable version */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceImportResult"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Evidence not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Idempotency or version conflict */
             409: {
                 headers: {
                     [name: string]: unknown;

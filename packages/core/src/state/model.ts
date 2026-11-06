@@ -51,6 +51,106 @@ export interface TaskOperation {
 	taskId: string;
 	taskVersion: number;
 }
+export interface EvidenceRef {
+	evidenceId: string;
+	version: number;
+}
+export interface EvidenceImportRecord {
+	source: {
+		platform: string;
+		accountRef: string;
+		reportRef: string;
+		sourceUri?: string;
+	};
+	scope: { planRef: string; campaignRefs: string[] };
+	period: {
+		startsAt: string;
+		endsAt: string;
+		timeZone: string;
+		completeness: "complete" | "partial";
+	};
+	metricsContract: {
+		spendMinor: { definition: string; formula: string; sourceField: string };
+		consultations: { definition: string; formula: string; sourceField: string };
+	};
+	currency: { code: string; minorUnit: string; minorUnitsPerMajor: number };
+	attribution: { model: string; windowDays?: number };
+	callbackStatus: "complete" | "pending" | "not_applicable" | "unknown";
+	rawValues: {
+		spend?: string | number | null;
+		consultations?: string | number | null;
+	};
+	values: EvidenceValues;
+}
+export interface EvidenceSourceInput {
+	source: EvidenceImportRecord["source"];
+	rawValues: EvidenceImportRecord["rawValues"];
+}
+export interface EvidenceValues {
+	spendMinor?: number | null;
+	consultations?: number | null;
+}
+export interface EvidenceHead {
+	id: string;
+	ownerId: string;
+	taskId: string;
+	taskVersion: number;
+	currentVersion: number;
+	createdAt: string;
+}
+export interface EvidenceVersion {
+	id: string;
+	evidenceId: string;
+	ownerId: string;
+	taskId: string;
+	taskVersion: number;
+	version: number;
+	businessKey: string;
+	contentDigest: string;
+	scope: { planRef: string; campaignRefs: string[] };
+	period: {
+		startsAt: string;
+		endsAt: string;
+		timeZone: string;
+		completeness: "complete" | "partial";
+	};
+	metricsContract: {
+		spendMinor: { definition: string; formula: string; sourceField: string };
+		consultations: { definition: string; formula: string; sourceField: string };
+	};
+	currency: { code: string; minorUnit: string; minorUnitsPerMajor: number };
+	attribution: { model: string; windowDays?: number };
+	callbackStatus: "complete" | "pending" | "not_applicable" | "unknown";
+	values: EvidenceValues;
+	createdAt: string;
+	reason?: string;
+}
+export interface EvidenceSource {
+	id: string;
+	ownerId: string;
+	evidenceId: string;
+	evidenceVersion: number;
+	source: {
+		platform: string;
+		accountRef: string;
+		reportRef: string;
+		sourceUri?: string;
+	};
+	rawValues: {
+		spend?: string | number | null;
+		consultations?: string | number | null;
+	};
+	digest: string;
+	createdAt: string;
+}
+export interface EvidenceOperation {
+	id: string;
+	ownerId: string;
+	operation: "import" | "revise";
+	key: string;
+	digest: string;
+	results: Array<{ evidenceId: string; version: number; status: "created" | "reused" | "revised" }>;
+}
 export interface Session {
 	id: string;
 	ownerId: string;
@@ -128,6 +228,10 @@ export interface Entities {
 	tasks: Task;
 	taskVersions: TaskVersion;
 	taskOperations: TaskOperation;
+	evidenceHeads: EvidenceHead;
+	evidenceVersions: EvidenceVersion;
+	evidenceSources: EvidenceSource;
+	evidenceOperations: EvidenceOperation;
 	sessions: Session;
 	rounds: Round;
 	actions: ActionRef;

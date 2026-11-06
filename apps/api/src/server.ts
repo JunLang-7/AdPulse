@@ -1,7 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { WebhookError } from "@adpluse/channels";
-import { TaskInputValidationError } from "@adpluse/core";
+import {
+	EvidenceConflictError,
+	EvidenceValidationError,
+	TaskInputValidationError,
+} from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
 import { ZodError } from "zod";
 import { HttpError, json } from "./http.js";
@@ -47,6 +51,16 @@ export function createApi(
 				return json(res, error.status, { error: error.message });
 			if (error instanceof TaskInputValidationError)
 				return json(res, 400, { error: `invalid field: ${error.fieldPath}` });
+			if (error instanceof EvidenceConflictError)
+				return json(res, 409, { error: error.message });
+			if (error instanceof EvidenceValidationError) {
+				const status = ["task not found", "evidence not found"].includes(
+					error.message,
+				)
+					? 404
+					: 400;
+				return json(res, status, { error: error.message });
+			}
 			if (
 				error instanceof Error &&
 				["idempotency conflict", "task version conflict"].includes(error.message)
