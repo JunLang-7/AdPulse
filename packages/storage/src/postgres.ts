@@ -92,6 +92,24 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (3)",
 				);
 			}
+			if (!current.has(4)) {
+				for (const name of [
+					"comparisonResults",
+					"comparisonOperations",
+					"comparisonFollowUps",
+				]) await this.createEntityTable(client, name);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_comparison_operation_key
+					ON adpulse_comparisonOperations ((data->>'ownerId'), (data->>'operation'), (data->>'key'))`);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_comparison_follow_up_dedup
+					ON adpulse_comparisonFollowUps ((data->>'dedupKey'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_comparison_result_task
+					ON adpulse_comparisonResults ((data->>'ownerId'), (data->>'taskId'), (data->>'createdAt'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_comparison_follow_up_task
+					ON adpulse_comparisonFollowUps ((data->>'ownerId'), (data->>'taskId'), (data->>'status'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (4)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");
