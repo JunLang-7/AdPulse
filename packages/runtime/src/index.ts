@@ -5,6 +5,7 @@ import {
 	WebhookError,
 } from "@adpluse/channels";
 import {
+	EvidenceService,
 	Orchestrator,
 	TaskService,
 	type PolicyEngine,
@@ -39,11 +40,13 @@ export function compose(
 	const channels = new ChannelRegistry(accounts);
 	const decisions = new Orchestrator(storage, policy);
 	const tasks = new TaskService(storage);
+	const evidence = new EvidenceService(storage);
 	return {
 		storage,
 		channels,
 		decisions,
 		tasks,
+		evidence,
 		worker: new Worker(storage, decisions, channels.outbound()),
 	};
 }

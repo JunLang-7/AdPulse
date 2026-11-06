@@ -163,6 +163,121 @@ test("task API preserves unknown versus zero, enforces idempotency/versioning, a
   assert.match((await invalidRevision.json()).error, /observation.startsAt/);
 });
 
+test("evidence JSON imports preserve provenance, deduplicate, revise immutably, and validate atomically", async (t) => {
+  const { url, headers } = await serve(t);
+  const taskResponse = await fetch(`${url}/api/tasks`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify({
+      product: "产品 A",
+      strategy: { objective: "咨询", audience: [], channels: {}, sellingPoints: [] },
+      observation: {},
+      rules: {},
+    }),
+  });
+  const task = await taskResponse.json();
+  const makeRecord = (overrides = {}) => ({
+    source: { platform: "web-report", accountRef: "account-1", reportRef: "report-1" },
+    scope: { planRef: "plan-1", campaignRefs: ["campaign-1"] },
+    period: {
+      startsAt: "2026-01-01T00:00:00+08:00",
+      endsAt: "2026-01-02T00:00:00+08:00",
+      timeZone: "Asia/Shanghai",
+      completeness: "complete",
+    },
+    metricsContract: {
+      spendMinor: { definition: "消耗", formula: "原始值换算为分", sourceField: "spend" },
+      consultations: { definition: "咨询数", formula: "报表咨询数", sourceField: "consultations" },
+    },
+    currency: { code: "CNY", minorUnit: "分", minorUnitsPerMajor: 100 },
+    attribution: { model: "click", windowDays: 7 },
+    callbackStatus: "complete",
+    rawValues: { spend: "0.00", consultations: null },
+    values: { spendMinor: 0 },
+    ...overrides,
+  });
+  const body = {
+    schemaVersion: 1,
+    taskRef: { taskId: task.taskId, taskVersion: 1 },
+    records: [makeRecord()],
+  };
+  const importEvidence = (input: unknown, key = crypto.randomUUID()) => fetch(`${url}/api/evidence/imports`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": key },
+    body: JSON.stringify(input),
+  });
+  const key = crypto.randomUUID();
+  const createdResponse = await importEvidence(body, key);
+  assert.equal(createdResponse.status, 201);
+  const [created] = (await createdResponse.json()).items;
+  const retryResponse = await importEvidence(body, key);
+  assert.equal(retryResponse.status, 201);
+  assert.deepEqual((await retryResponse.json()).items[0], created);
+
+  const duplicateBody = {
+    ...body,
+    records: [makeRecord({
+      source: { platform: "web-report", accountRef: "account-1", reportRef: "report-2" },
+    })],
+  };
+  const duplicateResponse = await importEvidence(duplicateBody);
+  assert.equal(duplicateResponse.status, 200);
+  assert.equal((await duplicateResponse.json()).items[0].evidenceId, created.evidenceId);
+
+  const conflictBody = {
+    ...body,
+    records: [makeRecord({ values: { spendMinor: 10 } })],
+  };
+  assert.equal((await importEvidence(conflictBody)).status, 409);
+
+  const listResponse = await fetch(`${url}/api/tasks/${task.taskId}/evidence`, { headers });
+  const list = await listResponse.json();
+  assert.equal(list.items.length, 1);
+  const detailResponse = await fetch(`${url}/api/evidence/${created.evidenceId}`, { headers });
+  const detail = await detailResponse.json();
+  assert.equal(detail.current.values.spendMinor, 0);
+  assert.equal("consultations" in detail.current.values, false);
+  assert.equal(detail.sources.length, 2);
+
+  const revisionResponse = await fetch(`${url}/api/evidence/${created.evidenceId}/revisions`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify({
+      expectedEvidenceVersion: 1,
+      reason: "报表修正",
+      record: makeRecord({
+        source: { platform: "web-report", accountRef: "account-1", reportRef: "report-1-fixed" },
+        values: { spendMinor: 5000, consultations: 5 },
+        rawValues: { spend: "50.00", consultations: "5" },
+      }),
+    }),
+  });
+  assert.equal(revisionResponse.status, 201);
+  assert.equal((await revisionResponse.json()).version, 2);
+  const finalDetail = await (await fetch(`${url}/api/evidence/${created.evidenceId}`, { headers })).json();
+  assert.equal(finalDetail.versions.length, 2);
+  assert.equal(finalDetail.versions[0].values.spendMinor, 0);
+  assert.equal(finalDetail.current.values.spendMinor, 5000);
+
+  const invalidBatch = {
+    ...body,
+    records: [
+      makeRecord(),
+      makeRecord({
+        period: {
+          startsAt: "2026-01-02T00:00:00+08:00",
+          endsAt: "2026-01-03T00:00:00+08:00",
+          timeZone: "Asia/Shanghai",
+          completeness: "complete",
+        },
+        values: { spendMinor: -1 },
+      }),
+    ],
+  };
+  assert.equal((await importEvidence(invalidBatch)).status, 400);
+  assert.equal((await (await fetch(`${url}/api/tasks/${task.taskId}/evidence`, { headers })).json()).items.length, 1);
+});
+
 test("sessions freeze the referenced task version and incomplete rules disable monetary suggestions", async (t) => {
   const { runtime, url, headers } = await serve(t);
   const taskBody = {
