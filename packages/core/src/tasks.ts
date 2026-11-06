@@ -10,6 +10,16 @@ export interface TaskInput {
 	rules: TaskVersion["rules"];
 }
 
+export class TaskInputValidationError extends Error {
+	constructor(
+		readonly fieldPath: string,
+		message: string,
+	) {
+		super(message);
+		this.name = "TaskInputValidationError";
+	}
+}
+
 const canonicalJson = (value: unknown): string =>
 	JSON.stringify(value, (_key, item) =>
 		item && typeof item === "object" && !Array.isArray(item)
@@ -41,7 +51,10 @@ function validateInput(input: TaskInput): void {
 			endsAt !== undefined &&
 			Date.parse(startsAt) > Date.parse(endsAt))
 	)
-		throw new Error("invalid task observation period");
+		throw new TaskInputValidationError(
+			"observation.startsAt",
+			"invalid task observation period",
+		);
 	if (!input.rules || typeof input.rules !== "object")
 		throw new Error("invalid task rules");
 	for (const key of [

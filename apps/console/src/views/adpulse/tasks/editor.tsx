@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useReducer, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { consoleClient, type components } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
@@ -10,6 +10,7 @@ import {
 	CardTitle,
 } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
+import { reduceTaskEditorState, reuseOperation } from "./editor-state.js";
 
 type TaskInput = components["schemas"]["TaskInput"];
 type TaskRules = components["schemas"]["TaskRules"];
@@ -68,6 +69,21 @@ const optionalRuleNumbers = [
 	"handlingDeadlineHours",
 	"maxPushRounds",
 ] as const;
+
+type SaveOperation =
+	| {
+			kind: "create";
+			key: string;
+			body: TaskInput;
+			formSnapshot: FormState;
+	  }
+	| {
+			kind: "revise";
+			key: string;
+			taskId: string;
+			body: { expectedTaskVersion: number; task: TaskInput };
+			formSnapshot: FormState;
+	  };
 
 function fromVersion(task: TaskVersion): FormState {
 	const rules = task.rules;
@@ -139,9 +155,15 @@ export default function TaskEditorPage() {
 	const creating = taskId === "new";
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
-	const [form, setForm] = useState<FormState>(emptyForm);
+	const [editorState, dispatch] = useReducer(reduceTaskEditorState<FormState>, {
+		form: emptyForm,
+		version: null,
+		dirty: false,
+		remoteVersion: null,
+	});
+	const { form, version, dirty, remoteVersion } = editorState;
 	const [formError, setFormError] = useState("");
-	const operationKey = useRef<string | null>(null);
+	const operation = useRef<SaveOperation | null>(null);
 	const detail = useQuery({
 		queryKey: ["task", taskId],
 		enabled: Boolean(taskId && !creating),
@@ -155,35 +177,44 @@ export default function TaskEditorPage() {
 	});
 
 	useEffect(() => {
-		if (!creating && detail.data) setForm(fromVersion(detail.data.task));
+		if (!creating && detail.data) {
+			dispatch({
+				type: "remote",
+				version: detail.data.task.version,
+				form: fromVersion(detail.data.task),
+			});
+		}
 	}, [creating, detail.data]);
 
 	const save = useMutation({
-		mutationFn: async (input: TaskInput) => {
-			const key = (operationKey.current ??= crypto.randomUUID());
-			if (creating) {
+		mutationFn: async (request: SaveOperation) => {
+			if (request.kind === "create") {
 				const result = await consoleClient.POST("/api/tasks", {
-					body: input,
-					params: { header: { "Idempotency-Key": key } },
+					body: request.body,
+					params: { header: { "Idempotency-Key": request.key } },
 				});
 				if (!result.data) throw new Error(JSON.stringify(result.error));
 				return result.data;
 			}
-			const current = detail.data?.task;
-			if (!taskId || !current) throw new Error("任务尚未加载");
 			const result = await consoleClient.PATCH("/api/tasks/{taskId}", {
 				params: {
-					path: { taskId },
-					header: { "Idempotency-Key": key },
+					path: { taskId: request.taskId },
+					header: { "Idempotency-Key": request.key },
 				},
-				body: { expectedTaskVersion: current.version, task: input },
+				body: request.body,
 			});
 			if (!result.data) throw new Error(JSON.stringify(result.error));
 			return result.data;
 		},
-		onSuccess: async (saved) => {
-			operationKey.current = null;
+		onSuccess: async (saved, request) => {
+			if (operation.current?.key === request.key) operation.current = null;
 			setFormError("");
+			dispatch({
+				type: "saved",
+				version: saved.version,
+				form: fromVersion(saved),
+				submittedForm: request.formSnapshot,
+			});
 			await queryClient.invalidateQueries({ queryKey: ["tasks"] });
 			await queryClient.invalidateQueries({ queryKey: ["task", taskId] });
 			if (creating) navigate(`/tasks/${saved.taskId}`);
@@ -195,14 +226,35 @@ export default function TaskEditorPage() {
 		event.preventDefault();
 		setFormError("");
 		try {
-			save.mutate(toInput(form));
+			const request = reuseOperation(operation.current, () => {
+				const formSnapshot = { ...form };
+				const input = toInput(formSnapshot);
+				if (creating) {
+					return {
+						kind: "create" as const,
+						key: crypto.randomUUID(),
+						body: input,
+						formSnapshot,
+					};
+				}
+				if (!taskId || version === null) throw new Error("任务尚未加载");
+				return {
+					kind: "revise" as const,
+					key: crypto.randomUUID(),
+					taskId,
+					body: { expectedTaskVersion: version, task: input },
+					formSnapshot,
+				};
+			});
+			operation.current = request;
+			save.mutate(request);
 		} catch (error) {
 			setFormError(String(error));
 		}
 	}
 
 	function set<K extends keyof FormState>(key: K, value: FormState[K]) {
-		setForm((current) => ({ ...current, [key]: value }));
+		dispatch({ type: "edit", form: { ...form, [key]: value } });
 	}
 
 	if (!creating && (detail.isLoading || !detail.data) && !detail.error)
@@ -282,6 +334,17 @@ export default function TaskEditorPage() {
 					</CardContent>
 				</Card>
 
+					{dirty ? <p className="text-sm text-muted-foreground">有未保存的更改。</p> : null}
+				{remoteVersion !== null ? (
+					<p role="status" className="text-sm text-amber-700">
+						服务端已更新到 v{remoteVersion}。本地未保存内容已保留，仍基于 v{version} 编辑；保存可能因版本冲突被拒绝。
+					</p>
+				) : null}
+				{operation.current && !save.isPending ? (
+					<p role="status" className="text-sm text-muted-foreground">
+						上次保存结果尚未确认。重试会复用原幂等键和完整请求；之后的编辑会保留为下一次保存。
+					</p>
+				) : null}
 				{formError ? <p role="alert" className="text-sm text-red-600">保存失败：{formError}</p> : null}
 				<div className="flex gap-2">
 					<Button type="submit" disabled={save.isPending}>{save.isPending ? "保存中…" : creating ? "保存任务" : "保存新版本"}</Button>

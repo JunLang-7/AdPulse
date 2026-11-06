@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { WebhookError } from "@adpluse/channels";
+import { TaskInputValidationError } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
 import { ZodError } from "zod";
 import { HttpError, json } from "./http.js";
@@ -44,6 +45,8 @@ export function createApi(
 			}
 			if (error instanceof HttpError || error instanceof WebhookError)
 				return json(res, error.status, { error: error.message });
+			if (error instanceof TaskInputValidationError)
+				return json(res, 400, { error: `invalid field: ${error.fieldPath}` });
 			if (
 				error instanceof Error &&
 				["idempotency conflict", "task version conflict"].includes(error.message)

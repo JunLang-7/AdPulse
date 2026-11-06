@@ -147,6 +147,20 @@ test("task API preserves unknown versus zero, enforces idempotency/versioning, a
   const invalid = await create({ ...body, rules: { maxPushRounds: 0 } }, crypto.randomUUID());
   assert.equal(invalid.status, 400);
   assert.match((await invalid.json()).error, /rules.maxPushRounds/);
+
+  const invalidPeriod = {
+    ...body,
+    observation: {
+      startsAt: "2026-02-02T00:00:00.000Z",
+      endsAt: "2026-02-01T00:00:00.000Z",
+    },
+  };
+  const invalidCreate = await create(invalidPeriod, crypto.randomUUID());
+  assert.equal(invalidCreate.status, 400);
+  assert.match((await invalidCreate.json()).error, /observation.startsAt/);
+  const invalidRevision = await revise(2, invalidPeriod, crypto.randomUUID());
+  assert.equal(invalidRevision.status, 400);
+  assert.match((await invalidRevision.json()).error, /observation.startsAt/);
 });
 
 test("sessions freeze the referenced task version and incomplete rules disable monetary suggestions", async (t) => {
