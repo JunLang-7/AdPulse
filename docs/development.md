@@ -88,7 +88,7 @@ DEMO_MODE=1 配合 DATABASE_URL 可以持久化模拟投递；关闭演示则必
 https://你的域名/webhooks/feishu-internal
 ```
 
-账户名须与 FEISHU_ACCOUNT_ID 一致。API 只监听 127.0.0.1，需可信反向代理；代理不能重序列化 JSON，必须保留原始请求体和 x-lark-* 签名头。服务器需校时。
+账户名须与 FEISHU_ACCOUNT_ID 一致。API 只监听 127.0.0.1，需可信反向代理；代理不能重序列化 JSON，否则 `x-lark-*` 签名校验会失败。平台校验回调地址时只发加密体、不带签名头，但卡片回调必须带，所以整条链路仍须保留原始请求体和签名头。服务器需校时（±300s），且 challenge 需在 1 秒内返回。
 
 创建 Session 时：
 - accountId 使用配置的账户名。

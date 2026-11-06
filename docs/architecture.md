@@ -34,6 +34,8 @@ core 不依赖具体 IM、HTTP、数据库驱动或应用入口。依赖边界�
 入站接口见 [contracts.ts](../packages/channels/src/contracts.ts)：
 验签、解密、校验应用与租户，转换为 ChoiceCommand，并构造平台特有的 challenge/ACK。
 
+回调地址校验（`url_verification`）由平台以加密体推送，**不带 `x-lark-*` 头**。因此验签是可选的：带了签名就必须通过（时间戳 ±300s、sha256 比对），没带时仅接受加密体且解密成功并通过 `token` 校验的场景；其余事件缺签名头一律 `401 missing signature`。签名失败仍在解密前返回，避免把解密错误当作鉴权前 oracle。
+
 [ChannelRegistry](../packages/channels/src/gateway.ts) 负责按账户路由。对于点击事件，**inbox 和任务成功提交后才返回 ACK**。ACK 仅表示接收成功，处理结果异步产生。
 
 出站接口见 [channel.ts](../packages/core/src/ports/channel.ts)：
