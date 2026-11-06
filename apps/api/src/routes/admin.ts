@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Job, Transaction } from "@adpluse/core";
+import type { Job, TaskInput, Transaction } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
@@ -29,6 +29,13 @@ const strategy = z
 	.strict();
 const sessionInput = z
 	.object({
+		taskRef: z
+			.object({
+				taskId: z.string().min(1).max(128),
+				taskVersion: z.number().int().min(1),
+			})
+			.strict()
+			.optional(),
 		recipient: z
 			.object({
 				accountId: z.string().min(1).max(128),
@@ -70,9 +77,49 @@ const sessionInput = z
 		expiresAt: z.iso.datetime(),
 	})
 	.strict();
+const taskInput = z
+	.object({
+		product: z.string().trim().min(1).max(200),
+		strategy,
+		observation: z
+			.object({
+				scope: z.string().max(1000).optional(),
+				startsAt: z.iso.datetime().optional(),
+				endsAt: z.iso.datetime().optional(),
+			})
+			.strict(),
+		rules: z
+			.object({
+				metricDefinition: z.string().trim().min(1).max(500).optional(),
+				currency: z.string().trim().min(1).max(16).optional(),
+				unit: z.string().trim().min(1).max(32).optional(),
+				statWindowDays: z.number().int().nonnegative().optional(),
+				alertThresholdMinor: z.number().int().nonnegative().optional(),
+				minimumSpendMinor: z.number().int().nonnegative().optional(),
+				minimumConsultations: z.number().int().nonnegative().optional(),
+				handlingDeadlineHours: z.number().int().nonnegative().optional(),
+				maxPushRounds: z.number().int().min(1).optional(),
+			})
+			.strict(),
+	})
+	.strict();
+const taskRevisionInput = z
+	.object({ expectedTaskVersion: z.number().int().min(1), task: taskInput })
+	.strict();
 const choiceInput = z
 	.object({ actionRef: z.string().min(1).max(128) })
 	.strict();
+const parseTaskInput = (body: unknown) => {
+	try {
+		return taskInput.parse(body) as unknown as TaskInput;
+	} catch (error) {
+		if (error instanceof z.ZodError) {
+			const field = error.issues[0]?.path.join(".") || "body";
+			throw new HttpError(400, `invalid field: ${field}`);
+		}
+		throw error;
+	}
+};
 const requestId = (req: IncomingMessage): string =>
 	z.uuid().parse(req.headers["idempotency-key"]);
 
@@ -97,14 +144,62 @@ export async function handleAdmin(
 	userId: string,
 	path: string,
 ): Promise<void> {
+	if (path === "/api/tasks" && req.method === "GET") {
+		return json(res, 200, { items: await runtime.tasks.list(userId) });
+	}
+	if (path === "/api/tasks" && req.method === "POST") {
+		const input = parseTaskInput(await readJson(req));
+		const task = await runtime.tasks.create(userId, requestId(req), input);
+		return json(res, 201, task);
+	}
+	if (path.startsWith("/api/tasks/") && req.method === "GET") {
+		const id = decodeURIComponent(path.slice("/api/tasks/".length));
+		const result = await runtime.storage.transaction(async (tx) => {
+			const task = await tx.tasks.get(id);
+			if (!task || task.ownerId !== userId)
+				throw new HttpError(404, "task not found");
+			const versions = (await tx.taskVersions.all())
+				.filter((version) => version.taskId === id)
+				.sort((a, b) => a.version - b.version);
+			const current = versions.find(
+				(version) => version.version === task.currentVersion,
+			);
+			if (!current) throw new HttpError(503, "task version unavailable");
+			return { task: current, versions };
+		});
+		return json(res, 200, result);
+	}
+	if (path.startsWith("/api/tasks/") && req.method === "PATCH") {
+		const id = decodeURIComponent(path.slice("/api/tasks/".length));
+		let parsed: z.infer<typeof taskRevisionInput>;
+		try {
+			parsed = taskRevisionInput.parse(await readJson(req));
+		} catch (error) {
+			if (error instanceof z.ZodError) {
+				const field = error.issues[0]?.path.join(".") || "body";
+				throw new HttpError(400, `invalid field: ${field}`);
+			}
+			throw error;
+		}
+		const task = await runtime.tasks.revise(
+			userId,
+			id,
+			parsed.expectedTaskVersion,
+			requestId(req),
+			parsed.task as unknown as TaskInput,
+		);
+		return json(res, 200, task);
+	}
 	if (path === "/api/sessions" && req.method === "POST") {
 		const input = sessionInput.parse(await readJson(req));
 		if (!runtime.channels.has(input.recipient.accountId))
 			throw new HttpError(400, "unknown recipient account");
 		if (Date.parse(input.expiresAt) <= Date.now())
 			throw new HttpError(400, "expiry must be in the future");
+		const { taskRef, ...sessionFields } = input;
 		const session = await runtime.decisions.startSession({
-			...input,
+			...sessionFields,
+			...(taskRef ? { taskRef } : {}),
 			requestId: requestId(req),
 			ownerId: userId,
 		});

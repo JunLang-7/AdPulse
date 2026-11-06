@@ -9,11 +9,13 @@ import type {
 	JobTask,
 	Round,
 	Session,
+	TaskVersion,
 } from "./state/model.js";
 
 export interface StartSession {
 	requestId: string;
 	ownerId: string;
+	taskRef?: { taskId: string; taskVersion: number };
 	recipient: Recipient;
 	allowedActorIds: string[];
 	strategy: Strategy;
@@ -68,15 +70,43 @@ export class Orchestrator {
 			throw new Error("invalid session input");
 		}
 		return this.storage.transaction(async (tx) => {
+			let taskVersion: TaskVersion | null = null;
+			if (input.taskRef) {
+				const task = await tx.tasks.get(input.taskRef.taskId);
+				taskVersion = await tx.taskVersions.get(
+					`${input.taskRef.taskId}:${input.taskRef.taskVersion}`,
+				);
+				if (!task || task.ownerId !== input.ownerId || !taskVersion)
+					throw new Error("task not found");
+				if (canonicalJson(taskVersion.strategy) !== canonicalJson(input.strategy))
+					throw new Error("task strategy mismatch");
+			}
 			const existing = await tx.sessions.get(input.requestId);
 			if (existing) {
 				if (existing.ownerId !== input.ownerId)
 					throw new Error("session id already in use");
+				if (
+					canonicalJson(existing.taskRef ?? null) !==
+					canonicalJson(input.taskRef ?? null)
+				)
+					throw new Error("idempotency conflict");
 				return existing;
 			}
+			const rules = taskVersion?.rules;
+			const monetarySuggestionsAllowed = Boolean(
+				rules?.metricDefinition &&
+				rules.currency &&
+				rules.unit &&
+				rules.statWindowDays !== undefined &&
+				rules.alertThresholdMinor !== undefined &&
+				rules.minimumSpendMinor !== undefined &&
+				rules.minimumConsultations !== undefined,
+			);
 			const session: Session = {
 				id: input.requestId,
 				ownerId: input.ownerId,
+				...(input.taskRef ? { taskRef: input.taskRef } : {}),
+				...(input.taskRef ? { monetarySuggestionsAllowed } : {}),
 				recipient: input.recipient,
 				allowedActorIds: input.allowedActorIds,
 				strategy: input.strategy,
@@ -164,6 +194,12 @@ export class Orchestrator {
 				(option) => option.id === action.optionId,
 			);
 			if (!candidate) return reject("unknown_option");
+			if (
+				session.taskRef &&
+				!session.monetarySuggestionsAllowed &&
+				candidate.changes.some((change) => change.kind !== "enabled")
+			)
+				return reject("unconfirmed_monetary_semantics");
 
 			// Validation is enforced here, independently of the policy/model producing the proposal.
 			const next = applyChanges(
@@ -290,6 +326,12 @@ export class Orchestrator {
 			throw new Error("invalid proposal");
 		}
 		for (const candidate of proposal.candidates) {
+			if (
+				session.taskRef &&
+				!session.monetarySuggestionsAllowed &&
+				candidate.changes?.some((change) => change.kind !== "enabled")
+			)
+				throw new Error("unconfirmed task rules prohibit monetary suggestions");
 			if (
 				!candidate.id ||
 				!candidate.label ||

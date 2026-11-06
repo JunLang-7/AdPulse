@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { WebhookError } from "@adpluse/channels";
+import { TaskInputValidationError } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
 import { ZodError } from "zod";
 import { HttpError, json } from "./http.js";
@@ -44,8 +45,17 @@ export function createApi(
 			}
 			if (error instanceof HttpError || error instanceof WebhookError)
 				return json(res, error.status, { error: error.message });
-			if (error instanceof Error && error.message === "idempotency conflict")
-				return json(res, 409, { error: "idempotency conflict" });
+			if (error instanceof TaskInputValidationError)
+				return json(res, 400, { error: `invalid field: ${error.fieldPath}` });
+			if (
+				error instanceof Error &&
+				["idempotency conflict", "task version conflict"].includes(error.message)
+			)
+				return json(res, 409, { error: error.message });
+			if (error instanceof Error && error.message === "task not found")
+				return json(res, 404, { error: "task not found" });
+			if (error instanceof Error && error.message === "task strategy mismatch")
+				return json(res, 400, { error: error.message });
 			if (error instanceof ZodError || error instanceof URIError)
 				return json(res, 400, { error: "invalid request" });
 			// Persistence failure must not produce a successful platform ACK.

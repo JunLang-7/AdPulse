@@ -10,6 +10,52 @@
     }
   ],
   "paths": {
+    "/api/tasks": {
+      "get": {
+        "operationId": "listTasks",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/TaskVersion" } } }, "required": ["items"], "additionalProperties": false } } }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "post": {
+        "operationId": "createTask",
+        "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskInput" } } } },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskVersion" } } } },
+          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Idempotency conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/tasks/{taskId}": {
+      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "getTask",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDetail" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "patch": {
+        "operationId": "reviseTask",
+        "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskRevision" } } } },
+        "responses": {
+          "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskVersion" } } } },
+          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Idempotency or task version conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/api/sessions": {
       "get": {
         "operationId": "listSessions",
@@ -654,6 +700,76 @@
         ],
         "additionalProperties": false
       },
+      "TaskObservation": {
+        "type": "object",
+        "properties": {
+          "scope": { "type": "string" },
+          "startsAt": { "type": "string", "format": "date-time" },
+          "endsAt": { "type": "string", "format": "date-time" }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "TaskRules": {
+        "type": "object",
+        "properties": {
+          "metricDefinition": { "type": "string" },
+          "currency": { "type": "string" },
+          "unit": { "type": "string" },
+          "statWindowDays": { "type": "integer", "minimum": 0 },
+          "alertThresholdMinor": { "type": "integer", "minimum": 0 },
+          "minimumSpendMinor": { "type": "integer", "minimum": 0 },
+          "minimumConsultations": { "type": "integer", "minimum": 0 },
+          "handlingDeadlineHours": { "type": "integer", "minimum": 0 },
+          "maxPushRounds": { "type": "integer", "minimum": 1 }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "TaskInput": {
+        "type": "object",
+        "properties": {
+          "product": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "strategy": { "$ref": "#/components/schemas/Strategy" },
+          "observation": { "$ref": "#/components/schemas/TaskObservation" },
+          "rules": { "$ref": "#/components/schemas/TaskRules" }
+        },
+        "required": ["product", "strategy", "observation", "rules"],
+        "additionalProperties": false
+      },
+      "TaskVersion": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "taskId": { "type": "string" },
+          "version": { "type": "integer", "minimum": 1 },
+          "product": { "type": "string" },
+          "strategy": { "$ref": "#/components/schemas/Strategy" },
+          "observation": { "$ref": "#/components/schemas/TaskObservation" },
+          "rules": { "$ref": "#/components/schemas/TaskRules" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "taskId", "version", "product", "strategy", "observation", "rules", "createdAt"],
+        "additionalProperties": false
+      },
+      "TaskRevision": {
+        "type": "object",
+        "properties": {
+          "expectedTaskVersion": { "type": "integer", "minimum": 1 },
+          "task": { "$ref": "#/components/schemas/TaskInput" }
+        },
+        "required": ["expectedTaskVersion", "task"],
+        "additionalProperties": false
+      },
+      "TaskDetail": {
+        "type": "object",
+        "properties": {
+          "task": { "$ref": "#/components/schemas/TaskVersion" },
+          "versions": { "type": "array", "items": { "$ref": "#/components/schemas/TaskVersion" } }
+        },
+        "required": ["task", "versions"],
+        "additionalProperties": false
+      },
       "Strategy": {
         "type": "object",
         "properties": {
@@ -1012,6 +1128,15 @@
       "StartSession": {
         "type": "object",
         "properties": {
+          "taskRef": {
+            "type": "object",
+            "properties": {
+              "taskId": { "type": "string" },
+              "taskVersion": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["taskId", "taskVersion"],
+            "additionalProperties": false
+          },
           "recipient": {
             "$ref": "#/components/schemas/Recipient"
           },
@@ -1054,6 +1179,16 @@
           "ownerId": {
             "type": "string"
           },
+          "taskRef": {
+            "type": "object",
+            "properties": {
+              "taskId": { "type": "string" },
+              "taskVersion": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["taskId", "taskVersion"],
+            "additionalProperties": false
+          },
+          "monetarySuggestionsAllowed": { "type": "boolean" },
           "recipient": {
             "$ref": "#/components/schemas/Recipient"
           },

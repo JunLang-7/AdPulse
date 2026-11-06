@@ -12,9 +12,50 @@ import type {
 } from "../ports/channel.js";
 import type { Candidate } from "../ports/policyEngine.js";
 
+export interface Task {
+	id: string;
+	ownerId: string;
+	currentVersion: number;
+	createdAt: string;
+}
+export interface TaskVersion {
+	id: string;
+	taskId: string;
+	version: number;
+	product: string;
+	strategy: Strategy;
+	observation: {
+		scope?: string;
+		startsAt?: string;
+		endsAt?: string;
+	};
+	rules: {
+		metricDefinition?: string;
+		currency?: string;
+		unit?: string;
+		statWindowDays?: number;
+		alertThresholdMinor?: number;
+		minimumSpendMinor?: number;
+		minimumConsultations?: number;
+		handlingDeadlineHours?: number;
+		maxPushRounds?: number;
+	};
+	createdAt: string;
+}
+export interface TaskOperation {
+	id: string;
+	ownerId: string;
+	operation: "create" | "revise";
+	key: string;
+	digest: string;
+	taskId: string;
+	taskVersion: number;
+}
 export interface Session {
 	id: string;
 	ownerId: string;
+	taskRef?: { taskId: string; taskVersion: number };
+	monetarySuggestionsAllowed?: boolean;
 	recipient: Recipient;
 	allowedActorIds: string[];
 	strategy: Strategy;
@@ -84,6 +125,9 @@ export interface Job {
 	lastError?: string;
 }
 export interface Entities {
+	tasks: Task;
+	taskVersions: TaskVersion;
+	taskOperations: TaskOperation;
 	sessions: Session;
 	rounds: Round;
 	actions: ActionRef;

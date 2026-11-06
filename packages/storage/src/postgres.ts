@@ -8,7 +8,7 @@ const retryable = (error: unknown): boolean =>
 	"code" in error &&
 	["40001", "40P01"].includes(String(error.code));
 
-/** Seven fixed tables: SQL identifiers never come from a request. */
+/** Fixed entity tables: SQL identifiers never come from a request. */
 export class PostgresStorage implements Storage {
 	constructor(private pool: Pool) {
 		// Idle clients can fail outside a query; without a listener pg emits an
@@ -26,27 +26,55 @@ export class PostgresStorage implements Storage {
 		await this.pool.end();
 	}
 
-	/** Idempotent bootstrap for this first schema. Future schema changes require migrations. */
+	/** Applies ordered, additive schema migrations under a process-wide advisory lock. */
 	async initialize(): Promise<void> {
 		const client = await this.pool.connect();
 		try {
 			await client.query("BEGIN");
 			await client.query("SELECT pg_advisory_xact_lock(702445811)");
-			for (const name of tableNames) {
-				await client.query(`CREATE TABLE IF NOT EXISTS adpulse_${name} (
-          id text PRIMARY KEY,
-          data jsonb NOT NULL,
-          CONSTRAINT entity_id_matches CHECK (data->>'id' = id)
-        )`);
+			await client.query(`CREATE TABLE IF NOT EXISTS adpulse_schema_migrations (
+				version integer PRIMARY KEY,
+				applied_at timestamptz NOT NULL DEFAULT now()
+			)`);
+			const applied = await client.query(
+				"SELECT version FROM adpulse_schema_migrations ORDER BY version",
+			);
+			const current = new Set<number>(
+				applied.rows.map((row) => Number(row.version)),
+			);
+			if (!current.has(1)) {
+				for (const name of [
+					"sessions",
+					"rounds",
+					"actions",
+					"snapshots",
+					"inbox",
+					"deliveries",
+					"jobs",
+				]) await this.createEntityTable(client, name);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_round_number
+					ON adpulse_rounds ((data->>'sessionId'), (data->>'roundNo'))`);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_strategy_version
+					ON adpulse_snapshots ((data->>'sessionId'), (data->>'version'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_jobs_due
+					ON adpulse_jobs ((data->>'status'), (data->>'runAt'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_jobs_lease
+					ON adpulse_jobs ((data->>'status'), (data->>'lockedUntil'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (1)",
+				);
 			}
-			await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_round_number
-        ON adpulse_rounds ((data->>'sessionId'), (data->>'roundNo'))`);
-			await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_strategy_version
-        ON adpulse_snapshots ((data->>'sessionId'), (data->>'version'))`);
-			await client.query(`CREATE INDEX IF NOT EXISTS adpulse_jobs_due
-        ON adpulse_jobs ((data->>'status'), (data->>'runAt'))`);
-			await client.query(`CREATE INDEX IF NOT EXISTS adpulse_jobs_lease
-        ON adpulse_jobs ((data->>'status'), (data->>'lockedUntil'))`);
+			if (!current.has(2)) {
+				for (const name of ["tasks", "taskVersions", "taskOperations"])
+					await this.createEntityTable(client, name);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_task_version
+					ON adpulse_taskVersions ((data->>'taskId'), (data->>'version'))`);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_task_operation_key
+					ON adpulse_taskOperations ((data->>'ownerId'), (data->>'operation'), (data->>'key'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (2)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");
@@ -54,6 +82,17 @@ export class PostgresStorage implements Storage {
 		} finally {
 			client.release();
 		}
+	}
+
+	private async createEntityTable(
+		client: PoolClient,
+		name: string,
+	): Promise<void> {
+		await client.query(`CREATE TABLE IF NOT EXISTS adpulse_${name} (
+			id text PRIMARY KEY,
+			data jsonb NOT NULL,
+			CONSTRAINT entity_id_matches CHECK (data->>'id' = id)
+		)`);
 	}
 
 	private tables(client: PoolClient): Transaction {

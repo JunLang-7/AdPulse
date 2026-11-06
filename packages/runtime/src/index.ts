@@ -6,6 +6,7 @@ import {
 } from "@adpluse/channels";
 import {
 	Orchestrator,
+	TaskService,
 	type PolicyEngine,
 	type Storage,
 	Worker,
@@ -37,10 +38,12 @@ export function compose(
 ) {
 	const channels = new ChannelRegistry(accounts);
 	const decisions = new Orchestrator(storage, policy);
+	const tasks = new TaskService(storage);
 	return {
 		storage,
 		channels,
 		decisions,
+		tasks,
 		worker: new Worker(storage, decisions, channels.outbound()),
 	};
 }
