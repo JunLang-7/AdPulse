@@ -27,40 +27,47 @@ export class FeishuInbound implements InboundChannel {
 		const timestamp = request.headers["x-lark-request-timestamp"];
 		const nonce = request.headers["x-lark-request-nonce"];
 		const signature = request.headers["x-lark-signature"];
-		if (
-			!timestamp ||
-			!nonce ||
-			!signature ||
-			!/^\d+$/.test(timestamp) ||
-			Math.abs(this.now() / 1000 - Number(timestamp)) > 300
-		) {
-			throw new WebhookError(401, "invalid signature timestamp");
+		// The platform omits the x-lark-* headers when it verifies a callback URL,
+		// so a missing signature is only acceptable for that challenge (see below).
+		const signed = Boolean(timestamp || nonce || signature);
+		if (signed) {
+			if (
+				!timestamp ||
+				!nonce ||
+				!signature ||
+				!/^\d+$/.test(timestamp) ||
+				Math.abs(this.now() / 1000 - Number(timestamp)) > 300
+			) {
+				throw new WebhookError(401, "invalid signature timestamp");
+			}
+			const expected = createHash("sha256")
+				.update(timestamp + nonce + this.config.encryptKey)
+				.update(request.rawBody)
+				.digest("hex");
+			if (!equal(signature, expected))
+				throw new WebhookError(401, "invalid signature");
 		}
-		const expected = createHash("sha256")
-			.update(timestamp + nonce + this.config.encryptKey)
-			.update(request.rawBody)
-			.digest("hex");
-		if (!equal(signature, expected))
-			throw new WebhookError(401, "invalid signature");
 		let payload: Record<string, unknown>;
+		let sealed = false;
 		try {
 			const envelope = object(
 				JSON.parse(Buffer.from(request.rawBody).toString("utf8")),
 			);
 			if (typeof envelope.encrypt === "string") {
-				const encrypted = Buffer.from(envelope.encrypt, "base64");
+				sealed = true;
+				const binary = Buffer.from(envelope.encrypt, "base64");
 				const key = createHash("sha256")
 					.update(this.config.encryptKey)
 					.digest();
 				const cipher = createDecipheriv(
 					"aes-256-cbc",
 					key,
-					encrypted.subarray(0, 16),
+					binary.subarray(0, 16),
 				);
 				payload = object(
 					JSON.parse(
 						Buffer.concat([
-							cipher.update(encrypted.subarray(16)),
+							cipher.update(binary.subarray(16)),
 							cipher.final(),
 						]).toString("utf8"),
 					),
@@ -74,7 +81,10 @@ export class FeishuInbound implements InboundChannel {
 		if (!payload || typeof payload !== "object")
 			throw new WebhookError(400, "invalid callback payload");
 		if (payload.type === "url_verification") {
+			// Successful decryption or a valid signature already proves the caller knows the
+			// shared secret; the token check stays for the plaintext handshake.
 			if (
+				(!signed && !sealed) ||
 				!equal(payload.token, this.config.verificationToken) ||
 				typeof payload.challenge !== "string"
 			) {
@@ -85,6 +95,7 @@ export class FeishuInbound implements InboundChannel {
 				response: jsonResponse({ challenge: payload.challenge }),
 			};
 		}
+		if (!signed) throw new WebhookError(401, "missing signature");
 		const header = object(payload.header);
 		if (
 			!header ||

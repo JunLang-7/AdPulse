@@ -27,6 +27,17 @@ const inbound = new FeishuInbound(config, () => time);
 interface TestRequest extends Omit<WebhookRequest, "headers"> {
 	headers: Record<string, string>;
 }
+/** Drops the x-lark-* headers, as the platform does when it verifies a callback URL. */
+function signed(request: TestRequest, keep: boolean): TestRequest {
+	if (!keep)
+		for (const name of [
+			"x-lark-request-timestamp",
+			"x-lark-request-nonce",
+			"x-lark-signature",
+		])
+			delete request.headers[name];
+	return request;
+}
 function request(payload: unknown, encrypt = false): TestRequest {
 	if (encrypt) {
 		const iv = randomBytes(16);
@@ -60,8 +71,7 @@ function request(payload: unknown, encrypt = false): TestRequest {
 		},
 	};
 }
-function event(actionRef = "ref") {
-	return {
+function event(actionRef = "ref") {	return {
 		schema: "2.0",
 		header: {
 			event_id: "e1",
@@ -115,6 +125,40 @@ test("Feishu rejects altered bodies, stale timestamps, wrong token and wrong ten
 		inbound.parse(request(wrongTenant)),
 		/invalid card action/,
 	);
+});
+test("Feishu answers the platform challenge that carries no signature headers", async () => {
+	// The developer console verifies a callback URL with an encrypted body and no
+	// x-lark-* headers, so rejecting unsigned requests blocked URL registration.
+	const challenge = request(
+		{ type: "url_verification", token: "verify", challenge: "challenge-2" },
+		true,
+	);
+	signed(challenge, false);
+	const parsed = await inbound.parse(challenge);
+	assert.equal(parsed.kind, "response");
+	assert.deepEqual(JSON.parse(parsed.response.body), {
+		challenge: "challenge-2",
+	});
+});
+test("Feishu still rejects unsigned plaintext challenges and unsigned card actions", async () => {
+	const plaintext = request({
+		type: "url_verification",
+		token: "verify",
+		challenge: "challenge-3",
+	});
+	signed(plaintext, false);
+	await assert.rejects(inbound.parse(plaintext), /invalid verification token/);
+
+	const action = request(event(), true);
+	signed(action, false);
+	await assert.rejects(inbound.parse(action), /missing signature/);
+
+	const tampered = request(
+		{ type: "url_verification", token: "wrong", challenge: "challenge-4" },
+		true,
+	);
+	signed(tampered, false);
+	await assert.rejects(inbound.parse(tampered), /invalid verification token/);
 });
 test("gateway commits inbound receipt before ACK; replay is deduplicated", async () => {
 	const f = fixture();
