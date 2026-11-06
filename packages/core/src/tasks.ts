@@ -72,6 +72,11 @@ function validateInput(input: TaskInput): void {
 		)
 			throw new Error(`invalid task rule ${key}`);
 	}
+	if (
+		input.rules.metricKey !== undefined &&
+		input.rules.metricKey !== "cost_per_consultation"
+	)
+		throw new Error("invalid task rule metricKey");
 	for (const key of ["metricDefinition", "currency", "unit"] as const) {
 		const value = input.rules[key];
 		if (value !== undefined && (typeof value !== "string" || !value.trim()))

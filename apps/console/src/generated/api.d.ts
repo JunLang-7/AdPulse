@@ -108,6 +108,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskId}/comparisons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["listTaskComparisons"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{taskId}/comparison-follow-ups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["listTaskComparisonFollowUps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/comparisons/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["evaluateComparison"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/comparison-follow-ups/{followUpId}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                followUpId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resolveComparisonFollowUp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions": {
         parameters: {
             query?: never;
@@ -204,6 +274,8 @@ export interface components {
         };
         TaskRules: {
             metricDefinition?: string;
+            /** @enum {string} */
+            metricKey?: "cost_per_consultation";
             currency?: string;
             unit?: string;
             statWindowDays?: number;
@@ -566,6 +638,175 @@ export interface components {
             expectedEvidenceVersion: number;
             reason: string;
             record: components["schemas"]["EvidenceRecordInput"];
+        };
+        EvidenceRef: {
+            evidenceId: string;
+            version: number;
+        };
+        FollowUpPeriod: {
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            timeZone: string;
+        };
+        ComparisonEvidenceRef: {
+            evidenceId: string;
+            version: number;
+            taskId: string;
+            taskVersion: number;
+        };
+        ComparisonInput: {
+            current: components["schemas"]["EvidenceRef"];
+            baseline?: components["schemas"]["EvidenceRef"];
+        };
+        ComparisonReason: {
+            /** @enum {string} */
+            code: "NO_BASELINE" | "TASK_MISMATCH" | "ACCOUNT_MISMATCH" | "SOURCE_MISSING" | "SCOPE_MISMATCH" | "METRICS_CONTRACT_MISMATCH" | "CURRENCY_MISMATCH" | "ATTRIBUTION_MISMATCH" | "TIME_ZONE_MISMATCH" | "PERIOD_INVALID" | "PERIOD_OVERLAP" | "PERIOD_NOT_ADJACENT" | "DURATION_MISMATCH" | "PERIOD_INCOMPLETE" | "CALLBACK_PENDING" | "CALLBACK_UNKNOWN" | "VALUE_MISSING" | "VALUE_NULL" | "VALUE_INVALID" | "RULE_METRIC_MISSING" | "RULE_METRIC_UNSUPPORTED" | "RULE_THRESHOLD_MISSING" | "RULE_CURRENCY_MISSING" | "RULE_UNIT_MISSING" | "RULE_WINDOW_MISSING" | "RULE_MINIMUMS_MISSING" | "RULE_CURRENCY_MISMATCH" | "RULE_UNIT_MISMATCH" | "WINDOW_MISMATCH" | "SAMPLE_BELOW_MINIMUM" | "ZERO_DENOMINATOR";
+            /** @enum {string} */
+            axis: "period_comparison" | "current_threshold" | "both";
+            /** @enum {string} */
+            metric?: "spendMinor" | "consultations" | "cost_per_consultation";
+            evidenceRef?: components["schemas"]["EvidenceRef"];
+            details?: {
+                [key: string]: string | number | boolean;
+            };
+            remediation: {
+                /** @enum {string} */
+                action: "provide_evidence" | "revise_task_rules" | "verify_source" | "none";
+                /** @enum {string} */
+                completionCriteria: "matching_complete_evidence_version" | "complete_task_rule_version" | "source_confirms_zero" | "manual_review";
+            };
+        };
+        ComparisonResult: {
+            id: string;
+            ownerId: string;
+            taskId: string;
+            current: components["schemas"]["ComparisonEvidenceRef"];
+            baseline?: components["schemas"]["ComparisonEvidenceRef"];
+            rulesRef: {
+                taskId: string;
+                version: number;
+            };
+            /** @enum {integer} */
+            evaluatorVersion: 1;
+            /** @enum {string} */
+            status: "comparable" | "incomparable" | "awaiting_supplementation" | "missing_baseline" | "temporarily_uncomputable";
+            canComparePeriods: boolean;
+            canEvaluateCurrentThreshold: boolean;
+            comparisons: {
+                spendMinor?: {
+                    baseline: number;
+                    current: number;
+                    delta: number;
+                };
+                consultations?: {
+                    baseline: number;
+                    current: number;
+                    delta: number;
+                };
+                costPerConsultation?: {
+                    baseline: components["schemas"]["RatioValue"];
+                    current: components["schemas"]["RatioValue"];
+                    /** @enum {string} */
+                    direction: "increased" | "decreased" | "unchanged";
+                };
+            };
+            thresholdEvaluation: {
+                /** @enum {string} */
+                status: "exceeded" | "not_exceeded" | "not_evaluated";
+                /** @enum {string} */
+                metricKey?: "cost_per_consultation";
+                value?: components["schemas"]["RatioValue"];
+                thresholdMinor?: number;
+                currency?: string;
+            };
+            reasons: components["schemas"]["ComparisonReason"][];
+            followUpIds: string[];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        RatioValue: {
+            numeratorMinor: number;
+            denominatorConsultations: number;
+        };
+        ComparisonResultList: {
+            items: components["schemas"]["ComparisonResult"][];
+        };
+        ComparisonFollowUp: {
+            id: string;
+            ownerId: string;
+            taskId: string;
+            taskVersion: number;
+            dedupKey: string;
+            /** @enum {string} */
+            reasonCode: "NO_BASELINE" | "TASK_MISMATCH" | "ACCOUNT_MISMATCH" | "SOURCE_MISSING" | "SCOPE_MISMATCH" | "METRICS_CONTRACT_MISMATCH" | "CURRENCY_MISMATCH" | "ATTRIBUTION_MISMATCH" | "TIME_ZONE_MISMATCH" | "PERIOD_INVALID" | "PERIOD_OVERLAP" | "PERIOD_NOT_ADJACENT" | "DURATION_MISMATCH" | "PERIOD_INCOMPLETE" | "CALLBACK_PENDING" | "CALLBACK_UNKNOWN" | "VALUE_MISSING" | "VALUE_NULL" | "VALUE_INVALID" | "RULE_METRIC_MISSING" | "RULE_METRIC_UNSUPPORTED" | "RULE_THRESHOLD_MISSING" | "RULE_CURRENCY_MISSING" | "RULE_UNIT_MISSING" | "RULE_WINDOW_MISSING" | "RULE_MINIMUMS_MISSING" | "RULE_CURRENCY_MISMATCH" | "RULE_UNIT_MISMATCH" | "WINDOW_MISMATCH" | "SAMPLE_BELOW_MINIMUM" | "ZERO_DENOMINATOR";
+            /** @enum {string} */
+            axis: "period_comparison" | "current_threshold" | "both";
+            /** @enum {string} */
+            metric?: "spendMinor" | "consultations" | "cost_per_consultation";
+            remediation: {
+                /** @enum {string} */
+                action: "provide_evidence" | "revise_task_rules" | "verify_source" | "none";
+                /** @enum {string} */
+                completionCriteria: "matching_complete_evidence_version" | "complete_task_rule_version" | "source_confirms_zero" | "manual_review";
+            };
+            evidenceRef?: components["schemas"]["EvidenceRef"];
+            anchorEvidenceRef?: components["schemas"]["EvidenceRef"];
+            /** @enum {string} */
+            resolutionKind: "evidence" | "task_version";
+            source?: {
+                platform: string;
+                accountRef: string;
+            };
+            /** @enum {string} */
+            expectedRelation?: "same_period" | "previous_adjacent" | "adjacent_pair";
+            minimumSpendMinor?: number;
+            minimumConsultations?: number;
+            scope?: components["schemas"]["EvidenceScope"];
+            period?: components["schemas"]["FollowUpPeriod"];
+            /** @enum {string} */
+            status: "open" | "completed";
+            comparisonResultIds: string[];
+            events: components["schemas"]["ComparisonFollowUpEvent"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ComparisonFollowUpEvent: {
+            /** @enum {string} */
+            type: "opened" | "observed" | "completed" | "reopened";
+            /** Format: date-time */
+            at: string;
+            resultId?: string;
+            material?: {
+                /** @enum {string} */
+                kind: "evidence";
+                evidenceId: string;
+                version: number;
+            } | {
+                /** @enum {string} */
+                kind: "task_version";
+                taskId: string;
+                version: number;
+            };
+        };
+        ComparisonFollowUpList: {
+            items: components["schemas"]["ComparisonFollowUp"][];
+        };
+        FollowUpResolutionInput: {
+            material: {
+                /** @enum {string} */
+                kind: "evidence";
+                evidenceId: string;
+                version: number;
+            } | {
+                /** @enum {string} */
+                kind: "task_version";
+                taskId: string;
+                version: number;
+            };
         };
         ChoiceReceipt: {
             inboxId: string;
@@ -967,6 +1208,212 @@ export interface operations {
                 };
             };
             /** @description Idempotency or version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listTaskComparisons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable comparison history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComparisonResultList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Task not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listTaskComparisonFollowUps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deduplicated follow-up history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComparisonFollowUpList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Task not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    evaluateComparison: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComparisonInput"];
+            };
+        };
+        responses: {
+            /** @description Immutable comparison evaluation */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComparisonResult"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Evidence or task not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    resolveComparisonFollowUp: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                followUpId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FollowUpResolutionInput"];
+            };
+        };
+        responses: {
+            /** @description Verified follow-up completion */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComparisonFollowUp"];
+                };
+            };
+            /** @description Material does not satisfy follow-up */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Follow-up or material not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Idempotency or state conflict */
             409: {
                 headers: {
                     [name: string]: unknown;

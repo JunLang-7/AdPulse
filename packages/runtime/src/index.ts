@@ -5,6 +5,7 @@ import {
 	WebhookError,
 } from "@adpluse/channels";
 import {
+	ComparisonService,
 	EvidenceService,
 	Orchestrator,
 	TaskService,
@@ -41,12 +42,14 @@ export function compose(
 	const decisions = new Orchestrator(storage, policy);
 	const tasks = new TaskService(storage);
 	const evidence = new EvidenceService(storage);
+	const comparisons = new ComparisonService(storage);
 	return {
 		storage,
 		channels,
 		decisions,
 		tasks,
 		evidence,
+		comparisons,
 		worker: new Worker(storage, decisions, channels.outbound()),
 	};
 }

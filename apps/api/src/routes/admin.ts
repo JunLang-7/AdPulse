@@ -1,7 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
+	EvidenceComparisonRequest,
 	EvidenceImportInput,
 	EvidenceRevisionInput,
+	FollowUpResolutionRequest,
 	Job,
 	TaskInput,
 	Transaction,
@@ -97,6 +99,7 @@ const taskInput = z
 		rules: z
 			.object({
 				metricDefinition: z.string().trim().min(1).max(500).optional(),
+				metricKey: z.enum(["cost_per_consultation"]).optional(),
 				currency: z.string().trim().min(1).max(16).optional(),
 				unit: z.string().trim().min(1).max(32).optional(),
 				statWindowDays: z.number().int().nonnegative().optional(),
@@ -214,6 +217,20 @@ const evidenceRevisionInput = z
 const choiceInput = z
 	.object({ actionRef: z.string().min(1).max(128) })
 	.strict();
+const evidenceRefInput = z
+	.object({ evidenceId: z.string().min(1).max(128), version: z.number().int().min(1) })
+	.strict();
+const comparisonInput = z
+	.object({ current: evidenceRefInput, baseline: evidenceRefInput.optional() })
+	.strict();
+const followUpResolutionInput = z
+	.object({
+		material: z.discriminatedUnion("kind", [
+			z.object({ kind: z.literal("evidence"), evidenceId: z.string().min(1).max(128), version: z.number().int().min(1) }).strict(),
+			z.object({ kind: z.literal("task_version"), taskId: z.string().min(1).max(128), version: z.number().int().min(1) }).strict(),
+		]),
+	})
+	.strict();
 const parseTaskInput = (body: unknown) => {
 	try {
 		return taskInput.parse(body) as unknown as TaskInput;
@@ -270,6 +287,62 @@ export async function handleAdmin(
 		}
 		const items = await runtime.evidence.import(userId, requestId(req), input);
 		return json(res, items.some((item) => item.status === "created") ? 201 : 200, { items });
+	}
+	if (path === "/api/comparisons/evaluate" && req.method === "POST") {
+		let input: EvidenceComparisonRequest;
+		try {
+			input = comparisonInput.parse(await readJson(req)) as EvidenceComparisonRequest;
+		} catch (error) {
+			if (error instanceof z.ZodError) {
+				const field = error.issues[0]?.path.join(".") || "body";
+				throw new HttpError(400, `invalid field: ${field}`);
+			}
+			throw error;
+		}
+		const result = await runtime.comparisons.evaluate(userId, requestId(req), input);
+		return json(res, 201, result);
+	}
+	const taskComparisons = path.match(/^\/api\/tasks\/([^/]+)\/comparisons$/);
+	if (taskComparisons?.[1] && req.method === "GET") {
+		return json(res, 200, {
+			items: await runtime.comparisons.listResultsForTask(
+				userId,
+				decodeURIComponent(taskComparisons[1]),
+			),
+		});
+	}
+	const taskComparisonFollowUps = path.match(
+		/^\/api\/tasks\/([^/]+)\/comparison-follow-ups$/,
+	);
+	if (taskComparisonFollowUps?.[1] && req.method === "GET") {
+		return json(res, 200, {
+			items: await runtime.comparisons.listFollowUpsForTask(
+				userId,
+				decodeURIComponent(taskComparisonFollowUps[1]),
+			),
+		});
+	}
+	const followUpResolution = path.match(
+		/^\/api\/comparison-follow-ups\/([^/]+)\/resolve$/,
+	);
+	if (followUpResolution?.[1] && req.method === "POST") {
+		let input: FollowUpResolutionRequest;
+		try {
+			input = followUpResolutionInput.parse(await readJson(req)) as FollowUpResolutionRequest;
+		} catch (error) {
+			if (error instanceof z.ZodError) {
+				const field = error.issues[0]?.path.join(".") || "body";
+				throw new HttpError(400, `invalid field: ${field}`);
+			}
+			throw error;
+		}
+		const result = await runtime.comparisons.resolveFollowUp(
+			userId,
+			decodeURIComponent(followUpResolution[1]),
+			requestId(req),
+			input,
+		);
+		return json(res, 200, result);
 	}
 	const taskEvidence = path.match(/^\/api\/tasks\/([^/]+)\/evidence$/);
 	if (taskEvidence?.[1] && req.method === "GET") {
