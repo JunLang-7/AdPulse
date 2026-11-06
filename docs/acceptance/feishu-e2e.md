@@ -43,8 +43,8 @@ bun run feishu:acceptance -- \
 - `platform.token` / `platform.tenant`：应用凭据有效，且凭据所属租户与 `FEISHU_TENANT_KEY` 一致。
 - `platform.bot`：机器人已启用；**发送权限仍需真机发送验证**，本脚本读不到 scope 列表。
 - `clock.skew`：与飞书服务器的时钟偏差，> 240s 会让所有回调 401。
-- `webhook.reachability` / `webhook.challenge`：公网地址返回 401（无签名）与自签 challenge 200，
-  证明反代送达原始字节。**自签不等于平台推送**，平台触发的 challenge 仍须第 3 步人工确认。
+- `webhook.reachability` / `webhook.challenge`：公网地址对未鉴权请求返回 401 或 403（被拒绝且不回 challenge），
+  自签 challenge 返回 200。两者合起来证明反代送达原始字节。**自签不等于平台推送**，平台触发的 challenge 仍须第 3 步人工确认。
 
 ## 3. 平台触发的 challenge、签名与解密
 

@@ -108,7 +108,7 @@ bun run feishu:acceptance -- --public-url https://你的域名/webhooks/feishu-i
 
 只读、脱敏探测：本地配置项、离线协议自检（真实 encrypt key 构造的验签/解密/身份拒绝/卡片动作）、
 平台连通（`tenant_access_token`、租户匹配、机器人启用状态、时钟偏差）、可选收件人、本机 `/healthz`，
-以及公网回调的 401 与自签 challenge 往返。它不发送业务消息、不写业务数据，也**不能替代真机验收**：
+以及公网回调的未鉴权拒绝（401/403）与自签 challenge 往返。它不发送业务消息、不写业务数据，也**不能替代真机验收**：
 平台触发的 challenge、单聊/群聊点击链路、失败与拒绝场景仍需人工执行。
 
 `fail` 需先处理，`skip` 不计入验收，退出码非 0 表示存在 `fail`。
