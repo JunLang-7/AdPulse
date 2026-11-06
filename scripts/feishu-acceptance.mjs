@@ -321,6 +321,37 @@ async function checkProtocol(inbound) {
 		);
 	}
 
+	// 平台校验回调地址时只发加密体、不带 x-lark-* 头，这里按同样形态复现。
+	const platformChallenge = challengePayload();
+	const platformRequest = signedRequest(platformChallenge, { encrypt: true });
+	for (const name of [
+		"x-lark-request-timestamp",
+		"x-lark-request-nonce",
+		"x-lark-signature",
+	])
+		delete platformRequest.headers[name];
+	try {
+		const result = await parse(platformRequest);
+		const echo = JSON.parse(result.response.body).challenge;
+		record(
+			"protocol.challenge",
+			"平台式 challenge（无签名头）",
+			echo === platformChallenge.challenge ? "ok" : "fail",
+			echo === platformChallenge.challenge
+				? "加密体且无 x-lark-* 头时仍应答 challenge"
+				: "返回的 challenge 与请求不一致",
+			"这项失败会让后台保存回调地址时提示 Challenge Code 未返回",
+		);
+	} catch (error) {
+		record(
+			"protocol.challenge",
+			"平台式 challenge（无签名头）",
+			"fail",
+			`${error.message}（status=${status(error) ?? "-"}）`,
+			"平台校验回调地址时不带签名头：入站需允许已解密的 challenge 无签名",
+		);
+	}
+
 	const rejections = [];
 	const badSignature = signedRequest(challengePayload(), {
 		signature: "0".repeat(64),
