@@ -6,6 +6,7 @@ import {
 	ComparisonValidationError,
 	EvidenceConflictError,
 	EvidenceValidationError,
+	InvestigationAlertValidationError,
 	TaskInputValidationError,
 } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
@@ -58,6 +59,10 @@ export function createApi(
 				error instanceof ComparisonConflictError
 			)
 				return json(res, 409, { error: error.message });
+			if (error instanceof InvestigationAlertValidationError) {
+				const status = ["comparison result not found", "task not found", "comparison evidence unavailable", "comparison task unavailable"].includes(error.message) ? 404 : 400;
+				return json(res, status, { error: error.message });
+			}
 			if (error instanceof ComparisonValidationError) {
 				const status = ["task not found", "evidence not found", "follow-up not found", "task version not found"].includes(error.message)
 					? 404

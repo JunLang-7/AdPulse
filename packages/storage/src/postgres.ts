@@ -110,6 +110,16 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (4)",
 				);
 			}
+			if (!current.has(5)) {
+				await this.createEntityTable(client, "investigationAlerts");
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_investigation_alert_logical_gap
+					ON adpulse_investigationAlerts ((data->>'ownerId'), (data->>'logicalKey'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_investigation_alert_task
+					ON adpulse_investigationAlerts ((data->>'ownerId'), (data->>'taskId'), (data->>'updatedAt'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (5)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

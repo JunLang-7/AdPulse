@@ -11,6 +11,7 @@ export const tableNames = [
 	"comparisonResults",
 	"comparisonOperations",
 	"comparisonFollowUps",
+	"investigationAlerts",
 	"sessions",
 	"rounds",
 	"actions",

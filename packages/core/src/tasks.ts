@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { validateStrategy, type Strategy } from "./domain/strategy.js";
 import type { Storage } from "./ports/storage.js";
+import { invalidateAlertsForTaskVersion } from "./investigation-alerts.js";
 import type { Task, TaskVersion } from "./state/model.js";
 
 export interface TaskInput {
@@ -174,6 +175,7 @@ export class TaskService {
 				taskId,
 				taskVersion: nextVersion,
 			});
+			await invalidateAlertsForTaskVersion(tx, ownerId, taskId, nextVersion, this.now);
 			return version;
 		});
 	}

@@ -361,6 +361,76 @@ test("comparison API requires explicit evidence versions and exposes immutable r
   assert.equal((await resolve.json()).status, "completed");
 });
 
+test("saved comparison evaluates threshold alerts and task alert history is owner-scoped", async (t) => {
+  const { runtime, url, headers } = await serve(t);
+  const taskResponse = await fetch(`${url}/api/tasks`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify({
+      product: "产品 A",
+      strategy: { objective: "咨询", audience: [], channels: {}, sellingPoints: [] },
+      observation: {},
+      rules: {
+        metricDefinition: "单次咨询成本",
+        metricKey: "cost_per_consultation",
+        currency: "CNY",
+        unit: "分",
+        statWindowDays: 1,
+        alertThresholdMinor: 100,
+        minimumSpendMinor: 0,
+        minimumConsultations: 0,
+      },
+    }),
+  });
+  const task = await taskResponse.json();
+  const evidenceResponse = await fetch(`${url}/api/evidence/imports`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify({
+      schemaVersion: 1,
+      taskRef: { taskId: task.taskId, taskVersion: 1 },
+      records: [{
+        source: { platform: "web-report", accountRef: "account-1", reportRef: "threshold-report" },
+        scope: { planRef: "plan-1", campaignRefs: ["campaign-1"] },
+        period: {
+          startsAt: "2026-01-01T00:00:00+08:00",
+          endsAt: "2026-01-02T00:00:00+08:00",
+          timeZone: "Asia/Shanghai",
+          completeness: "complete",
+        },
+        metricsContract: {
+          spendMinor: { definition: "消耗", formula: "原始值换算为分", sourceField: "spend" },
+          consultations: { definition: "咨询数", formula: "报表数", sourceField: "consultations" },
+        },
+        currency: { code: "CNY", minorUnit: "分", minorUnitsPerMajor: 100 },
+        attribution: { model: "click", windowDays: 7 },
+        callbackStatus: "complete",
+        rawValues: { spend: "20.00", consultations: 10 },
+        values: { spendMinor: 2_000, consultations: 10 },
+      }],
+    }),
+  });
+  assert.equal(evidenceResponse.status, 201);
+  const evidence = (await evidenceResponse.json()).items[0];
+  const comparisonResponse = await fetch(`${url}/api/comparisons/evaluate`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify({ current: { evidenceId: evidence.evidenceId, version: evidence.version } }),
+  });
+  assert.equal(comparisonResponse.status, 201);
+  const comparison = await comparisonResponse.json();
+  assert.equal(comparison.status, "missing_baseline");
+  assert.equal(comparison.thresholdEvaluation.status, "exceeded");
+  const response = await fetch(`${url}/api/tasks/${task.taskId}/investigation-alerts`, { headers });
+  assert.equal(response.status, 200);
+  const listed = await response.json();
+  assert.equal(listed.items.length, 1);
+  assert.equal(listed.items[0].current.comparisonResultId, comparison.id);
+  assert.equal(listed.items[0].current.canComparePeriods, false);
+  assert.equal(listed.items[0].status, "open");
+  assert.equal((await fetch(`${url}/api/tasks/not-found/investigation-alerts`, { headers })).status, 404);
+});
+
 test("sessions freeze the referenced task version and incomplete rules disable monetary suggestions", async (t) => {
   const { runtime, url, headers } = await serve(t);
   const taskBody = {
