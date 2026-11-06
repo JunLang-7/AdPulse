@@ -97,6 +97,27 @@ test("Feishu inbound verifies bytes, decrypts and normalizes a card action", asy
 	});
 	assert.equal(JSON.parse(parsed.response.body).toast.type, "info");
 });
+test("Feishu verifies Go-format timestamps without weakening freshness or signatures", async () => {
+	const make = (timestamp: string) => {
+		const r = request(event(), true);
+		r.headers["x-lark-request-timestamp"] = timestamp;
+		r.headers["x-lark-signature"] = createHash("sha256")
+			.update(timestamp + "nonce" + config.encryptKey)
+			.update(r.rawBody)
+			.digest("hex");
+		return r;
+	};
+	const valid = "2026-01-01 08:00:00.000000000 +0800 CST m=+123.456";
+	assert.equal((await inbound.parse(make(valid))).kind, "choice");
+	assert.equal((await inbound.parse(make("2025-12-31 19:00:00 -0500 EST"))).kind, "choice");
+	await assert.rejects(inbound.parse(make("2026-01-01 07:54:59 +0800 CST")), /timestamp/);
+	await assert.rejects(inbound.parse(make("2026-01-01 08:05:01 +0800 CST")), /timestamp/);
+	await assert.rejects(inbound.parse(make("2026-02-30 08:00:00 +0800 CST")), /timestamp/);
+	await assert.rejects(inbound.parse(make(valid + " extra")), /timestamp/);
+	const altered = make(valid);
+	altered.headers["x-lark-signature"] = "0".repeat(64);
+	await assert.rejects(inbound.parse(altered), /invalid signature/);
+});
 test("Feishu challenge is request-specific and never creates a business event", async () => {
 	const parsed = await inbound.parse(
 		request(
