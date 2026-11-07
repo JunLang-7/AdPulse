@@ -75,6 +75,24 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (2)",
 				);
 			}
+			if (!current.has(3)) {
+				for (const name of [
+					"users",
+					"identityBindings",
+					"webSessions",
+					"loginTransactions",
+				]) await this.createEntityTable(client, name);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_identity_binding_scope
+					ON adpulse_identityBindings ((data->>'platform'), (data->>'applicationId'),
+					(data->>'tenantId'), (data->>'idType'), (data->>'externalId'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_web_sessions_user
+					ON adpulse_webSessions ((data->>'userId'), (data->>'expiresAt'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_login_transactions_expiry
+					ON adpulse_loginTransactions ((data->>'status'), (data->>'expiresAt'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (3)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

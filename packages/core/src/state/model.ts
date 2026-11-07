@@ -12,6 +12,42 @@ import type {
 } from "../ports/channel.js";
 import type { Candidate } from "../ports/policyEngine.js";
 
+export interface User {
+	id: string;
+	status: "active" | "disabled";
+	createdAt: string;
+}
+export interface IdentityBinding {
+	id: string;
+	platform: string;
+	applicationId: string;
+	tenantId: string;
+	idType: string;
+	externalId: string;
+	userId: string;
+	status: "active" | "revoked";
+	verifiedAt: string;
+}
+export interface WebSession {
+	/** SHA-256 digest of the opaque cookie value; never store the cookie itself. */
+	id: string;
+	userId: string;
+	identityBindingId: string;
+	createdAt: string;
+	expiresAt: string;
+	revokedAt?: string;
+}
+export interface LoginTransaction {
+	/** SHA-256 digest of the one-time OAuth state. */
+	id: string;
+	browserBindingHash: string;
+	codeVerifier: string;
+	returnTo: string;
+	status: "pending" | "consumed" | "expired";
+	createdAt: string;
+	expiresAt: string;
+	consumedAt?: string;
+}
 export interface Task {
 	id: string;
 	ownerId: string;
@@ -125,6 +161,10 @@ export interface Job {
 	lastError?: string;
 }
 export interface Entities {
+	users: User;
+	identityBindings: IdentityBinding;
+	webSessions: WebSession;
+	loginTransactions: LoginTransaction;
 	tasks: Task;
 	taskVersions: TaskVersion;
 	taskOperations: TaskOperation;

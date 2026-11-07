@@ -25,15 +25,15 @@
 
 ## 2. 启动与自检
 
-```bash
+```powershell
 bun install --frozen-lockfile
 bun run build
 bun run start                 # 另一个终端；DEMO_MODE=0 + DATABASE_URL
 
-bun run feishu:acceptance -- \
-  --public-url https://你的域名/webhooks/feishu-internal \
-  --chat-id oc_xxx --open-id ou_xxx
+bun run feishu:acceptance -- --public-url https://你的域名/webhooks/feishu-internal --chat-id oc_xxx --open-id ou_xxx
 ```
+
+POSIX shell 可用反斜杠续行；这里使用单行以便在 Windows PowerShell 中直接执行。
 
 判读：
 
@@ -65,9 +65,11 @@ bun run feishu:acceptance -- \
 ## 4. 单聊全链路（卡片 → 点击 → 持久化 → 处理 → 确认）
 
 ```bash
-TOKEN=$CONSOLE_TOKEN
+# 先在浏览器完成飞书登录；安全地将 adpulse_session cookie 值注入本地环境。
+SESSION_COOKIE=$ADPULSE_SESSION_COOKIE
 curl -sS -X POST http://127.0.0.1:3000/api/sessions \
-  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -H "Cookie: adpulse_session=$SESSION_COOKIE" -H "Origin: $PUBLIC_ORIGIN" \
+  -H 'content-type: application/json' \
   -H "idempotency-key: $(uuidgen | tr 'A-Z' 'a-z')" \
   -d '{
     "recipient": {"accountId": "feishu-internal", "kind": "user", "externalId": "ou_真实用户"},
@@ -77,6 +79,26 @@ curl -sS -X POST http://127.0.0.1:3000/api/sessions \
     "signal": {"id": "<uuid>", "title": "联调信号", "summary": "合成内容", "evidence": [{"label": "来源", "value": "本地联调"}]},
     "expiresAt": "<1 小时后>"
   }'
+```
+
+```powershell
+# 先在浏览器完成飞书登录；从开发者工具复制 adpulse_session 值，不要提交或写入脚本。
+$sessionCookie = "粘贴 adpulse_session 的值"
+$publicOrigin = "http://localhost:5173"
+$body = @{
+  recipient = @{ accountId = "feishu-internal"; kind = "user"; externalId = "ou_真实用户" }
+  allowedActorIds = @("ou_真实用户")
+  strategy = @{ objective = "联调用方案"; audience = @(); channels = @{}; sellingPoints = @() }
+  limits = @{ maxBudgetChangeRatio = 0.2; maxBidChangeRatio = 0.2 }
+  signal = @{ id = [guid]::NewGuid().ToString(); title = "联调信号"; summary = "合成内容"; evidence = @(@{ label = "来源"; value = "本地联调" }) }
+  expiresAt = "<1 小时后>"
+} | ConvertTo-Json -Depth 6
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:3000/api/sessions `
+  -Headers @{
+    Cookie = "adpulse_session=$sessionCookie"
+    Origin = $publicOrigin
+    "Idempotency-Key" = [guid]::NewGuid().ToString()
+  } -ContentType "application/json" -Body $body
 ```
 
 预期与判读

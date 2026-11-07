@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import test from "node:test";
 import { promisify } from "node:util";
 import type { ChoiceCommand } from "../packages/core/dist/index.js";
@@ -106,4 +108,89 @@ test("PostgreSQL: serializable decisions, rollback, reconnect and SKIP LOCKED cl
 	]);
 	assert.ok(claims.every(Boolean));
 	assert.notEqual(claims[0]!.id, claims[1]!.id);
+});
+
+test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse one user", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async (t) => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const storage = PostgresStorage.connect(databaseUrl);
+	const reconnected = PostgresStorage.connect(databaseUrl);
+	t.after(async () => {
+		await storage.close();
+		await reconnected.close();
+	});
+	await storage.initialize();
+	await storage.initialize();
+
+	const { Pool } = createRequire(
+		new URL("../packages/storage/package.json", import.meta.url),
+	)("pg") as { Pool: new (options: { connectionString: string }) => {
+		query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
+		end(): Promise<void>;
+	} };
+	const admin = new Pool({ connectionString: databaseUrl });
+	t.after(() => admin.end());
+	const migrations = await admin.query(
+		"SELECT version FROM adpulse_schema_migrations ORDER BY version",
+	);
+	assert.deepEqual(
+		migrations.rows.map((row) => Number(row.version)),
+		[1, 2, 3],
+	);
+	const indexes = await admin.query(
+		`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()
+		AND indexname IN ('adpulse_identity_binding_scope', 'adpulse_web_sessions_user',
+		'adpulse_login_transactions_expiry') ORDER BY indexname`,
+	);
+	assert.deepEqual(
+		indexes.rows.map((row) => row.indexname),
+		[
+			"adpulse_identity_binding_scope",
+			"adpulse_login_transactions_expiry",
+			"adpulse_web_sessions_user",
+		],
+	);
+
+	const { AuthenticationService } = await import("../packages/core/dist/index.js");
+	const auth = new AuthenticationService(storage);
+	const scope = crypto.randomUUID();
+	const identity = {
+		platform: "feishu",
+		applicationId: `cli_${scope}`,
+		tenantId: `tenant-${scope}`,
+		idType: "open_id",
+		externalId: `ou_${scope}`,
+	};
+	const now = new Date().toISOString();
+	const sessions = await Promise.all(
+		Array.from({ length: 12 }, (_, index) =>
+			auth.createWebSession(
+				identity,
+				createHash("sha256").update(`${scope}:${index}`).digest("hex"),
+				now,
+			),
+		),
+	);
+	assert.equal(new Set(sessions.map((session) => session.userId)).size, 1);
+	const bindings = await storage.transaction((tx) => tx.identityBindings.all());
+	assert.equal(
+		bindings.filter((binding) => binding.externalId === identity.externalId).length,
+		1,
+	);
+	assert.equal(
+		(
+			await reconnected.transaction((tx) => tx.users.all())
+		).filter((user) => user.id === sessions[0].userId).length,
+		1,
+		"the session user survives a new pool",
+	);
+	assert.equal(
+		(
+			await reconnected.transaction((tx) =>
+				tx.webSessions.get(sessions[0].sessionId),
+			)
+		)?.userId,
+		sessions[0].userId,
+	);
 });
