@@ -1,6 +1,7 @@
 import type { Entities, Job, Storage, Transaction } from "@adpluse/core";
 
 export const tableNames = [
+	"sourceStates",
 	"sourceRuns",
 	"sourceSnapshots",
 	"sourceItems",

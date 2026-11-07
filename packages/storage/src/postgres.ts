@@ -122,6 +122,7 @@ export class PostgresStorage implements Storage {
 			}
 			if (!current.has(6)) {
 				for (const name of [
+					"sourceStates",
 					"sourceRuns",
 					"sourceSnapshots",
 					"sourceItems",

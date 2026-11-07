@@ -456,7 +456,17 @@ export interface SourceItem {
 	contentScope: "title_link_only";
 	status: "active" | "purged";
 }
+export interface SourceState {
+	id: string;
+	sourceKey: string;
+	status: "active" | "stopped";
+	stoppedAt: string | null;
+	stoppedReason: string | null;
+	resumedAt: string | null;
+	resumedBy: string | null;
+}
 export interface Entities {
+	sourceStates: SourceState;
 	sourceRuns: SourceRun;
 	sourceSnapshots: SourceSnapshot;
 	sourceItems: SourceItem;

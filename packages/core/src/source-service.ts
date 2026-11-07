@@ -1,6 +1,11 @@
 import * as crypto from "node:crypto";
 import type { Storage } from "./ports/storage.js";
-import type { SourceItem, SourceRun, SourceSnapshot } from "./state/model.js";
+import type {
+	SourceItem,
+	SourceRun,
+	SourceSnapshot,
+	SourceState,
+} from "./state/model.js";
 import {
 	SOURCE_DEFINITIONS,
 	contentHash,
@@ -135,6 +140,18 @@ function robotsUrlFor(source: SourceDefinition): string {
 	return url.toString();
 }
 
+function stopped(sourceKey: string, run: SourceRun): SourceState {
+	return {
+		id: sourceKey,
+		sourceKey,
+		status: "stopped",
+		stoppedAt: run.finishedAt,
+		stoppedReason: run.errorReason,
+		resumedAt: null,
+		resumedBy: null,
+	};
+}
+
 export class SourceService {
 	constructor(
 		private storage: Storage,
@@ -196,7 +213,10 @@ export class SourceService {
 				configVersion: source.configVersion,
 				...partial,
 			};
-			await this.storage.transaction((tx) => tx.sourceRuns.put(run));
+			await this.storage.transaction(async (tx) => {
+				await tx.sourceRuns.put(run);
+				if (run.outcome === "stopped") await tx.sourceStates.put(stopped(source.key, run));
+			});
 			return {
 				runId,
 				acquired: true,
@@ -225,16 +245,30 @@ export class SourceService {
 			const items = (await tx.sourceItems.all()).filter(
 				(item) => item.sourceKey === source.key,
 			);
+			const control = await tx.sourceStates.get(source.key);
 			return {
 				runsToday,
 				cachedRobots,
 				items,
+				control,
 				lastStartedAt: runs[0]?.startedAt ?? null,
 			};
 		});
 
 		// One robots.txt fetch per day plus list runs must stay within the limit.
 		const listRunBudget = source.dailyRequestLimit - 1;
+		// A stopped source never retries on its own: only resume() clears this.
+		if (state.control?.status === "stopped")
+			return {
+				runId: "",
+				acquired: true,
+				outcome: "stopped",
+				created: 0,
+				updated: 0,
+				skippedPurged: 0,
+				reason: state.control.stoppedReason ?? "source stopped",
+			};
+
 		if (trigger === "manual" && state.lastStartedAt) {
 			const elapsed = Date.parse(now) - Date.parse(state.lastStartedAt);
 			if (Number.isFinite(elapsed) && elapsed < MIN_MANUAL_INTERVAL_MS)
@@ -440,6 +474,44 @@ export class SourceService {
 				await tx.sourceSnapshots.delete(snapshot.id);
 			}
 			return purged;
+		});
+	}
+
+	/** Clears a stop. Contents stay purged until a new run re-ingests them. */
+	async resume(
+		sourceKey: string,
+		now: string,
+		operator: string,
+	): Promise<SourceState> {
+		if (!SOURCE_DEFINITIONS[sourceKey]) throw new UnknownSourceError(sourceKey);
+		return this.storage.transaction(async (tx) => {
+			const previous = await tx.sourceStates.get(sourceKey);
+			const next: SourceState = {
+				id: sourceKey,
+				sourceKey,
+				status: "active",
+				stoppedAt: null,
+				stoppedReason: null,
+				resumedAt: now,
+				resumedBy: operator,
+			};
+			await tx.sourceStates.put(next);
+			if (previous?.status === "stopped")
+				await tx.sourceRuns.put({
+					id: `${sourceKey}:resume:${now}`,
+					sourceKey,
+					startedAt: now,
+					finishedAt: now,
+					httpStatus: null,
+					robotsState: "allow",
+					bytes: 0,
+					itemCount: 0,
+					outcome: "ok",
+					snapshotComplete: false,
+					configVersion: `resume:${operator}`,
+					errorReason: null,
+				});
+			return next;
 		});
 	}
 

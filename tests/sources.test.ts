@@ -423,3 +423,32 @@ test("an unexpected redirect is recorded as an http error", async () => {
 	assert.equal(result.outcome, "http_error");
 	assert.match(result.reason ?? "", /redirect/);
 });
+
+test("a stopped source does not retry until an operator resumes it", async () => {
+	const storage = new MemoryStorage();
+	const blocked = new FakeFetcher({
+		"https://www.haier.com/robots.txt": { status: 404, bytes: 0, body: "" },
+		[haier.listUrl]: { status: 429, bytes: 0, body: "" },
+	});
+	const svc = service(storage, blocked);
+	assert.equal((await svc.sync("haier_news", NOW)).outcome, "stopped");
+
+	const callsAfterStop = blocked.calls.length;
+	const again = await svc.sync("haier_news", "2026-11-07T09:00:00.000Z");
+	assert.equal(again.outcome, "stopped");
+	assert.equal(blocked.calls.length, callsAfterStop, "no network while stopped");
+
+	const resumed = await svc.resume("haier_news", "2026-11-07T10:00:00.000Z", "ops@example");
+	assert.equal(resumed.status, "active");
+	assert.equal(resumed.resumedBy, "ops@example");
+
+	const healthy = new FakeFetcher({
+		"https://www.haier.com/robots.txt": { status: 404, bytes: 0, body: "" },
+		[haier.listUrl]: listOf(HAIER_LIST),
+	});
+	const afterResume = await service(storage, healthy).sync(
+		"haier_news",
+		"2026-11-07T11:00:00.000Z",
+	);
+	assert.equal(afterResume.outcome, "ok");
+});
