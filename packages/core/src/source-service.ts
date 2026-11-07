@@ -518,6 +518,16 @@ export class SourceService {
 		});
 	}
 
+	/** Newest run for scheduler catch-up checks. */
+	async lastRun(sourceKey: string): Promise<SourceRun | null> {
+		return this.storage.transaction(async (tx) => {
+			const runs = (await tx.sourceRuns.all())
+				.filter((run) => run.sourceKey === sourceKey)
+				.sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+			return runs[0] ?? null;
+		});
+	}
+
 	async listItems(sourceKey: string): Promise<SourceItem[]> {
 		return this.storage.transaction(async (tx) =>
 			(await tx.sourceItems.all()).filter(

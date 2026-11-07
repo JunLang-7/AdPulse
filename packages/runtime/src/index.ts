@@ -66,6 +66,7 @@ export {
 	isAllowedContentType,
 	isPublicAddress,
 } from "./source-fetch.js";
+export { runSources } from "./source-runner.js";
 
 /** Derived from the allowlisted definitions so the two cannot drift. */
 const SOURCE_HOSTS = [

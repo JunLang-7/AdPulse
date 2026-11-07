@@ -174,3 +174,35 @@ export function isWithinItemBounds(
 ): boolean {
 	return count >= source.minItems && count <= source.maxItems;
 }
+
+/** Polling hours in Asia/Shanghai. Keep in sync with #41. */
+export const SCHEDULE_HOURS = [8, 12, 16, 20] as const;
+
+/**
+ * Most recent scheduled slot at or before `now`. Used to catch up after a
+ * restart without ever running twice for the same slot.
+ */
+export function latestDueSlot(
+	now: string,
+	hours: readonly number[] = SCHEDULE_HOURS,
+	offsetHours = 8,
+): string {
+	const shifted = new Date(Date.parse(now) + offsetHours * 3_600_000);
+	const year = shifted.getUTCFullYear();
+	const month = shifted.getUTCMonth();
+	const day = shifted.getUTCDate();
+	const hour = shifted.getUTCHours();
+	const ordered = [...hours].sort((left, right) => right - left);
+	const due = ordered.find((candidate) => candidate <= hour);
+	const slotHour = due ?? ordered[0] ?? 0;
+	const base = Date.UTC(year, month, day, slotHour) - offsetHours * 3_600_000;
+	return new Date(due === undefined ? base - 86_400_000 : base).toISOString();
+}
+
+export function isSlotPending(
+	lastStartedAt: string | null,
+	slot: string,
+): boolean {
+	if (!lastStartedAt) return true;
+	return Date.parse(lastStartedAt) < Date.parse(slot);
+}

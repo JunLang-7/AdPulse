@@ -10,6 +10,8 @@ import {
 	SourceFetchError,
 	SourceService,
 	MIN_MANUAL_INTERVAL_MS,
+	isSlotPending,
+	latestDueSlot,
 	contentHash,
 	isWithinItemBounds,
 	normalizeItemUrl,
@@ -467,4 +469,22 @@ test("only markup payloads are accepted", () => {
 	assert.equal(isAllowedContentType(undefined), true);
 	assert.equal(isAllowedContentType("image/png"), false);
 	assert.equal(isAllowedContentType("application/pdf"), false);
+});
+
+test("scheduled slots follow Asia/Shanghai and never replay old ones", () => {
+	// 11:30 Beijing -> the 08:00 slot of the same day.
+	assert.equal(latestDueSlot("2026-11-07T03:30:00.000Z"), "2026-11-07T00:00:00.000Z");
+	// 08:30 Beijing -> the 08:00 slot.
+	assert.equal(latestDueSlot("2026-11-07T00:30:00.000Z"), "2026-11-07T00:00:00.000Z");
+	// 21:00 Beijing -> the 20:00 slot.
+	assert.equal(latestDueSlot("2026-11-07T13:00:00.000Z"), "2026-11-07T12:00:00.000Z");
+	// 04:00 Beijing -> nothing due today yet, falls back to yesterday 20:00.
+	assert.equal(latestDueSlot("2026-11-06T20:00:00.000Z"), "2026-11-06T12:00:00.000Z");
+});
+
+test("only a run older than the current slot is due", () => {
+	const slot = "2026-11-07T00:00:00.000Z";
+	assert.equal(isSlotPending(null, slot), true);
+	assert.equal(isSlotPending("2026-11-07T00:00:01.000Z", slot), false);
+	assert.equal(isSlotPending("2026-11-06T20:00:00.000Z", slot), true);
 });
