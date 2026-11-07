@@ -1,6 +1,9 @@
 import type { Entities, Job, Storage, Transaction } from "@adpluse/core";
 
 export const tableNames = [
+	"sourceRuns",
+	"sourceSnapshots",
+	"sourceItems",
 	"tasks",
 	"taskVersions",
 	"taskOperations",
@@ -28,6 +31,7 @@ export class MemoryStorage implements Storage {
 		tableNames.map((name) => [name, new Map()]),
 	) as Data;
 	private tail: Promise<void> = Promise.resolve();
+	private running = new Set<string>();
 
 	async transaction<T>(work: (tx: Transaction) => Promise<T>): Promise<T> {
 		const previous = this.tail;
@@ -84,5 +88,19 @@ export class MemoryStorage implements Storage {
 			await tx.jobs.put(claimed);
 			return claimed;
 		});
+	}
+
+	/** In-process only: single-process deployments and tests. */
+	async runExclusive<T>(
+		key: string,
+		work: () => Promise<T>,
+	): Promise<{ acquired: boolean; value: T | null }> {
+		if (this.running.has(key)) return { acquired: false, value: null };
+		this.running.add(key);
+		try {
+			return { acquired: true, value: await work() };
+		} finally {
+			this.running.delete(key);
+		}
 	}
 }

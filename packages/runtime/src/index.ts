@@ -9,12 +9,14 @@ import {
 	EvidenceService,
 	InvestigationAlertService,
 	Orchestrator,
+	SourceService,
 	TaskService,
 	type PolicyEngine,
 	type Storage,
 	Worker,
 } from "@adpluse/core";
 import { MemoryStorage, PostgresStorage } from "@adpluse/storage";
+import { HttpSourceFetcher } from "./source-fetch.js";
 
 export const reviewPolicy: PolicyEngine = {
 	async propose({ signal, roundNo }) {
@@ -57,6 +59,24 @@ export function compose(
 	};
 }
 export type Runtime = ReturnType<typeof compose>;
+
+export { HttpSourceFetcher, isPublicAddress } from "./source-fetch.js";
+
+const SOURCE_HOSTS = ["www.weichai.com", "www.haier.com"];
+
+/** Collection stays disabled unless SOURCES_ENABLED=1 (Gate 0 in issue #41). */
+export function createSourceService(
+	storage: Storage,
+	env: Record<string, string | undefined> = process.env,
+): SourceService {
+	return new SourceService(
+		storage,
+		new HttpSourceFetcher(SOURCE_HOSTS),
+		{ enabled: env.SOURCES_ENABLED === "1" },
+	);
+}
+
+
 
 export async function fromEnvironment(
 	env: Record<string, string | undefined> = process.env,

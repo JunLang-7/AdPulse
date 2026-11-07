@@ -421,7 +421,45 @@ export interface Job {
 	lockedUntil?: string;
 	lastError?: string;
 }
+export interface SourceRun {
+	id: string;
+	sourceKey: string;
+	startedAt: string;
+	finishedAt: string | null;
+	httpStatus: number | null;
+	robotsState: "allow" | "absent" | "disallow" | "blocked";
+	bytes: number;
+	itemCount: number;
+	outcome: "ok" | "parse_failed" | "http_error" | "blocked" | "stopped";
+	snapshotComplete: boolean;
+	configVersion: string;
+	errorReason: string | null;
+}
+export interface SourceSnapshot {
+	id: string;
+	runId: string;
+	sourceKey: string;
+	itemKey: string;
+	contentHash: string;
+	createdAt: string;
+}
+export interface SourceItem {
+	id: string;
+	sourceKey: string;
+	itemKey: string;
+	title: string;
+	itemUrl: string;
+	publishedAt: string | null;
+	firstSeenAt: string;
+	lastSeenAt: string;
+	titleUpdatedAt: string | null;
+	contentScope: "title_link_only";
+	status: "active" | "purged";
+}
 export interface Entities {
+	sourceRuns: SourceRun;
+	sourceSnapshots: SourceSnapshot;
+	sourceItems: SourceItem;
 	tasks: Task;
 	taskVersions: TaskVersion;
 	taskOperations: TaskOperation;

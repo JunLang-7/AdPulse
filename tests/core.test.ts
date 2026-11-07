@@ -131,6 +131,7 @@ test("failure mid-transaction rolls back event consumption and patch; retry succ
 	let fail = false;
 	const storage: Storage = {
 		claimJob: (now, leaseMs) => base.claimJob(now, leaseMs),
+		runExclusive: (key, work) => base.runExclusive(key, work),
 		transaction: (work) =>
 			base.transaction((tx) =>
 				work({
