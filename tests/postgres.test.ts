@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import test from "node:test";
 import { promisify } from "node:util";
 import type { ChoiceCommand } from "../packages/core/dist/index.js";
@@ -106,4 +108,219 @@ test("PostgreSQL: serializable decisions, rollback, reconnect and SKIP LOCKED cl
 	]);
 	assert.ok(claims.every(Boolean));
 	assert.notEqual(claims[0]!.id, claims[1]!.id);
+});
+
+test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse one user", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async (t) => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const storage = PostgresStorage.connect(databaseUrl);
+	const reconnected = PostgresStorage.connect(databaseUrl);
+	t.after(async () => {
+		await storage.close();
+		await reconnected.close();
+	});
+	await storage.initialize();
+	await storage.initialize();
+
+	const { Pool } = createRequire(
+		new URL("../packages/storage/package.json", import.meta.url),
+	)("pg") as { Pool: new (options: { connectionString: string }) => {
+		query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
+		end(): Promise<void>;
+	} };
+	const admin = new Pool({ connectionString: databaseUrl });
+	t.after(() => admin.end());
+	const migrations = await admin.query(
+		"SELECT version FROM adpulse_schema_migrations ORDER BY version",
+	);
+	assert.deepEqual(
+		migrations.rows.map((row) => Number(row.version)),
+		[1, 2, 7],
+	);
+	const indexes = await admin.query(
+		`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()
+		AND indexname IN ('adpulse_identity_binding_scope', 'adpulse_web_sessions_user',
+		'adpulse_login_transactions_expiry') ORDER BY indexname`,
+	);
+	assert.deepEqual(
+		indexes.rows.map((row) => row.indexname),
+		[
+			"adpulse_identity_binding_scope",
+			"adpulse_login_transactions_expiry",
+			"adpulse_web_sessions_user",
+		],
+	);
+
+	const { AuthenticationService } = await import("../packages/core/dist/index.js");
+	const auth = new AuthenticationService(storage);
+	const scope = crypto.randomUUID();
+	const identity = {
+		platform: "feishu",
+		applicationId: `cli_${scope}`,
+		tenantId: `tenant-${scope}`,
+		idType: "open_id",
+		externalId: `ou_${scope}`,
+	};
+	const now = new Date().toISOString();
+	const sessions = await Promise.all(
+		Array.from({ length: 12 }, (_, index) =>
+			auth.createWebSession(
+				identity,
+				createHash("sha256").update(`${scope}:${index}`).digest("hex"),
+				now,
+			),
+		),
+	);
+	assert.equal(new Set(sessions.map((session) => session.userId)).size, 1);
+	const bindings = await storage.transaction((tx) => tx.identityBindings.all());
+	assert.equal(
+		bindings.filter((binding) => binding.externalId === identity.externalId).length,
+		1,
+	);
+	assert.equal(
+		(
+			await reconnected.transaction((tx) => tx.users.all())
+		).filter((user) => user.id === sessions[0].userId).length,
+		1,
+		"the session user survives a new pool",
+	);
+	assert.equal(
+		(
+			await reconnected.transaction((tx) =>
+				tx.webSessions.get(sessions[0].sessionId),
+			)
+		)?.userId,
+		sessions[0].userId,
+	);
+});
+
+test("PostgreSQL: a failed auth migration rolls back atomically and can be retried", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async () => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const { Pool } = createRequire(
+		new URL("../packages/storage/package.json", import.meta.url),
+	)("pg") as { Pool: new (options: { connectionString: string }) => {
+		query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
+		end(): Promise<void>;
+	} };
+	const schema = `auth_migration_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+	const admin = new Pool({ connectionString: databaseUrl });
+	await admin.query(`CREATE SCHEMA ${schema}`);
+	const scopedUrl = new URL(databaseUrl);
+	scopedUrl.searchParams.set("options", `-c search_path=${schema}`);
+	const storage = PostgresStorage.connect(scopedUrl.toString());
+	const check = new Pool({ connectionString: scopedUrl.toString() });
+	try {
+		// Simulate a partially conflicting deployment: the entity table exists but
+		// lacks the columns used by the migration's indexes.
+		await admin.query(
+			`CREATE TABLE ${schema}.adpulse_identityBindings (id text primary key)`,
+		);
+		await assert.rejects(storage.initialize());
+		const tables = await check.query(`SELECT
+			to_regclass('adpulse_users') AS users,
+			to_regclass('adpulse_webSessions') AS web_sessions,
+			to_regclass('adpulse_schema_migrations') AS migrations`);
+		assert.deepEqual(tables.rows[0], {
+			users: null,
+			web_sessions: null,
+			migrations: null,
+		});
+
+		await admin.query(`DROP TABLE ${schema}.adpulse_identityBindings`);
+		await storage.initialize();
+		const versions = await check.query(
+			"SELECT version FROM adpulse_schema_migrations ORDER BY version",
+		);
+		assert.deepEqual(
+			versions.rows.map((row) => Number(row.version)),
+			[1, 2, 7],
+		);
+	} finally {
+		await check.end();
+		await storage.close();
+		await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+		await admin.end();
+	}
+});
+
+test("PostgreSQL: authentication survives a process restart and repeated initialization", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async () => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const { Pool } = createRequire(
+		new URL("../packages/storage/package.json", import.meta.url),
+	)("pg") as { Pool: new (options: { connectionString: string }) => {
+		query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
+		end(): Promise<void>;
+	} };
+	const schema = `auth_restart_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+	const admin = new Pool({ connectionString: databaseUrl });
+	await admin.query(`CREATE SCHEMA ${schema}`);
+	const scopedUrl = new URL(databaseUrl);
+	scopedUrl.searchParams.set("options", `-c search_path=${schema}`);
+	const storage = PostgresStorage.connect(scopedUrl.toString());
+	try {
+		await storage.initialize();
+		const { AuthenticationService } = await import("../packages/core/dist/index.js");
+		const auth = new AuthenticationService(storage);
+		const identity = {
+			platform: "feishu",
+			applicationId: `cli_${schema}`,
+			tenantId: `tenant_${schema}`,
+			idType: "open_id",
+			externalId: `ou_${schema}`,
+		};
+		const now = new Date().toISOString();
+		const sessionId = createHash("sha256").update(`${schema}:session`).digest("hex");
+		const created = await auth.createWebSession(identity, sessionId, now);
+
+		const script = `
+			import { AuthenticationService } from "./packages/core/dist/index.js";
+			import { PostgresStorage } from "./packages/storage/dist/index.js";
+			const storage = PostgresStorage.connect(process.env.TEST_SCHEMA_URL);
+			await storage.initialize();
+			const session = await new AuthenticationService(storage).authenticateSession(
+				process.env.SESSION_ID,
+				process.env.NOW,
+			);
+			console.log(JSON.stringify({
+				userId: session?.userId ?? null,
+				expiresAt: session?.expiresAt ?? null,
+			}));
+			await storage.close();
+		`;
+		const { stdout } = await promisify(execFile)(
+			process.execPath,
+			["--input-type=module", "-e", script],
+			{
+				cwd: process.cwd(),
+				env: {
+					...process.env,
+					TEST_SCHEMA_URL: scopedUrl.toString(),
+					SESSION_ID: sessionId,
+					NOW: now,
+				},
+				timeout: 15_000,
+			},
+		);
+		const output = stdout.trim().split(/\r?\n/).filter(Boolean).pop();
+		assert.ok(output);
+		assert.deepEqual(JSON.parse(output), {
+			userId: created.userId,
+			expiresAt: created.expiresAt,
+		});
+		const bindings = await storage.transaction((tx) => tx.identityBindings.all());
+		assert.equal(
+			bindings.filter((binding) => binding.externalId === identity.externalId).length,
+			1,
+			"restart must not duplicate the identity binding",
+		);
+	} finally {
+		await storage.close();
+		await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+		await admin.end();
+	}
 });

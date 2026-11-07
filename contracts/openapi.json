@@ -6,10 +6,50 @@
   },
   "security": [
     {
-      "bearerAuth": []
+      "sessionCookie": []
     }
   ],
   "paths": {
+    "/auth/feishu/login": {
+      "get": {
+        "operationId": "beginFeishuLogin",
+        "security": [],
+        "parameters": [{ "name": "returnTo", "in": "query", "required": false, "schema": { "type": "string" } }],
+        "responses": { "302": { "description": "Redirect to Feishu authorization" }, "400": { "description": "Invalid return target" } }
+      }
+    },
+    "/auth/feishu/callback": {
+      "get": {
+        "operationId": "completeFeishuLogin",
+        "security": [],
+        "parameters": [
+          { "name": "code", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "state", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "error", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": { "303": { "description": "Redirect to the validated in-app target" }, "503": { "description": "Temporarily unavailable" } }
+      }
+    },
+    "/api/me": {
+      "get": {
+        "operationId": "getCurrentUser",
+        "responses": {
+          "200": { "description": "Current authenticated user", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CurrentUser" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/logout": {
+      "post": {
+        "operationId": "logout",
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
+        "responses": {
+          "200": { "description": "Session revoked", "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } }, "required": ["ok"], "additionalProperties": false } } } },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Same-origin request required" }
+        }
+      }
+    },
     "/api/tasks": {
       "get": {
         "operationId": "listTasks",
@@ -23,6 +63,7 @@
       },
       "post": {
         "operationId": "createTask",
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
         "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskInput" } } } },
         "responses": {
@@ -45,6 +86,7 @@
       },
       "patch": {
         "operationId": "reviseTask",
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
         "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskRevision" } } } },
         "responses": {
@@ -157,6 +199,7 @@
       },
       "post": {
         "operationId": "startSession",
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -362,6 +405,7 @@
     "/api/choices": {
       "post": {
         "operationId": "submitChoice",
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -576,6 +620,7 @@
     "/api/jobs/{jobId}/retry": {
       "post": {
         "operationId": "retryJob",
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
         "parameters": [
           {
             "name": "jobId",
@@ -682,12 +727,28 @@
   },
   "components": {
     "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer"
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "adpulse_session"
+      },
+      "sameOriginOrigin": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Origin",
+        "description": "Must exactly equal the configured PUBLIC_ORIGIN for mutations."
       }
     },
     "schemas": {
+      "CurrentUser": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string" },
+          "sessionExpiresAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["userId", "sessionExpiresAt"],
+        "additionalProperties": false
+      },
       "Error": {
         "type": "object",
         "properties": {

@@ -1,3 +1,4 @@
+export * from "./authentication.js";
 export * from "./domain/decisionCard.js";
 export * from "./domain/strategy.js";
 export * from "./orchestrator.js";
