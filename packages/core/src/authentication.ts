@@ -42,11 +42,12 @@ const identityMatches = (
 	binding.idType === identity.idType &&
 	binding.externalId === identity.externalId;
 
-const isUniqueConstraintViolation = (error: unknown): boolean =>
-	typeof error === "object" &&
-	error !== null &&
-	"code" in error &&
-	String(error.code) === "23505";
+const isRetryableConflict = (error: unknown): boolean => {
+	if (typeof error !== "object" || error === null || !("code" in error))
+		return false;
+	const code = String(error.code);
+	return code === "23505" || code === "40001" || code === "40P01";
+};
 
 /** Platform-neutral identity/session use cases; protocol verification stays at the API boundary. */
 export class AuthenticationService {
@@ -147,9 +148,10 @@ export class AuthenticationService {
 						const user = await tx.users.get(existing.userId);
 						if (!user || user.status !== "active")
 							throw new Error("identity user unavailable");
-						binding = { ...existing, verifiedAt: now };
+						// Do not rewrite the binding on every login: concurrent logins would
+						// contend on the same row. It records when the binding was established.
+						binding = existing;
 						userId = user.id;
-						await tx.identityBindings.put(binding);
 					} else {
 						userId = crypto.randomUUID();
 						binding = {
@@ -178,9 +180,13 @@ export class AuthenticationService {
 					return session;
 				});
 			} catch (error) {
-				// A concurrent first login can race on the scoped-identity unique index.
-				// Retry outside the failed transaction to reuse the winner's user ID.
-				if (!isUniqueConstraintViolation(error) || attempt >= 4) throw error;
+				// Concurrent first logins can collide on the scoped-identity unique index
+				// or be aborted by serializable conflict detection. Retry outside the
+				// failed transaction so the winner's user ID is reused.
+				if (!isRetryableConflict(error) || attempt >= 7) throw error;
+				await new Promise((resolve) =>
+					setTimeout(resolve, 10 + Math.random() * 20 * (attempt + 1)),
+				);
 			}
 		}
 	}
