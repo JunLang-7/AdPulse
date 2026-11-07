@@ -438,9 +438,13 @@ test("a stopped source does not retry until an operator resumes it", async () =>
 	assert.equal(again.outcome, "stopped");
 	assert.equal(blocked.calls.length, callsAfterStop, "no network while stopped");
 
+	const runsBefore = await storage.transaction(async (tx) => tx.sourceRuns.all());
 	const resumed = await svc.resume("haier_news", "2026-11-07T10:00:00.000Z", "ops@example");
 	assert.equal(resumed.status, "active");
 	assert.equal(resumed.resumedBy, "ops@example");
+	// Resuming must not consume a request slot or fabricate a fetch run.
+	const runsAfter = await storage.transaction(async (tx) => tx.sourceRuns.all());
+	assert.equal(runsAfter.length, runsBefore.length);
 
 	const healthy = new FakeFetcher({
 		"https://www.haier.com/robots.txt": { status: 404, bytes: 0, body: "" },

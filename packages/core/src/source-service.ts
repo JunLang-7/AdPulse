@@ -485,7 +485,6 @@ export class SourceService {
 	): Promise<SourceState> {
 		if (!SOURCE_DEFINITIONS[sourceKey]) throw new UnknownSourceError(sourceKey);
 		return this.storage.transaction(async (tx) => {
-			const previous = await tx.sourceStates.get(sourceKey);
 			const next: SourceState = {
 				id: sourceKey,
 				sourceKey,
@@ -496,21 +495,6 @@ export class SourceService {
 				resumedBy: operator,
 			};
 			await tx.sourceStates.put(next);
-			if (previous?.status === "stopped")
-				await tx.sourceRuns.put({
-					id: `${sourceKey}:resume:${now}`,
-					sourceKey,
-					startedAt: now,
-					finishedAt: now,
-					httpStatus: null,
-					robotsState: "allow",
-					bytes: 0,
-					itemCount: 0,
-					outcome: "ok",
-					snapshotComplete: false,
-					configVersion: `resume:${operator}`,
-					errorReason: null,
-				});
 			return next;
 		});
 	}
