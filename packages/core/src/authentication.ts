@@ -1,16 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IdentityBinding, LoginTransaction } from "./state/model.js";
+import type { PlatformIdentity } from "./ports/channel.js";
 import type { Storage } from "./ports/storage.js";
 
 export const MAX_WEB_SESSION_MS = 8 * 60 * 60 * 1000;
 
-export interface VerifiedIdentity {
-	platform: string;
-	applicationId: string;
-	tenantId: string;
-	idType: string;
-	externalId: string;
-}
+/** Platform-neutral identity contract shared by login and inbound channels. */
+export type VerifiedIdentity = PlatformIdentity;
 
 export interface NewLoginTransaction {
 	id: string;
@@ -41,6 +37,14 @@ const identityMatches = (
 	binding.tenantId === identity.tenantId &&
 	binding.idType === identity.idType &&
 	binding.externalId === identity.externalId;
+const validIdentity = (identity: VerifiedIdentity): boolean =>
+	Object.values(identity).every(
+		(value) =>
+			typeof value === "string" &&
+			value.length > 0 &&
+			value.length <= 512 &&
+			!/[\u0000-\u001f]/.test(value),
+	);
 
 const isRetryableConflict = (error: unknown): boolean => {
 	if (typeof error !== "object" || error === null || !("code" in error))
@@ -130,10 +134,7 @@ export class AuthenticationService {
 	): Promise<AuthenticatedSession> {
 		if (!digestPattern.test(sessionTokenHash) || !Number.isFinite(Date.parse(now)))
 			throw new Error("invalid session token or timestamp");
-		for (const value of Object.values(identity)) {
-			if (!value || value.length > 512 || /[\u0000-\u001f]/.test(value))
-				throw new Error("invalid verified identity");
-		}
+		if (!validIdentity(identity)) throw new Error("invalid verified identity");
 		for (let attempt = 0; ; attempt++) {
 			try {
 				return await this.storage.transaction(async (tx) => {
@@ -189,6 +190,37 @@ export class AuthenticationService {
 				);
 			}
 		}
+	}
+
+	/** Resolves a provider-verified scoped identity to its active internal user. */
+	async resolveIdentity(identity: VerifiedIdentity): Promise<string | null> {
+		if (!validIdentity(identity)) return null;
+		return this.storage.transaction(async (tx) => {
+			const binding = (await tx.identityBindings.all()).find((candidate) =>
+				identityMatches(candidate, identity),
+			);
+			if (!binding || binding.status !== "active") return null;
+			const user = await tx.users.get(binding.userId);
+			return user?.status === "active" ? user.id : null;
+		});
+	}
+
+	/** Active identity bindings owned by one internal user. */
+	async listIdentities(userId: string): Promise<VerifiedIdentity[]> {
+		return this.storage.transaction(async (tx) =>
+			(await tx.identityBindings.all())
+				.filter(
+					(binding) =>
+						binding.userId === userId && binding.status === "active",
+				)
+				.map((binding) => ({
+					platform: binding.platform,
+					applicationId: binding.applicationId,
+					tenantId: binding.tenantId,
+					idType: binding.idType,
+					externalId: binding.externalId,
+				})),
+		);
 	}
 
 	async authenticateSession(

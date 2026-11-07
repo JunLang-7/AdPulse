@@ -853,13 +853,29 @@
       }
     },
     "schemas": {
+      "VerifiedIdentity": {
+        "type": "object",
+        "properties": {
+          "platform": { "type": "string" },
+          "applicationId": { "type": "string" },
+          "tenantId": { "type": "string" },
+          "idType": { "type": "string" },
+          "externalId": { "type": "string" }
+        },
+        "required": ["platform", "applicationId", "tenantId", "idType", "externalId"],
+        "additionalProperties": false
+      },
       "CurrentUser": {
         "type": "object",
         "properties": {
           "userId": { "type": "string" },
-          "sessionExpiresAt": { "type": "string", "format": "date-time" }
+          "sessionExpiresAt": { "type": "string", "format": "date-time" },
+          "identities": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/VerifiedIdentity" }
+          }
         },
-        "required": ["userId", "sessionExpiresAt"],
+        "required": ["userId", "sessionExpiresAt", "identities"],
         "additionalProperties": false
       },
       "Error": {

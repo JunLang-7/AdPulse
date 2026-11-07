@@ -3,7 +3,10 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { createApi } from "../apps/api/dist/server.js";
-import { AuthenticationService } from "../packages/core/dist/index.js";
+import {
+  AuthenticationService,
+  type PlatformIdentity,
+} from "../packages/core/dist/index.js";
 import { compose } from "../packages/runtime/dist/index.js";
 import { MemoryStorage } from "../packages/storage/dist/index.js";
 import { proposal } from "./helpers.ts";
@@ -45,7 +48,11 @@ async function serve(
   const issuedAt = options.sessionIssuedAt ?? new Date().toISOString();
   const ownerToken = randomBytes(32).toString("base64url");
   const strangerToken = randomBytes(32).toString("base64url");
-  await service.createWebSession(ownerIdentity, hash(ownerToken), issuedAt);
+  const ownerSession = await service.createWebSession(
+    ownerIdentity,
+    hash(ownerToken),
+    issuedAt,
+  );
   await service.createWebSession({ ...ownerIdentity, externalId: "ou-stranger" }, hash(strangerToken), issuedAt);
   const publicOrigin = options.publicOrigin ?? "http://localhost";
   const provider = {
@@ -79,7 +86,15 @@ async function serve(
     ...headers,
     cookie: `adpulse_session=${strangerToken}`,
   };
-  return { runtime, url, headers, strangerHeaders, publicOrigin, service };
+  return {
+    runtime,
+    url,
+    headers,
+    strangerHeaders,
+    publicOrigin,
+    service,
+    ownerUserId: ownerSession.userId,
+  };
 }
 const startInput = () => ({
   recipient: { accountId: "account-a", kind: "user", externalId: "user-a" },
@@ -650,7 +665,9 @@ test("Feishu login binds one-time state to the browser and issues a revocable Ht
     headers: { cookie: `adpulse_session=${sessionToken}` },
   });
   assert.equal(me.status, 200);
-  assert.ok((await me.json()).userId);
+  const meBody = await me.json();
+  assert.ok(meBody.userId);
+  assert.deepEqual(meBody.identities, [ownerIdentity]);
   assert.equal(
     (await fetch(`${url}/api/me`, { headers: { cookie: headers.cookie } })).status,
     401,
@@ -683,6 +700,25 @@ test("production OAuth cookies are Secure and callback URI uses the shared HTTPS
   assert.equal(
     location.searchParams.get("redirect_uri"),
     `${publicOrigin}/auth/feishu/callback`,
+  );
+});
+
+test("webhook receives a verified actor resolver wired to internal users", async (t) => {
+  const { runtime, url, ownerUserId } = await serve(t);
+  const original = runtime.channels.handle.bind(runtime.channels);
+  let resolveActor:
+    | ((identity: PlatformIdentity) => Promise<string | null>)
+    | undefined;
+  runtime.channels.handle = async (accountId, request, decisions, resolver) => {
+    resolveActor = resolver;
+    return original(accountId, request, decisions, resolver);
+  };
+  await fetch(`${url}/webhooks/account-a`, { method: "POST", body: "{}" });
+  assert.ok(resolveActor);
+  assert.equal(await resolveActor(ownerIdentity), ownerUserId);
+  assert.equal(
+    await resolveActor({ ...ownerIdentity, externalId: "ou-unknown" }),
+    null,
   );
 });
 

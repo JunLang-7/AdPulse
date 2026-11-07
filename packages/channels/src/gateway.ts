@@ -1,4 +1,8 @@
-import type { Orchestrator, OutboundChannel } from "@adpluse/core";
+import type {
+	Orchestrator,
+	OutboundChannel,
+	PlatformIdentity,
+} from "@adpluse/core";
 import type {
 	ChannelAccount,
 	WebhookRequest,
@@ -28,6 +32,7 @@ export class ChannelRegistry {
 		accountId: string,
 		request: WebhookRequest,
 		decisions: Orchestrator,
+		resolveActor?: (identity: PlatformIdentity) => Promise<string | null>,
 	): Promise<WebhookResponse> {
 		const account = this.accounts.get(accountId);
 		if (!account) throw new WebhookError(404, "unknown account");
@@ -40,7 +45,23 @@ export class ChannelRegistry {
 			) {
 				throw new WebhookError(403, "account mismatch");
 			}
-			await decisions.receiveChoice({ ...result.command, sourceId: accountId });
+			let command = result.command;
+			if (command.actor.kind === "platform") {
+				const identity =
+					account.inbound.identifyActor?.(command.actor) ?? null;
+				const userId = identity
+					? ((await resolveActor?.(identity)) ?? null)
+					: null;
+				// Missing mapping stays absent; the business service fails closed.
+				command = {
+					...command,
+					actor: {
+						...command.actor,
+						...(userId ? { userId } : {}),
+					},
+				};
+			}
+			await decisions.receiveChoice({ ...command, sourceId: accountId });
 		}
 		// Database errors propagate: never ACK an event that was not durably accepted.
 		return result.response;

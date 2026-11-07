@@ -11,7 +11,11 @@ import type {
 	FeishuInboundConfig,
 	WebhookRequest,
 } from "../packages/channels/dist/index.js";
-import type { CardDelivery, Orchestrator } from "../packages/core/dist/index.js";
+import type {
+	CardDelivery,
+	ChoiceCommand,
+	Orchestrator,
+} from "../packages/core/dist/index.js";
 import { fixture } from "./helpers.ts";
 
 const config: Omit<FeishuInboundConfig, "appSecret"> = {
@@ -97,6 +101,95 @@ test("Feishu inbound verifies bytes, decrypts and normalizes a card action", asy
 	});
 	assert.equal(JSON.parse(parsed.response.body).toast.type, "info");
 });
+test("Feishu actor identity is scoped to the configured application and tenant", () => {
+	assert.deepEqual(
+		inbound.identifyActor({ accountId: "account-a", externalId: "user-a" }),
+		{
+			platform: "feishu",
+			applicationId: config.appId,
+			tenantId: config.tenantKey,
+			idType: "open_id",
+			externalId: "user-a",
+		},
+	);
+	assert.equal(
+		inbound.identifyActor({ accountId: "other", externalId: "user-a" }),
+		null,
+	);
+	assert.equal(
+		inbound.identifyActor({ accountId: "account-a", externalId: "" }),
+		null,
+	);
+});
+
+test("gateway maps a verified platform actor and leaves unverified actors unresolved", async () => {
+	const received: ChoiceCommand[] = [];
+	const registry = new ChannelRegistry([
+		{
+			id: "account-a",
+			inbound: {
+				async parse() {
+					return {
+						kind: "choice" as const,
+						command: {
+							sourceId: "untrusted",
+							eventId: "e1",
+							actionRef: "ref",
+							actor: {
+								kind: "platform" as const,
+								accountId: "account-a",
+								externalId: "open-1",
+							},
+						},
+						response: { status: 200, headers: {}, body: "ok" },
+					};
+				},
+				identifyActor(actor) {
+					return {
+						platform: "feishu",
+						applicationId: "app",
+						tenantId: "tenant",
+						idType: "open_id",
+						externalId: actor.externalId,
+					};
+				},
+			},
+			outbound: {
+				async send() {
+					return { externalMessageId: "x" };
+				},
+			},
+		},
+	]);
+	const decisions = {
+		async receiveChoice(command: ChoiceCommand) {
+			received.push(command);
+		},
+	} as unknown as Orchestrator;
+
+	await registry.handle("account-a", request({}), decisions, async (identity) => {
+		assert.deepEqual(identity, {
+			platform: "feishu",
+			applicationId: "app",
+			tenantId: "tenant",
+			idType: "open_id",
+			externalId: "open-1",
+		});
+		return "user-1";
+	});
+	assert.equal(received[0]?.sourceId, "account-a");
+	assert.equal(
+		received[0]?.actor.kind === "platform" ? received[0].actor.userId : null,
+		"user-1",
+	);
+
+	await registry.handle("account-a", request({}), decisions, async () => null);
+	assert.equal(
+		received[1]?.actor.kind === "platform" ? received[1].actor.userId : null,
+		undefined,
+	);
+});
+
 test("Feishu verifies Go-format timestamps without weakening freshness or signatures", async () => {
 	const make = (timestamp: string) => {
 		const r = request(event(), true);

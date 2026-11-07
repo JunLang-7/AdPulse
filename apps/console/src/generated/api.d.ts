@@ -344,10 +344,18 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        VerifiedIdentity: {
+            platform: string;
+            applicationId: string;
+            tenantId: string;
+            idType: string;
+            externalId: string;
+        };
         CurrentUser: {
             userId: string;
             /** Format: date-time */
             sessionExpiresAt: string;
+            identities: components["schemas"]["VerifiedIdentity"][];
         };
         Error: {
             error: string;
