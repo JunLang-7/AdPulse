@@ -136,7 +136,7 @@ test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse
 	);
 	assert.deepEqual(
 		migrations.rows.map((row) => Number(row.version)),
-		[1, 2, 3],
+		[1, 2, 7],
 	);
 	const indexes = await admin.query(
 		`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()

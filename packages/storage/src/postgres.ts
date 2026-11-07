@@ -75,7 +75,8 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (2)",
 				);
 			}
-			if (!current.has(3)) {
+			// Versions 3-6 are reserved for the evidence/comparison/alert/source chain.
+			if (!current.has(7)) {
 				for (const name of [
 					"users",
 					"identityBindings",
@@ -90,7 +91,7 @@ export class PostgresStorage implements Storage {
 				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_login_transactions_expiry
 					ON adpulse_loginTransactions ((data->>'status'), (data->>'expiresAt'))`);
 				await client.query(
-					"INSERT INTO adpulse_schema_migrations(version) VALUES (3)",
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (7)",
 				);
 			}
 			await client.query("COMMIT");
