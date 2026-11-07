@@ -8,6 +8,12 @@ import {
 	type SourceFetcher,
 } from "@adpluse/core";
 
+/** Only markup/plain payloads are list pages or robots files. */
+export function isAllowedContentType(value: string | undefined): boolean {
+	if (!value) return true;
+	return /^(text\/|application\/(xml|json|xhtml\+xml))/i.test(value.trim());
+}
+
 const USER_AGENT =
 	"AdPulseSourceBot/0.1 (+https://github.com/JunLang-7/AdPulse)";
 const MAX_REDIRECTS = 3;
@@ -98,6 +104,9 @@ function once(
 			try {
 				if (response.headers["content-encoding"] !== undefined)
 					throw new SourceFetchError("blocked", "compressed responses refused");
+				const contentType = response.headers["content-type"];
+				if (!isAllowedContentType(typeof contentType === "string" ? contentType : undefined))
+					throw new SourceFetchError("blocked", "unexpected content type");
 				const location = response.headers.location ?? null;
 				if (response.statusCode && REDIRECT_STATUS.has(response.statusCode)) {
 					response.resume();

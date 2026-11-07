@@ -9,6 +9,7 @@ import {
 	EvidenceService,
 	InvestigationAlertService,
 	Orchestrator,
+	SOURCE_DEFINITIONS,
 	SourceService,
 	TaskService,
 	type PolicyEngine,
@@ -60,9 +61,18 @@ export function compose(
 }
 export type Runtime = ReturnType<typeof compose>;
 
-export { HttpSourceFetcher, isPublicAddress } from "./source-fetch.js";
+export {
+	HttpSourceFetcher,
+	isAllowedContentType,
+	isPublicAddress,
+} from "./source-fetch.js";
 
-const SOURCE_HOSTS = ["www.weichai.com", "www.haier.com"];
+/** Derived from the allowlisted definitions so the two cannot drift. */
+const SOURCE_HOSTS = [
+	...new Set(
+		Object.values(SOURCE_DEFINITIONS).flatMap((source) => source.allowedHosts),
+	),
+];
 
 /** Collection stays disabled unless SOURCES_ENABLED=1 (Gate 0 in issue #41). */
 export function createSourceService(

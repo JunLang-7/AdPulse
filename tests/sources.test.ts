@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MemoryStorage } from "../packages/storage/dist/memory.js";
-import { isPublicAddress } from "../packages/runtime/dist/index.js";
+import {
+	isAllowedContentType,
+	isPublicAddress,
+} from "../packages/runtime/dist/index.js";
 import {
 	SOURCE_DEFINITIONS,
 	SourceFetchError,
@@ -455,4 +458,13 @@ test("a stopped source does not retry until an operator resumes it", async () =>
 		"2026-11-07T11:00:00.000Z",
 	);
 	assert.equal(afterResume.outcome, "ok");
+});
+
+test("only markup payloads are accepted", () => {
+	assert.equal(isAllowedContentType("text/html; charset=utf-8"), true);
+	assert.equal(isAllowedContentType("text/plain"), true);
+	assert.equal(isAllowedContentType("application/xml"), true);
+	assert.equal(isAllowedContentType(undefined), true);
+	assert.equal(isAllowedContentType("image/png"), false);
+	assert.equal(isAllowedContentType("application/pdf"), false);
 });
