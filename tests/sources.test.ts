@@ -257,9 +257,10 @@ test("daily quota blocks further runs", async () => {
 		[weichai.listUrl]: listOf(WEICHAI_LIST),
 	});
 	const svc = service(storage, fetcher);
-	for (let index = 0; index < 6; index++) {
+	// 6 requests/day = 5 list runs + 1 robots.txt fetch.
+	for (let index = 0; index < 5; index++) {
 		const stamp = `2026-11-07T0${index}:00:00.000Z`;
-		await svc.sync("weichai_news", stamp);
+		assert.equal((await svc.sync("weichai_news", stamp)).outcome, "ok");
 	}
 	const blocked = await svc.sync("weichai_news", "2026-11-07T07:00:00.000Z");
 	assert.equal(blocked.outcome, "blocked");

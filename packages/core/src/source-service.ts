@@ -221,7 +221,9 @@ export class SourceService {
 			return { runsToday, cachedRobots, items };
 		});
 
-		if (state.runsToday >= source.dailyRequestLimit)
+		// One robots.txt fetch per day plus list runs must stay within the limit.
+		const listRunBudget = source.dailyRequestLimit - 1;
+		if (state.runsToday >= listRunBudget)
 			return record({
 				...base,
 				robotsState: "allow",
