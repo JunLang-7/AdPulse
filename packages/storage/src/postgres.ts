@@ -177,6 +177,11 @@ export class PostgresStorage implements Storage {
 							[entity.id, JSON.stringify(entity)],
 						);
 					},
+					delete: async (id: string) => {
+						await client.query(`DELETE FROM adpulse_${name} WHERE id = $1`, [
+							id,
+						]);
+					},
 					all: async () => {
 						const result = await client.query(
 							`SELECT data FROM adpulse_${name} ORDER BY id`,

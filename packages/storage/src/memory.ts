@@ -54,6 +54,9 @@ export class MemoryStorage implements Storage {
 								structuredClone(entity),
 							);
 						},
+						delete: async (id: string) => {
+							draft[name].delete(id);
+						},
 						all: async () => structuredClone([...draft[name].values()]),
 					},
 				]),

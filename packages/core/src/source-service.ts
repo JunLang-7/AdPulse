@@ -1,11 +1,10 @@
 import * as crypto from "node:crypto";
-import type { Storage, Transaction } from "./ports/storage.js";
+import type { Storage } from "./ports/storage.js";
 import type { SourceItem, SourceRun, SourceSnapshot } from "./state/model.js";
 import {
 	SOURCE_DEFINITIONS,
 	contentHash,
 	isWithinItemBounds,
-	normalizeItemUrl,
 	parseListPage,
 	type FetchOutcome,
 	type RobotsState,
@@ -50,6 +49,9 @@ export class UnknownSourceError extends Error {
 }
 
 export const FETCH_LIMITS = { maxBytes: 1_048_576, timeoutMs: 20_000 };
+/** Operators may re-run early, but not faster than this. */
+export const MIN_MANUAL_INTERVAL_MS = 15 * 60 * 1000;
+const SNAPSHOT_RETENTION_DAYS = 30;
 const MAX_CRAWL_DELAY_MS = 20_000;
 
 export interface SourceSyncResult {
@@ -144,12 +146,16 @@ export class SourceService {
 	 * One polling attempt. Network I/O happens outside any transaction, and a
 	 * failed run never mutates existing items.
 	 */
-	async sync(sourceKey: string, now: string): Promise<SourceSyncResult> {
+	async sync(
+		sourceKey: string,
+		now: string,
+		options: { trigger?: "schedule" | "manual" } = {},
+	): Promise<SourceSyncResult> {
 		if (!this.options.enabled) throw new SourceDisabledError();
 		const source = SOURCE_DEFINITIONS[sourceKey];
 		if (!source) throw new UnknownSourceError(sourceKey);
 		const lock = await this.storage.runExclusive(`source:${sourceKey}`, () =>
-			this.attempt(source, now),
+			this.attempt(source, now, options.trigger ?? "schedule"),
 		);
 		if (!lock.acquired || !lock.value)
 			return {
@@ -167,6 +173,7 @@ export class SourceService {
 	private async attempt(
 		source: SourceDefinition,
 		now: string,
+		trigger: "schedule" | "manual",
 	): Promise<SourceSyncResult> {
 		const runId = crypto.randomUUID();
 		const base = {
@@ -218,11 +225,29 @@ export class SourceService {
 			const items = (await tx.sourceItems.all()).filter(
 				(item) => item.sourceKey === source.key,
 			);
-			return { runsToday, cachedRobots, items };
+			return {
+				runsToday,
+				cachedRobots,
+				items,
+				lastStartedAt: runs[0]?.startedAt ?? null,
+			};
 		});
 
 		// One robots.txt fetch per day plus list runs must stay within the limit.
 		const listRunBudget = source.dailyRequestLimit - 1;
+		if (trigger === "manual" && state.lastStartedAt) {
+			const elapsed = Date.parse(now) - Date.parse(state.lastStartedAt);
+			if (Number.isFinite(elapsed) && elapsed < MIN_MANUAL_INTERVAL_MS)
+				return {
+					runId: "",
+					acquired: true,
+					outcome: "skipped",
+					created: 0,
+					updated: 0,
+					skippedPurged: 0,
+					reason: "manual trigger throttled to one run per 15 minutes",
+				};
+		}
 		if (state.runsToday >= listRunBudget)
 			return record({
 				...base,
@@ -287,6 +312,15 @@ export class SourceService {
 				bytes: page.bytes,
 				outcome: "stopped",
 				errorReason: `HTTP ${page.status}; manual review required`,
+			});
+		if (page.status >= 300 && page.status < 400)
+			return record({
+				...base,
+				robotsState,
+				httpStatus: page.status,
+				bytes: page.bytes,
+				outcome: "http_error",
+				errorReason: `unexpected redirect ${page.status}`,
 			});
 		if (page.status < 200 || page.status >= 400)
 			return record({
@@ -403,9 +437,28 @@ export class SourceService {
 			}
 			for (const snapshot of await tx.sourceSnapshots.all()) {
 				if (snapshot.sourceKey !== sourceKey) continue;
-				await tx.sourceSnapshots.put({ ...snapshot, contentHash: "" });
+				await tx.sourceSnapshots.delete(snapshot.id);
 			}
 			return purged;
+		});
+	}
+
+	/** Snapshot rows expire after the retention window. */
+	async pruneSnapshots(
+		sourceKey: string,
+		now: string,
+		retentionDays: number = SNAPSHOT_RETENTION_DAYS,
+	): Promise<number> {
+		const cutoff = Date.parse(now) - retentionDays * 86_400_000;
+		return this.storage.transaction(async (tx) => {
+			let removed = 0;
+			for (const snapshot of await tx.sourceSnapshots.all()) {
+				if (snapshot.sourceKey !== sourceKey) continue;
+				if (Date.parse(snapshot.createdAt) >= cutoff) continue;
+				await tx.sourceSnapshots.delete(snapshot.id);
+				removed += 1;
+			}
+			return removed;
 		});
 	}
 
@@ -428,12 +481,3 @@ export class SourceService {
 			);
 	}
 }
-
-export function assertAllowedItemUrl(
-	source: SourceDefinition,
-	url: string,
-): string | null {
-	return normalizeItemUrl(url, source.listUrl, source.allowedHosts);
-}
-
-export type { Transaction };

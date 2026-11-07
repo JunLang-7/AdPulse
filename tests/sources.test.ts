@@ -6,6 +6,7 @@ import {
 	SOURCE_DEFINITIONS,
 	SourceFetchError,
 	SourceService,
+	MIN_MANUAL_INTERVAL_MS,
 	contentHash,
 	isWithinItemBounds,
 	normalizeItemUrl,
@@ -354,4 +355,71 @@ test("SSRF guard rejects loopback, private, CGNAT and metadata ranges", () => {
 		assert.equal(isPublicAddress(address), false, address);
 	assert.equal(isPublicAddress("8.8.8.8"), true);
 	assert.equal(isPublicAddress("2400:3200::1"), true);
+});
+
+test("purge removes snapshot rows, not just their hashes", async () => {
+	const storage = new MemoryStorage();
+	const fetcher = new FakeFetcher({
+		"https://www.weichai.com/robots.txt": { status: 404, bytes: 0, body: "" },
+		[weichai.listUrl]: listOf(WEICHAI_LIST),
+	});
+	const svc = service(storage, fetcher);
+	await svc.sync("weichai_news", NOW);
+	assert.equal(
+		(await storage.transaction(async (tx) => tx.sourceSnapshots.all())).length,
+		3,
+	);
+	await svc.purge("weichai_news", NOW);
+	assert.equal(
+		(await storage.transaction(async (tx) => tx.sourceSnapshots.all())).length,
+		0,
+	);
+});
+
+test("snapshots older than the retention window are pruned", async () => {
+	const storage = new MemoryStorage();
+	const fetcher = new FakeFetcher({
+		"https://www.weichai.com/robots.txt": { status: 404, bytes: 0, body: "" },
+		[weichai.listUrl]: listOf(WEICHAI_LIST),
+	});
+	const svc = service(storage, fetcher);
+	await svc.sync("weichai_news", NOW);
+	assert.equal(await svc.pruneSnapshots("weichai_news", "2026-11-20T00:00:00.000Z"), 0);
+	assert.equal(await svc.pruneSnapshots("weichai_news", "2026-12-20T00:00:00.000Z"), 3);
+	assert.equal(
+		(await storage.transaction(async (tx) => tx.sourceSnapshots.all())).length,
+		0,
+	);
+});
+
+test("manual runs are throttled to one per 15 minutes", async () => {
+	const storage = new MemoryStorage();
+	const fetcher = new FakeFetcher({
+		"https://www.weichai.com/robots.txt": { status: 404, bytes: 0, body: "" },
+		[weichai.listUrl]: listOf(WEICHAI_LIST),
+	});
+	const svc = service(storage, fetcher);
+	assert.equal((await svc.sync("weichai_news", NOW, { trigger: "manual" })).outcome, "ok");
+	const early = await svc.sync("weichai_news", new Date(Date.parse(NOW) + 60_000).toISOString(), {
+		trigger: "manual",
+	});
+	assert.equal(early.outcome, "skipped");
+	assert.match(early.reason ?? "", /15 minutes/);
+	const later = await svc.sync(
+		"weichai_news",
+		new Date(Date.parse(NOW) + MIN_MANUAL_INTERVAL_MS + 1000).toISOString(),
+		{ trigger: "manual" },
+	);
+	assert.equal(later.outcome, "ok");
+});
+
+test("an unexpected redirect is recorded as an http error", async () => {
+	const storage = new MemoryStorage();
+	const fetcher = new FakeFetcher({
+		"https://www.haier.com/robots.txt": { status: 404, bytes: 0, body: "" },
+		[haier.listUrl]: { status: 302, bytes: 0, body: "" },
+	});
+	const result = await service(storage, fetcher).sync("haier_news", NOW);
+	assert.equal(result.outcome, "http_error");
+	assert.match(result.reason ?? "", /redirect/);
 });

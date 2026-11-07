@@ -3,6 +3,7 @@ import type { Entities, Job } from "../state/model.js";
 export interface Table<T extends { id: string }> {
 	get(id: string): Promise<T | null>;
 	put(entity: T): Promise<void>;
+	delete(id: string): Promise<void>;
 	all(): Promise<T[]>;
 }
 export type Transaction = { [K in keyof Entities]: Table<Entities[K]> };
