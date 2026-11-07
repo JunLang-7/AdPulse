@@ -245,3 +245,82 @@ test("PostgreSQL: a failed auth migration rolls back atomically and can be retri
 		await admin.end();
 	}
 });
+
+test("PostgreSQL: authentication survives a process restart and repeated initialization", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async () => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const { Pool } = createRequire(
+		new URL("../packages/storage/package.json", import.meta.url),
+	)("pg") as { Pool: new (options: { connectionString: string }) => {
+		query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
+		end(): Promise<void>;
+	} };
+	const schema = `auth_restart_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+	const admin = new Pool({ connectionString: databaseUrl });
+	await admin.query(`CREATE SCHEMA ${schema}`);
+	const scopedUrl = new URL(databaseUrl);
+	scopedUrl.searchParams.set("options", `-c search_path=${schema}`);
+	const storage = PostgresStorage.connect(scopedUrl.toString());
+	try {
+		await storage.initialize();
+		const { AuthenticationService } = await import("../packages/core/dist/index.js");
+		const auth = new AuthenticationService(storage);
+		const identity = {
+			platform: "feishu",
+			applicationId: `cli_${schema}`,
+			tenantId: `tenant_${schema}`,
+			idType: "open_id",
+			externalId: `ou_${schema}`,
+		};
+		const now = new Date().toISOString();
+		const sessionId = createHash("sha256").update(`${schema}:session`).digest("hex");
+		const created = await auth.createWebSession(identity, sessionId, now);
+
+		const script = `
+			import { AuthenticationService } from "./packages/core/dist/index.js";
+			import { PostgresStorage } from "./packages/storage/dist/index.js";
+			const storage = PostgresStorage.connect(process.env.TEST_SCHEMA_URL);
+			await storage.initialize();
+			const session = await new AuthenticationService(storage).authenticateSession(
+				process.env.SESSION_ID,
+				process.env.NOW,
+			);
+			console.log(JSON.stringify({
+				userId: session?.userId ?? null,
+				expiresAt: session?.expiresAt ?? null,
+			}));
+			await storage.close();
+		`;
+		const { stdout } = await promisify(execFile)(
+			process.execPath,
+			["--input-type=module", "-e", script],
+			{
+				cwd: process.cwd(),
+				env: {
+					...process.env,
+					TEST_SCHEMA_URL: scopedUrl.toString(),
+					SESSION_ID: sessionId,
+					NOW: now,
+				},
+				timeout: 15_000,
+			},
+		);
+		const output = stdout.trim().split(/\r?\n/).filter(Boolean).pop();
+		assert.ok(output);
+		assert.deepEqual(JSON.parse(output), {
+			userId: created.userId,
+			expiresAt: created.expiresAt,
+		});
+		const bindings = await storage.transaction((tx) => tx.identityBindings.all());
+		assert.equal(
+			bindings.filter((binding) => binding.externalId === identity.externalId).length,
+			1,
+			"restart must not duplicate the identity binding",
+		);
+	} finally {
+		await storage.close();
+		await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+		await admin.end();
+	}
+});
