@@ -278,3 +278,54 @@ test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse
 		sessions[0].userId,
 	);
 });
+
+test("PostgreSQL: a failed auth migration rolls back atomically and can be retried", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async () => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const { Pool } = createRequire(
+		new URL("../packages/storage/package.json", import.meta.url),
+	)("pg") as { Pool: new (options: { connectionString: string }) => {
+		query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
+		end(): Promise<void>;
+	} };
+	const schema = `auth_migration_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+	const admin = new Pool({ connectionString: databaseUrl });
+	await admin.query(`CREATE SCHEMA ${schema}`);
+	const scopedUrl = new URL(databaseUrl);
+	scopedUrl.searchParams.set("options", `-c search_path=${schema}`);
+	const storage = PostgresStorage.connect(scopedUrl.toString());
+	const check = new Pool({ connectionString: scopedUrl.toString() });
+	try {
+		// Simulate a partially conflicting deployment: the entity table exists but
+		// lacks the columns used by the migration's indexes.
+		await admin.query(
+			`CREATE TABLE ${schema}.adpulse_identityBindings (id text primary key)`,
+		);
+		await assert.rejects(storage.initialize());
+		const tables = await check.query(`SELECT
+			to_regclass('adpulse_users') AS users,
+			to_regclass('adpulse_webSessions') AS web_sessions,
+			to_regclass('adpulse_schema_migrations') AS migrations`);
+		assert.deepEqual(tables.rows[0], {
+			users: null,
+			web_sessions: null,
+			migrations: null,
+		});
+
+		await admin.query(`DROP TABLE ${schema}.adpulse_identityBindings`);
+		await storage.initialize();
+		const versions = await check.query(
+			"SELECT version FROM adpulse_schema_migrations ORDER BY version",
+		);
+		assert.deepEqual(
+			versions.rows.map((row) => Number(row.version)),
+			[1, 2, 7],
+		);
+	} finally {
+		await check.end();
+		await storage.close();
+		await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+		await admin.end();
+	}
+});
