@@ -2,6 +2,8 @@ export * from "./domain/decisionCard.js";
 export * from "./evidence.js";
 export * from "./comparisons.js";
 export * from "./comparison-service.js";
+export * from "./sources.js";
+export * from "./source-service.js";
 export * from "./investigation-alerts.js";
 export * from "./domain/strategy.js";
 export * from "./orchestrator.js";
