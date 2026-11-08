@@ -35,7 +35,8 @@ export const dmScenario = defineScenario({
 	id: "dm",
 	title: "单聊全链路",
 	evidence: EVIDENCE.platformReal,
-	timeoutMs: 180_000,
+	// 人工点击窗口：单步 300s，避免阅读提示时错过窗口；与 3s ACK 预算无关。
+	timeoutMs: 300_000,
 	setup: async (ctx) => {
 		const session = await startAcceptanceSession(ctx);
 		ctx.log?.(
@@ -99,7 +100,8 @@ export const dmScenario = defineScenario({
 		},
 		{
 			id: "dm.round1",
-			prompt: "请在飞书单聊中点击「继续观察」（不要点其他按钮）",
+			prompt:
+				"请在飞书单聊中点击标题为「第 1 轮」那张卡上的「继续观察」（不要点「确认已阅」）",
 			stopOnFail: true,
 			read: detailOf,
 			// 只等「已答」就判定，避免点错按钮时白等超时；进入第 2 轮单独断言。
@@ -189,7 +191,8 @@ export const dmScenario = defineScenario({
 		},
 		{
 			id: "dm.round2",
-			prompt: "请在飞书单聊中点击「确认已阅」完成会话",
+			prompt:
+				"请在飞书单聊中点击标题为「第 2 轮」那张卡上的「确认已阅」（不要再点「继续观察」）",
 			stopOnFail: true,
 			read: detailOf,
 			until: (detail) =>
