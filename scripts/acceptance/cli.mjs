@@ -22,8 +22,10 @@ export const USAGE = `用法：bun run feishu:acceptance [-- 选项]
 
   --api <url>         本机 API 地址，默认 http://127.0.0.1:3000
   --public-url <url>  公网回调地址，如 https://example.com/webhooks/feishu-internal
-  --chat-id <oc_...>  可选：校验群聊收件人
-  --open-id <ou_...>  可选：校验用户收件人；--scenario 时必填
+  --chat-id <oc_...>  群聊收件人；group / reject 场景必填
+  --open-id <ou_...>  授权成员（单聊收件人）；--scenario 时多数必填
+  --other-open-id <ou_...>
+                      未授权成员，仅 reject 场景需要
   --scenario <id>     运行验收场景（dm / rounds）；先跑只读自检作为前置
   --list-scenarios    列出可用场景
   --step-timeout <s>  场景单步等待人工动作的秒数，默认用场景内置值
@@ -43,6 +45,7 @@ export function parseArgs(argv) {
 		publicUrl: undefined,
 		chatId: undefined,
 		openId: undefined,
+		otherOpenId: undefined,
 		scenario: undefined,
 		listScenarios: false,
 		stepTimeoutMs: undefined,
@@ -65,6 +68,7 @@ export function parseArgs(argv) {
 			options.publicUrl = value().replace(/\/+$/, "");
 		else if (flag === "--chat-id") options.chatId = value();
 		else if (flag === "--open-id") options.openId = value();
+		else if (flag === "--other-open-id") options.otherOpenId = value();
 		else if (flag === "--scenario") options.scenario = value();
 		else if (flag === "--list-scenarios") options.listScenarios = true;
 		else if (flag === "--step-timeout") {
@@ -150,9 +154,14 @@ export async function main(argv, env, io = {}) {
 			);
 			return 2;
 		}
+		const requirementFlags = {
+			openId: "--open-id <ou_...>",
+			otherOpenId: "--other-open-id <ou_...>",
+			chatId: "--chat-id <oc_...>",
+		};
 		for (const requirement of scenarioRequires(scenario.id)) {
-			if (requirement === "openId" && !options.openId) {
-				error(`场景 ${scenario.id} 需要 --open-id <ou_...>`);
+			if (!options[requirement]) {
+				error(`场景 ${scenario.id} 需要 ${requirementFlags[requirement]}`);
 				return 2;
 			}
 		}

@@ -9,13 +9,22 @@ import { randomUUID } from "node:crypto";
  * @typedef {import("../scenario.mjs").ScenarioContext} ScenarioContext
  */
 
+/** 按场景需要取单聊或群聊收件人：单聊用 open_id，群聊用 chat_id。 */
+export function recipientOf(ctx, kind = "user") {
+	const accountId = ctx.env?.FEISHU_ACCOUNT_ID ?? "feishu-internal";
+	return kind === "group"
+		? { accountId, kind: "group", externalId: ctx.options?.chatId }
+		: { accountId, kind: "user", externalId: ctx.options?.openId };
+}
+
 /** 验收会话的固定策略与限额；与 runbook 第 4 节示例保持一致。 */
 export function acceptanceSessionInput(ctx, overrides = {}) {
-	const accountId = ctx.env?.FEISHU_ACCOUNT_ID ?? "feishu-internal";
-	const { expiresInMs = 3_600_000, ...rest } = overrides;
+	const { expiresInMs = 3_600_000, kind = "user", allowedActorIds, ...rest } =
+		overrides;
 	return {
-		recipient: { accountId, kind: "user", externalId: ctx.options?.openId },
-		allowedActorIds: [ctx.options?.openId],
+		recipient: recipientOf(ctx, kind),
+		// 群成员不会自动获得决策权：allowedActorIds 必须显式给出。
+		allowedActorIds: allowedActorIds ?? [ctx.options?.openId],
 		strategy: {
 			objective: "验收编排会话",
 			audience: [],

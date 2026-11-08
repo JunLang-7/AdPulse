@@ -1,0 +1,272 @@
+// 往返场景工厂：卡片 → 点击 → 持久化 → 处理 → 确认（runbook 第 4/5 节）。
+// 单聊与群聊只在收件人、提示文案和断言前缀上不同，流程与判据完全一致。
+
+import { EVIDENCE } from "../checks.mjs";
+import { mask } from "../redact.mjs";
+import { assertEqual, defineScenario, verdict } from "../scenario.mjs";
+import {
+	actionRefOf,
+	confirmationDelivered,
+	decisionDelivered,
+	inboxFor,
+	roundByNo,
+	roundDelivered,
+	startAcceptanceSession,
+} from "./fixture.mjs";
+
+/**
+ * @typedef {import("../console-api.mjs").ConsoleClient} ConsoleClient
+ * @typedef {import("../console-api.mjs").SessionDetail} SessionDetail
+ * @typedef {import("../scenario.mjs").ScenarioContext} ScenarioContext
+ */
+
+/** @param {SessionDetail} detail */
+const processedInboxes = (detail) =>
+	detail.inbox.filter((item) => item.status === "processed");
+
+/** @param {ScenarioContext} ctx */
+const detailOf = async (ctx) =>
+	/** @type {ConsoleClient} */ (ctx.client).getSession(
+		String(ctx.vars.sessionId),
+	);
+
+const CHANNELS = {
+	user: {
+		title: "单聊全链路",
+		where: "飞书单聊",
+		// 群成员不会自动获得决策权，因此群聊也不额外放宽 allowedActorIds。
+		note: "收件人与真实标识不打印。",
+	},
+	group: {
+		title: "群聊全链路",
+		where: "飞书群聊",
+		note: "群内只有 allowedActorIds 明确列出的成员能生效，群成员身份不自动获得决策权。",
+	},
+};
+
+/**
+ * @param {{ id: string, channel: "user" | "group" }} options
+ */
+export function createRoundTripScenario({ id, channel }) {
+	const meta = CHANNELS[channel];
+	const assertion = (suffix) => `${id}.${suffix}`;
+	const where = meta.where;
+	const cardOf = (roundNo) => `标题为「第 ${roundNo} 轮」那张卡`;
+
+	return defineScenario({
+		id,
+		title: meta.title,
+		evidence: EVIDENCE.platformReal,
+		// 人工点击窗口：单步 300s，可用 --step-timeout 放宽；与 3s ACK 预算无关。
+		timeoutMs: 300_000,
+		setup: async (ctx) => {
+			const session = await startAcceptanceSession(ctx, { kind: channel });
+			ctx.log?.(`会话已建立 session=${mask(session.id, 8, 0)}；${meta.note}`);
+		},
+		steps: [
+			{
+				id: assertion("card"),
+				read: detailOf,
+				until: (detail) => roundDelivered(detail, 1),
+				assertions: [
+					{
+						id: assertion("card.delivered"),
+						title: "第 1 轮决策卡已投递",
+						check: (detail) => {
+							const delivery = detail.deliveries.find(
+								(item) => item.roundId === roundByNo(detail, 1)?.id,
+							);
+							return verdict(
+								decisionDelivered(detail, 1),
+								`delivery=${delivery?.status ?? "缺失"} purpose=${delivery?.purpose ?? "-"} message=${mask(delivery?.externalMessageId ?? "", 6, 4)}`,
+								"卡片未送达：检查 FEISHU_APP_SECRET、机器人权限与 worker 是否运行",
+							);
+						},
+					},
+					{
+						id: assertion("card.round"),
+						title: "第 1 轮处于待选择状态",
+						check: (detail) =>
+							assertEqual(
+								[
+									roundByNo(detail, 1)?.status,
+									detail.session.status,
+									detail.session.roundNo,
+								],
+								["open", "awaiting_input", 1],
+								"round1/status/roundNo",
+							),
+					},
+					{
+						id: assertion("card.options"),
+						title: "每个候选只对应一个不透明 actionRef",
+						check: (detail) => {
+							const round = roundByNo(detail, 1);
+							const actions = detail.actions.filter(
+								(item) => item.roundId === round?.id,
+							);
+							const candidates = round?.candidates ?? [];
+							return verdict(
+								actions.length === candidates.length &&
+									candidates.every((candidate) =>
+										Boolean(actionRefOf(detail, 1, candidate.id)),
+									),
+								`候选 ${candidates.length} 个 / 动作 ${actions.length} 个`,
+								"候选与动作数量不一致：检查卡片构建与 actionRef 生成",
+							);
+						},
+					},
+				],
+			},
+			{
+				id: assertion("round1"),
+				prompt: `请在${where}中点击${cardOf(1)}上的「继续观察」（不要点「确认已阅」）`,
+				stopOnFail: true,
+				read: detailOf,
+				// 只等「已答」就判定，避免点错按钮时白等超时；进入第 2 轮单独断言。
+				until: (detail) => roundByNo(detail, 1)?.status === "answered",
+				assertions: [
+					{
+						id: assertion("round1.selected"),
+						title: "第 1 轮记录所选选项与平台操作者",
+						check: (detail, ctx) => {
+							const round = roundByNo(detail, 1);
+							const actor = round?.selectedBy;
+							const openId = /** @type {{ openId?: string }} */ (ctx.options)
+								?.openId;
+							const actorOk =
+								actor?.kind === "platform" &&
+								Boolean(actor?.externalId) &&
+								(!openId || actor?.externalId === openId);
+							return verdict(
+								round?.selectedOptionId === "observe" && actorOk,
+								`option=${round?.selectedOptionId ?? "-"} actor=${actor?.kind ?? "-"}/${mask(actor?.externalId ?? "", 6, 4)}`,
+								"应点击「继续观察」；若点了其他选项请新建会话重跑",
+							);
+						},
+					},
+					{
+						id: assertion("round1.persisted"),
+						title: "版本递增且快照增加",
+						check: (detail, ctx) => {
+							const baseline =
+								/** @type {{ version: number, snapshots: number }} */ (
+									ctx.vars.baseline
+								);
+							return verdict(
+								detail.session.version > baseline.version &&
+									detail.snapshots.length > baseline.snapshots,
+								`version ${baseline.version} → ${detail.session.version}，快照 ${baseline.snapshots} → ${detail.snapshots.length}`,
+								"选择未落到策略快照：检查事务提交与版本校验",
+							);
+						},
+					},
+					{
+						id: assertion("round1.inbox"),
+						title: "inbox 已 processed",
+						check: (detail) => {
+							const inbox = inboxFor(
+								detail,
+								actionRefOf(
+									detail,
+									1,
+									roundByNo(detail, 1)?.selectedOptionId,
+								),
+							);
+							return verdict(
+								inbox?.status === "processed",
+								`inbox=${inbox?.status ?? "缺失"}${inbox?.reason ? ` reason=${inbox.reason}` : ""}`,
+								"inbox 非 processed：确认 worker 已处理 process_inbox 任务",
+							);
+						},
+					},
+					{
+						id: assertion("round1.observed-interval"),
+						title: "点击到观测到迁移的区间（含人工耗时，不计入验收）",
+						evidence: EVIDENCE.localReal,
+						check: (_detail, ctx) => ({
+							status: "skip",
+							detail: `共 ${ctx.vars.elapsedMs}ms，含人工点击耗时与 1s 轮询粒度；不是服务端 ACK 时延`,
+							hint: "服务端 ACK 时延仍需专用指标；当前按 runbook 第 9 节用代理日志替代取数",
+						}),
+					},
+				],
+			},
+			{
+				id: assertion("round2-card"),
+				stopOnFail: true,
+				read: detailOf,
+				until: (detail) => roundDelivered(detail, 2),
+				assertions: [
+					{
+						id: assertion("round2-card.delivered"),
+						title: "继续观察后自动进入第 2 轮并送达新卡",
+						check: (detail) =>
+							verdict(
+								detail.session.roundNo === 2 &&
+									roundByNo(detail, 2)?.status === "open" &&
+									decisionDelivered(detail, 2),
+								`roundNo=${detail.session.roundNo} round2=${roundByNo(detail, 2)?.status ?? "缺失"} 投递=${decisionDelivered(detail, 2)}`,
+								"非完成类选项应产生下一轮；卡片未送达则检查 worker 与投递任务",
+							),
+					},
+				],
+			},
+			{
+				id: assertion("round2"),
+				prompt: `请在${where}中点击${cardOf(2)}上的「确认已阅」（不要再点「继续观察」）`,
+				stopOnFail: true,
+				read: detailOf,
+				until: (detail) =>
+					detail.session.status === "completed" &&
+					confirmationDelivered(detail),
+				assertions: [
+					{
+						id: assertion("completed"),
+						title: "会话 completed 且收到结束确认卡",
+						check: (detail) => {
+							const confirmation = detail.deliveries.find(
+								(item) => item.purpose === "confirmation",
+							);
+							return verdict(
+								detail.session.status === "completed" &&
+									confirmation?.status === "sent",
+								`status=${detail.session.status} confirmation=${confirmation?.status ?? "缺失"}`,
+								"未收到结束确认卡：检查 confirmation 投递与 worker",
+							);
+						},
+					},
+					{
+						id: assertion("round2.selected"),
+						title: "第 2 轮记录完成类选项",
+						check: (detail) => {
+							const round = roundByNo(detail, 2);
+							return verdict(
+								round?.status === "answered" &&
+									round?.selectedOptionId === "acknowledge",
+								`option=${round?.selectedOptionId ?? "-"} roundStatus=${round?.status ?? "-"}`,
+								"应点击「确认已阅」；其他选项不会结束会话",
+							);
+						},
+					},
+					{
+						id: assertion("round2.persisted"),
+						title: "两轮共两次快照与两条 processed inbox",
+						check: (detail, ctx) => {
+							const baseline =
+								/** @type {{ version: number, snapshots: number }} */ (
+									ctx.vars.baseline
+								);
+							return verdict(
+								detail.snapshots.length === baseline.snapshots + 2 &&
+									processedInboxes(detail).length === 2,
+								`快照 +${detail.snapshots.length - baseline.snapshots}，processed inbox=${processedInboxes(detail).length}`,
+								"轮次未全部落库：核对 rounds 与 inbox 终态",
+							);
+						},
+					},
+				],
+			},
+		],
+	});
+}

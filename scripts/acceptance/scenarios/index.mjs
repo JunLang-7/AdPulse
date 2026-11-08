@@ -2,15 +2,23 @@
 // requires 描述场景对参数的硬依赖，缺参数时入口直接拒绝而不是跑空。
 
 import { dmScenario } from "./dm.mjs";
+import { groupScenario } from "./group.mjs";
+import { rejectScenario } from "./reject.mjs";
 import { roundsScenario } from "./rounds.mjs";
 
 export const SCENARIOS = new Map(
-	[dmScenario, roundsScenario].map((scenario) => [scenario.id, scenario]),
+	[dmScenario, groupScenario, roundsScenario, rejectScenario].map((scenario) => [
+		scenario.id,
+		scenario,
+	]),
 );
 
 const REQUIREMENTS = {
 	dm: ["openId"],
+	group: ["chatId", "openId"],
 	rounds: ["openId"],
+	// 需要第二个真实用户：由未授权成员点击，才能验证拒绝。
+	reject: ["chatId", "openId", "otherOpenId"],
 };
 
 export function scenarioRequires(id) {

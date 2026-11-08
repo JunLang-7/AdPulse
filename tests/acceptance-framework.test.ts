@@ -29,6 +29,8 @@ import {
 	verdict,
 } from "../scripts/acceptance/scenario.mjs";
 import { dmScenario } from "../scripts/acceptance/scenarios/dm.mjs";
+import { groupScenario } from "../scripts/acceptance/scenarios/group.mjs";
+import { rejectScenario } from "../scripts/acceptance/scenarios/reject.mjs";
 import { roundsScenario } from "../scripts/acceptance/scenarios/rounds.mjs";
 
 test("redact: 凭据、地址与数据库串只保留可判读部分", () => {
@@ -376,11 +378,16 @@ type FakeInbox = {
 	id: string;
 	status: string;
 	reason?: string;
-	command: { actionRef: string };
+	command: {
+		actionRef: string;
+		actor?: { kind: string; externalId?: string };
+	};
 };
 
 type FakeSession = {
 	id: string;
+	recipient: { accountId: string; kind: string; externalId: string };
+	allowedActorIds: string[];
 	status: string;
 	version: number;
 	roundNo: number;
@@ -412,8 +419,8 @@ function fakeServer(clock: { value: number }) {
 		lastCreatedId: "",
 		/** 置 true 可模拟「服务端缺少已答轮次校验」的回归。 */
 		acceptStale: false,
-		/** 模拟真人在飞书客户端点一次卡片。 */
-		humanClick(sessionId: string, optionId: string) {
+		/** 模拟某个真人在飞书客户端点一次卡片。 */
+		humanClick(sessionId: string, optionId: string, actorId = "ou_test") {
 			const session = sessions.get(sessionId);
 			if (!session) throw new Error("unknown session");
 			const round = session.rounds.at(-1);
@@ -421,13 +428,16 @@ function fakeServer(clock: { value: number }) {
 				(item) => item.roundId === round?.id && item.optionId === optionId,
 			);
 			if (!action) throw new Error("unknown option");
-			server.submitChoice(action.id);
+			server.submitChoice(action.id, actorId);
 		},
 		createSession(input: Record<string, unknown>) {
 			sequence += 1;
 			const id = `sess-${sequence}`;
+			const recipient = input.recipient as FakeSession["recipient"];
 			const session: FakeSession = {
 				id,
+				recipient,
+				allowedActorIds: [...((input.allowedActorIds as string[]) ?? [])],
 				status: "awaiting_input",
 				version: 0,
 				roundNo: 1,
@@ -472,6 +482,7 @@ function fakeServer(clock: { value: number }) {
 			return {
 				session: {
 					id: session.id,
+					recipient: session.recipient,
 					status: session.status,
 					version: session.version,
 					roundNo: session.roundNo,
@@ -485,10 +496,14 @@ function fakeServer(clock: { value: number }) {
 				jobs: [],
 			};
 		},
-		submitChoice(actionRef: string) {
+		submitChoice(actionRef: string, actorId = "ou_test") {
 			sequence += 1;
 			const id = `inbox-${sequence}`;
-			const inbox: FakeInbox = { id, status: "pending", command: { actionRef } };
+			const inbox: FakeInbox = {
+				id,
+				status: "pending",
+				command: { actionRef, actor: { kind: "platform", externalId: actorId } },
+			};
 			choices.set(id, inbox);
 			const owner = [...sessions.values()].find((session) =>
 				session.actions.some((action) => action.id === actionRef),
@@ -500,7 +515,12 @@ function fakeServer(clock: { value: number }) {
 			}
 			const action = owner.actions.find((item) => item.id === actionRef);
 			const round = owner.rounds.find((item) => item.id === action?.roundId);
-			if (Date.parse(owner.expiresAt) <= clock.value) {
+			if (!owner.allowedActorIds.includes(actorId)) {
+				// 群成员身份不自动获得决策权：未授权点击直接拒绝且不改策略。
+				owner.inbox.push(inbox);
+				inbox.status = "rejected";
+				inbox.reason = "forbidden";
+			} else if (Date.parse(owner.expiresAt) <= clock.value) {
 				inbox.status = "rejected";
 				inbox.reason = "expired";
 			} else if (round?.status !== "open" && !server.acceptStale) {
@@ -546,7 +566,12 @@ function fakeServer(clock: { value: number }) {
 function scenarioContext(
 	server: ReturnType<typeof fakeServer>,
 	clock: { value: number },
-	options: { clicks?: string[]; openId?: string } = {},
+	options: {
+		clicks?: Array<string | { option: string; actor: string }>;
+		openId?: string;
+		chatId?: string;
+		otherOpenId?: string;
+	} = {},
 ) {
 	const checks = createChecks({ defaultEvidence: EVIDENCE.platformReal });
 	const clicks = [...(options.clicks ?? [])];
@@ -554,7 +579,11 @@ function scenarioContext(
 		record: checks.record,
 		log: () => {},
 		env: { FEISHU_ACCOUNT_ID: "feishu-internal" },
-		options: { openId: options.openId ?? "ou_test" },
+		options: {
+			openId: options.openId ?? "ou_test",
+			chatId: options.chatId ?? "oc_test_chat",
+			otherOpenId: options.otherOpenId,
+		},
 		client: server,
 		vars: {} as Record<string, unknown>,
 		now: () => clock.value,
@@ -562,7 +591,9 @@ function scenarioContext(
 		sleep: async (ms: number) => {
 			clock.value += ms;
 			const next = clicks.shift();
-			if (next) server.humanClick(server.lastCreatedId, next);
+			if (!next) return;
+			if (typeof next === "string") server.humanClick(server.lastCreatedId, next);
+			else server.humanClick(server.lastCreatedId, next.option, next.actor);
 		},
 	};
 	return { checks, ctx };
@@ -670,5 +701,87 @@ test("rounds 场景：服务端把重复提交当成功时会判失败", async (
 		(item) => item.id === "rounds.repeat.no-effect",
 	);
 	assert.equal(drift?.status, "fail");
+	assert.equal(checks.exitCode(), 1);
+});
+
+test("group 场景：群聊收件人下走完整往返，断言前缀为 group", async () => {
+	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
+	const server = fakeServer(clock);
+	const { checks, ctx } = scenarioContext(server, clock, {
+		clicks: ["observe", "acknowledge"],
+		chatId: "oc_test_chat",
+	});
+	const outcome = await runScenario(groupScenario, ctx);
+	assert.equal(outcome.matched, true);
+	assert.equal(outcome.aborted, false);
+	assert.deepEqual(
+		checks.results.map((item) => [item.id, item.status]),
+		[
+			["group.card.delivered", "ok"],
+			["group.card.round", "ok"],
+			["group.card.options", "ok"],
+			["group.round1.selected", "ok"],
+			["group.round1.persisted", "ok"],
+			["group.round1.inbox", "ok"],
+			["group.round1.observed-interval", "skip"],
+			["group.round2-card.delivered", "ok"],
+			["group.completed", "ok"],
+			["group.round2.selected", "ok"],
+			["group.round2.persisted", "ok"],
+		],
+	);
+	assert.equal(checks.exitCode(), 0);
+});
+
+test("reject 场景：未授权成员被拒且策略不变，授权成员随后生效", async () => {
+	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
+	const server = fakeServer(clock);
+	const { checks, ctx } = scenarioContext(server, clock, {
+		// 先由未授权成员点，再由授权成员点。
+		clicks: [
+			{ option: "acknowledge", actor: "ou_other" },
+			"observe",
+		],
+		chatId: "oc_test_chat",
+		openId: "ou_test",
+		otherOpenId: "ou_other",
+	});
+	const outcome = await runScenario(rejectScenario, ctx);
+	assert.equal(outcome.matched, true);
+	assert.deepEqual(
+		checks.results.map((item) => [item.id, item.status]),
+		[
+			["reject.card.delivered", "ok"],
+			["reject.forbidden.rejected", "ok"],
+			["reject.forbidden.no-effect", "ok"],
+			["reject.forbidden.actor", "ok"],
+			["reject.authorized.processed", "ok"],
+			["reject.authorized.rejected-stays", "ok"],
+		],
+	);
+	assert.match(checks.results[1].detail, /reason=forbidden/);
+	assert.equal(checks.exitCode(), 0);
+});
+
+test("reject 场景：服务端把群成员当有权限时会判失败", async () => {
+	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
+	const server = fakeServer(clock);
+	const { checks, ctx } = scenarioContext(server, clock, {
+		clicks: [{ option: "acknowledge", actor: "ou_other" }, "observe"],
+		chatId: "oc_test_chat",
+		openId: "ou_test",
+		otherOpenId: "ou_other",
+	});
+	// 模拟回归：未授权者被当作允许成员放行。
+	const create = server.createSession.bind(server);
+	server.createSession = (input: Record<string, unknown>) =>
+		create({ ...input, allowedActorIds: ["ou_test", "ou_other"] });
+	const outcome = await runScenario(rejectScenario, ctx);
+	assert.equal(outcome.matched, true);
+	const forbidden = checks.results.find(
+		(item) => item.id === "reject.forbidden.rejected",
+	);
+	assert.equal(forbidden?.status, "fail");
+	assert.match(forbidden?.detail ?? "", /status=processed/);
 	assert.equal(checks.exitCode(), 1);
 });

@@ -31,7 +31,7 @@ import { maskBody } from "./redact.mjs";
  * @property {string} id
  * @property {string} status
  * @property {string} [reason]
- * @property {{ actionRef: string }} command
+ * @property {{ actionRef: string, actor?: { kind: string, externalId?: string, userId?: string } }} command
  *
  * @typedef {Object} DetailDelivery
  * @property {string} id
