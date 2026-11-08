@@ -36,25 +36,35 @@ const FEISHU_HINTS = {
 const hintForCode = (code) =>
 	FEISHU_HINTS[String(code)] ?? "对照飞书开放平台错误码文档定位该 code";
 
-/** 记录里固定的手工验收项；执行方式说明当前是否需要真人操作。 */
+/** 记录里的固定验收项：执行方式写明由脚本断言还是需真人操作。 */
 export const MANUAL_ITEMS = [
 	{
 		title: "验签 / 解密 / tenant-app-token 匹配（含错配置定位）",
-		mode: "真人操作 + 脚本断言",
-	},
-	{ title: "单聊：卡片 → 点击 → 持久化 → 处理 → 确认", mode: "真人操作" },
-	{ title: "群聊：卡片 → 点击 → 持久化 → 处理 → 确认", mode: "真人操作" },
-	{
-		title: "落库前失败显式失败；落库后响应丢失再次点击不重复生效",
-		mode: "真人操作",
+		mode: "脚本断言（自检）",
 	},
 	{
-		title: "非允许成员 / 同轮重复 / 旧卡与过期操作被拒；待发送旧卡被抑制",
-		mode: "真人操作",
+		title: "单聊：卡片 → 点击 → 持久化 → 处理 → 确认",
+		mode: "真人点击 + 脚本断言（--scenario dm）",
 	},
 	{
-		title: "发送超时或失败与业务成功分开；重试保留 delivery.id 与去重窗口风险",
-		mode: "真人操作",
+		title: "群聊：卡片 → 点击 → 持久化 → 处理 → 确认",
+		mode: "真人点击 + 脚本断言（--scenario group）",
+	},
+	{
+		title: "落库前失败显式失败；恢复后只处理一次",
+		mode: "脚本断言（--scenario db-down，隔离实例）",
+	},
+	{
+		title: "非允许成员被拒；旧卡 / 同轮重复 / 过期被拒",
+		mode: "第二人点击 + 脚本断言（reject / rounds）",
+	},
+	{
+		title: "投递失败与业务成功分开；重试复用同一 delivery.id",
+		mode: "脚本断言（--scenario failure）",
+	},
+	{
+		title: "平台触发的 challenge 与真实推送",
+		mode: "真人操作（开发者后台「验证」）",
 	},
 ];
 
