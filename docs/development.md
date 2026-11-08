@@ -170,13 +170,34 @@ docker stop adpulse-test-db
 未设置 TEST_DATABASE_URL 时，该集成测试明确显示 SKIP，其余测试仍执行。
 CI 会启动 PostgreSQL service 并设置此变量，避免把跳过误判为完整验收。
 
-## 7. 扩展与现有限制
+## 7. 受限来源采集（默认关闭）
+
+采集器默认不联网：只有设置 `SOURCES_ENABLED=1` 时，worker 里的 `runSources` 才会按 Asia/Shanghai 08/12/16/20 轮询两个 allowlist 站点。未设置时第一次 tick 即退出，不产生请求。
+
+运维命令（需要 `DATABASE_URL`；只有 `sync` 会联网）：
+
+```bash
+bun run sources status                  # 每站最近一次运行、outcome、失败原因、条目数
+bun run sources list weichai_news       # 只看 active 条目
+bun run sources sync weichai_news       # 手动跑一次，受每日配额与 15 分钟限速约束
+bun run sources prune haier_news        # 手动清理 30 天前的快照（调度器也会每日自动执行）
+bun run sources purge haier_news        # 清空内容并保留身份，防止重新入库
+bun run sources resume haier_news <operator>   # 解除 stopped，记录操作人
+```
+
+排障顺序：先 `status` 看 `lastOutcome` 与 `lastReason`；`stopped` 不会自行恢复，确认站点正常后再 `resume`；收到下架或投诉时直接 `purge`。
+
+行为约束（与 [#41](https://github.com/JunLang-7/AdPulse/issues/41) 一致）：每站每日最多 6 次请求（5 次列表 + 1 次 robots）；403/429 或连续 3 次失败即停止；失败不改动已有条目；快照保留 30 天。
+
+测试用**人造 HTML fixture**，不访问真实站点，因此本地跑测试不会产生任何外发请求。
+
+## 8. 扩展与现有限制
 
 新接 IM：在 channels 中实现 InboundChannel 和 OutboundChannel，构造 ChannelAccount，在 runtime 注册。增加原始请求/ACK、渲染、账户隔离与重试测试；不要把平台字段或 HTTP 响应移入 core。
 
 更换策略：实现 PolicyEngine 并通过 compose 注入。候选必须带冻结的 changes 和 complete 标志；内核不信任模型的边界判断，会重复校验变更和操作者。
 
 生产前仍需：
-真实平台验收、正式认证、数据保留策略、版本化数据库迁移、分页、限流/监控、失效原因提示和长任务租约续期。发送前已有过期/失效投递抑制，但不撤回已送达卡片，也不能完全消除检查与发送间的竞态。消息端到端不承诺 exactly-once。
+真实平台验收、正式认证、数据保留策略、旧库结构迁移的执行与演练（版本化迁移已就位）、分页、限流/监控、失效原因提示和长任务租约续期。发送前已有过期/失效投递抑制，但不撤回已送达卡片，也不能完全消除检查与发送间的竞态。消息端到端不承诺 exactly-once。
 
 设计过程遵循 XEngineer 规范：工程提案与设计澄清由 Issue 承载，进入开发即定稿只读，变更新开增量说明；本文仅随实现维护使用方式。当前已合并交互内核与最小控制台，下一阶段待评审提案见 [#6](https://github.com/JunLang-7/AdPulse/issues/6)。
