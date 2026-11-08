@@ -320,7 +320,7 @@ test("PostgreSQL: a failed auth migration rolls back atomically and can be retri
 		);
 		assert.deepEqual(
 			versions.rows.map((row) => Number(row.version)),
-			[1, 2, 7],
+			[1, 2, 3, 4, 5, 6, 7],
 		);
 	} finally {
 		await check.end();
