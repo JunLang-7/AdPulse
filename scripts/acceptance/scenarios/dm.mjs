@@ -156,28 +156,34 @@ export const dmScenario = defineScenario({
 					},
 				},
 				{
-					id: "dm.round1.next-round",
-					title: "继续观察后进入第 2 轮并收到新卡",
+					id: "dm.round1.observed-interval",
+					title: "点击到观测到迁移的区间（含人工耗时，不计入验收）",
+					evidence: EVIDENCE.localReal,
+					check: (_detail, ctx) => ({
+						status: "skip",
+						detail: `共 ${ctx.vars.elapsedMs}ms，含人工点击耗时与 1s 轮询粒度；不是服务端 ACK 时延`,
+						hint: "服务端 ACK 时延仍需专用指标；当前按 runbook 第 9 节用代理日志替代取数",
+					}),
+				},
+			],
+		},
+		{
+			id: "dm.round2-card",
+			stopOnFail: true,
+			read: detailOf,
+			until: (detail) => roundDelivered(detail, 2),
+			assertions: [
+				{
+					id: "dm.round2-card.delivered",
+					title: "继续观察后自动进入第 2 轮并送达新卡",
 					check: (detail) =>
 						verdict(
 							detail.session.roundNo === 2 &&
 								roundByNo(detail, 2)?.status === "open" &&
 								decisionDelivered(detail, 2),
-							`roundNo=${detail.session.roundNo} round2=${roundByNo(detail, 2)?.status ?? "缺失"}`,
-							"非完成类选项应产生下一轮；选了完成类选项请新建会话重跑",
+							`roundNo=${detail.session.roundNo} round2=${roundByNo(detail, 2)?.status ?? "缺失"} 投递=${decisionDelivered(detail, 2)}`,
+							"非完成类选项应产生下一轮；卡片未送达则检查 worker 与投递任务",
 						),
-				},
-				{
-					id: "dm.round1.latency",
-					title: "服务端处理区间（近似值）",
-					check: (_detail, ctx) => {
-						const elapsed = Number(ctx.vars.elapsedMs);
-						return verdict(
-							elapsed <= 3_000,
-							`点击后 ${elapsed}ms 内观测到迁移（1s 轮询粒度近似，非服务端 ACK 指标）`,
-							"超过 3 秒预算：见 runbook 第 9 节的替代取数与超时判读",
-						);
-					},
 				},
 			],
 		},

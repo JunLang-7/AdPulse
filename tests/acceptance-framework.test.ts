@@ -576,14 +576,21 @@ test("dm 场景：两次点击后全部断言通过（platform-real）", async (
 			["dm.round1.selected", "ok"],
 			["dm.round1.persisted", "ok"],
 			["dm.round1.inbox", "ok"],
-			["dm.round1.next-round", "ok"],
-			["dm.round1.latency", "ok"],
+			["dm.round1.observed-interval", "skip"],
+			["dm.round2-card.delivered", "ok"],
 			["dm.completed", "ok"],
 			["dm.round2.selected", "ok"],
 			["dm.round2.persisted", "ok"],
 		],
 	);
-	assert.ok(checks.results.every((item) => item.evidence === "platform-real"));
+	// 观测区间是 skip（含人工耗时，不计入验收），因此证据等级为 local-real。
+	assert.ok(
+		checks.results.every((item) =>
+			item.id === "dm.round1.observed-interval"
+				? item.evidence === "local-real"
+				: item.evidence === "platform-real",
+		),
+	);
 	assert.equal(checks.exitCode(), 0);
 });
 
