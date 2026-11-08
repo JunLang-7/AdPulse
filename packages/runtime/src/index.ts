@@ -9,12 +9,15 @@ import {
 	EvidenceService,
 	InvestigationAlertService,
 	Orchestrator,
+	SOURCE_DEFINITIONS,
+	SourceService,
 	TaskService,
 	type PolicyEngine,
 	type Storage,
 	Worker,
 } from "@adpluse/core";
 import { MemoryStorage, PostgresStorage } from "@adpluse/storage";
+import { HttpSourceFetcher } from "./source-fetch.js";
 
 export const reviewPolicy: PolicyEngine = {
 	async propose({ signal, roundNo }) {
@@ -57,6 +60,34 @@ export function compose(
 	};
 }
 export type Runtime = ReturnType<typeof compose>;
+
+export {
+	HttpSourceFetcher,
+	isAllowedContentType,
+	isPublicAddress,
+} from "./source-fetch.js";
+export { runSources } from "./source-runner.js";
+
+/** Derived from the allowlisted definitions so the two cannot drift. */
+const SOURCE_HOSTS = [
+	...new Set(
+		Object.values(SOURCE_DEFINITIONS).flatMap((source) => source.allowedHosts),
+	),
+];
+
+/** Collection stays disabled unless SOURCES_ENABLED=1 (Gate 0 in issue #41). */
+export function createSourceService(
+	storage: Storage,
+	env: Record<string, string | undefined> = process.env,
+): SourceService {
+	return new SourceService(
+		storage,
+		new HttpSourceFetcher(SOURCE_HOSTS),
+		{ enabled: env.SOURCES_ENABLED === "1" },
+	);
+}
+
+
 
 export async function fromEnvironment(
 	env: Record<string, string | undefined> = process.env,

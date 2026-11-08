@@ -120,6 +120,25 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (5)",
 				);
 			}
+			if (!current.has(6)) {
+				for (const name of [
+					"sourceStates",
+					"sourceRuns",
+					"sourceSnapshots",
+					"sourceItems",
+				]) await this.createEntityTable(client, name);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_source_run_source
+					ON adpulse_sourceRuns ((data->>'sourceKey'), (data->>'startedAt'))`);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_source_snapshot_entry
+					ON adpulse_sourceSnapshots ((data->>'runId'), (data->>'itemKey'))`);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_source_item_identity
+					ON adpulse_sourceItems ((data->>'sourceKey'), (data->>'itemKey'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_source_item_status
+					ON adpulse_sourceItems ((data->>'sourceKey'), (data->>'status'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (6)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");
@@ -159,6 +178,11 @@ export class PostgresStorage implements Storage {
 							[entity.id, JSON.stringify(entity)],
 						);
 					},
+					delete: async (id: string) => {
+						await client.query(`DELETE FROM adpulse_${name} WHERE id = $1`, [
+							id,
+						]);
+					},
 					all: async () => {
 						const result = await client.query(
 							`SELECT data FROM adpulse_${name} ORDER BY id`,
@@ -185,6 +209,33 @@ export class PostgresStorage implements Storage {
 			} finally {
 				client.release();
 			}
+		}
+	}
+
+	/**
+	 * Cross-process guard for scheduled polling. Uses a session advisory lock on
+	 * a dedicated client; the lock is released even when the work throws.
+	 */
+	async runExclusive<T>(
+		key: string,
+		work: () => Promise<T>,
+	): Promise<{ acquired: boolean; value: T | null }> {
+		const client = await this.pool.connect();
+		let locked = false;
+		try {
+			const result = await client.query(
+				"SELECT pg_try_advisory_lock(hashtext($1)) AS locked",
+				[key],
+			);
+			locked = result.rows[0]?.locked === true;
+			if (!locked) return { acquired: false, value: null };
+			return { acquired: true, value: await work() };
+		} finally {
+			if (locked)
+				await client
+					.query("SELECT pg_advisory_unlock(hashtext($1))", [key])
+					.catch(() => undefined);
+			client.release();
 		}
 	}
 
