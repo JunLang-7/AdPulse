@@ -10,11 +10,22 @@ import {
 } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { ComparisonPanel } from "./comparison-panel";
+import { readEvidenceCorrection, readEvidenceImport } from "./evidence-file";
 import { InvestigationAlertsPanel } from "./investigation-alerts-panel";
 
 type EvidenceImportInput = components["schemas"]["EvidenceImportInput"];
 type EvidenceRevision = components["schemas"]["EvidenceRevision"];
 type EvidenceVersion = components["schemas"]["EvidenceVersion"];
+
+type ReportOperation<Body> = { key: string; body: Body };
+
+function reportError(status: number, conflict: string): Error {
+	if (status === 401 || status === 403)
+		return new Error("当前账号没有操作权限，请确认登录后重试。");
+	if (status === 413) return new Error("报表文件过大，请分批导入。");
+	if (status === 409) return new Error(conflict);
+	return new Error("报表内容未通过校验，请核对任务、时间范围和报表口径。");
+}
 
 export function EvidencePanel({
 	taskId,
@@ -24,9 +35,11 @@ export function EvidencePanel({
 	taskVersion: number;
 }) {
 	const queryClient = useQueryClient();
-	const [json, setJson] = useState("");
+	const [reportFile, setReportFile] = useState<File | null>(null);
 	const [error, setError] = useState("");
-	const importKey = useRef<string | null>(null);
+	const [confirmation, setConfirmation] = useState("");
+	const fileInput = useRef<HTMLInputElement>(null);
+	const importOperation = useRef<ReportOperation<EvidenceImportInput> | null>(null);
 	const evidence = useQuery({
 		queryKey: ["task-evidence", taskId],
 		queryFn: async () => {
@@ -38,37 +51,45 @@ export function EvidencePanel({
 		},
 	});
 	const importMutation = useMutation({
-		mutationFn: async () => {
-			let input: EvidenceImportInput;
-			try {
-				input = JSON.parse(json) as EvidenceImportInput;
-			} catch {
-				throw new Error("请检查 JSON 格式");
-			}
-			if (
-				input.schemaVersion !== 1 ||
-				input.taskRef?.taskId !== taskId ||
-				input.taskRef?.taskVersion !== taskVersion
-			)
-				throw new Error(`taskRef 必须是当前任务版本 ${taskId} v${taskVersion}`);
-			const key = importKey.current ?? crypto.randomUUID();
-			importKey.current = key;
+		mutationFn: async (file: File) => {
+			const operation = importOperation.current ?? {
+				key: crypto.randomUUID(),
+				body: await readEvidenceImport(file, { taskId, taskVersion }),
+			};
+			importOperation.current = operation;
 			const result = await consoleClient.POST("/api/evidence/imports", {
-				body: input,
-				params: { header: { "Idempotency-Key": key } },
+				body: operation.body,
+				params: { header: { "Idempotency-Key": operation.key } },
 			});
-			if (!result.data) throw new Error(JSON.stringify(result.error));
+			if (!result.data) {
+				const { status } = result.response;
+				if (status >= 400 && status < 500) importOperation.current = null;
+				throw reportError(
+					status,
+					"此区间已有不同内容。如需更正，请在该条报表的详情中上传更正文件。",
+				);
+			}
 			return result.data;
 		},
-		onSuccess: async () => {
-			importKey.current = null;
+		onSuccess: async ({ items }) => {
+			importOperation.current = null;
 			setError("");
-			setJson("");
+			setReportFile(null);
+			if (fileInput.current) fileInput.current.value = "";
+			const added = items.filter((item) => item.status === "created").length;
+			const existing = items.length - added;
+			const addedMessage = added ? `已导入 ${added} 个区间。` : "";
+			const existingMessage = existing ? `${existing} 个区间已存在。` : "";
+			setConfirmation(addedMessage + existingMessage);
 			await queryClient.invalidateQueries({
 				queryKey: ["task-evidence", taskId],
 			});
 		},
-		onError: (cause) => setError(String(cause)),
+		onError: (cause) => setError(
+			importOperation.current
+				? "暂时无法确认导入结果，请重试同一份报表。"
+				: cause.message,
+		),
 	});
 
 	return (
@@ -76,57 +97,51 @@ export function EvidencePanel({
 			<CardHeader>
 				<CardTitle>效果证据</CardTitle>
 				<p className="text-sm text-muted-foreground">
-					导入固定 JSON；每批 1–2 个区间，必须引用当前任务版本。缺失、来源 null
-					与真实 0 保持区分。
+					上传为当前任务准备的 AdPulse 报表，每份包含 1 或 2 个统计区间。
 				</p>
 			</CardHeader>
 			<CardContent className="space-y-4">
-				<details className="rounded border p-3 text-sm">
-					<summary className="cursor-pointer font-medium">
-						字段与去重规则
-					</summary>
-					<ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
-						<li>
-							必填来源、账户/计划范围、时间区间/时区、指标定义/公式、币种最小单位、归因和回传状态。
-						</li>
-						<li>
-							values 中省略为未知，null 为来源明确为空，0 为真实零；rawValues
-							原样保留。
-						</li>
-						<li>同业务范围与内容复用证据；内容变更需提交带原因的新版本。</li>
-					</ul>
-				</details>
 				<form
-					className="space-y-2"
+					className="space-y-3 rounded-lg border p-4"
 					onSubmit={(event) => {
 						event.preventDefault();
+						if (!reportFile || importMutation.isPending) return;
 						setError("");
-						importMutation.mutate();
+						setConfirmation("");
+						importMutation.mutate(reportFile);
 					}}
 				>
 					<label className="block space-y-1 text-sm">
-						<span>固定 JSON 导入内容</span>
-						<textarea
-							className="min-h-56 w-full rounded-md border bg-background p-3 font-mono text-xs"
-							value={json}
-							placeholder={`{
-  "schemaVersion": 1,
-  "taskRef": { "taskId": "${taskId}", "taskVersion": ${taskVersion} },
-  "records": []
-}`}
-							onChange={(event) => setJson(event.target.value)}
+						<span className="font-medium">选择报表文件</span>
+						<Input
+							ref={fileInput}
+							type="file"
+							accept=".json,application/json"
+							className="h-auto py-2"
+							disabled={importMutation.isPending || importOperation.current !== null}
+							onChange={(event) => {
+								setReportFile(event.target.files?.[0] ?? null);
+								setError("");
+								setConfirmation("");
+							}}
 						/>
 					</label>
+					<p className="text-xs text-muted-foreground">
+						AdPulse 格式（.json） · 当前任务 v{taskVersion}
+					</p>
 					{error ? (
 						<p role="alert" className="text-sm text-red-600">
-							导入失败：{error}
+							{error}
 						</p>
 					) : null}
+					{confirmation ? <p role="status" className="text-sm">{confirmation}</p> : null}
 					<Button
 						type="submit"
-						disabled={importMutation.isPending || !json.trim()}
+						disabled={importMutation.isPending || !reportFile}
 					>
-						{importMutation.isPending ? "导入中…" : "校验并导入"}
+						{importMutation.isPending
+							? "导入中…"
+							: importOperation.current ? "重试导入" : "导入报表"}
 					</Button>
 				</form>
 				{evidence.isLoading ? <p className="text-sm">正在加载证据…</p> : null}
@@ -155,11 +170,13 @@ export function EvidencePanel({
 
 function EvidenceItem({ item }: { item: EvidenceVersion }) {
 	const [expanded, setExpanded] = useState(false);
-	const [revisionText, setRevisionText] = useState("");
+	const [correctionFile, setCorrectionFile] = useState<File | null>(null);
 	const [reason, setReason] = useState("");
 	const [revisionError, setRevisionError] = useState("");
+	const [revisionConfirmation, setRevisionConfirmation] = useState("");
 	const queryClient = useQueryClient();
-	const revisionKey = useRef<string | null>(null);
+	const correctionInput = useRef<HTMLInputElement>(null);
+	const revisionOperation = useRef<ReportOperation<EvidenceRevision> | null>(null);
 	const detail = useQuery({
 		queryKey: ["evidence", item.evidenceId],
 		enabled: expanded,
@@ -172,37 +189,39 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 		},
 	});
 	const revise = useMutation({
-		mutationFn: async () => {
-			let record: EvidenceRevision["record"];
-			try {
-				record = JSON.parse(revisionText) as EvidenceRevision["record"];
-			} catch {
-				throw new Error("修订记录不是有效 JSON");
-			}
-			const key = revisionKey.current ?? crypto.randomUUID();
-			revisionKey.current = key;
+		mutationFn: async (file: File) => {
+			const operation = revisionOperation.current ?? {
+				key: crypto.randomUUID(),
+				body: {
+					expectedEvidenceVersion: detail.data?.current.version ?? item.version,
+					reason: reason.trim(),
+					record: await readEvidenceCorrection(file),
+				},
+			};
+			revisionOperation.current = operation;
 			const result = await consoleClient.POST(
 				"/api/evidence/{evidenceId}/revisions",
 				{
 					params: {
 						path: { evidenceId: item.evidenceId },
-						header: { "Idempotency-Key": key },
+						header: { "Idempotency-Key": operation.key },
 					},
-					body: {
-						expectedEvidenceVersion:
-							detail.data?.current.version ?? item.version,
-						reason,
-						record,
-					},
+					body: operation.body,
 				},
 			);
-			if (!result.data) throw new Error(JSON.stringify(result.error));
+			if (!result.data) {
+				const { status } = result.response;
+				if (status >= 400 && status < 500) revisionOperation.current = null;
+				throw reportError(status, "报表版本有更新，请刷新详情并核对后再更正。");
+			}
 			return result.data;
 		},
-		onSuccess: async () => {
-			revisionKey.current = null;
+		onSuccess: async ({ version }) => {
+			revisionOperation.current = null;
 			setRevisionError("");
-			setRevisionText("");
+			setRevisionConfirmation(`已保存更正，当前为 v${version}。`);
+			setCorrectionFile(null);
+			if (correctionInput.current) correctionInput.current.value = "";
 			setReason("");
 			await queryClient.invalidateQueries({
 				queryKey: ["evidence", item.evidenceId],
@@ -211,7 +230,11 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 				queryKey: ["task-evidence", item.taskId],
 			});
 		},
-		onError: (cause) => setRevisionError(String(cause)),
+		onError: (cause) => setRevisionError(
+			revisionOperation.current
+				? "暂时无法确认更正结果，请重试同一次更正。"
+				: cause.message,
+		),
 	});
 
 	return (
@@ -318,38 +341,62 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 							</div>
 							<details className="rounded border p-2">
 								<summary className="cursor-pointer font-medium">
-									提交显式修订
+									更正报表
 								</summary>
-								<div className="mt-2 space-y-2">
+								<form
+									className="mt-2 space-y-2"
+									onSubmit={(event) => {
+										event.preventDefault();
+										if (!correctionFile || !reason.trim() || revise.isPending) return;
+										setRevisionError("");
+										setRevisionConfirmation("");
+										revise.mutate(correctionFile);
+									}}
+								>
+									<p className="text-muted-foreground">
+										上传同一区间的更正文件，并说明更正原因。历史版本仍可查看。
+									</p>
 									<Input
 										aria-label="修订原因"
-										placeholder="修订原因（必填）"
+										placeholder="更正原因（必填）"
 										value={reason}
+										required
+										maxLength={1000}
+										disabled={revise.isPending || revisionOperation.current !== null}
 										onChange={(event) => setReason(event.target.value)}
 									/>
-									<textarea
-										className="min-h-40 w-full rounded-md border bg-background p-2 font-mono text-xs"
-										placeholder="粘贴一条完整的 EvidenceRecordInput JSON（不含 taskRef）"
-										value={revisionText}
-										onChange={(event) => setRevisionText(event.target.value)}
-									/>
+									<label className="block space-y-1">
+										<span>选择单区间更正文件（.json）</span>
+										<Input
+											ref={correctionInput}
+											type="file"
+											accept=".json,application/json"
+											className="h-auto py-2"
+											disabled={revise.isPending || revisionOperation.current !== null}
+											onChange={(event) => {
+												setCorrectionFile(event.target.files?.[0] ?? null);
+												setRevisionError("");
+												setRevisionConfirmation("");
+											}}
+										/>
+									</label>
 									{revisionError ? (
 										<p role="alert" className="text-red-600">
-											修订失败：{revisionError}
+											{revisionError}
 										</p>
 									) : null}
+									{revisionConfirmation ? <p role="status">{revisionConfirmation}</p> : null}
 									<Button
-										type="button"
+										type="submit"
 										disabled={
-											revise.isPending || !reason.trim() || !revisionText.trim()
+											revise.isPending || !reason.trim() || !correctionFile
 										}
-										onClick={() => revise.mutate()}
 									>
 										{revise.isPending
 											? "保存中…"
-											: `保存为 v${(detail.data.current.version ?? item.version) + 1}`}
+											: revisionOperation.current ? "重试更正" : "保存更正"}
 									</Button>
-								</div>
+								</form>
 							</details>
 						</>
 					) : null}
