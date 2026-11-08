@@ -18,6 +18,7 @@ import {
 } from "@adpluse/core";
 import { MemoryStorage, PostgresStorage } from "@adpluse/storage";
 import { HttpSourceFetcher } from "./source-fetch.js";
+import { createDeepSeekTaskDraftExtractor, type TaskDraftExtractor } from "./task-draft-extractor.js";
 
 export const reviewPolicy: PolicyEngine = {
 	async propose({ signal, roundNo }) {
@@ -59,7 +60,9 @@ export function compose(
 		worker: new Worker(storage, decisions, channels.outbound(), undefined, 5, investigationAlerts),
 	};
 }
-export type Runtime = ReturnType<typeof compose>;
+export type Runtime = ReturnType<typeof compose> & { extractTaskDraft?: TaskDraftExtractor };
+
+export { taskDraftBriefMaxLength } from "./task-draft-extractor.js";
 
 export {
 	HttpSourceFetcher,
@@ -134,8 +137,10 @@ export async function fromEnvironment(
 				},
 			},
 		});
+	const extractTaskDraft = createDeepSeekTaskDraftExtractor(env.DEEPSEEK_API_KEY);
 	return {
 		...compose(postgres ?? new MemoryStorage(), accounts),
+		...(extractTaskDraft ? { extractTaskDraft } : {}),
 		close: async () => {
 			await postgres?.close();
 		},

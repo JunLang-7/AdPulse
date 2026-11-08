@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/task-drafts/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Extract editable suggestions from a brief explicitly submitted to the configured provider. This operation does not save a draft or create a task. */
+        post: operations["extractTaskDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks": {
         parameters: {
             query?: never;
@@ -302,6 +319,16 @@ export interface components {
             minimumConsultations?: number;
             handlingDeadlineHours?: number;
             maxPushRounds?: number;
+        };
+        TaskDraftExtractionInput: {
+            brief: string;
+        };
+        TaskDraftSuggestions: {
+            product?: string;
+            objective?: string;
+            audience?: string[];
+            sellingPoints?: string[];
+            channels?: string[];
         };
         TaskInput: {
             product: string;
@@ -903,6 +930,75 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    extractTaskDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskDraftExtractionInput"];
+            };
+        };
+        responses: {
+            /** @description Suggestions supported by verbatim snippets from the brief */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDraftSuggestions"];
+                };
+            };
+            /** @description Invalid request or blank brief */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description JSON required */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Extraction not configured, busy or temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     listTasks: {
         parameters: {
             query?: never;

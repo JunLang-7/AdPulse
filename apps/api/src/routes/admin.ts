@@ -8,7 +8,7 @@ import type {
 	TaskInput,
 	Transaction,
 } from "@adpluse/core";
-import type { Runtime } from "@adpluse/runtime";
+import { taskDraftBriefMaxLength, type Runtime } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
 
@@ -84,6 +84,9 @@ const sessionInput = z
 			.strict(),
 		expiresAt: z.iso.datetime(),
 	})
+	.strict();
+const taskDraftExtractionInput = z
+	.object({ brief: z.string().max(taskDraftBriefMaxLength).trim().min(1) })
 	.strict();
 const taskInput = z
 	.object({
@@ -268,6 +271,12 @@ export async function handleAdmin(
 	userId: string,
 	path: string,
 ): Promise<void> {
+	if (path === "/api/task-drafts/extract" && req.method === "POST") {
+		const { brief } = taskDraftExtractionInput.parse(await readJson(req));
+		const suggestions = await runtime.extractTaskDraft?.(brief);
+		if (!suggestions) throw new HttpError(503, "task draft extraction unavailable");
+		return json(res, 200, suggestions);
+	}
 	if (path === "/api/tasks" && req.method === "GET") {
 		return json(res, 200, { items: await runtime.tasks.list(userId) });
 	}

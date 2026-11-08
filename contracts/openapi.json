@@ -10,6 +10,21 @@
     }
   ],
   "paths": {
+    "/api/task-drafts/extract": {
+      "post": {
+        "operationId": "extractTaskDraft",
+        "description": "Extract editable suggestions from a brief explicitly submitted to the configured provider. This operation does not save a draft or create a task.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDraftExtractionInput" } } } },
+        "responses": {
+          "200": { "description": "Suggestions supported by verbatim snippets from the brief", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDraftSuggestions" } } } },
+          "400": { "description": "Invalid request or blank brief", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "413": { "description": "Request too large", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "415": { "description": "JSON required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Extraction not configured, busy or temporarily unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/api/tasks": {
       "get": {
         "operationId": "listTasks",
@@ -838,6 +853,25 @@
           "maxPushRounds": { "type": "integer", "minimum": 1 }
         },
         "required": [],
+        "additionalProperties": false
+      },
+      "TaskDraftExtractionInput": {
+        "type": "object",
+        "properties": {
+          "brief": { "type": "string", "minLength": 1, "maxLength": 2500 }
+        },
+        "required": ["brief"],
+        "additionalProperties": false
+      },
+      "TaskDraftSuggestions": {
+        "type": "object",
+        "properties": {
+          "product": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "objective": { "type": "string", "minLength": 1, "maxLength": 320 },
+          "audience": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 160 } },
+          "sellingPoints": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 160 } },
+          "channels": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 128 } }
+        },
         "additionalProperties": false
       },
       "TaskInput": {
