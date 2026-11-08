@@ -1,25 +1,18 @@
 import createClient from "openapi-fetch";
+import { sessionExpiredTarget } from "./views/auth/return-to";
 import type { paths } from "./generated/api.js";
 
-const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
-const token = import.meta.env.VITE_CONSOLE_TOKEN ?? "";
+/** Console components use the same-origin generated client and opaque session cookie. */
+export const consoleClient = createClient<paths>({ baseUrl: "" });
 
-if (!token) {
-	console.warn(
-		"VITE_CONSOLE_TOKEN is empty: console API calls will be rejected",
-	);
-}
-
-/** Console components use this generated-contract client, never hand-written fetch calls. */
-export const consoleClient = createClient<paths>({
-	baseUrl,
-	headers: { authorization: `Bearer ${token}` },
+consoleClient.use({
+	onResponse({ request, response }) {
+		if (response.status !== 401 || typeof window === "undefined") return;
+		const path = new URL(request.url, window.location.origin).pathname;
+		// The login gate and explicit logout handle their own 401 responses.
+		if (path === "/api/me" || path === "/api/logout") return;
+		if (window.location.pathname === "/login") return;
+		window.location.assign(sessionExpiredTarget(window.location));
+	},
 });
-
-export function createConsoleClient(base: string, bearer: string) {
-	return createClient<paths>({
-		baseUrl: base,
-		headers: { authorization: `Bearer ${bearer}` },
-	});
-}
 export type { components, paths } from "./generated/api.js";
