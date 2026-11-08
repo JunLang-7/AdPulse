@@ -88,9 +88,9 @@ export function createManagedDocker(options = {}) {
 				if (!running(MANAGED_DB_NAME)) this.startDb();
 				return MANAGED_DB_NAME;
 			}
+			// 不能用 --rm：本场景要 stop → start 恢复同一容器，--rm 会在 stop 时直接删除。
 			docker([
 				"run",
-				"--rm",
 				"-d",
 				"--name",
 				MANAGED_DB_NAME,

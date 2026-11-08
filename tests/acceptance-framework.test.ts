@@ -970,6 +970,8 @@ test("docker: 只操作带前缀与自有 label 的容器", () => {
 	const created = calls.find((args) => args[0] === "run");
 	assert.ok(created?.includes("127.0.0.1:5433:5432"));
 	assert.ok(created?.includes("adpulse.acceptance=1"));
+	// stop → start 要恢复同一容器，因此不能带 --rm（stop 会直接删除容器）。
+	assert.ok(!created?.includes("--rm"));
 	assert.equal(state.names.has(MANAGED_DB_NAME), true);
 
 	// 被停/被删都只针对已验证归属的容器。
