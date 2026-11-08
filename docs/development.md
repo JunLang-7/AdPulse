@@ -148,6 +148,14 @@ bun run feishu:acceptance -- --scenario reject --chat-id oc_xxx \
 - `reject`：群聊下先让 `--other-open-id` 那位点一次，断言 `rejected/forbidden` 且
   `version`/快照/轮次不变；再让授权成员点一次，断言正常生效且被拒记录不被改写。
   需要第二个真实用户配合，缺人时该场景无法取证。
+- `failure`：不需要人工点击。收件人故意不可达，断言「业务侧成功（`version`/快照/
+  `inbox processed`）与投递失败（`delivery=failed` + 发送任务 failed）分离」，
+  再用 `POST /api/jobs/{id}/retry` 验证重试复用同一 `delivery.id`（投递条数不增加）。
+- `db-down`：停库注入，需同时满足 `--managed-db` 与 `DATABASE_URL` 指向本脚本自建的
+  一次性库（`127.0.0.1:5433/adpulse_acceptance`）；否则整步记 `skip`，**不会**停任何其它库。
+  断言：停库时回调返回 5xx 且无成功 ACK；恢复后同一事件只处理一次。
+  一次性容器只由本脚本创建（名称前缀 `adpulse-acceptance-`、label `adpulse.acceptance=1`、
+  固定端口 5433），默认运行结束即清理，`--keep` 保留；不接受任意容器名或端口，不使用 `sudo`。
 - `rounds`：只需点一次卡片建立已答轮次，其余由脚本提交并断言旧卡、同轮重复被拒（`already_handled`），以及过期会话提交被拒（`expired`）；过期分支要求短有效期会话能及时送出第 1 轮卡片，否则记 `skip`。
 
 场景会新建验收会话并按提示请你在飞书客户端点击，不删除或改写既有数据。断言结果标为 `platform-real`（由真实点击驱动）。

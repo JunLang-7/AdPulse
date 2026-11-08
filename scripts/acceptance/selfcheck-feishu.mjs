@@ -3,12 +3,16 @@
 // 因此只能证明配置与连通一致，不能替代真机验收（#12）。
 // 不发送业务消息、不写业务数据；输出已脱敏。
 
-import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { EVIDENCE } from "./checks.mjs";
+import {
+	actionPayload as buildActionPayload,
+	challengePayload as buildChallengePayload,
+	signedRequest as buildSignedRequest,
+} from "./feishu-crypto.mjs";
 import { callJson, errorReason, httpStatus } from "./http.mjs";
 import { mask, maskBody, maskUrl, redactDatabaseUrl } from "./redact.mjs";
 import { ROOT, gitCommit } from "./workspace.mjs";
@@ -148,68 +152,20 @@ export async function runFeishuSelfCheck({ env, options, checks }) {
 	}
 
 	// ---------- 离线协议自检 ----------
-	function seal(payload, encryptKey) {
-		const iv = randomBytes(16);
-		const key = createHash("sha256").update(encryptKey).digest();
-		const cipher = createCipheriv("aes-256-cbc", key, iv);
-		return Buffer.concat([
-			iv,
-			cipher.update(JSON.stringify(payload)),
-			cipher.final(),
-		]).toString("base64");
-	}
-
-	function signedRequest(payload, overrides = {}) {
-		const timestamp =
-			overrides.timestamp ?? String(Math.floor(Date.now() / 1000));
-		const nonce = overrides.nonce ?? randomBytes(8).toString("hex");
-		const body = overrides.encrypt
-			? { encrypt: seal(payload, config.encryptKey) }
-			: payload;
-		const rawBody = Buffer.from(JSON.stringify(body));
-		const signature = createHash("sha256")
-			.update(timestamp + nonce + config.encryptKey)
-			.update(rawBody)
-			.digest("hex");
-		return {
-			method: "POST",
-			url: "/webhooks/acceptance",
-			rawBody,
-			headers: {
-				"x-lark-request-timestamp": timestamp,
-				"x-lark-request-nonce": nonce,
-				"x-lark-signature": overrides.signature ?? signature,
+	// 报文构造统一在 feishu-crypto.mjs：真实 encrypt key 加密、按平台规则签名。
+	const signedRequest = (payload, overrides = {}) =>
+		buildSignedRequest(payload, { encryptKey: config.encryptKey, ...overrides });
+	const challengePayload = (overrides = {}) =>
+		buildChallengePayload(config.verificationToken, overrides);
+	const actionPayload = (overrides = {}) =>
+		buildActionPayload(
+			{
+				appId: config.appId,
+				tenantKey: config.tenantKey,
+				verificationToken: config.verificationToken,
 			},
-		};
-	}
-
-	function challengePayload(overrides = {}) {
-		return {
-			type: "url_verification",
-			token: overrides.token ?? config.verificationToken,
-			challenge: overrides.challenge ?? randomBytes(8).toString("hex"),
-		};
-	}
-
-	function actionPayload(overrides = {}) {
-		return {
-			schema: "2.0",
-			header: {
-				event_id: overrides.eventId ?? `acceptance-${Date.now()}`,
-				token: config.verificationToken,
-				app_id: config.appId,
-				tenant_key: overrides.tenantKey ?? config.tenantKey,
-				event_type: "card.action.trigger",
-			},
-			event: {
-				operator: {
-					open_id: overrides.actor ?? "ou_acceptance_selfcheck",
-					tenant_key: overrides.tenantKey ?? config.tenantKey,
-				},
-				action: { value: { actionRef: overrides.actionRef ?? "acceptance" } },
-			},
-		};
-	}
+			overrides,
+		);
 
 	async function checkProtocol(inbound) {
 		const parse = (request) => inbound.parse(request);

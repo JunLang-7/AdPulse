@@ -29,6 +29,8 @@ export const USAGE = `用法：bun run feishu:acceptance [-- 选项]
   --scenario <id>     运行验收场景（dm / rounds）；先跑只读自检作为前置
   --list-scenarios    列出可用场景
   --step-timeout <s>  场景单步等待人工动作的秒数，默认用场景内置值
+  --managed-db        允许 db-down 场景停启本脚本自建的一次性数据库
+  --keep              场景结束后保留一次性容器（默认清理）
   --skip-preflight    跳过场景前置自检（仅本地调试，不能用于真机留证）
   --write             生成验收记录 docs/acceptance/records/<日期>.md
   --force             覆盖同名验收记录
@@ -49,6 +51,8 @@ export function parseArgs(argv) {
 		scenario: undefined,
 		listScenarios: false,
 		stepTimeoutMs: undefined,
+		managedDb: false,
+		keep: false,
 		skipPreflight: false,
 		write: false,
 		force: false,

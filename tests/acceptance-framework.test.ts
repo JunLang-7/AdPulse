@@ -28,10 +28,17 @@ import {
 	runScenario,
 	verdict,
 } from "../scripts/acceptance/scenario.mjs";
+import { dbDownScenario } from "../scripts/acceptance/scenarios/db-down.mjs";
 import { dmScenario } from "../scripts/acceptance/scenarios/dm.mjs";
+import { failureScenario } from "../scripts/acceptance/scenarios/failure.mjs";
 import { groupScenario } from "../scripts/acceptance/scenarios/group.mjs";
 import { rejectScenario } from "../scripts/acceptance/scenarios/reject.mjs";
 import { roundsScenario } from "../scripts/acceptance/scenarios/rounds.mjs";
+import {
+	MANAGED_DB_NAME,
+	createManagedDocker,
+	pointsAtManagedDb,
+} from "../scripts/acceptance/docker.mjs";
 
 test("redact: 凭据、地址与数据库串只保留可判读部分", () => {
 	assert.equal(mask(""), "(缺失)");
@@ -401,8 +408,16 @@ type FakeSession = {
 		purpose: string;
 		status: string;
 		externalMessageId?: string;
+		lastError?: string;
 	}>;
 	snapshots: Array<{ version: number }>;
+	jobs: Array<{
+		id: string;
+		status: string;
+		attempts: number;
+		lastError?: string;
+		task: { kind: string; deliveryId?: string };
+	}>;
 };
 
 const CANDIDATES = [
@@ -448,6 +463,7 @@ function fakeServer(clock: { value: number }) {
 				deliveries: [],
 				// 真实服务端在建会话时即写入一条 version=0 的初始快照。
 				snapshots: [{ version: 0 }],
+				jobs: [],
 			};
 			sessions.set(id, session);
 			server.openRound(session, 1);
@@ -468,12 +484,24 @@ function fakeServer(clock: { value: number }) {
 					roundId,
 					optionId: candidate.id,
 				});
+			const unreachable = session.recipient.externalId.startsWith("ou_0000");
 			session.deliveries.push({
 				id: `del-${roundId}`,
 				roundId,
 				purpose: "decision",
-				status: "sent",
-				externalMessageId: `om_${roundId}`,
+				status: unreachable ? "failed" : "sent",
+				...(unreachable
+					? { lastError: "Feishu send failed (HTTP 400, code 230002)" }
+					: { externalMessageId: `om_${roundId}` }),
+			});
+			session.jobs.push({
+				id: `job-${roundId}`,
+				status: unreachable ? "failed" : "done",
+				attempts: unreachable ? 5 : 1,
+				task: { kind: "send_delivery", deliveryId: `del-${roundId}` },
+				...(unreachable
+					? { lastError: "Feishu send failed (HTTP 400, code 230002)" }
+					: {}),
 			});
 		},
 		getSession(id: string) {
@@ -493,7 +521,7 @@ function fakeServer(clock: { value: number }) {
 				inbox: session.inbox,
 				deliveries: session.deliveries,
 				snapshots: session.snapshots,
-				jobs: [],
+				jobs: session.jobs,
 			};
 		},
 		submitChoice(actionRef: string, actorId = "ou_test") {
@@ -553,6 +581,16 @@ function fakeServer(clock: { value: number }) {
 				}
 			}
 			return { inboxId: id, status: inbox.status };
+		},
+		retryJob(jobId: string) {
+			for (const session of sessions.values()) {
+				const job = session.jobs.find((item) => item.id === jobId);
+				if (job) {
+					job.status = "pending";
+					job.attempts = 0;
+				}
+			}
+			return { ok: true };
 		},
 		getChoice(inboxId: string) {
 			const inbox = choices.get(inboxId);
@@ -784,4 +822,177 @@ test("reject 场景：服务端把群成员当有权限时会判失败", async (
 	assert.equal(forbidden?.status, "fail");
 	assert.match(forbidden?.detail ?? "", /status=processed/);
 	assert.equal(checks.exitCode(), 1);
+});
+
+test("failure 场景：业务成功与投递失败分离，重试复用同一 delivery", async () => {
+	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
+	const server = fakeServer(clock);
+	const { checks, ctx } = scenarioContext(server, clock, { clicks: [] });
+	const outcome = await runScenario(failureScenario, ctx);
+	assert.equal(outcome.matched, true);
+	assert.deepEqual(
+		checks.results.map((item) => [item.id, item.status]),
+		[
+			["failure.round1.delivery-failed", "ok"],
+			["failure.round1.round-open", "ok"],
+			["failure.business-succeeded", "ok"],
+			["failure.delivery-still-failed", "ok"],
+			["failure.retry-same-delivery", "ok"],
+			["failure.retry-restarted", "ok"],
+		],
+	);
+	assert.match(checks.results[0].detail, /code 230002/);
+	assert.ok(checks.results.every((item) => item.evidence === "local-real"));
+	assert.equal(checks.exitCode(), 0);
+});
+
+test("failure 场景：重试换新 delivery 或未真正重跑都会判失败", async () => {
+	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
+	const server = fakeServer(clock);
+	const { checks, ctx } = scenarioContext(server, clock, { clicks: [] });
+	const originalRetry = server.retryJob.bind(server);
+	// 模拟回归：重试时新建 delivery，且任务 attempts 未重置。
+	server.retryJob = (jobId: string) => {
+		const detail = server.getSession(server.lastCreatedId);
+		const job = detail.jobs.find((item) => item.id === jobId);
+		const oldId = (job?.task.deliveryId ?? "") as string;
+		if (job && oldId) {
+			job.attempts = 5;
+			job.task.deliveryId = `${oldId}-new`;
+			detail.deliveries.push({
+				id: `${oldId}-new`,
+				roundId: oldId.replace("del-", ""),
+				purpose: "decision",
+				status: "failed",
+				lastError: "Feishu send failed (HTTP 400, code 230002)",
+			});
+		}
+		return { ok: true };
+	};
+	const outcome = await runScenario(failureScenario, ctx);
+	// 重试后 attempts 未回退，等待会超时 → blocked；断言不通过。
+	const aborted = checks.results.at(-1);
+	assert.ok(
+		aborted?.status === "blocked" || aborted?.status === "fail",
+		`实际状态 ${aborted?.status}`,
+	);
+	const same = checks.results.find(
+		(item) => item.id === "failure.retry-same-delivery",
+	);
+	if (same) assert.equal(same.status, "fail");
+});
+
+test("docker: 只操作带前缀与自有 label 的容器", () => {
+	const state = {
+		names: new Set<string>(),
+		labels: new Map<string, string>(),
+		running: new Map<string, boolean>(),
+	};
+	const calls: string[][] = [];
+	const run = (args: string[]) => {
+		calls.push(args);
+		const name = args.at(-1) ?? "";
+		if (args[0] === "inspect") {
+			if (!state.names.has(name)) return { status: 1, stdout: "", stderr: "no such" };
+			const format = args.includes("--format") ? args[args.indexOf("--format") + 1] : "";
+			if (format?.includes("Labels")) {
+				return { status: 0, stdout: `${state.labels.get(name) ?? ""}\n`, stderr: "" };
+			}
+			if (format?.includes("State.Running")) {
+				return { status: 0, stdout: `${state.running.get(name) ? "true" : "false"}\n`, stderr: "" };
+			}
+			return { status: 0, stdout: "{}", stderr: "" };
+		}
+		if (args[0] === "run") {
+			const nameIndex = args.indexOf("--name");
+			const name = args[nameIndex + 1] as string;
+			const labelIndex = args.indexOf("--label");
+			state.names.add(name);
+			state.labels.set(name, String(args[labelIndex + 1]).split("=")[1] ?? "");
+			state.running.set(name, true);
+			return { status: 0, stdout: "cid\n", stderr: "" };
+		}
+		if (args[0] === "start") {
+			state.running.set(args[1] as string, true);
+			return { status: 0, stdout: "", stderr: "" };
+		}
+		if (args[0] === "stop") {
+			state.running.set(args[1] as string, false);
+			return { status: 0, stdout: "", stderr: "" };
+		}
+		if (args[0] === "rm") {
+			const target = args[args.length - 1] as string;
+			state.names.delete(target);
+			return { status: 0, stdout: "", stderr: "" };
+		}
+		if (args[0] === "exec") return { status: 0, stdout: "accepting", stderr: "" };
+		return { status: 0, stdout: "", stderr: "" };
+	};
+
+	const docker = createManagedDocker({ run, log: () => {}, sleep: async () => {} });
+	assert.equal(docker.ensureDb(), MANAGED_DB_NAME);
+	const created = calls.find((args) => args[0] === "run");
+	assert.ok(created?.includes("127.0.0.1:5433:5432"));
+	assert.ok(created?.includes("adpulse.acceptance=1"));
+	assert.equal(state.names.has(MANAGED_DB_NAME), true);
+
+	// 被停/被删都只针对已验证归属的容器。
+	docker.stopDb();
+	assert.equal(state.running.get(MANAGED_DB_NAME), false);
+	docker.startDb();
+	assert.equal(state.running.get(MANAGED_DB_NAME), true);
+
+	// 缺自有 label 的容器必须拒绝操作。
+	state.labels.set(MANAGED_DB_NAME, "");
+	assert.throws(() => docker.stopDb(), /label/);
+	state.labels.set(MANAGED_DB_NAME, "1");
+	docker.cleanup();
+	assert.equal(state.names.has(MANAGED_DB_NAME), false);
+});
+
+test("docker: 只有指向受管端口与库时允许停库", () => {
+	assert.equal(
+		pointsAtManagedDb("postgres://postgres:pw@127.0.0.1:5433/adpulse_acceptance"),
+		true,
+	);
+	assert.equal(
+		pointsAtManagedDb("postgres://postgres:pw@127.0.0.1:5432/adpulse"),
+		false,
+	);
+	assert.equal(
+		pointsAtManagedDb("postgres://postgres:pw@db.internal:5433/adpulse_acceptance"),
+		false,
+	);
+	assert.equal(
+		pointsAtManagedDb("postgres://postgres:pw@127.0.0.1:5433/other"),
+		false,
+	);
+	assert.equal(pointsAtManagedDb(""), false);
+});
+
+test("db-down 场景：未授权停库时全部 skip，且不触碰 docker 与会话", async () => {
+	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
+	const server = fakeServer(clock);
+	let sessionsCreated = 0;
+	const create = server.createSession.bind(server);
+	server.createSession = (input: Record<string, unknown>) => {
+		sessionsCreated += 1;
+		return create(input);
+	};
+	const { checks, ctx } = scenarioContext(server, clock, { clicks: [] });
+	const outcome = await runScenario(dbDownScenario, ctx);
+	assert.equal(outcome.matched, true);
+	assert.equal(sessionsCreated, 0);
+	assert.deepEqual(
+		checks.results.map((item) => [item.id, item.status]),
+		[
+			["db-down.prepare.action", "skip"],
+			["db-down.down.no-ack", "skip"],
+			["db-down.recover.accepted", "skip"],
+			["db-down.once.processed", "skip"],
+			["db-down.once.round", "skip"],
+		],
+	);
+	assert.match(checks.results[0].detail, /未提供 --managed-db/);
+	assert.equal(checks.exitCode(), 0);
 });

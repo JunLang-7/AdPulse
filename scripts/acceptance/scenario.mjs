@@ -55,6 +55,7 @@ const REQUIRED_STEP_KEYS = ["read", "until"];
  *   title: string,
  *   evidence?: string,
  *   setup?: (ctx: ScenarioContext) => Promise<void>,
+ *   teardown?: (ctx: ScenarioContext) => Promise<void>,
  *   intervalMs?: number,
  *   timeoutMs?: number,
  *   steps: Array<{
@@ -107,6 +108,28 @@ export function defineScenario(spec) {
  */
 export async function runScenario(spec, ctx) {
 	const scenario = defineScenario(spec);
+	try {
+		return await runSteps(scenario, ctx);
+	} finally {
+		// 清理必须执行，即便前面 blocked 或提前返回；失败只记 warn，不覆盖结论。
+		if (scenario.teardown) {
+			try {
+				await scenario.teardown(ctx);
+			} catch (error) {
+				ctx.record(
+					`${scenario.id}.teardown`,
+					`${scenario.title}（清理）`,
+					STATUS.warn,
+					`清理失败（${errorReason(error)}）`,
+					"手动确认一次性容器是否残留",
+				);
+			}
+		}
+	}
+}
+
+/** @param {ReturnType<typeof defineScenario>} scenario */
+async function runSteps(scenario, ctx) {
 	const log = ctx.log ?? console.log;
 	const evidence = scenario.evidence;
 	ctx.vars = ctx.vars ?? {};

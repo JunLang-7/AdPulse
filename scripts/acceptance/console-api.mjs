@@ -39,6 +39,7 @@ import { maskBody } from "./redact.mjs";
  * @property {string} purpose
  * @property {string} roundId
  * @property {string} [externalMessageId]
+ * @property {string} [lastError]
  *
  * @typedef {Object} SessionDetail
  * @property {DetailSession} session
@@ -47,7 +48,7 @@ import { maskBody } from "./redact.mjs";
  * @property {DetailInboxEntry[]} inbox
  * @property {DetailDelivery[]} deliveries
  * @property {Array<{ version: number }>} snapshots
- * @property {Array<{ id: string, status: string, task: object }>} jobs
+ * @property {Array<{ id: string, status: string, attempts: number, lastError?: string, task: { kind: string, deliveryId?: string } }>} jobs
  *
  * @typedef {Object} ChoiceReceipt
  * @property {string} inboxId
@@ -58,6 +59,7 @@ import { maskBody } from "./redact.mjs";
  * @property {(id: string) => Promise<SessionDetail>} getSession
  * @property {(actionRef: string) => Promise<ChoiceReceipt>} submitChoice
  * @property {(inboxId: string) => Promise<DetailInboxEntry>} getChoice
+ * @property {(jobId: string) => Promise<{ ok: boolean }>} retryJob
  */
 
 export class ConsoleApiError extends Error {
@@ -118,5 +120,11 @@ export function createConsoleClient({ baseUrl, token, timeoutMs = 10_000 }) {
 			}),
 		getChoice: (inboxId) =>
 			request(`/api/choices/${encodeURIComponent(inboxId)}`),
+		/** 仅允许所属用户重试 failed 任务；复用同一 delivery.id。 */
+		retryJob: (jobId) =>
+			request(`/api/jobs/${encodeURIComponent(jobId)}/retry`, {
+				method: "POST",
+				headers: { "idempotency-key": randomUUID() },
+			}),
 	};
 }
