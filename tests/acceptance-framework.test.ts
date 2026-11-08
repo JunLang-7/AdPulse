@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -17,7 +19,8 @@ import {
 	redactDatabaseUrl,
 } from "../scripts/acceptance/redact.mjs";
 import { USAGE, parseArgs } from "../scripts/acceptance/cli.mjs";
-import { authHeaders } from "../scripts/acceptance/console-api.mjs";
+import { authHeaders, createConsoleClient } from "../scripts/acceptance/console-api.mjs";
+import { main } from "../scripts/acceptance/cli.mjs";
 import {
 	recordFileName,
 	renderRecord,
@@ -1051,4 +1054,100 @@ test("db-down 场景：未授权停库时全部 skip，且不触碰 docker 与�
 	);
 	assert.match(checks.results[0].detail, /未提供 --managed-db/);
 	assert.equal(checks.exitCode(), 0);
+});
+
+test("console-api: 会话凭据随请求发出，GET 不带 Origin，401 不回显凭据", async () => {
+	const seen: Array<Record<string, unknown>> = [];
+	let replyStatus = 200;
+	const server = createServer((req, res) => {
+		seen.push({ ...req.headers, method: req.method });
+		res.writeHead(replyStatus, { "content-type": "application/json" });
+		res.end(
+			replyStatus === 200
+				? JSON.stringify({ id: "session-1" })
+				: JSON.stringify({ error: "unauthenticated" }),
+		);
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const { port } = server.address() as AddressInfo;
+	const client = createConsoleClient({
+		baseUrl: `http://127.0.0.1:${port}`,
+		auth: { sessionCookie: "cookie-value", origin: "https://console.example.com" },
+	});
+	try {
+		await client.createSession({ recipient: {} });
+		// 副作用请求：带 Cookie + 同源 Origin，不带 Bearer。
+		assert.equal(seen[0]?.cookie, "adpulse_session=cookie-value");
+		assert.equal(seen[0]?.origin, "https://console.example.com");
+		assert.equal(seen[0]?.authorization, undefined);
+
+		await client.getSession("session-1");
+		// 读取类请求不强制 Origin，但仍带 Cookie。
+		assert.equal(seen[1]?.cookie, "adpulse_session=cookie-value");
+		assert.equal(seen[1]?.origin, undefined);
+
+		replyStatus = 401;
+		await assert.rejects(
+			() => client.getSession("session-1"),
+			(error: Error) => {
+				assert.match(error.message, /HTTP 401/);
+				assert.ok(
+					!error.message.includes("cookie-value"),
+					"错误信息不得回显会话凭据",
+				);
+				return true;
+			},
+		);
+	} finally {
+		server.close();
+	}
+});
+
+test("selfcheck: #34 之后 config.console 校验 PUBLIC_ORIGIN 形态", async () => {
+	const run = async (env: Record<string, string>) => {
+		const lines: string[] = [];
+		const code = await main(
+			["--api", "http://127.0.0.1:1"],
+			env,
+			{ log: (line: string) => lines.push(line), error: (line: string) => lines.push(line) },
+		);
+		return { code, lines };
+	};
+
+	const good = await run({ PUBLIC_ORIGIN: "https://console.example.com" });
+	assert.ok(
+		good.lines.some(
+			(line) =>
+				line.startsWith("[ok  ] config.console") &&
+				line.includes("https://console.example.com/auth/feishu/callback"),
+		),
+		good.lines.join("\n"),
+	);
+
+	// 非 HTTPS 与带路径的 origin 都必须判 fail：它们会让 Cookie/CORS 行为偏离预期。
+	for (const bad of ["http://console.example.com", "https://console.example.com/app"]) {
+		const result = await run({ PUBLIC_ORIGIN: bad });
+		assert.ok(
+			result.lines.some((line) => line.startsWith("[fail] config.console")),
+			`${bad} 应判 fail：${result.lines.join("\n")}`,
+		);
+	}
+
+	const missing = await run({});
+	assert.ok(
+		missing.lines.some((line) => line.startsWith("[fail] config.console")),
+	);
+	assert.equal(missing.code, 1, "存在 fail 时退出码非 0");
+});
+
+test("cli: 场景缺少控制台凭据时退出 2 并指出两种来源", async () => {
+	const errors: string[] = [];
+	const code = await main(
+		["--scenario", "dm", "--open-id", "ou_x"],
+		{},
+		{ log: () => {}, error: (line: string) => errors.push(line) },
+	);
+	assert.equal(code, 2);
+	assert.match(errors[0] ?? "", /ADPULSE_SESSION_COOKIE/);
+	assert.match(errors[0] ?? "", /CONSOLE_TOKEN/);
 });
