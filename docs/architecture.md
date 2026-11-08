@@ -1,6 +1,6 @@
 # 架构导览
 
-本文是面向开发与运行的**当前实现导览**，随代码维护，不是产品/架构设计定稿。当前交接基线为已合并的 [#3](https://github.com/JunLang-7/AdPulse/pull/3) 与 [#5](https://github.com/JunLang-7/AdPulse/pull/5)。历史设计 [#2](https://github.com/JunLang-7/AdPulse/issues/2) 不回写；下一阶段讨论见待评审的 [#6](https://github.com/JunLang-7/AdPulse/issues/6)，新增设计与变更继续由 Issue 承载。
+本文是面向开发与运行的**当前实现导览**，随代码维护，不是产品/架构设计定稿。当前交接基线为已合并的 [#3](https://github.com/JunLang-7/AdPulse/pull/3)、[#5](https://github.com/JunLang-7/AdPulse/pull/5) 与堆叠合并的 [#26](https://github.com/JunLang-7/AdPulse/pull/26)、[#31](https://github.com/JunLang-7/AdPulse/pull/31)、[#32](https://github.com/JunLang-7/AdPulse/pull/32)、[#42](https://github.com/JunLang-7/AdPulse/pull/42)。历史设计 [#2](https://github.com/JunLang-7/AdPulse/issues/2) 不回写；下一阶段讨论见待评审的 [#6](https://github.com/JunLang-7/AdPulse/issues/6)，新增设计与变更继续由 Issue 承载。
 
 ## 当前范围
 
@@ -12,7 +12,11 @@
 - 飞书：已实现原生 HTTP 出入站代码，尚未完成真实应用真机联调。
 - 企微 / 钉钉：尚未实现原生接入；可通过相同契约扩展。
 - Web：已有 API、OpenAPI、类型化客户端和最小控制台：会话列表、详情、选项提交、轮次/投递/快照摘要。尚无创建表单、完整证据追溯、策略差异及失败任务恢复界面。
-- 信号采集、比较基线、提醒分级与去重：不在当前子系统中。
+- 任务规则版本与效果证据：已实现固定 JSON 导入、不可变证据版本与幂等操作（#7、#8）。
+- 期次比较与阈值判定：已实现显式选择当前/基线证据、严格可比性校验与补证跟进（#9）。
+- 调查告警：已实现 Web-only 逻辑缺口告警与失效处理（#10），不含飞书推送。
+- 受限来源采集：已实现两站列表页的标题/链接采集，**默认关闭**，见下文「受限来源采集」（#41）。
+- 仍未实现：个人订阅筛选与推送（#37）、企业飞书身份登录（#34）、自动广告操作。
 
 ## 模块职责
 
@@ -59,7 +63,7 @@ PostgreSQL 使用 SERIALIZABLE、行锁、唯一索引与冲突重试。
 version 是决策版本，每次成功处理选择都会递增，即使 changes 为空；快照版本增加不等于预算或其他策略字段发生变化。
 
 模型见 [model.ts](../packages/core/src/state/model.ts)，实际 DDL 与索引见 [postgres.ts](../packages/storage/src/postgres.ts)。
-当前为七张 id + jsonb 表，采用应用层引用关系；尚无版本化迁移和分页，面向小规模验证。
+当前为 22 张 id + jsonb 表，采用应用层引用关系；结构变更走 `initialize()` 内的版本化迁移（版本 1–6，顺序、加法式，在 advisory lock 下执行）。尚无分页，面向小规模验证。
 
 ## 任务与发送语义
 
@@ -71,6 +75,20 @@ version 是决策版本，每次成功处理选择都会递增，即使 changes 
 发送前已检查会话/轮次的有效期与状态：失效的 pending 投递标记 cancelled，不调用渠道；decision 卡还要求轮次 open、会话 awaiting_input，confirmation 卡也会因过期或会话取消而被抑制。这不是撤回平台上已送达的卡片，也不能消除检查后到实际发送之间的竞态；旧卡点击仍由内核拒绝。
 
 当前尚无租约续期、Session 自动过期状态或面向用户的完整失效原因提示。单独扩容 worker 必须连接同一 PostgreSQL，不能使用两个独立内存存储。
+
+## 受限来源采集
+
+仅覆盖两个 allowlist 站点（潍柴新闻与事件、海尔品牌资讯）的列表页，只保存标题、原文链接与列表日期，**不抓正文、不存摘要**。合规前提与风险记录见 [#41](https://github.com/JunLang-7/AdPulse/issues/41)：Gate 0 未签核，产品方决定推进；`SOURCES_ENABLED` 默认关闭，未设置时不发起任何请求。
+
+- 端口：[SourceFetcher](../packages/core/src/source-service.ts) 由 runtime 实现（[source-fetch.ts](../packages/runtime/src/source-fetch.ts)）；core 不引入 HTTP。
+- 取数器只允许 HTTPS、按 DNS 解析结果固定公网地址、逐跳重验重定向、限制 1 MiB 与超时，拒绝压缩响应与非文本 `Content-Type`。
+- 实体：`sourceStates`（停止/恢复与清理水位）、`sourceRuns`（每次尝试与失败原因）、`sourceSnapshots`（key + 内容哈希，30 天）、`sourceItems`（标题/链接/日期，`active` 或 `purged`）。
+- 调度：[runSources](../packages/runtime/src/source-runner.ts) 在 worker 内按 Asia/Shanghai 08/12/16/20 各跑一次，重启只补当前时段，不回放历史时段。
+- 配额：每站每日 6 次请求 = 5 次列表抓取 + 1 次 robots（每日仅取一次并缓存）。
+- robots：2xx 遵从 `Disallow`/`Allow`（最长匹配、Allow 优先）与 `Crawl-delay`；4xx 视为无限制；5xx/不可达保守停止。
+- 失败语义：空列表、结构变化、超时、5xx 一律只记 `sourceRuns`，**不修改任何条目**；连续 3 次失败或 403/429 升级为 `stopped`，只能由 `resume(source, now, operator)` 人工恢复。
+- 清除：`purge(source, now)` 置空标题、删除快照并保留条目身份，后续再出现也不复活。运维入口为 `bun run sources`。
+- 未实现：卡片展示（归 #37）、语义去重（归 #38）、`gone` 推断（只取首屏，无法区分撤稿）。
 
 ## 控制台与验证
 
