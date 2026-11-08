@@ -197,6 +197,8 @@ Vite 将同源 `/api`、`/auth`、`/webhooks` 请求代理到 127.0.0.1:3000，�
 
 登录采用 Feishu OAuth authorization code + PKCE；服务端检查授权用户的 tenant scope，身份键包含 platform、application、tenant、ID 类型和外部 ID。首次验证自动建立个人用户；不保存 access/refresh token，不提供静态 Bearer 或开发绕过。浏览器 session cookie 为 HttpOnly、SameSite=Lax，生产设置 Secure；服务端固定 8 小时绝对过期且不滑动，退出会撤销 session。所有有副作用的 `/api/*` 请求还必须携带与 `PUBLIC_ORIGIN` 一致的 `Origin`。控制台在受保护 API 返回 401 时携带经校验的站内 `returnTo` 跳转登录，退出会撤销会话并清空本地查询缓存。
 
+机器人卡片动作按飞书 open_id 的应用/租户作用域映射到内部用户；仅当映射用户是会话 owner 且 open_id 在 `allowedActorIds` 中时才允许。尚未在控制台登录建立绑定的用户会被拒绝，需先登录一次；`GET /api/me` 返回本人的 `identities`，可用于创建会话时填写收件人与允许操作者。通知授权由 #35 单独处理，本映射不改变发送授权。
+
 接口清单见 contracts/openapi.json；HTTP 调用示例见 scripts/demo.mjs。页面通过 apps/console/src/adpulse-client.ts 的 consoleClient 使用生成类型，不手写另一套 HTTP 契约。
 
 - `/api/*` 要求有效的 `adpulse_session` cookie；`POST`、`PATCH`、`PUT`、`DELETE` 还要求同源 `Origin`。浏览器不得自行持久化或注入认证 token。

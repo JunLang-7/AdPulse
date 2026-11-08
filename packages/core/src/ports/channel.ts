@@ -19,8 +19,22 @@ export interface OutboundChannel {
 	/** Must reuse delivery.id as provider idempotency key when supported. */
 	send(delivery: CardDelivery): Promise<DeliveryReceipt>;
 }
+/** Provider-attested, tenant/app-scoped identity; never a bare external ID. */
+export interface PlatformIdentity {
+	platform: string;
+	applicationId: string;
+	tenantId: string;
+	idType: string;
+	externalId: string;
+}
 export type Actor =
-	| { kind: "platform"; accountId: string; externalId: string }
+	| {
+			kind: "platform";
+			accountId: string;
+			externalId: string;
+			/** Resolved server-side from PlatformIdentity; absent means unverified. */
+			userId?: string;
+		}
 	| { kind: "console"; userId: string };
 export interface ChoiceCommand {
 	sourceId: string;

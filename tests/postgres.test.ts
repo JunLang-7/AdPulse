@@ -60,7 +60,12 @@ test("PostgreSQL: serializable decisions, rollback, reconnect and SKIP LOCKED cl
 		sourceId: "account-a",
 		eventId: crypto.randomUUID(),
 		actionRef: actions[0].id,
-		actor: { kind: "platform", accountId: "account-a", externalId: "user-a" },
+		actor: {
+			kind: "platform",
+			accountId: "account-a",
+			externalId: "user-a",
+			userId: "owner",
+		},
 	};
 	const duplicate = await Promise.all(
 		Array.from({ length: 20 }, () => f.decisions.receiveChoice(command)),

@@ -133,3 +133,24 @@ test("revoking an identity invalidates every associated web session", async () =
 	const afterRevocation = await storage.transaction((tx) => tx.identityBindings.all());
 	assert.equal(afterRevocation[0]?.status, "revoked");
 });
+
+test("verified identities resolve to active users and expose only own bindings", async () => {
+	const storage = new MemoryStorage();
+	const auth = new AuthenticationService(storage);
+	const session = await auth.createWebSession(identity, hash("resolve-session"), now);
+	assert.equal(await auth.resolveIdentity(identity), session.userId);
+	assert.equal(
+		await auth.resolveIdentity({ ...identity, externalId: "ou-other" }),
+		null,
+	);
+	assert.equal(
+		await auth.resolveIdentity({ ...identity, tenantId: "" }),
+		null,
+	);
+	assert.deepEqual(await auth.listIdentities(session.userId), [identity]);
+
+	const bindings = await storage.transaction((tx) => tx.identityBindings.all());
+	await auth.revokeIdentity(bindings[0]!.id, now);
+	assert.equal(await auth.resolveIdentity(identity), null);
+	assert.deepEqual(await auth.listIdentities(session.userId), []);
+});

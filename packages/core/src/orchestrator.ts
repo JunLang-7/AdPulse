@@ -181,6 +181,8 @@ export class Orchestrator {
 					? actor.userId === session.ownerId
 					: session.deliveryMode !== "web" &&
 						session.recipient?.accountId === actor.accountId &&
+						typeof actor.userId === "string" &&
+						actor.userId === session.ownerId &&
 						session.allowedActorIds.includes(actor.externalId);
 			if (!authorized) return reject("forbidden");
 			if (

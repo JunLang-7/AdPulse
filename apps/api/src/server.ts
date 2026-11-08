@@ -116,6 +116,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					res,
 					runtime,
 					decodeURIComponent(webhook[1]),
+					(identity) => auth.service.resolveIdentity(identity),
 				);
 
 			if (path === "/auth/feishu/login" && req.method === "GET") {
@@ -231,6 +232,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					return json(res, 200, {
 						userId: session.userId,
 						sessionExpiresAt: session.expiresAt,
+						identities: await auth.service.listIdentities(session.userId),
 					});
 				if (path === "/api/logout" && req.method === "POST") {
 					await auth.service.revokeSession(session.sessionId, now().toISOString());

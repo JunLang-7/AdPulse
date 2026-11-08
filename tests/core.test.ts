@@ -34,7 +34,12 @@ const choice = (
 	sourceId: "account-a",
 	eventId: crypto.randomUUID(),
 	actionRef: action.id,
-	actor: { kind: "platform", accountId: "account-a", externalId: "user-a" },
+	actor: {
+		kind: "platform",
+		accountId: "account-a",
+		externalId: "user-a",
+		userId: "owner",
+	},
 	...overrides,
 });
 
@@ -88,12 +93,35 @@ test("expired, wrong-account, unauthorized, unknown and cancelled actions are re
 	const { session, actions } = await open(f);
 	const action = actions[0];
 	for (const overrides of [
-		{ actor: { kind: "platform", accountId: "other", externalId: "user-a" } },
+		{
+			actor: {
+				kind: "platform",
+				accountId: "other",
+				externalId: "user-a",
+				userId: "owner",
+			},
+		},
 		{
 			actor: {
 				kind: "platform",
 				accountId: "account-a",
 				externalId: "stranger",
+				userId: "owner",
+			},
+		},
+		{
+			actor: {
+				kind: "platform",
+				accountId: "account-a",
+				externalId: "user-a",
+			},
+		},
+		{
+			actor: {
+				kind: "platform",
+				accountId: "account-a",
+				externalId: "user-a",
+				userId: "stranger",
 			},
 		},
 		{ actor: { kind: "console", userId: "stranger" } },
