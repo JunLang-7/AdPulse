@@ -3,6 +3,8 @@
 	"compilerOptions": {
 		"noEmit": true,
 		"allowImportingTsExtensions": true,
+		// 工具脚本为 .mjs（Node 直接运行）：测试导入它们以覆盖断言/脱敏逻辑。
+		"allowJs": true,
 		"types": ["node"],
 		// 断言风格为主：数组下标访问由断言/长度检查覆盖。
 		"noUncheckedIndexedAccess": false
