@@ -10,6 +10,7 @@ import {
 	CardTitle,
 } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
+import { EvidencePanel } from "./evidence-panel";
 import {
 	operationAfterSaveError,
 	reduceTaskEditorState,
@@ -287,16 +288,19 @@ export default function TaskEditorPage() {
 			</p>
 
 			{detail.data && !creating ? (
-				<Card>
-					<CardHeader><CardTitle>历史版本</CardTitle></CardHeader>
-					<CardContent className="flex flex-wrap gap-2">
-						{detail.data.versions.map((version) => (
-							<span key={version.id} className="rounded border px-2 py-1 text-xs">
-								v{version.version} · {new Date(version.createdAt).toLocaleString()}
-							</span>
-						))}
-					</CardContent>
-				</Card>
+				<>
+					<Card>
+						<CardHeader><CardTitle>历史版本</CardTitle></CardHeader>
+						<CardContent className="flex flex-wrap gap-2">
+							{detail.data.versions.map((version) => (
+								<span key={version.id} className="rounded border px-2 py-1 text-xs">
+									v{version.version} · {new Date(version.createdAt).toLocaleString()}
+								</span>
+							))}
+						</CardContent>
+					</Card>
+					<EvidencePanel taskId={detail.data.task.taskId} taskVersion={detail.data.task.version} />
+				</>
 			) : null}
 
 			<form onSubmit={submit} className="space-y-4">

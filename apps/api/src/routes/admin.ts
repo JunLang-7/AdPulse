@@ -1,5 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Job, TaskInput, Transaction } from "@adpluse/core";
+import type {
+	EvidenceImportInput,
+	EvidenceRevisionInput,
+	Job,
+	TaskInput,
+	Transaction,
+} from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
@@ -106,6 +112,105 @@ const taskInput = z
 const taskRevisionInput = z
 	.object({ expectedTaskVersion: z.number().int().min(1), task: taskInput })
 	.strict();
+const nonBlank = (maxLength: number) =>
+	z.string().min(1).max(maxLength).refine((value) => value.trim().length > 0);
+const rawMetricValue = z.union([
+	z.string().max(500),
+	z.number().finite(),
+	z.null(),
+]);
+const normalizedMetricValue = z
+	.number()
+	.int()
+	.refine(Number.isSafeInteger)
+	.nonnegative()
+	.nullable();
+const evidenceRecordInput = z
+	.object({
+		source: z
+			.object({
+				platform: nonBlank(100),
+				accountRef: nonBlank(256),
+				reportRef: nonBlank(256),
+				sourceUri: z.url().optional(),
+			})
+			.strict(),
+		scope: z
+			.object({
+				planRef: nonBlank(256),
+				campaignRefs: z.array(nonBlank(256)).max(100),
+			})
+			.strict(),
+		period: z
+			.object({
+				startsAt: z.iso.datetime({ offset: true }),
+				endsAt: z.iso.datetime({ offset: true }),
+				timeZone: nonBlank(100),
+				completeness: z.enum(["complete", "partial"]),
+			})
+			.strict(),
+		metricsContract: z
+			.object({
+				spendMinor: z
+					.object({
+						definition: nonBlank(500),
+						formula: nonBlank(1000),
+						sourceField: nonBlank(256),
+					})
+					.strict(),
+				consultations: z
+					.object({
+						definition: nonBlank(500),
+						formula: nonBlank(1000),
+						sourceField: nonBlank(256),
+					})
+					.strict(),
+			})
+			.strict(),
+		currency: z
+			.object({
+				code: nonBlank(16),
+				minorUnit: nonBlank(32),
+				minorUnitsPerMajor: z.number().int().refine(Number.isSafeInteger).positive(),
+			})
+			.strict(),
+		attribution: z
+			.object({
+				model: nonBlank(200),
+				windowDays: z.number().int().refine(Number.isSafeInteger).nonnegative().optional(),
+			})
+			.strict(),
+		callbackStatus: z.enum(["complete", "pending", "not_applicable", "unknown"]),
+		rawValues: z
+			.object({
+				spend: rawMetricValue.optional(),
+				consultations: rawMetricValue.optional(),
+			})
+			.strict(),
+		values: z
+			.object({
+				spendMinor: normalizedMetricValue.optional(),
+				consultations: normalizedMetricValue.optional(),
+			})
+			.strict(),
+	})
+	.strict();
+const evidenceImportInput = z
+	.object({
+		schemaVersion: z.literal(1),
+		taskRef: z
+			.object({ taskId: z.string().min(1).max(128), taskVersion: z.number().int().min(1) })
+			.strict(),
+		records: z.array(evidenceRecordInput).min(1).max(2),
+	})
+	.strict();
+const evidenceRevisionInput = z
+	.object({
+		expectedEvidenceVersion: z.number().int().min(1),
+		reason: z.string().trim().min(1).max(1000),
+		record: evidenceRecordInput,
+	})
+	.strict();
 const choiceInput = z
 	.object({ actionRef: z.string().min(1).max(128) })
 	.strict();
@@ -151,6 +256,51 @@ export async function handleAdmin(
 		const input = parseTaskInput(await readJson(req));
 		const task = await runtime.tasks.create(userId, requestId(req), input);
 		return json(res, 201, task);
+	}
+	if (path === "/api/evidence/imports" && req.method === "POST") {
+		let input: EvidenceImportInput;
+		try {
+			input = evidenceImportInput.parse(await readJson(req)) as EvidenceImportInput;
+		} catch (error) {
+			if (error instanceof z.ZodError) {
+				const field = error.issues[0]?.path.join(".") || "body";
+				throw new HttpError(400, `invalid field: ${field}`);
+			}
+			throw error;
+		}
+		const items = await runtime.evidence.import(userId, requestId(req), input);
+		return json(res, items.some((item) => item.status === "created") ? 201 : 200, { items });
+	}
+	const taskEvidence = path.match(/^\/api\/tasks\/([^/]+)\/evidence$/);
+	if (taskEvidence?.[1] && req.method === "GET") {
+		const taskId = decodeURIComponent(taskEvidence[1]);
+		return json(res, 200, { items: await runtime.evidence.listForTask(userId, taskId) });
+	}
+	const evidenceRevision = path.match(/^\/api\/evidence\/([^/]+)\/revisions$/);
+	if (evidenceRevision?.[1] && req.method === "POST") {
+		let input: EvidenceRevisionInput;
+		try {
+			input = evidenceRevisionInput.parse(await readJson(req)) as EvidenceRevisionInput;
+		} catch (error) {
+			if (error instanceof z.ZodError) {
+				const field = error.issues[0]?.path.join(".") || "body";
+				throw new HttpError(400, `invalid field: ${field}`);
+			}
+			throw error;
+		}
+		const result = await runtime.evidence.revise(
+			userId,
+			decodeURIComponent(evidenceRevision[1]),
+			requestId(req),
+			input,
+		);
+		return json(res, 201, result);
+	}
+	const evidenceDetail = path.match(/^\/api\/evidence\/([^/]+)$/);
+	if (evidenceDetail?.[1] && req.method === "GET") {
+		const detail = await runtime.evidence.get(userId, decodeURIComponent(evidenceDetail[1]));
+		if (!detail) throw new HttpError(404, "evidence not found");
+		return json(res, 200, detail);
 	}
 	if (path.startsWith("/api/tasks/") && req.method === "GET") {
 		const id = decodeURIComponent(path.slice("/api/tasks/".length));

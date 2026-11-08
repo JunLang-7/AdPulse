@@ -56,6 +56,57 @@
         }
       }
     },
+    "/api/evidence/imports": {
+      "post": {
+        "operationId": "importEvidence",
+        "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EvidenceImportInput" } } } },
+        "responses": {
+          "200": { "description": "Evidence reused", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EvidenceImportResultList" } } } },
+          "201": { "description": "Evidence imported", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EvidenceImportResultList" } } } },
+          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Idempotency or content conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/tasks/{taskId}/evidence": {
+      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "listTaskEvidence",
+        "responses": {
+          "200": { "description": "Current evidence for the task", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/EvidenceVersion" } } }, "required": ["items"], "additionalProperties": false } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Task not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/evidence/{evidenceId}": {
+      "parameters": [{ "name": "evidenceId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "getEvidence",
+        "responses": {
+          "200": { "description": "Evidence detail and immutable revisions", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EvidenceDetail" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Evidence not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/evidence/{evidenceId}/revisions": {
+      "parameters": [{ "name": "evidenceId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "operationId": "reviseEvidence",
+        "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EvidenceRevision" } } } },
+        "responses": {
+          "201": { "description": "New immutable version", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EvidenceImportResult" } } } },
+          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Evidence not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Idempotency or version conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/api/sessions": {
       "get": {
         "operationId": "listSessions",
@@ -1651,6 +1702,182 @@
           "jobs",
           "snapshots"
         ],
+        "additionalProperties": false
+      },
+      "EvidenceImportInput": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "integer", "enum": [1] },
+          "taskRef": { "$ref": "#/components/schemas/TaskRef" },
+          "records": { "type": "array", "minItems": 1, "maxItems": 2, "items": { "$ref": "#/components/schemas/EvidenceRecordInput" } }
+        },
+        "required": ["schemaVersion", "taskRef", "records"],
+        "additionalProperties": false
+      },
+      "TaskRef": {
+        "type": "object",
+        "properties": { "taskId": { "type": "string" }, "taskVersion": { "type": "integer", "minimum": 1 } },
+        "required": ["taskId", "taskVersion"],
+        "additionalProperties": false
+      },
+      "EvidenceRecordInput": {
+        "type": "object",
+        "properties": {
+          "source": { "$ref": "#/components/schemas/EvidenceSourceInput" },
+          "scope": { "$ref": "#/components/schemas/EvidenceScope" },
+          "period": { "$ref": "#/components/schemas/EvidencePeriod" },
+          "metricsContract": { "$ref": "#/components/schemas/EvidenceMetricsContract" },
+          "currency": { "$ref": "#/components/schemas/EvidenceCurrency" },
+          "attribution": { "$ref": "#/components/schemas/EvidenceAttribution" },
+          "callbackStatus": { "type": "string", "enum": ["complete", "pending", "not_applicable", "unknown"] },
+          "rawValues": { "$ref": "#/components/schemas/EvidenceRawValues" },
+          "values": { "$ref": "#/components/schemas/EvidenceValues" }
+        },
+        "required": ["source", "scope", "period", "metricsContract", "currency", "attribution", "callbackStatus", "rawValues", "values"],
+        "additionalProperties": false
+      },
+      "EvidenceSourceInput": {
+        "type": "object",
+        "properties": {
+          "platform": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "accountRef": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "reportRef": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "sourceUri": { "type": "string", "format": "uri" }
+        },
+        "required": ["platform", "accountRef", "reportRef"],
+        "additionalProperties": false
+      },
+      "EvidenceScope": {
+        "type": "object",
+        "properties": {
+          "planRef": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "campaignRefs": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 256 } }
+        },
+        "required": ["planRef", "campaignRefs"],
+        "additionalProperties": false
+      },
+      "EvidencePeriod": {
+        "type": "object",
+        "properties": {
+          "startsAt": { "type": "string", "format": "date-time" },
+          "endsAt": { "type": "string", "format": "date-time" },
+          "timeZone": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "completeness": { "type": "string", "enum": ["complete", "partial"] }
+        },
+        "required": ["startsAt", "endsAt", "timeZone", "completeness"],
+        "additionalProperties": false
+      },
+      "EvidenceMetricDefinition": {
+        "type": "object",
+        "properties": {
+          "definition": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "formula": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "sourceField": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "required": ["definition", "formula", "sourceField"],
+        "additionalProperties": false
+      },
+      "EvidenceMetricsContract": {
+        "type": "object",
+        "properties": {
+          "spendMinor": { "$ref": "#/components/schemas/EvidenceMetricDefinition" },
+          "consultations": { "$ref": "#/components/schemas/EvidenceMetricDefinition" }
+        },
+        "required": ["spendMinor", "consultations"],
+        "additionalProperties": false
+      },
+      "EvidenceCurrency": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "minLength": 1, "maxLength": 16 },
+          "minorUnit": { "type": "string", "minLength": 1, "maxLength": 32 },
+          "minorUnitsPerMajor": { "type": "integer", "minimum": 1 }
+        },
+        "required": ["code", "minorUnit", "minorUnitsPerMajor"],
+        "additionalProperties": false
+      },
+      "EvidenceAttribution": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "windowDays": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["model"],
+        "additionalProperties": false
+      },
+      "EvidenceRawValues": {
+        "type": "object",
+        "properties": {
+          "spend": { "oneOf": [{ "type": "string", "maxLength": 500 }, { "type": "number" }, { "type": "null" }] },
+          "consultations": { "oneOf": [{ "type": "string", "maxLength": 500 }, { "type": "number" }, { "type": "null" }] }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "EvidenceValues": {
+        "type": "object",
+        "properties": {
+          "spendMinor": { "type": "integer", "minimum": 0, "nullable": true },
+          "consultations": { "type": "integer", "minimum": 0, "nullable": true }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "EvidenceVersion": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "evidenceId": { "type": "string" }, "ownerId": { "type": "string" },
+          "taskId": { "type": "string" }, "taskVersion": { "type": "integer" }, "version": { "type": "integer" },
+          "businessKey": { "type": "string" }, "contentDigest": { "type": "string" },
+          "scope": { "$ref": "#/components/schemas/EvidenceScope" }, "period": { "$ref": "#/components/schemas/EvidencePeriod" },
+          "metricsContract": { "$ref": "#/components/schemas/EvidenceMetricsContract" }, "currency": { "$ref": "#/components/schemas/EvidenceCurrency" },
+          "attribution": { "$ref": "#/components/schemas/EvidenceAttribution" }, "callbackStatus": { "type": "string", "enum": ["complete", "pending", "not_applicable", "unknown"] },
+          "values": { "$ref": "#/components/schemas/EvidenceValues" }, "createdAt": { "type": "string", "format": "date-time" }, "reason": { "type": "string" }
+        },
+        "required": ["id", "evidenceId", "ownerId", "taskId", "taskVersion", "version", "businessKey", "contentDigest", "scope", "period", "metricsContract", "currency", "attribution", "callbackStatus", "values", "createdAt"],
+        "additionalProperties": false
+      },
+      "EvidenceSource": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "ownerId": { "type": "string" }, "evidenceId": { "type": "string" }, "evidenceVersion": { "type": "integer" },
+          "source": { "$ref": "#/components/schemas/EvidenceSourceInput" }, "rawValues": { "$ref": "#/components/schemas/EvidenceRawValues" },
+          "digest": { "type": "string" }, "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "ownerId", "evidenceId", "evidenceVersion", "source", "rawValues", "digest", "createdAt"],
+        "additionalProperties": false
+      },
+      "EvidenceDetail": {
+        "type": "object",
+        "properties": {
+          "current": { "$ref": "#/components/schemas/EvidenceVersion" },
+          "versions": { "type": "array", "items": { "$ref": "#/components/schemas/EvidenceVersion" } },
+          "sources": { "type": "array", "items": { "$ref": "#/components/schemas/EvidenceSource" } }
+        },
+        "required": ["current", "versions", "sources"],
+        "additionalProperties": false
+      },
+      "EvidenceImportResult": {
+        "type": "object",
+        "properties": {
+          "evidenceId": { "type": "string" }, "version": { "type": "integer" }, "status": { "type": "string", "enum": ["created", "reused", "revised"] }
+        },
+        "required": ["evidenceId", "version", "status"],
+        "additionalProperties": false
+      },
+      "EvidenceImportResultList": {
+        "type": "object",
+        "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/EvidenceImportResult" } } },
+        "required": ["items"], "additionalProperties": false
+      },
+      "EvidenceRevision": {
+        "type": "object",
+        "properties": {
+          "expectedEvidenceVersion": { "type": "integer", "minimum": 1 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "record": { "$ref": "#/components/schemas/EvidenceRecordInput" }
+        },
+        "required": ["expectedEvidenceVersion", "reason", "record"],
         "additionalProperties": false
       },
       "ChoiceReceipt": {
