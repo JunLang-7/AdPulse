@@ -30,6 +30,12 @@ export interface InboundChannel {
 }
 export interface ChannelAccount {
 	id: string;
+	/** Verified identity scope this connection can attest; absent for synthetic/demo accounts. */
+	identityScope?: {
+		platform: string;
+		applicationId: string;
+		tenantId: string;
+	};
 	inbound: InboundChannel;
 	outbound: OutboundChannel;
 }

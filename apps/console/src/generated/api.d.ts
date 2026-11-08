@@ -496,6 +496,7 @@ export interface components {
                 taskVersion: number;
             };
             recipient: components["schemas"]["Recipient"];
+            /** @description For identity-backed accounts this must contain only the current user's verified external IDs. */
             allowedActorIds: string[];
             strategy: components["schemas"]["Strategy"];
             limits: components["schemas"]["Limits"];

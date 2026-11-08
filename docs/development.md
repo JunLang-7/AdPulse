@@ -204,6 +204,7 @@ Vite 将同源 `/api`、`/auth`、`/webhooks` 请求代理到 127.0.0.1:3000，�
 - `/api/*` 要求有效的 `adpulse_session` cookie；`POST`、`PATCH`、`PUT`、`DELETE` 还要求同源 `Origin`。浏览器不得自行持久化或注入认证 token。
 - 创建与选择要求 UUID 格式 Idempotency-Key。
 - 创建会话：同 owner 的已有 requestId 返回原会话，目前不比较新旧创建请求体。
+- 真实飞书账户创建会话时，用户收件人与 `allowedActorIds` 必须是当前用户自己的已验证身份（`/api/me` 的 `identities`）；服务端拒绝他人 open_id，避免通过操作者列表扩权。
 - 提交选择：同一 sourceId + eventId、同规范化内容返回原 inbox；同键不同内容返回 409。一次操作的网络重试应复用键，新操作用新键。
 - POST /api/choices 返回 202 仅表示已接收；查询 GET /api/choices/{inboxId} 或会话详情获知 processed/rejected/failed。路径中的 inboxId 需 URL 编码。
 - 当前 Web 提交后只触发一次查询失效，尚未跟踪异步终态，必要时刷新详情核对。此限制由 [#11](https://github.com/JunLang-7/AdPulse/issues/11) 跟进；不能把按钮请求成功视为策略已变更。

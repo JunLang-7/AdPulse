@@ -5,6 +5,7 @@ import {
 	ChannelRegistry,
 	FeishuInbound,
 	FeishuOutbound,
+	createFeishuAccount,
 	toFeishuCard,
 } from "../packages/channels/dist/index.js";
 import type {
@@ -101,6 +102,15 @@ test("Feishu inbound verifies bytes, decrypts and normalizes a card action", asy
 	});
 	assert.equal(JSON.parse(parsed.response.body).toast.type, "info");
 });
+test("Feishu channel accounts expose their app and tenant identity scope", () => {
+	const account = createFeishuAccount({ ...config, appSecret: "secret" });
+	assert.deepEqual(account.identityScope, {
+		platform: "feishu",
+		applicationId: config.appId,
+		tenantId: config.tenantKey,
+	});
+});
+
 test("Feishu actor identity is scoped to the configured application and tenant", () => {
 	assert.deepEqual(
 		inbound.identifyActor({ accountId: "account-a", externalId: "user-a" }),

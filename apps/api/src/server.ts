@@ -239,7 +239,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					clearCookie(res, SESSION_COOKIE);
 					return json(res, 200, { ok: true });
 				}
-				return await handleAdmin(req, res, runtime, session.userId, path);
+				return await handleAdmin(req, res, runtime, session.userId, path, auth.service);
 			}
 			throw new HttpError(404, "route not found");
 		} catch (error) {
