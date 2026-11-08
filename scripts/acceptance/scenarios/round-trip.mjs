@@ -8,7 +8,6 @@ import {
 	actionRefOf,
 	confirmationDelivered,
 	decisionDelivered,
-	inboxFor,
 	roundByNo,
 	roundDelivered,
 	startAcceptanceSession,
@@ -165,18 +164,26 @@ export function createRoundTripScenario({ id, channel }) {
 						id: assertion("round1.inbox"),
 						title: "inbox 已 processed",
 						check: (detail) => {
-							const inbox = inboxFor(
+							const actionRef = actionRefOf(
 								detail,
-								actionRefOf(
-									detail,
-									1,
-									roundByNo(detail, 1)?.selectedOptionId,
-								),
+								1,
+								roundByNo(detail, 1)?.selectedOptionId,
 							);
+							const related = detail.inbox.filter(
+								(item) => item.command.actionRef === actionRef,
+							);
+							// 群聊里可能有其他成员先点过而被拒（forbidden），
+							// 因此这里判定「存在 processed」，而不是取第一条 matching。
+							const processed = related.find(
+								(item) => item.status === "processed",
+							);
+							const others = related
+								.filter((item) => item.status !== "processed")
+								.map((item) => `${item.status}/${item.reason ?? "-"}`);
 							return verdict(
-								inbox?.status === "processed",
-								`inbox=${inbox?.status ?? "缺失"}${inbox?.reason ? ` reason=${inbox.reason}` : ""}`,
-								"inbox 非 processed：确认 worker 已处理 process_inbox 任务",
+								Boolean(processed),
+								`processed=${Boolean(processed)} 其他=${others.length ? others.join(",") : "无"}`,
+								"缺少 processed inbox：确认授权成员已点击且 worker 已处理",
 							);
 						},
 					},
