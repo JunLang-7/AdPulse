@@ -296,20 +296,70 @@ export interface ComparisonFollowUp {
 	createdAt: string;
 	updatedAt: string;
 }
+export interface InvestigationAlertEvidence {
+	comparisonResultId: string;
+	evidence: ComparisonEvidenceRef;
+	source: { platform: string; accountRef: string };
+	scope: EvidenceVersion["scope"];
+	period: EvidenceVersion["period"];
+	metric: "cost_per_consultation";
+	metricDefinition: string;
+	metricFormula: string;
+	spendMinor?: number | null;
+	consultations?: number | null;
+	currency: EvidenceVersion["currency"];
+	thresholdMinor?: number;
+	comparisonStatus: ComparisonStatus;
+	canComparePeriods: boolean;
+	limitations: ComparisonReasonCode[];
+	handlingDeadlineHours?: number;
+}
+export type InvestigationAlertStatus =
+	| "open"
+	| "awaiting_evidence"
+	| "handled"
+	| "cleared"
+	| "stale"
+	| "capped";
+export interface InvestigationAlert {
+	id: string;
+	ownerId: string;
+	taskId: string;
+	logicalKey: string;
+	sessionId: string;
+	status: InvestigationAlertStatus;
+	statusReason?: string;
+	current: InvestigationAlertEvidence;
+	comparisonResultIds: string[];
+	maxPushRounds: number;
+	logicalRounds: number;
+	events: Array<{
+		type: "opened" | "observed" | "candidate_created" | "deferred" | "handled" | "cleared" | "invalidated" | "capped";
+		at: string;
+		comparisonResultId: string;
+		evidence: ComparisonEvidenceRef;
+		reason?: string;
+	}>;
+	createdAt: string;
+	updatedAt: string;
+}
 export interface Session {
 	id: string;
 	ownerId: string;
 	taskRef?: { taskId: string; taskVersion: number };
 	monetarySuggestionsAllowed?: boolean;
-	recipient: Recipient;
+	deliveryMode?: "channel" | "web";
+	investigationAlertId?: string;
+	alertEvidenceRef?: EvidenceRef;
+	recipient?: Recipient;
 	allowedActorIds: string[];
 	strategy: Strategy;
 	limits: Limits;
 	signal: Signal;
 	version: number;
 	roundNo: number;
-	status: "planning" | "awaiting_input" | "completed" | "cancelled";
-	expiresAt: string;
+	status: "planning" | "awaiting_input" | "completed" | "cancelled" | "stale";
+	expiresAt?: string;
 	createdAt: string;
 }
 export interface Round {
@@ -317,8 +367,9 @@ export interface Round {
 	sessionId: string;
 	roundNo: number;
 	strategyVersion: number;
-	status: "open" | "answered";
-	expiresAt: string;
+	status: "open" | "answered" | "invalidated";
+	invalidationReason?: string;
+	expiresAt?: string;
 	card: DecisionCard;
 	candidates: Candidate[];
 	selectedOptionId?: string;
@@ -358,6 +409,7 @@ export interface Delivery extends CardDelivery {
 export type JobTask =
 	| { kind: "process_inbox"; inboxId: string }
 	| { kind: "prepare_round"; sessionId: string; version: number }
+	| { kind: "prepare_investigation_alert_session"; alertId: string }
 	| { kind: "send_delivery"; deliveryId: string };
 export interface Job {
 	id: string;
@@ -380,6 +432,7 @@ export interface Entities {
 	comparisonResults: ComparisonResult;
 	comparisonOperations: ComparisonOperation;
 	comparisonFollowUps: ComparisonFollowUp;
+	investigationAlerts: InvestigationAlert;
 	sessions: Session;
 	rounds: Round;
 	actions: ActionRef;

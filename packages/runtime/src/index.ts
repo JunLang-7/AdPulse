@@ -7,6 +7,7 @@ import {
 import {
 	ComparisonService,
 	EvidenceService,
+	InvestigationAlertService,
 	Orchestrator,
 	TaskService,
 	type PolicyEngine,
@@ -43,6 +44,7 @@ export function compose(
 	const tasks = new TaskService(storage);
 	const evidence = new EvidenceService(storage);
 	const comparisons = new ComparisonService(storage);
+	const investigationAlerts = new InvestigationAlertService(storage);
 	return {
 		storage,
 		channels,
@@ -50,7 +52,8 @@ export function compose(
 		tasks,
 		evidence,
 		comparisons,
-		worker: new Worker(storage, decisions, channels.outbound()),
+		investigationAlerts,
+		worker: new Worker(storage, decisions, channels.outbound(), undefined, 5, investigationAlerts),
 	};
 }
 export type Runtime = ReturnType<typeof compose>;
@@ -100,10 +103,6 @@ export async function fromEnvironment(
 				},
 			},
 		});
-	if (!accounts.length) {
-		await postgres?.close();
-		throw new Error("no channel account configured");
-	}
 	return {
 		...compose(postgres ?? new MemoryStorage(), accounts),
 		close: async () => {

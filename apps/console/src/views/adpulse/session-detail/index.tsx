@@ -60,9 +60,15 @@ export default function SessionDetailPage() {
 					<Badge variant="outline">第 {session.roundNo} 轮</Badge>
 					<Badge variant="outline">v{session.version} 策略</Badge>
 					<Badge variant="outline">
-						{session.recipient.kind === "group" ? "群聊" : "单聊"}
+						{session.deliveryMode === "web"
+							? "Web 待处理"
+							: session.recipient?.kind === "group"
+								? "群聊"
+								: "单聊"}
 					</Badge>
-					<Badge variant="outline">到期 {formatTime(session.expiresAt)}</Badge>
+					{session.expiresAt ? (
+						<Badge variant="outline">到期 {formatTime(session.expiresAt)}</Badge>
+					) : null}
 					{session.taskRef ? (
 						<Link to={`/tasks/${session.taskRef.taskId}`}>
 							<Badge variant="outline">任务基线 v{session.taskRef.taskVersion}</Badge>
@@ -88,7 +94,9 @@ export default function SessionDetailPage() {
 							(a) => a.roundId === round.id,
 						);
 						const state = roundStatus(round.status);
-						const isCurrent = round.roundNo === session.roundNo;
+						const isCurrent =
+							round.roundNo === session.roundNo &&
+							session.status === "awaiting_input";
 						return (
 							<div
 								key={round.id}
@@ -106,7 +114,11 @@ export default function SessionDetailPage() {
 									<span className="text-xs text-muted-foreground">
 										{round.respondedAt
 											? `已响应 ${formatTime(round.respondedAt)}`
-											: `到期 ${formatTime(round.expiresAt)}`}
+											: round.status === "invalidated"
+												? `已失效${round.invalidationReason ? ` · ${round.invalidationReason}` : ""}`
+												: round.expiresAt
+													? `到期 ${formatTime(round.expiresAt)}`
+													: "无到期时间"}
 									</span>
 								</div>
 
@@ -137,7 +149,7 @@ export default function SessionDetailPage() {
 												label={candidate.label}
 												selected={round.selectedOptionId === candidate.id}
 												actionRef={
-													round.status === "open" && !expired
+													round.status === "open" && isCurrent && !expired
 														? action?.id
 														: undefined
 												}

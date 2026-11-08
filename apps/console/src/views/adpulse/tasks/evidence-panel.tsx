@@ -10,6 +10,7 @@ import {
 } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { ComparisonPanel } from "./comparison-panel";
+import { InvestigationAlertsPanel } from "./investigation-alerts-panel";
 
 type EvidenceImportInput = components["schemas"]["EvidenceImportInput"];
 type EvidenceRevision = components["schemas"]["EvidenceRevision"];
@@ -144,8 +145,9 @@ export function EvidencePanel({
 					<p className="text-sm text-muted-foreground">尚无效果证据。</p>
 				) : null}
 			</CardContent>
-			<div className="px-6 pb-6">
+			<div className="space-y-4 px-6 pb-6">
 				<ComparisonPanel taskId={taskId} items={evidence.data ?? []} />
+				<InvestigationAlertsPanel taskId={taskId} />
 			</div>
 		</Card>
 	);

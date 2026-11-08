@@ -252,6 +252,8 @@ async function sessionForJob(
 	if (job.task.kind === "prepare_round") return job.task.sessionId;
 	if (job.task.kind === "send_delivery")
 		return (await tx.deliveries.get(job.task.deliveryId))?.sessionId ?? null;
+	if (job.task.kind === "prepare_investigation_alert_session")
+		return (await tx.investigationAlerts.get(job.task.alertId))?.sessionId ?? null;
 	const inbox = await tx.inbox.get(job.task.inboxId);
 	const action = inbox && (await tx.actions.get(inbox.command.actionRef));
 	return action
@@ -300,6 +302,7 @@ export async function handleAdmin(
 			throw error;
 		}
 		const result = await runtime.comparisons.evaluate(userId, requestId(req), input);
+		await runtime.investigationAlerts.evaluateComparison(userId, result.id);
 		return json(res, 201, result);
 	}
 	const taskComparisons = path.match(/^\/api\/tasks\/([^/]+)\/comparisons$/);
@@ -308,6 +311,17 @@ export async function handleAdmin(
 			items: await runtime.comparisons.listResultsForTask(
 				userId,
 				decodeURIComponent(taskComparisons[1]),
+			),
+		});
+	}
+	const taskInvestigationAlerts = path.match(
+		/^\/api\/tasks\/([^/]+)\/investigation-alerts$/,
+	);
+	if (taskInvestigationAlerts?.[1] && req.method === "GET") {
+		return json(res, 200, {
+			items: await runtime.investigationAlerts.listForTask(
+				userId,
+				decodeURIComponent(taskInvestigationAlerts[1]),
 			),
 		});
 	}
@@ -461,7 +475,9 @@ export async function handleAdmin(
 					? j.task.sessionId === id
 					: j.task.kind === "process_inbox"
 						? inboxIds.has(j.task.inboxId)
-						: deliveryIds.has(j.task.deliveryId),
+						: j.task.kind === "send_delivery"
+							? deliveryIds.has(j.task.deliveryId)
+							: j.task.alertId === session.investigationAlertId,
 			);
 			return {
 				session,

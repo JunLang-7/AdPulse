@@ -85,8 +85,9 @@ export default function SessionsPage() {
 
 									<div className="flex items-center justify-between text-xs text-muted-foreground">
 										<span>
-											{session.recipient.kind === "group" ? "群聊" : "单聊"} ·{" "}
-											{session.recipient.externalId}
+											{session.deliveryMode === "web"
+												? "Web 待处理"
+												: `${session.recipient?.kind === "group" ? "群聊" : "单聊"} · ${session.recipient?.externalId ?? "—"}`}
 										</span>
 										<span className="flex items-center gap-1">
 											{formatTime(session.createdAt)}

@@ -144,6 +144,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskId}/investigation-alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["listTaskInvestigationAlerts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/comparisons/evaluate": {
         parameters: {
             query?: never;
@@ -414,7 +432,11 @@ export interface components {
                 taskVersion: number;
             };
             monetarySuggestionsAllowed?: boolean;
-            recipient: components["schemas"]["Recipient"];
+            /** @enum {string} */
+            deliveryMode?: "channel" | "web";
+            investigationAlertId?: string;
+            alertEvidenceRef?: components["schemas"]["EvidenceRef"];
+            recipient?: components["schemas"]["Recipient"];
             allowedActorIds: string[];
             strategy: components["schemas"]["Strategy"];
             limits: components["schemas"]["Limits"];
@@ -422,8 +444,8 @@ export interface components {
             version: number;
             roundNo: number;
             /** @enum {string} */
-            status: "planning" | "awaiting_input" | "completed" | "cancelled";
-            expiresAt: string;
+            status: "planning" | "awaiting_input" | "completed" | "cancelled" | "stale";
+            expiresAt?: string;
             createdAt: string;
         };
         Round: {
@@ -432,8 +454,9 @@ export interface components {
             roundNo: number;
             strategyVersion: number;
             /** @enum {string} */
-            status: "open" | "answered";
-            expiresAt: string;
+            status: "open" | "answered" | "invalidated";
+            invalidationReason?: string;
+            expiresAt?: string;
             card: components["schemas"]["Card"];
             candidates: components["schemas"]["Candidate"][];
             selectedOptionId?: string;
@@ -495,6 +518,10 @@ export interface components {
             kind: "prepare_round";
             sessionId: string;
             version: number;
+        } | {
+            /** @enum {string} */
+            kind: "prepare_investigation_alert_session";
+            alertId: string;
         } | {
             /** @enum {string} */
             kind: "send_delivery";
@@ -794,6 +821,60 @@ export interface components {
         };
         ComparisonFollowUpList: {
             items: components["schemas"]["ComparisonFollowUp"][];
+        };
+        InvestigationAlertEvidence: {
+            comparisonResultId: string;
+            evidence: components["schemas"]["ComparisonEvidenceRef"];
+            source: {
+                platform: string;
+                accountRef: string;
+            };
+            scope: components["schemas"]["EvidenceScope"];
+            period: components["schemas"]["EvidencePeriod"];
+            /** @enum {string} */
+            metric: "cost_per_consultation";
+            metricDefinition: string;
+            metricFormula: string;
+            spendMinor?: number | null;
+            consultations?: number | null;
+            currency: components["schemas"]["EvidenceCurrency"];
+            thresholdMinor?: number;
+            /** @enum {string} */
+            comparisonStatus: "comparable" | "incomparable" | "awaiting_supplementation" | "missing_baseline" | "temporarily_uncomputable";
+            canComparePeriods: boolean;
+            limitations: string[];
+            handlingDeadlineHours?: number;
+        };
+        InvestigationAlertEvent: {
+            /** @enum {string} */
+            type: "opened" | "observed" | "candidate_created" | "deferred" | "handled" | "cleared" | "invalidated" | "capped";
+            /** Format: date-time */
+            at: string;
+            comparisonResultId: string;
+            evidence: components["schemas"]["ComparisonEvidenceRef"];
+            reason?: string;
+        };
+        InvestigationAlert: {
+            id: string;
+            ownerId: string;
+            taskId: string;
+            logicalKey: string;
+            sessionId: string;
+            /** @enum {string} */
+            status: "open" | "awaiting_evidence" | "handled" | "cleared" | "stale" | "capped";
+            statusReason?: string;
+            current: components["schemas"]["InvestigationAlertEvidence"];
+            comparisonResultIds: string[];
+            maxPushRounds: number;
+            logicalRounds: number;
+            events: components["schemas"]["InvestigationAlertEvent"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        InvestigationAlertList: {
+            items: components["schemas"]["InvestigationAlert"][];
         };
         FollowUpResolutionInput: {
             material: {
@@ -1276,6 +1357,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ComparisonFollowUpList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Task not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listTaskInvestigationAlerts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Web-only investigation reminders and history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvestigationAlertList"];
                 };
             };
             /** @description Unauthorized */
