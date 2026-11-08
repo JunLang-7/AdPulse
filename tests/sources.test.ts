@@ -513,3 +513,25 @@ test("scheduled pruning removes expired snapshots once per day", async () => {
 	);
 	assert.equal(state?.lastPrunedAt, later);
 });
+
+test("three consecutive failures stop the source for manual review", async () => {
+	const storage = new MemoryStorage();
+	const html = "<div>broken layout</div>";
+	const fetcher = new FakeFetcher({
+		"https://www.weichai.com/robots.txt": { status: 404, bytes: 0, body: "" },
+		[weichai.listUrl]: listOf(html),
+	});
+	const svc = service(storage, fetcher);
+	const first = await svc.sync("weichai_news", "2026-11-07T00:00:00.000Z");
+	assert.equal(first.outcome, "parse_failed");
+	const second = await svc.sync("weichai_news", "2026-11-07T04:00:00.000Z");
+	assert.equal(second.outcome, "parse_failed");
+	const third = await svc.sync("weichai_news", "2026-11-07T08:00:00.000Z");
+	assert.equal(third.outcome, "stopped");
+	assert.match(third.reason ?? "", /3 consecutive failures/);
+
+	const callsBefore = fetcher.calls.length;
+	const fourth = await svc.sync("weichai_news", "2026-11-07T12:00:00.000Z");
+	assert.equal(fourth.outcome, "stopped");
+	assert.equal(fetcher.calls.length, callsBefore, "no network while stopped");
+});

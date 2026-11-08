@@ -220,12 +220,21 @@ export class SourceService {
 		const record = async (
 			partial: Omit<SourceRun, "id" | "sourceKey" | "configVersion">,
 			counts: { created?: number; updated?: number; skippedPurged?: number } = {},
+			failureStreak = 0,
 		): Promise<SourceSyncResult> => {
+			const failed =
+				partial.outcome === "http_error" || partial.outcome === "parse_failed";
+			// Three consecutive failures escalate to a manual-review stop.
+			const escalate = failed && failureStreak >= 2;
 			const run: SourceRun = {
 				id: runId,
 				sourceKey: source.key,
 				configVersion: source.configVersion,
 				...partial,
+				outcome: escalate ? "stopped" : partial.outcome,
+				...(escalate
+					? { errorReason: `${partial.errorReason}; stopped after 3 consecutive failures` }
+					: {}),
 			};
 			await this.storage.transaction(async (tx) => {
 				await tx.sourceRuns.put(run);
@@ -263,11 +272,18 @@ export class SourceService {
 				(item) => item.sourceKey === source.key,
 			);
 			const control = await tx.sourceStates.get(source.key);
+			let failureStreak = 0;
+			for (const run of runs) {
+				if (run.outcome === "http_error" || run.outcome === "parse_failed")
+					failureStreak += 1;
+				else break;
+			}
 			return {
 				runsToday,
 				cachedRobots,
 				items,
 				control,
+				failureStreak,
 				lastStartedAt: runs[0]?.startedAt ?? null,
 			};
 		});
@@ -381,7 +397,7 @@ export class SourceService {
 				bytes: page.bytes,
 				outcome: "http_error",
 				errorReason: `HTTP ${page.status}`,
-			});
+			}, {}, state.failureStreak);
 
 		const parsed = parseListPage(source, page.body, now);
 		if (!isWithinItemBounds(source, parsed.length))
@@ -393,7 +409,7 @@ export class SourceService {
 				itemCount: parsed.length,
 				outcome: "parse_failed",
 				errorReason: `item count ${parsed.length} outside ${source.minItems}-${source.maxItems}`,
-			});
+			}, {}, state.failureStreak);
 
 		const existing = new Map(state.items.map((item) => [item.itemKey, item]));
 		let created = 0;
