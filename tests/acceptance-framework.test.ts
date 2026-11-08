@@ -16,7 +16,7 @@ import {
 	maskUrl,
 	redactDatabaseUrl,
 } from "../scripts/acceptance/redact.mjs";
-import { parseArgs } from "../scripts/acceptance/cli.mjs";
+import { USAGE, parseArgs } from "../scripts/acceptance/cli.mjs";
 import {
 	recordFileName,
 	renderRecord,
@@ -338,6 +338,42 @@ test("record: 渲染来源列与证据分级说明，表格内容转义", () => 
 	assert.match(content, /\| 单聊链路 \| 真人操作 \|/);
 	assert.match(content, /\| 环境 commit \| abc1234 \|/);
 	assert.match(content, /结论行/);
+});
+
+test("cli: 场景用到的开关都能解析（防止只加帮助文本漏加解析）", () => {
+	const options = parseArgs([
+		"--managed-db",
+		"--keep",
+		"--scenario",
+		"db-down",
+		"--other-open-id",
+		"ou_other",
+		"--chat-id",
+		"oc_chat",
+	]);
+	assert.equal(options.managedDb, true);
+	assert.equal(options.keep, true);
+	assert.equal(options.scenario, "db-down");
+	assert.equal(options.otherOpenId, "ou_other");
+	assert.equal(options.chatId, "oc_chat");
+	// 帮助文本里列出的每个开关都必须能被解析。
+	for (const flag of USAGE.match(/--[a-z-]+/g) ?? []) {
+		if (["--", "--help"].includes(flag)) continue;
+		const booleanFlags = [
+			"--list-scenarios",
+			"--managed-db",
+			"--keep",
+			"--write",
+			"--force",
+			"--skip-preflight",
+		];
+		// 数值参数用合法值探测，其余用占位字符串。
+		const probe = flag === "--step-timeout" ? "60" : "x";
+		assert.doesNotThrow(
+			() => parseArgs(booleanFlags.includes(flag) ? [flag] : [flag, probe]),
+			`帮助文本列出的 ${flag} 未被解析`,
+		);
+	}
 });
 
 test("cli: --step-timeout 换算为毫秒并拒绝非法值", () => {

@@ -81,6 +81,8 @@ export function parseArgs(argv) {
 				throw new UsageError("--step-timeout 需要正数秒");
 			options.stepTimeoutMs = Math.round(seconds * 1000);
 		} else if (flag === "--skip-preflight") options.skipPreflight = true;
+		else if (flag === "--managed-db") options.managedDb = true;
+		else if (flag === "--keep") options.keep = true;
 		else if (flag === "--write") options.write = true;
 		else if (flag === "--force") {
 			options.write = true;
