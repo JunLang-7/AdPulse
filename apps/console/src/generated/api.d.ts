@@ -483,6 +483,8 @@ export interface components {
             kind: "platform";
             accountId: string;
             externalId: string;
+            /** @description Resolved internal user for a verified platform actor. */
+            userId?: string;
         } | {
             /** @enum {string} */
             kind: "console";

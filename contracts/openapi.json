@@ -1286,6 +1286,10 @@
               },
               "externalId": {
                 "type": "string"
+              },
+              "userId": {
+                "type": "string",
+                "description": "Resolved internal user for a verified platform actor."
               }
             },
             "required": [
