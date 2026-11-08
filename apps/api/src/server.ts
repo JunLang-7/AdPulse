@@ -24,11 +24,32 @@ const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const COOKIE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MUTATING_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
+/** 登录/会话被拒的结构化留痕：只含原因与请求形状，不含凭据、外部标识或原始参数。 */
+export type AuthAuditReason =
+	| "login_request_invalid"
+	| "login_transaction_invalid"
+	| "identity_rejected"
+	| "session_missing"
+	| "session_invalid"
+	| "origin_mismatch";
+
+export interface AuthAuditEvent {
+	event: "auth.reject";
+	reason: AuthAuditReason;
+	method: string;
+	path: string;
+}
+
 export interface ApiAuthentication {
 	service: AuthenticationService;
 	provider: IdentityProvider;
 	publicOrigin: string;
 	now?: () => Date;
+	/**
+	 * 拒绝留痕的落点。默认写一行 JSON 到 stdout，便于验收脚本与日志检索断言；
+	 * 参数已裁剪为原因/方法/路径，调用方不得补充 cookie、code、state、open_id 等。
+	 */
+	audit?: (event: AuthAuditEvent) => void;
 }
 
 const digest = (value: string): string =>
@@ -83,6 +104,11 @@ function validatePublicOrigin(value: string): URL {
 
 export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 	const publicOrigin = validatePublicOrigin(auth.publicOrigin);
+	const audit =
+		auth.audit ??
+		((event: AuthAuditEvent) => {
+			process.stdout.write(`${JSON.stringify(event)}\n`);
+		});
 	const secureCookies = publicOrigin.protocol === "https:";
 	const now = auth.now ?? (() => new Date());
 	const appendCookie = (
@@ -102,6 +128,14 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 		name: string,
 	) => appendCookie(res, name, "", 0);
 	const callbackUri = new URL("/auth/feishu/callback", publicOrigin).toString();
+
+	const reject = (
+		reason: AuthAuditReason,
+		req: import("node:http").IncomingMessage,
+		path: string,
+	) =>
+		// 只记录路径本身：查询串可能带 state/code，记录会把一次性凭据写进日志。
+		audit({ event: "auth.reject", reason, method: req.method ?? "GET", path });
 
 	const server = createServer(async (req, res) => {
 		try {
@@ -131,8 +165,10 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					!returnTo.pathname.startsWith("/") ||
 					returnTo.pathname.startsWith("//") ||
 					returnTo.pathname.includes("\\")
-				)
+				) {
+					reject("login_request_invalid", req, path);
 					throw new HttpError(400, "invalid return target");
+				}
 
 				const state = randomBytes(32).toString("base64url");
 				const browserNonce = randomBytes(32).toString("base64url");
@@ -174,6 +210,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					!nonce ||
 					!COOKIE_TOKEN_PATTERN.test(nonce)
 				) {
+					reject("login_request_invalid", req, path);
 					clearCookie(res, OAUTH_COOKIE);
 					return redirect(res, "/login?error=authorization");
 				}
@@ -184,6 +221,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					currentTime.toISOString(),
 				);
 				if (!transaction) {
+					reject("login_transaction_invalid", req, path);
 					clearCookie(res, OAUTH_COOKIE);
 					return redirect(res, "/login?error=authorization");
 				}
@@ -195,6 +233,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						callbackUri,
 					);
 				} catch {
+					reject("identity_rejected", req, path);
 					clearCookie(res, OAUTH_COOKIE);
 					return redirect(res, "/login?error=identity");
 				}
@@ -216,18 +255,25 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 
 			if (path.startsWith("/api/")) {
 				const token = cookieValue(req.headers.cookie, SESSION_COOKIE);
-				if (!token || !COOKIE_TOKEN_PATTERN.test(token))
+				if (!token || !COOKIE_TOKEN_PATTERN.test(token)) {
+					reject("session_missing", req, path);
 					throw new HttpError(401, "unauthorized");
+				}
 				const session = await auth.service.authenticateSession(
 					digest(token),
 					now().toISOString(),
 				);
-				if (!session) throw new HttpError(401, "unauthorized");
+				if (!session) {
+					reject("session_invalid", req, path);
+					throw new HttpError(401, "unauthorized");
+				}
 				if (
 					MUTATING_METHODS.has(req.method ?? "") &&
 					!sameOrigin(req.headers.origin, publicOrigin.origin)
-				)
+				) {
+					reject("origin_mismatch", req, path);
 					throw new HttpError(403, "same-origin request required");
+				}
 				if (path === "/api/me" && req.method === "GET")
 					return json(res, 200, {
 						userId: session.userId,

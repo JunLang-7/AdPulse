@@ -240,3 +240,50 @@ bun run feishu:acceptance -- --scenario dm --open-id ou_xxx --write
   `synthetic` 只能证明代码路径。`blocked`/`skip` 一律不计入验收。
 - 未覆盖项保留空白并写明原因（缺环境/缺权限/未实现），不追认提案状态，不宣称市场信号主链路或 Web 主线已完成。
 - 需要修复的问题走独立 PR，不在验收记录里夹带功能改动。
+
+## 13. 登录类验收取证（#34）
+
+本节说明**每条登录验收项靠什么取证**，不重复 #34 的设计正文，也不代替其结论。
+执行方式分三类：`脚本断言`（可重复的自动化证据）、`人工操作`（只能在真实客户端/浏览器完成）、
+`未覆盖`（明确不做或由其它 Issue 承担）。
+
+| #34 验收项 | 执行方式 | 证据位置 / 命令 |
+| --- | --- | --- |
+| 飞书内授权与浏览器授权登录同一内部账号，机器人与控制台映射一致 | 脚本断言 + 待真实客户端 | `tests/feishu-auth.test.ts`（PKCE/换票/租户作用域）、`tests/authentication.test.ts`（绑定复用）、`tests/api.test.ts`（会话与 actor 映射） |
+| 两名用户自动开通、并发回调不重复建号、再次登录复用 | 脚本断言 | `tests/postgres.test.ts`：`auth migration is idempotent and concurrent first logins reuse one user` |
+| 范围外/伪造/错应用/回调重放/未认证被拒 | 脚本断言 | `tests/feishu-auth.test.ts`（租户不符、提供商拒绝、传输失败）、`tests/api-auth-audit.test.ts`（重放 → `login_transaction_invalid`） |
+| 仅本人访问；伪造他人 task/evidence/session/inbox/job ID 被拒 | 脚本断言 | `tests/api.test.ts`：`task API … scopes access`、`saved comparison … owner-scoped`、`webhook choices are processed only when the actor maps to the session owner` |
+| 换身份认领/人工换绑/姓名邮箱迁移/管理员代登录不支持 | 脚本断言 | `tests/authentication.test.ts`：`personal users are stable only within the full scoped external identity`、`verified identities … expose only own bindings` |
+| 会话最长 8 小时、到期前/中/后、普通访问不续期、无开发 token 回退 | 脚本断言（注入时钟） | `node --test --test-name-pattern="eight-hour absolute session expiry" tests/api.test.ts`（约 20ms，不依赖等待） |
+| 退出/撤销后立即失效 | 脚本断言 + 人工 | `tests/authentication.test.ts`：`revoking an identity invalidates every associated web session`；浏览器退出可直接观察 |
+| 到期不删除账号/订阅；机器人侧仍验证身份 | 部分脚本断言 | 会话与用户/绑定分离由 `createWebSession`/`authenticateSession` 语义覆盖；**订阅侧属 #35，未覆盖** |
+| 企业身份失效/解绑/恢复规则可测 | 脚本断言 + 待注入 | `revoking an identity …`、`PostgreSQL: queued platform action is refused after its binding is revoked`；真实离职/停用事件尚未实测 |
+| 卡片直达回跳覆盖各登录态，外站/伪造返回目标被拒 | 脚本断言 + 人工 | `tests/console-auth.test.ts`：`return targets keep in-console paths and reject external or ambiguous values`、`expired sessions return to the sanitized current page`；真实卡片点击后的回跳需人工走一次 |
+| 独立新库 schema 基线/迁移/回滚、同域 HTTPS 与安全 Cookie | 脚本断言 | `PostgreSQL: auth migration …`、`production OAuth cookies are Secure and callback URI uses the shared HTTPS origin` |
+| 受控真实企业飞书验证授权登录与身份映射，证据脱敏 | 人工操作 | 受控账号完成一次真实登录；记录写 `docs/acceptance/records/`，**不得写入 Cookie 值或完整 open_id** |
+
+### 登录拒绝的可观测输出
+
+API 对登录/会话拒绝输出一行 JSON（默认 stdout；测试可注入 `auth.audit` 收集）：
+
+```json
+{"event":"auth.reject","reason":"session_invalid","method":"GET","path":"/api/me"}
+```
+
+| reason | 含义 | 排查方向 |
+| --- | --- | --- |
+| `login_request_invalid` | 登录入口返回目标非法，或回调缺少 state/code/绑定 cookie | 站内 returnTo 白名单、浏览器 Cookie |
+| `login_transaction_invalid` | 一次性事务不存在（重放、过期或绑定不符） | 是否重复使用同一回调链接 |
+| `identity_rejected` | 换票或身份校验失败（租户/应用不符、传输失败） | 应用凭证、租户、网络 |
+| `session_missing` | 未携带或格式非法的 `adpulse_session` | 是否已登录、Cookie 域 |
+| `session_invalid` | 会话不存在/已过期/已撤销 | 8 小时上限、退出与撤销 |
+| `origin_mismatch` | 副作用请求的 `Origin` 与 `PUBLIC_ORIGIN` 不一致 | 控制台与 API 是否同源 |
+
+边界：`login_transaction_invalid` 不区分「过期」与「重放」，`identity_rejected` 不区分具体平台错误；
+日志只含原因/方法/**不含查询串的路径**，不写 cookie、`code`、`state`、`open_id` 或租户值。
+
+### 场景驱动器的凭据
+
+#34 之后控制台只有会话 Cookie：先人工登录一次，把 `adpulse_session` 放进 `ADPULSE_SESSION_COOKIE`，
+并把 `PUBLIC_ORIGIN` 设为浏览器实际 origin。Cookie 只注入当前终端，不写入仓库、记录或 CI。
+**不引入测试会话注入入口**；如将来需要，须单独评审并限制在测试环境。
