@@ -28,6 +28,9 @@ export class ChannelRegistry {
 	has(id: string): boolean {
 		return this.accounts.has(id);
 	}
+	identityScopeOf(id: string): ChannelAccount["identityScope"] {
+		return this.accounts.get(id)?.identityScope;
+	}
 	async handle(
 		accountId: string,
 		request: WebhookRequest,

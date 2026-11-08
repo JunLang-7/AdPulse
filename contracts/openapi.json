@@ -1336,6 +1336,7 @@
             "$ref": "#/components/schemas/Recipient"
           },
           "allowedActorIds": {
+            "description": "For identity-backed accounts this must contain only the current user's verified external IDs.",
             "type": "array",
             "items": {
               "type": "string"

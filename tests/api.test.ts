@@ -26,6 +26,11 @@ async function serve(
   const runtime = compose(new MemoryStorage(), [
     {
       id: "account-a",
+      identityScope: {
+        platform: "feishu",
+        applicationId: "cli_test",
+        tenantId: "tenant-a",
+      },
       inbound: {
         identifyActor(actor) {
           return { ...ownerIdentity, externalId: actor.externalId };
@@ -108,8 +113,8 @@ async function serve(
   };
 }
 const startInput = () => ({
-  recipient: { accountId: "account-a", kind: "user", externalId: "user-a" },
-  allowedActorIds: ["user-a"],
+  recipient: { accountId: "account-a", kind: "user", externalId: "ou-owner" },
+  allowedActorIds: ["ou-owner"],
   strategy: { objective: "leads", audience: [], channels: { ads: { bidCpc: 2 } }, sellingPoints: [] },
   limits: { maxBidChangeRatio: 0.2, maxBudgetChangeRatio: 0.2 },
   signal: { id: "sig", title: "成本变化", summary: "需要复核", evidence: proposal.card.evidence },
@@ -790,6 +795,35 @@ test("webhook choices are processed only when the actor maps to the session owne
   const rejected = await process(strangerAction.id);
   assert.equal(rejected?.status, "rejected");
   assert.equal(rejected?.reason, "forbidden");
+});
+
+test("Feishu sessions accept only the current user's verified identity", async (t) => {
+  const { url, headers } = await serve(t);
+  const create = (overrides: Record<string, unknown>) =>
+    fetch(`${url}/api/sessions`, {
+      method: "POST",
+      headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify({ ...startInput(), ...overrides }),
+    });
+  assert.equal(
+    (await create({ allowedActorIds: ["ou-someone-else"] })).status,
+    400,
+    "actor lists cannot include another user",
+  );
+  assert.equal(
+    (
+      await create({
+        recipient: {
+          accountId: "account-a",
+          kind: "user",
+          externalId: "ou-someone-else",
+        },
+      })
+    ).status,
+    400,
+    "a user recipient must be the current user",
+  );
+  assert.equal((await create({})).status, 201);
 });
 
 test("webhook returns failure instead of ACK if persistence fails", async (t) => {
