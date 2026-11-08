@@ -26,6 +26,7 @@ export const USAGE = `用法：bun run feishu:acceptance [-- 选项]
   --open-id <ou_...>  可选：校验用户收件人；--scenario 时必填
   --scenario <id>     运行验收场景（dm / rounds）；先跑只读自检作为前置
   --list-scenarios    列出可用场景
+  --step-timeout <s>  场景单步等待人工动作的秒数，默认用场景内置值
   --skip-preflight    跳过场景前置自检（仅本地调试，不能用于真机留证）
   --write             生成验收记录 docs/acceptance/records/<日期>.md
   --force             覆盖同名验收记录
@@ -44,6 +45,7 @@ export function parseArgs(argv) {
 		openId: undefined,
 		scenario: undefined,
 		listScenarios: false,
+		stepTimeoutMs: undefined,
 		skipPreflight: false,
 		write: false,
 		force: false,
@@ -65,7 +67,12 @@ export function parseArgs(argv) {
 		else if (flag === "--open-id") options.openId = value();
 		else if (flag === "--scenario") options.scenario = value();
 		else if (flag === "--list-scenarios") options.listScenarios = true;
-		else if (flag === "--skip-preflight") options.skipPreflight = true;
+		else if (flag === "--step-timeout") {
+			const seconds = Number(value());
+			if (!Number.isFinite(seconds) || seconds <= 0)
+				throw new UsageError("--step-timeout 需要正数秒");
+			options.stepTimeoutMs = Math.round(seconds * 1000);
+		} else if (flag === "--skip-preflight") options.skipPreflight = true;
 		else if (flag === "--write") options.write = true;
 		else if (flag === "--force") {
 			options.write = true;
@@ -162,7 +169,11 @@ export async function main(argv, env, io = {}) {
 
 		const checks = createChecks({ defaultEvidence: EVIDENCE.platformReal });
 		const vars = {};
-		const completed = await runScenario(scenario, {
+		const effective =
+			options.stepTimeoutMs === undefined
+				? scenario
+				: { ...scenario, timeoutMs: options.stepTimeoutMs };
+		const completed = await runScenario(effective, {
 			record: checks.record,
 			log,
 			env,
@@ -181,6 +192,12 @@ export async function main(argv, env, io = {}) {
 					["执行时间", now().toISOString()],
 					["环境 commit", gitCommit()],
 					["场景", `${scenario.id}（${scenario.steps.length} 步）`],
+					[
+						"人工窗口",
+						options.stepTimeoutMs === undefined
+							? `${scenario.timeoutMs / 1000}s（场景默认）`
+							: `${options.stepTimeoutMs / 1000}s（--step-timeout）`,
+					],
 					["API 地址", options.api],
 					["验收会话", vars.sessionId ? mask(vars.sessionId, 8, 0) : "(未建立)"],
 				],

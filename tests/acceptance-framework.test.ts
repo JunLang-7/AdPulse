@@ -16,6 +16,7 @@ import {
 	maskUrl,
 	redactDatabaseUrl,
 } from "../scripts/acceptance/redact.mjs";
+import { parseArgs } from "../scripts/acceptance/cli.mjs";
 import {
 	recordFileName,
 	renderRecord,
@@ -328,6 +329,14 @@ test("record: 渲染来源列与证据分级说明，表格内容转义", () => 
 	assert.match(content, /\| 单聊链路 \| 真人操作 \|/);
 	assert.match(content, /\| 环境 commit \| abc1234 \|/);
 	assert.match(content, /结论行/);
+});
+
+test("cli: --step-timeout 换算为毫秒并拒绝非法值", () => {
+	assert.equal(parseArgs(["--step-timeout", "1800"]).stepTimeoutMs, 1_800_000);
+	assert.equal(parseArgs(["--step-timeout=90"]).stepTimeoutMs, 90_000);
+	assert.throws(() => parseArgs(["--step-timeout", "0"]), /正数秒/);
+	assert.throws(() => parseArgs(["--step-timeout", "abc"]), /正数秒/);
+	assert.equal(parseArgs([]).stepTimeoutMs, undefined);
 });
 
 test("record: 文件名按 UTC 分钟，同名默认不覆盖", () => {

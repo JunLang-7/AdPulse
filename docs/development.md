@@ -145,6 +145,8 @@ bun run feishu:acceptance -- --scenario rounds --open-id ou_xxx
 场景会新建验收会话并按提示请你在飞书客户端点击，不删除或改写既有数据。断言结果标为 `platform-real`（由真实点击驱动）。
 
 没人点击时步骤记 `blocked` 并且退出码非 0：本次结果不计入验收，完成动作后重跑即可。
+真机上人往往不会立刻在客户端前，可用 `--step-timeout <秒>` 放宽单步人工窗口（例如 1800），
+它只调整等待人工动作的时间，与 runbook 的 3 秒 ACK 预算无关。
 加 `--write` 写入 `docs/acceptance/records/<UTC>-scenario-<id>.md`，同样默认不覆盖。
 
 ## 5. Web 控制台与接口
