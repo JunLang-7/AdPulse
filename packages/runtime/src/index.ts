@@ -67,6 +67,7 @@ export {
 	isPublicAddress,
 } from "./source-fetch.js";
 export { runSources } from "./source-runner.js";
+export { discoverSource } from "./source-discovery.js";
 
 /** Derived from the allowlisted definitions so the two cannot drift. */
 const SOURCE_HOSTS = [

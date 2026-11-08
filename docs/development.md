@@ -191,6 +191,21 @@ bun run sources resume haier_news <operator>   # 解除 stopped，记录操作�
 
 测试用**人造 HTML fixture**，不访问真实站点，因此本地跑测试不会产生任何外发请求。
 
+### 用 Agent-Reach 查找官网线索
+
+运维人员可按品牌和主题手动查询海尔、潍柴的新品发布（`products`）或品牌活动（`campaigns`）。该命令独立于采集 worker 和数据库，固定把公开品牌、官网域名和主题词发给 Exa。
+
+在独立 Python 环境中从 Agent-Reach 的 GitHub 仓库安装已核对的提交。将 `AGENT_REACH_BIN` 配置为该环境中 `agent-reach` 可执行文件的绝对路径（Windows 为 `agent-reach.exe`）。
+
+```bash
+uv tool install "agent-reach @ git+https://github.com/Panniantong/Agent-Reach.git@47898829204ad27521d8a1719e3aeca3b8a3e0ca"
+bun run build
+bun run sources discover haier_news products
+bun run sources discover weichai_news campaigns
+```
+
+命令在临时配置目录内只执行 `web search`。查询最多返回 5 条结果，AdPulse 只输出与既有官网域名和新闻路径匹配的去重标题、原文链接及可解析的索引日期。`verification: unverified` 和 `indexedPublishedAt` 表示这些字段来自搜索索引，须对照原文核对。发现结果只输出到终端，采集入库与用户展示仍按 [#41](https://github.com/JunLang-7/AdPulse/issues/41)、[#38](https://github.com/JunLang-7/AdPulse/issues/38) 和 [#37](https://github.com/JunLang-7/AdPulse/issues/37) 分别验收。限流或访问阻断会结束当前命令。
+
 ## 8. 扩展与现有限制
 
 新接 IM：在 channels 中实现 InboundChannel 和 OutboundChannel，构造 ChannelAccount，在 runtime 注册。增加原始请求/ACK、渲染、账户隔离与重试测试；不要把平台字段或 HTTP 响应移入 core。
