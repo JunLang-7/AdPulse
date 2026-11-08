@@ -116,6 +116,19 @@ bun run feishu:acceptance -- --public-url https://你的域名/webhooks/feishu-i
 操作步骤与判读标准见[飞书真机联调 runbook](acceptance/feishu-e2e.md)。
 服务端尚无专用的回调 ACK 时延指标，需按 runbook 第 9 节用代理日志等替代取数。
 
+实现在 `scripts/acceptance/`：`scripts/feishu-acceptance.mjs` 只是入口转发，参数、输出与退出码保持不变；
+框架提供脱敏（`redact.mjs`）、HTTP 调用（`http.mjs`）、轮询断言（`poll.mjs`）、场景描述（`scenario.mjs`）
+与记录渲染（`record.mjs`）。后续真机链路场景按 `{ setup, prompt, read, until, assertions }` 注册，不各写一套脚本；
+当前只有只读自检，单聊/群聊等场景驱动器尚未接入。
+
+输出的每条结果都带证据来源，记录里同样保留该列：
+
+- `platform-real`：平台真实推送或真实用户交互，可支撑真机验收勾选。
+- `local-real`：真实凭据或真实平台 API 由本地发起，可证明配置与连通，不可勾选真机项。
+- `synthetic`：假凭据或 mock，只能证明代码路径。
+
+等待人工动作超时或读取状态失败记 `blocked`：它表示没有等到操作，不等于被测系统失败，与 `skip` 一样不计入验收。
+
 ## 5. Web 控制台与接口
 
 保持上述 API 在 127.0.0.1:3000 运行，另一个终端启动控制台：

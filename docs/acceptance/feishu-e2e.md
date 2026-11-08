@@ -152,6 +152,9 @@ bun run feishu:acceptance -- --public-url https://... --chat-id oc_xxx --open-id
 ```
 
 - 记录里只写脱敏标识：`cli_***f9`、`t***3a`、`oc_***9f2a`；真实姓名、手机号、完整 `open_id`、群名一律不写。
+- 自动检查与场景断言每行都带证据来源：`platform-real`（平台真实推送或真实用户交互）、
+  `local-real`（真实凭据或平台 API 由本地发起）、`synthetic`（假凭据或 mock）。只有 `platform-real` 可勾选真机项；
+  脚本输出 `blocked`（未等到人工动作）与 `skip` 一样不计入验收。
 - `docs/acceptance/records/` 默认被 `.gitignore` 忽略。确需入库时先逐行复核脱敏，再用 `git add -f` 显式提交。
 - 不粘贴平台响应中的 token、secret、`tenant_access_token` 或带签名头的完整请求。
 
