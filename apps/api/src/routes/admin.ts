@@ -435,6 +435,8 @@ export async function handleAdmin(
 			throw new HttpError(400, "unknown recipient account");
 		const scope = runtime.channels.identityScopeOf(input.recipient.accountId);
 		if (scope) {
+			if (input.recipient.kind !== "user")
+				throw new HttpError(400, "personal sessions require a user recipient");
 			const identities = (await auth.listIdentities(userId)).filter(
 				(identity) =>
 					identity.platform === scope.platform &&

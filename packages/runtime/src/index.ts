@@ -9,6 +9,7 @@ import {
 	EvidenceService,
 	InvestigationAlertService,
 	Orchestrator,
+	resolveActiveIdentity,
 	SOURCE_DEFINITIONS,
 	SourceService,
 	TaskService,
@@ -43,7 +44,12 @@ export function compose(
 	policy: PolicyEngine = reviewPolicy,
 ) {
 	const channels = new ChannelRegistry(accounts);
-	const decisions = new Orchestrator(storage, policy);
+	const decisions = new Orchestrator(storage, policy, undefined, undefined, async (tx, actor) => {
+		const account = accounts.find((candidate) => candidate.id === actor.accountId);
+		const identity = account?.inbound.identifyActor?.(actor);
+		return Boolean(identity && actor.userId &&
+			(await resolveActiveIdentity(tx, identity)) === actor.userId);
+	});
 	const tasks = new TaskService(storage);
 	const evidence = new EvidenceService(storage);
 	const comparisons = new ComparisonService(storage);

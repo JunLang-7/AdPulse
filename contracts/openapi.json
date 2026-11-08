@@ -1333,7 +1333,8 @@
             "additionalProperties": false
           },
           "recipient": {
-            "$ref": "#/components/schemas/Recipient"
+            "$ref": "#/components/schemas/Recipient",
+            "description": "Identity-backed personal sessions require the current user's user recipient; group destinations are rejected."
           },
           "allowedActorIds": {
             "description": "For identity-backed accounts this must contain only the current user's verified external IDs.",

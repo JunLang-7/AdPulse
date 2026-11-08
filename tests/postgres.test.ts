@@ -413,3 +413,53 @@ test("PostgreSQL: authentication survives a process restart and repeated initial
 		await admin.end();
 	}
 });
+
+test("PostgreSQL: queued platform action is refused after its binding is revoked", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async (t) => {
+	const { AuthenticationService } = await import("../packages/core/dist/index.js");
+	const { compose } = await import("../packages/runtime/dist/index.js");
+	const storage = PostgresStorage.connect(process.env.TEST_DATABASE_URL!);
+	t.after(() => storage.close());
+	await storage.initialize();
+	const suffix = crypto.randomUUID();
+	const identity = { platform: "test", applicationId: suffix, tenantId: suffix, idType: "open_id", externalId: suffix };
+	const auth = new AuthenticationService(storage);
+	const owner = await auth.createWebSession(identity, createHash("sha256").update(suffix).digest("hex"), new Date().toISOString());
+	let actionRef = "";
+	const eventId = crypto.randomUUID();
+	const runtime = compose(storage, [{
+		id: suffix,
+		inbound: {
+			identifyActor: () => identity,
+			async parse() {
+				return { kind: "choice", command: { sourceId: suffix, eventId, actionRef, actor: {
+					kind: "platform", accountId: suffix, externalId: suffix,
+				} }, response: { status: 200, headers: {}, body: "{}" } };
+			},
+		},
+		outbound: { async send() { throw new Error("this regression must not send"); } },
+	}]);
+	const session = await runtime.decisions.startSession({
+		requestId: crypto.randomUUID(), ownerId: owner.userId,
+		recipient: { accountId: suffix, kind: "user", externalId: suffix }, allowedActorIds: [suffix],
+		strategy: { objective: "test", audience: [], channels: {}, sellingPoints: [] },
+		limits: { maxBudgetChangeRatio: 0.2, maxBidChangeRatio: 0.2 },
+		signal: { id: suffix, title: "synthetic", summary: "test", evidence: [] },
+		expiresAt: new Date(Date.now() + 3600000).toISOString(),
+	});
+	await runtime.decisions.prepareRound(session.id, 0);
+	actionRef = await storage.transaction(async (tx) => {
+		const round = (await tx.rounds.all()).find((round) => round.sessionId === session.id)!;
+		return (await tx.actions.all()).find((action) => action.roundId === round.id)!.id;
+	});
+	await runtime.channels.handle(suffix, { method: "POST", url: "/webhooks/test", headers: {}, rawBody: Buffer.from("{}") }, runtime.decisions, (identity) => auth.resolveIdentity(identity));
+	const binding = await storage.transaction(async (tx) => (await tx.identityBindings.all()).find((binding) => binding.userId === owner.userId)!);
+	await auth.revokeIdentity(binding.id, new Date().toISOString());
+	const inboxId = JSON.stringify([suffix, eventId]);
+	await runtime.decisions.processInbox(inboxId);
+	const result = await storage.transaction(async (tx) => ({ inbox: await tx.inbox.get(inboxId), session: await tx.sessions.get(session.id) }));
+	assert.equal(result.inbox?.status, "rejected");
+	assert.equal(result.inbox?.reason, "forbidden");
+	assert.equal(result.session?.version, 0);
+});

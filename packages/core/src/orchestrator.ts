@@ -1,6 +1,6 @@
 import type { Limits, Signal, Strategy } from "./domain/strategy.js";
 import { applyChanges, validateStrategy } from "./domain/strategy.js";
-import type { ChoiceCommand, Recipient } from "./ports/channel.js";
+import type { Actor, ChoiceCommand, Recipient } from "./ports/channel.js";
 import type { PolicyEngine, Proposal } from "./ports/policyEngine.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
@@ -45,6 +45,11 @@ export class Orchestrator {
 		private policy: PolicyEngine,
 		private now: () => string = () => new Date().toISOString(),
 		private id: () => string = () => crypto.randomUUID(),
+		/** Local storage checks only; runs within the same retryable transaction. */
+		private authorizePlatformActor?: (
+			tx: Transaction,
+			actor: Extract<Actor, { kind: "platform" }>,
+		) => Promise<boolean>,
 	) {}
 
 	async startSession(input: StartSession): Promise<Session> {
@@ -185,6 +190,12 @@ export class Orchestrator {
 						actor.userId === session.ownerId &&
 						session.allowedActorIds.includes(actor.externalId);
 			if (!authorized) return reject("forbidden");
+			if (
+				actor.kind === "platform" &&
+				this.authorizePlatformActor &&
+				!(await this.authorizePlatformActor(tx, actor))
+			)
+				return reject("forbidden");
 			if (
 				(session.expiresAt && session.expiresAt <= this.now()) ||
 				(round.expiresAt && round.expiresAt <= this.now())

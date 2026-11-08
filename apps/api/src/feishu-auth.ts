@@ -42,6 +42,8 @@ export class FeishuIdentityProvider implements IdentityProvider {
 	) {}
 
 	authorizationUrl(parameters: OAuthAuthorizationParameters): string {
+		if (!/^[A-Za-z0-9_-]{43}$/.test(parameters.codeChallenge))
+			throw new Error("invalid PKCE challenge");
 		const url = new URL("https://accounts.feishu.cn/open-apis/authen/v1/authorize");
 		url.searchParams.set("client_id", this.configuration.applicationId);
 		url.searchParams.set("response_type", "code");
@@ -57,8 +59,13 @@ export class FeishuIdentityProvider implements IdentityProvider {
 		codeVerifier: string,
 		redirectUri: string,
 	): Promise<VerifiedIdentity> {
+		if (!/^[A-Za-z0-9._~-]{43,128}$/.test(codeVerifier))
+			throw new Error("invalid PKCE verifier");
+		// This authorize endpoint currently supports PKCE with the v2 token endpoint.
+		// https://open.feishu.cn/document/common-capabilities/sso/api/obtain-oauth-code
+		// Keep the pair explicit: never retry a consumed code against another endpoint.
 		const tokenResponse = await this.fetcher(
-			"https://accounts.feishu.cn/oauth/v3/token",
+			"https://open.feishu.cn/open-apis/authen/v2/oauth/token",
 			{
 				method: "POST",
 				headers: { "content-type": "application/json" },

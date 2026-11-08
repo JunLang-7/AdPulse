@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IdentityBinding, LoginTransaction } from "./state/model.js";
 import type { PlatformIdentity } from "./ports/channel.js";
-import type { Storage } from "./ports/storage.js";
+import type { Storage, Transaction } from "./ports/storage.js";
 
 export const MAX_WEB_SESSION_MS = 8 * 60 * 60 * 1000;
 
@@ -45,6 +45,20 @@ const validIdentity = (identity: VerifiedIdentity): boolean =>
 			value.length <= 512 &&
 			!/[\u0000-\u001f]/.test(value),
 	);
+
+/** Recheck inside the business transaction so revocation and execution serialize. */
+export async function resolveActiveIdentity(
+	tx: Transaction,
+	identity: VerifiedIdentity,
+): Promise<string | null> {
+	if (!validIdentity(identity)) return null;
+	const binding = (await tx.identityBindings.all()).find((candidate) =>
+		identityMatches(candidate, identity),
+	);
+	if (!binding || binding.status !== "active") return null;
+	const user = await tx.users.get(binding.userId);
+	return user?.status === "active" ? user.id : null;
+}
 
 const isRetryableConflict = (error: unknown): boolean => {
 	if (typeof error !== "object" || error === null || !("code" in error))
@@ -194,15 +208,7 @@ export class AuthenticationService {
 
 	/** Resolves a provider-verified scoped identity to its active internal user. */
 	async resolveIdentity(identity: VerifiedIdentity): Promise<string | null> {
-		if (!validIdentity(identity)) return null;
-		return this.storage.transaction(async (tx) => {
-			const binding = (await tx.identityBindings.all()).find((candidate) =>
-				identityMatches(candidate, identity),
-			);
-			if (!binding || binding.status !== "active") return null;
-			const user = await tx.users.get(binding.userId);
-			return user?.status === "active" ? user.id : null;
-		});
+		return this.storage.transaction((tx) => resolveActiveIdentity(tx, identity));
 	}
 
 	/** Active identity bindings owned by one internal user. */

@@ -495,6 +495,7 @@ export interface components {
                 taskId: string;
                 taskVersion: number;
             };
+            /** @description Identity-backed personal sessions require the current user's user recipient; group destinations are rejected. */
             recipient: components["schemas"]["Recipient"];
             /** @description For identity-backed accounts this must contain only the current user's verified external IDs. */
             allowedActorIds: string[];
