@@ -10,6 +10,7 @@ import {
 	SourceFetchError,
 	SourceService,
 	MIN_MANUAL_INTERVAL_MS,
+	isPruneDue,
 	isSlotPending,
 	latestDueSlot,
 	contentHash,
@@ -487,4 +488,28 @@ test("only a run older than the current slot is due", () => {
 	assert.equal(isSlotPending(null, slot), true);
 	assert.equal(isSlotPending("2026-11-07T00:00:01.000Z", slot), false);
 	assert.equal(isSlotPending("2026-11-06T20:00:00.000Z", slot), true);
+});
+
+test("retention is due once a day", () => {
+	assert.equal(isPruneDue(null, NOW), true);
+	assert.equal(isPruneDue("2026-11-07T01:00:00.000Z", NOW), false);
+	assert.equal(isPruneDue("2026-11-06T03:00:00.000Z", NOW), true);
+	assert.equal(isPruneDue("not-a-date", NOW), true);
+});
+
+test("scheduled pruning removes expired snapshots once per day", async () => {
+	const storage = new MemoryStorage();
+	const fetcher = new FakeFetcher({
+		"https://www.weichai.com/robots.txt": { status: 404, bytes: 0, body: "" },
+		[weichai.listUrl]: listOf(WEICHAI_LIST),
+	});
+	const svc = service(storage, fetcher);
+	await svc.sync("weichai_news", NOW);
+	const later = "2026-12-20T00:00:00.000Z";
+	assert.equal(await svc.pruneIfDue("weichai_news", later), 3);
+	assert.equal(await svc.pruneIfDue("weichai_news", later), 0, "same day is a no-op");
+	const state = await storage.transaction(async (tx) =>
+		tx.sourceStates.get("weichai_news"),
+	);
+	assert.equal(state?.lastPrunedAt, later);
 });

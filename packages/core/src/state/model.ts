@@ -464,6 +464,7 @@ export interface SourceState {
 	stoppedReason: string | null;
 	resumedAt: string | null;
 	resumedBy: string | null;
+	lastPrunedAt: string | null;
 }
 export interface Entities {
 	sourceStates: SourceState;

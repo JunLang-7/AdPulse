@@ -57,6 +57,7 @@ export const FETCH_LIMITS = { maxBytes: 1_048_576, timeoutMs: 20_000 };
 /** Operators may re-run early, but not faster than this. */
 export const MIN_MANUAL_INTERVAL_MS = 15 * 60 * 1000;
 const SNAPSHOT_RETENTION_DAYS = 30;
+const PRUNE_INTERVAL_MS = 24 * 3_600_000;
 const MAX_CRAWL_DELAY_MS = 20_000;
 
 export interface SourceSyncResult {
@@ -140,7 +141,19 @@ function robotsUrlFor(source: SourceDefinition): string {
 	return url.toString();
 }
 
-function stopped(sourceKey: string, run: SourceRun): SourceState {
+/** Retention only needs to run once a day. */
+export function isPruneDue(lastPrunedAt: string | null, now: string): boolean {
+	if (!lastPrunedAt) return true;
+	const elapsed = Date.parse(now) - Date.parse(lastPrunedAt);
+	if (!Number.isFinite(elapsed)) return true;
+	return elapsed >= PRUNE_INTERVAL_MS;
+}
+
+function stopped(
+	sourceKey: string,
+	run: SourceRun,
+	previous: SourceState | null,
+): SourceState {
 	return {
 		id: sourceKey,
 		sourceKey,
@@ -149,6 +162,7 @@ function stopped(sourceKey: string, run: SourceRun): SourceState {
 		stoppedReason: run.errorReason,
 		resumedAt: null,
 		resumedBy: null,
+		lastPrunedAt: previous?.lastPrunedAt ?? null,
 	};
 }
 
@@ -215,7 +229,10 @@ export class SourceService {
 			};
 			await this.storage.transaction(async (tx) => {
 				await tx.sourceRuns.put(run);
-				if (run.outcome === "stopped") await tx.sourceStates.put(stopped(source.key, run));
+				if (run.outcome === "stopped")
+					await tx.sourceStates.put(
+						stopped(source.key, run, await tx.sourceStates.get(source.key)),
+					);
 			});
 			return {
 				runId,
@@ -485,6 +502,7 @@ export class SourceService {
 	): Promise<SourceState> {
 		if (!SOURCE_DEFINITIONS[sourceKey]) throw new UnknownSourceError(sourceKey);
 		return this.storage.transaction(async (tx) => {
+			const previous = await tx.sourceStates.get(sourceKey);
 			const next: SourceState = {
 				id: sourceKey,
 				sourceKey,
@@ -493,6 +511,7 @@ export class SourceService {
 				stoppedReason: null,
 				resumedAt: now,
 				resumedBy: operator,
+				lastPrunedAt: previous?.lastPrunedAt ?? null,
 			};
 			await tx.sourceStates.put(next);
 			return next;
@@ -526,6 +545,37 @@ export class SourceService {
 				.sort((left, right) => right.startedAt.localeCompare(left.startedAt));
 			return runs[0] ?? null;
 		});
+	}
+
+	/**
+	 * Retention runs at most once per day per source, driven by the scheduler.
+	 * Uses the same 30-day window as the manual command.
+	 */
+	async pruneIfDue(
+		sourceKey: string,
+		now: string,
+		retentionDays: number = SNAPSHOT_RETENTION_DAYS,
+	): Promise<number> {
+		if (!SOURCE_DEFINITIONS[sourceKey]) throw new UnknownSourceError(sourceKey);
+		const state = await this.storage.transaction(async (tx) =>
+			tx.sourceStates.get(sourceKey),
+		);
+		if (!isPruneDue(state?.lastPrunedAt ?? null, now)) return 0;
+		const removed = await this.pruneSnapshots(sourceKey, now, retentionDays);
+		await this.storage.transaction(async (tx) => {
+			const current = await tx.sourceStates.get(sourceKey);
+			await tx.sourceStates.put({
+				id: sourceKey,
+				sourceKey,
+				status: current?.status ?? "active",
+				stoppedAt: current?.stoppedAt ?? null,
+				stoppedReason: current?.stoppedReason ?? null,
+				resumedAt: current?.resumedAt ?? null,
+				resumedBy: current?.resumedBy ?? null,
+				lastPrunedAt: now,
+			});
+		});
+		return removed;
 	}
 
 	async listItems(sourceKey: string): Promise<SourceItem[]> {

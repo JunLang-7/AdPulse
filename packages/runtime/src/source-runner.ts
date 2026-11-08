@@ -36,10 +36,17 @@ export async function runSources(
 		const stamp = now();
 		const slot = latestDueSlot(stamp);
 		for (const key of Object.keys(SOURCE_DEFINITIONS)) {
+			// Retention is independent of polling: it also runs while a source is
+			// stopped or collection is off, so old snapshots do not accumulate.
+			try {
+				await sources.pruneIfDue(key, stamp);
+			} catch {
+				console.error(`source ${key} retention failed; will retry next tick`);
+			}
 			try {
 				const last = await sources.lastRun(key);
-				if (!isSlotPending(last?.startedAt ?? null, slot)) continue;
-				await sources.sync(key, stamp);
+				if (isSlotPending(last?.startedAt ?? null, slot))
+					await sources.sync(key, stamp);
 			} catch (error) {
 				// Collection disabled (Gate 0 unsigned) is a terminal condition.
 				if (error instanceof SourceDisabledError) return;
