@@ -44,8 +44,14 @@ export async function startAcceptanceSession(ctx, overrides = {}) {
 	const session = await ctx.client.createSession(
 		acceptanceSessionInput(ctx, overrides),
 	);
+	const detail = await ctx.client.getSession(session.id);
 	ctx.vars.sessionId = session.id;
-	ctx.vars.baseline = { version: session.version, snapshots: 0 };
+	// 建会话时已存在一条 version=0 的初始快照，基线必须取真实数量，
+	// 否则「快照增加」类断言会差一（真机数据暴露过这个问题）。
+	ctx.vars.baseline = {
+		version: detail.session.version,
+		snapshots: detail.snapshots.length,
+	};
 	return session;
 }
 

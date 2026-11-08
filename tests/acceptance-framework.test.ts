@@ -427,7 +427,8 @@ function fakeServer(clock: { value: number }) {
 				actions: [],
 				inbox: [],
 				deliveries: [],
-				snapshots: [],
+				// 真实服务端在建会话时即写入一条 version=0 的初始快照。
+				snapshots: [{ version: 0 }],
 			};
 			sessions.set(id, session);
 			server.openRound(session, 1);
