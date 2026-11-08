@@ -1,14 +1,21 @@
-// 验收脚本入口：解析参数、执行检查、输出结果与记录。
-// 当前只有飞书只读自检；场景驱动器在后续 PR 注册到 SCENARIOS。
+// 验收脚本入口：解析参数、执行自检或场景、输出结果与记录。
+// 默认行为是飞书只读自检（与 #21 一致）；--scenario 走 #49 的场景驱动器。
 
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
-import { createChecks, printChecks } from "./checks.mjs";
+import { EVIDENCE, createChecks, printChecks } from "./checks.mjs";
+import { createConsoleClient } from "./console-api.mjs";
+import { mask } from "./redact.mjs";
 import { recordFileName, renderRecord, writeRecord } from "./record.mjs";
+import { runScenario } from "./scenario.mjs";
+import {
+	findScenario,
+	listScenarios,
+	scenarioRequires,
+} from "./scenarios/index.mjs";
 import { runFeishuSelfCheck } from "./selfcheck-feishu.mjs";
+import { ROOT, gitCommit } from "./workspace.mjs";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const RECORDS = resolve(ROOT, "docs/acceptance/records");
 
 export const USAGE = `用法：bun run feishu:acceptance [-- 选项]
@@ -16,12 +23,18 @@ export const USAGE = `用法：bun run feishu:acceptance [-- 选项]
   --api <url>         本机 API 地址，默认 http://127.0.0.1:3000
   --public-url <url>  公网回调地址，如 https://example.com/webhooks/feishu-internal
   --chat-id <oc_...>  可选：校验群聊收件人
-  --open-id <ou_...>  可选：校验用户收件人
+  --open-id <ou_...>  可选：校验用户收件人；--scenario 时必填
+  --scenario <id>     运行验收场景（dm / rounds）；先跑只读自检作为前置
+  --list-scenarios    列出可用场景
+  --skip-preflight    跳过场景前置自检（仅本地调试，不能用于真机留证）
   --write             生成验收记录 docs/acceptance/records/<日期>.md
   --force             覆盖同名验收记录
   --help              显示本帮助
 
-只读探测：不会发送业务消息，不写业务数据。`;
+自检只读：不会发送业务消息，不写业务数据。
+场景会新建验收会话并按提示请你在飞书客户端点击；不修改既有数据。`;
+
+export class UsageError extends Error {}
 
 export function parseArgs(argv) {
 	const options = {
@@ -29,6 +42,9 @@ export function parseArgs(argv) {
 		publicUrl: undefined,
 		chatId: undefined,
 		openId: undefined,
+		scenario: undefined,
+		listScenarios: false,
+		skipPreflight: false,
 		write: false,
 		force: false,
 		help: false,
@@ -47,6 +63,9 @@ export function parseArgs(argv) {
 			options.publicUrl = value().replace(/\/+$/, "");
 		else if (flag === "--chat-id") options.chatId = value();
 		else if (flag === "--open-id") options.openId = value();
+		else if (flag === "--scenario") options.scenario = value();
+		else if (flag === "--list-scenarios") options.listScenarios = true;
+		else if (flag === "--skip-preflight") options.skipPreflight = true;
 		else if (flag === "--write") options.write = true;
 		else if (flag === "--force") {
 			options.write = true;
@@ -57,7 +76,33 @@ export function parseArgs(argv) {
 	return options;
 }
 
-export class UsageError extends Error {}
+function printScenarioList(log) {
+	const items = listScenarios();
+	log("可用场景：\n");
+	for (const item of items) {
+		log(
+			`  ${item.id.padEnd(8)} ${item.title}（${item.steps} 步，证据 ${item.evidence}）`,
+		);
+		if (item.requires.length)
+			log(`           ↳ 需要 ${item.requires.map((key) => `--${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`).join(" / ")}`);
+	}
+	log("\n场景会请求在飞书客户端完成点击；其余断言与留证由脚本完成。");
+}
+
+/**
+ * 场景前置自检：fail 非零即中止，避免在错配置上让人白点一遍。
+ * @returns {Promise<boolean>} 是否通过
+ */
+async function runPreflight({ env, options, log }) {
+	const checks = createChecks();
+	await runFeishuSelfCheck({ env, options, checks });
+	printChecks(checks.results, log);
+	if (checks.exitCode() === 0) return true;
+	log(
+		"\n前置自检存在 fail：已中止场景。修复后重跑；仅本地调试可加 --skip-preflight（不能用于真机留证）。",
+	);
+	return false;
+}
 
 /**
  * @param {string[]} argv
@@ -83,6 +128,80 @@ export async function main(argv, env, io = {}) {
 	if (options.help) {
 		log(USAGE);
 		return 0;
+	}
+	if (options.listScenarios) {
+		printScenarioList(log);
+		return 0;
+	}
+	if (options.scenario) {
+		const scenario = findScenario(options.scenario);
+		if (!scenario) {
+			error(
+				`未知场景：${options.scenario}（可用：${listScenarios()
+					.map((item) => item.id)
+					.join(" / ")}）`,
+			);
+			return 2;
+		}
+		for (const requirement of scenarioRequires(scenario.id)) {
+			if (requirement === "openId" && !options.openId) {
+				error(`场景 ${scenario.id} 需要 --open-id <ou_...>`);
+				return 2;
+			}
+		}
+		const token = env.CONSOLE_TOKEN ?? "";
+		if (token.length < 24) {
+			error("CONSOLE_TOKEN 缺失或短于 24 字符：场景需要访问控制台 API");
+			return 2;
+		}
+		if (!options.skipPreflight) {
+			log("== 前置只读自检 ==");
+			if (!(await runPreflight({ env, options, log }))) return 1;
+			log("\n== 场景 ==");
+		}
+
+		const checks = createChecks({ defaultEvidence: EVIDENCE.platformReal });
+		const vars = {};
+		const completed = await runScenario(scenario, {
+			record: checks.record,
+			log,
+			env,
+			options,
+			client: createConsoleClient({ baseUrl: options.api, token }),
+			vars,
+			now: () => now().getTime(),
+		});
+		printChecks(checks.results, log);
+
+		if (options.write) {
+			const content = renderRecord({
+				title: `${scenario.title}（场景编排记录）`,
+				generator: "`scripts/feishu-acceptance.mjs --scenario`",
+				meta: [
+					["执行时间", now().toISOString()],
+					["环境 commit", gitCommit()],
+					["场景", `${scenario.id}（${scenario.steps.length} 步）`],
+					["API 地址", options.api],
+					["验收会话", vars.sessionId ? mask(vars.sessionId, 8, 0) : "(未建立)"],
+				],
+				results: checks.results,
+				manualItems: [],
+				footerLines: [
+					"场景记录只证明「人工点击 + 脚本断言」覆盖的部分；未覆盖项保持空白。",
+					"只有 platform-real 行可勾选真机验收项；blocked/skip 不计入验收。",
+				],
+			});
+			writeRecord(RECORDS, recordFileName(now(), `scenario-${scenario.id}`), content, {
+				force: options.force,
+				log,
+			});
+		}
+		// 场景未走完（多为没等到人工动作）不算通过：即使没有 fail 也返回非 0。
+		if (!completed.matched) {
+			log("\n场景未完成：本次结果不计入验收，按提示完成动作后重跑。");
+			return 1;
+		}
+		return checks.exitCode();
 	}
 
 	const checks = createChecks();

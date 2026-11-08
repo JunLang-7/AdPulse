@@ -129,6 +129,24 @@ bun run feishu:acceptance -- --public-url https://你的域名/webhooks/feishu-i
 
 等待人工动作超时或读取状态失败记 `blocked`：它表示没有等到操作，不等于被测系统失败，与 `skip` 一样不计入验收。
 
+### 验收场景编排
+
+```bash
+bun run feishu:acceptance -- --list-scenarios
+bun run feishu:acceptance -- --scenario dm --open-id ou_xxx
+bun run feishu:acceptance -- --scenario rounds --open-id ou_xxx
+```
+
+场景先跑一遍只读自检作为前置：存在 `fail` 即中止，避免在错配置上让人白点。`--skip-preflight` 只供本地调试，不能用于真机留证。
+
+- `dm`：建会话 → 等第 1 轮卡片送达 → 提示点击「继续观察」→ 提示点击「确认已阅」；断言投递、`rounds`、`inbox`、`version`、`snapshots`、结束确认卡，并记录点击后的观测区间。
+- `rounds`：只需点一次卡片建立已答轮次，其余由脚本提交并断言旧卡、同轮重复被拒（`already_handled`），以及过期会话提交被拒（`expired`）；过期分支要求短有效期会话能及时送出第 1 轮卡片，否则记 `skip`。
+
+场景会新建验收会话并按提示请你在飞书客户端点击，不删除或改写既有数据。断言结果标为 `platform-real`（由真实点击驱动）。
+
+没人点击时步骤记 `blocked` 并且退出码非 0：本次结果不计入验收，完成动作后重跑即可。
+加 `--write` 写入 `docs/acceptance/records/<UTC>-scenario-<id>.md`，同样默认不覆盖。
+
 ## 5. Web 控制台与接口
 
 保持上述 API 在 127.0.0.1:3000 运行，另一个终端启动控制台：

@@ -1,7 +1,8 @@
 // 轮询断言引擎：等状态迁移，而不是等固定时长。
 // 时间与 sleep 可注入，便于测试不依赖真实时钟。
 
-const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** 默认 sleep；调用方可注入替代实现以便测试。 */
+export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * 反复读取状态直到满足条件或超时。
@@ -20,13 +21,13 @@ const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @returns {Promise<{ matched: boolean, state: T | undefined, elapsedMs: number, samples: number, error?: Error }>}
  */
 export async function pollUntil(options) {
+	const sleepImpl = options.sleep ?? sleep;
 	const {
 		read,
 		until,
 		intervalMs = 1_000,
 		timeoutMs = 120_000,
 		now = Date.now,
-		sleep = defaultSleep,
 		onSample,
 	} = options;
 	if (timeoutMs <= 0) throw new Error("timeoutMs 必须为正数");
@@ -55,6 +56,6 @@ export async function pollUntil(options) {
 		if (until(state)) return { matched: true, state, elapsedMs, samples };
 		if (elapsedMs + intervalMs > timeoutMs)
 			return { matched: false, state, elapsedMs, samples };
-		await sleep(intervalMs);
+		await sleepImpl(intervalMs);
 	}
 }

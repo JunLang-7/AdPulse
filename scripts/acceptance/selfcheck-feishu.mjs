@@ -3,17 +3,15 @@
 // 因此只能证明配置与连通一致，不能替代真机验收（#12）。
 // 不发送业务消息、不写业务数据；输出已脱敏。
 
-import { execFileSync } from "node:child_process";
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { EVIDENCE } from "./checks.mjs";
 import { callJson, errorReason, httpStatus } from "./http.mjs";
 import { mask, maskBody, maskUrl, redactDatabaseUrl } from "./redact.mjs";
-
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+import { ROOT, gitCommit } from "./workspace.mjs";
 const PLATFORM = "https://open.feishu.cn";
 const CLOCK_TOLERANCE_SECONDS = 240;
 const ACK_BUDGET_MS = 1_000;
@@ -30,18 +28,6 @@ const FEISHU_HINTS = {
 	230020: "触发平台频控：降低频率后重试",
 	41050: "缺少通讯录读取权限，可跳过该项检查",
 };
-
-/** 记录环境 commit，便于把证据对到具体代码版本。 */
-function gitCommit(root) {
-	try {
-		return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
-			cwd: root,
-			encoding: "utf8",
-		}).trim();
-	} catch {
-		return "(unknown)";
-	}
-}
 
 const hintForCode = (code) =>
 	FEISHU_HINTS[String(code)] ?? "对照飞书开放平台错误码文档定位该 code";
