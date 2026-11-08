@@ -1,5 +1,6 @@
 import type { Limits, Signal, Strategy } from "./domain/strategy.js";
 import { applyChanges, validateStrategy } from "./domain/strategy.js";
+import { invalidateAlertCandidate } from "./investigation-alerts.js";
 import type { ChoiceCommand, Recipient } from "./ports/channel.js";
 import type { PolicyEngine, Proposal } from "./ports/policyEngine.js";
 import type { Storage, Transaction } from "./ports/storage.js";
@@ -37,6 +38,27 @@ const canonicalJson = (value: unknown): string =>
 					}, {})
 			: item,
 	);
+
+const INVESTIGATION_ROUND_TTL_MS = 24 * 60 * 60 * 1000;
+
+async function investigationRoundExpiry(
+	tx: Transaction,
+	session: Session,
+	frozenAt: string,
+): Promise<string> {
+	const version = session.taskRef
+		? await tx.taskVersions.get(
+				`${session.taskRef.taskId}:${session.taskRef.taskVersion}`,
+			)
+		: null;
+	const taskEndsAt = version?.observation.endsAt;
+	const expiresAt = Math.min(
+		Date.parse(frozenAt) + INVESTIGATION_ROUND_TTL_MS,
+		taskEndsAt ? Date.parse(taskEndsAt) : Infinity,
+		session.expiresAt ? Date.parse(session.expiresAt) : Infinity,
+	);
+	return new Date(expiresAt).toISOString();
+}
 
 /** Application service: console and IM submit the same command; no HTTP/platform SDKs. */
 export class Orchestrator {
@@ -183,9 +205,10 @@ export class Orchestrator {
 						session.recipient?.accountId === actor.accountId &&
 						session.allowedActorIds.includes(actor.externalId);
 			if (!authorized) return reject("forbidden");
+			const now = this.now();
 			if (
-				(session.expiresAt && session.expiresAt <= this.now()) ||
-				(round.expiresAt && round.expiresAt <= this.now())
+				(session.expiresAt && session.expiresAt <= now) ||
+				(round.expiresAt && round.expiresAt <= now)
 			)
 				return reject("expired");
 			if (
@@ -215,6 +238,14 @@ export class Orchestrator {
 					task.currentVersion !== session.taskRef?.taskVersion
 				)
 					return reject("stale_evidence_or_task_rules");
+				if (!round.expiresAt) {
+					// Earlier releases recorded the freeze event but left the round without an expiry.
+					const frozenAt = investigationAlert.events
+						.filter((event) => event.type === "candidate_created")
+						.at(-1)?.at ?? session.createdAt;
+					if ((await investigationRoundExpiry(tx, session, frozenAt)) <= now)
+						return reject("expired");
+				}
 			}
 			if (
 				session.taskRef &&
@@ -305,7 +336,9 @@ export class Orchestrator {
 		if (
 			snapshot?.status !== "planning" ||
 			snapshot.version !== version ||
-			(snapshot.expiresAt && snapshot.expiresAt <= this.now())
+			(!snapshot.investigationAlertId &&
+				snapshot.expiresAt &&
+				snapshot.expiresAt <= this.now())
 		)
 			return;
 		// Slow model calls outside the transaction; commit only if the input version is still current.
@@ -331,10 +364,13 @@ export class Orchestrator {
 		this.validateProposal(proposal, snapshot);
 		await this.storage.transaction(async (tx) => {
 			const session = await tx.sessions.get(sessionId);
+			const frozenAt = this.now();
 			if (
 				session?.status !== "planning" ||
 				session.version !== version ||
-				(session.expiresAt && session.expiresAt <= this.now())
+				(!session.investigationAlertId &&
+					session.expiresAt &&
+					session.expiresAt <= frozenAt)
 			)
 				return;
 			const roundNo = session.roundNo + 1;
@@ -342,8 +378,11 @@ export class Orchestrator {
 				...proposal.card,
 				options: proposal.candidates.map(({ id, label }) => ({ id, label })),
 			};
+			const alert = session.investigationAlertId
+				? await tx.investigationAlerts.get(session.investigationAlertId)
+				: null;
+			let expiresAt = session.expiresAt;
 			if (session.investigationAlertId) {
-				const alert = await tx.investigationAlerts.get(session.investigationAlertId);
 				if (
 					!alert ||
 					alert.status !== "open" ||
@@ -353,6 +392,11 @@ export class Orchestrator {
 					alert.logicalRounds >= alert.maxPushRounds
 				)
 					return;
+				expiresAt = await investigationRoundExpiry(tx, session, frozenAt);
+				if (expiresAt <= frozenAt) {
+					await invalidateAlertCandidate(tx, alert, "decision_deadline_elapsed", frozenAt);
+					return;
+				}
 			}
 			const round: Round = {
 				id: `${session.id}:${roundNo}`,
@@ -360,7 +404,7 @@ export class Orchestrator {
 				roundNo,
 				strategyVersion: version,
 				status: "open",
-				...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
+				...(expiresAt ? { expiresAt } : {}),
 				card,
 				candidates: proposal.candidates,
 			};
@@ -378,22 +422,18 @@ export class Orchestrator {
 			if (session.deliveryMode !== "web")
 				await this.queueDelivery(tx, session, round, card, actions);
 			await tx.sessions.put({ ...session, roundNo, status: "awaiting_input" });
-			if (session.investigationAlertId) {
-				const alert = await tx.investigationAlerts.get(session.investigationAlertId);
-				if (alert) {
-					const at = this.now();
-					await tx.investigationAlerts.put({
-						...alert,
-						logicalRounds: alert.logicalRounds + 1,
-						updatedAt: at,
-						events: [...alert.events, {
-							type: "candidate_created",
-							at,
-							comparisonResultId: alert.current.comparisonResultId,
-							evidence: alert.current.evidence,
-						}],
-					});
-				}
+			if (alert) {
+				await tx.investigationAlerts.put({
+					...alert,
+					logicalRounds: alert.logicalRounds + 1,
+					updatedAt: frozenAt,
+					events: [...alert.events, {
+						type: "candidate_created",
+						at: frozenAt,
+						comparisonResultId: alert.current.comparisonResultId,
+						evidence: alert.current.evidence,
+					}],
+				});
 			}
 		});
 	}

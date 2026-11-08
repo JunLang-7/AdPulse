@@ -153,7 +153,7 @@ function jobId(alertId: string): string {
 	return `alert-session:${alertId}`;
 }
 
-async function invalidateAlertCandidate(
+export async function invalidateAlertCandidate(
 	tx: Transaction,
 	alert: InvestigationAlert,
 	reason: string,

@@ -70,13 +70,22 @@ const record = (
 	values: { spendMinor, consultations: 10 },
 });
 
-async function setup(options: { maxPushRounds?: number; spendMinor?: number } = {}) {
+async function setup(options: {
+	maxPushRounds?: number;
+	spendMinor?: number;
+	endsAt?: string;
+	handlingDeadlineHours?: number;
+} = {}) {
 	let now = "2026-01-03T00:00:00.000Z";
 	let id = 0;
 	const clock = () => now;
 	const storage = new MemoryStorage();
 	const tasks = new TaskService(storage, clock, () => "task-1");
-	const task = await tasks.create("owner", "task-create", taskInput(options.maxPushRounds));
+	const input = taskInput(options.maxPushRounds);
+	if (options.endsAt !== undefined) input.observation.endsAt = options.endsAt;
+	if (options.handlingDeadlineHours !== undefined)
+		input.rules.handlingDeadlineHours = options.handlingDeadlineHours;
+	const task = await tasks.create("owner", "task-create", input);
 	const evidence = new EvidenceService(storage, clock);
 	const imported = await evidence.import("owner", "evidence-import", {
 		schemaVersion: 1,
@@ -135,7 +144,7 @@ async function prepareOneWebCandidate(context: Awaited<ReturnType<typeof setup>>
 	const round = rounds.find((item) => item.sessionId === alert.sessionId);
 	assert.ok(round);
 	assert.equal(round.candidates.length, 3);
-	assert.equal(round.expiresAt, undefined);
+	assert.ok(round.expiresAt);
 	const deliveries = await context.storage.transaction((tx) => tx.deliveries.all());
 	assert.equal(deliveries.length, 0);
 	const alerts = await listAlerts(context.storage);
@@ -186,6 +195,7 @@ test("worker prepares a fixed Web-only candidate without policy or channel deliv
 		(await tx.jobs.all()).filter((job) => job.task.kind === "prepare_round" && job.task.sessionId === first.sessionId),
 	);
 	assert.equal(roundJobs.length, 1);
+	context.setTime("2026-01-03T04:00:00.000Z");
 	assert.equal(await context.worker.runOnce(), true);
 	const refreshed = await context.storage.transaction((tx) => tx.sessions.get(first.sessionId));
 	assert.ok(refreshed);
@@ -195,9 +205,119 @@ test("worker prepares a fixed Web-only candidate without policy or channel deliv
 	const round = rounds.find((item) => item.sessionId === first.sessionId);
 	assert.ok(round);
 	assert.equal(round.candidates.length, 3);
-	assert.equal(round.expiresAt, undefined);
+	assert.equal(round.expiresAt, "2026-01-04T04:00:00.000Z");
+	context.setTime("2026-01-03T05:00:00.000Z");
+	await context.alerts.prepareSession(first.id);
+	await context.orchestrator.prepareRound(first.sessionId, 0);
+	assert.equal((await context.storage.transaction((tx) => tx.rounds.get(round.id)))?.expiresAt, round.expiresAt);
 	assert.equal((await context.storage.transaction((tx) => tx.deliveries.all())).length, 0);
 	assert.equal((await listAlerts(context.storage))[0]?.logicalRounds, 1);
+});
+
+test("decision actions expire exactly at an earlier task cutoff", async () => {
+	const context = await setup({
+		endsAt: "2026-01-03T14:00:00+08:00",
+		handlingDeadlineHours: 1,
+	});
+	const { alert, round, session } = await prepareOneWebCandidate(context);
+	assert.equal(round.expiresAt, "2026-01-03T06:00:00.000Z");
+	assert.equal(alert.current.handlingDeadlineHours, 1);
+	const choiceAction = await context.storage.transaction(async (tx) =>
+		(await tx.actions.all()).find((action) => action.roundId === round.id),
+	);
+	assert.ok(choiceAction);
+	context.setTime(round.expiresAt);
+	const inbox = await context.orchestrator.receiveChoice({
+		sourceId: "console",
+		eventId: "at-task-cutoff",
+		actionRef: choiceAction.id,
+		actor: { kind: "console", userId: "owner" },
+	});
+	assert.equal(await context.worker.runOnce(), true);
+	const state = await context.storage.transaction(async (tx) => ({
+		inbox: await tx.inbox.get(inbox.id),
+		round: await tx.rounds.get(round.id),
+		session: await tx.sessions.get(session.id),
+	}));
+	assert.equal(state.inbox?.status, "rejected");
+	assert.equal(state.inbox?.reason, "expired");
+	assert.equal(state.round?.status, "open");
+	assert.equal(state.session?.version, session.version);
+});
+
+test("an existing earlier session cutoff bounds a newly frozen candidate", async () => {
+	const context = await setup({ endsAt: "2026-01-03T06:00:00.000Z" });
+	const alert = await context.alerts.evaluateComparison("owner", context.comparison.id);
+	assert.ok(alert);
+	assert.equal(await context.worker.runOnce(), true);
+	await context.storage.transaction(async (tx) => {
+		const session = await tx.sessions.get(alert.sessionId);
+		assert.ok(session);
+		await tx.sessions.put({ ...session, expiresAt: "2026-01-03T04:00:00.000Z" });
+	});
+	assert.equal(await context.worker.runOnce(), true);
+	const round = await context.storage.transaction((tx) => tx.rounds.get(alert.sessionId + ":1"));
+	assert.equal(round?.expiresAt, "2026-01-03T04:00:00.000Z");
+});
+
+test("a task cutoff reached while preparing creates no candidate and consumes no round", async () => {
+	const context = await setup({ endsAt: "2026-01-03T06:00:00.000Z" });
+	const alert = await context.alerts.evaluateComparison("owner", context.comparison.id);
+	assert.ok(alert);
+	assert.equal(await context.worker.runOnce(), true);
+	context.setTime("2026-01-03T06:00:00.000Z");
+	assert.equal(await context.worker.runOnce(), true);
+	const state = await context.storage.transaction(async (tx) => ({
+		alert: await tx.investigationAlerts.get(alert.id),
+		session: await tx.sessions.get(alert.sessionId),
+		rounds: await tx.rounds.all(),
+		actions: await tx.actions.all(),
+	}));
+	assert.equal(state.alert?.status, "stale");
+	assert.equal(state.alert?.statusReason, "decision_deadline_elapsed");
+	assert.equal(state.alert?.logicalRounds, 0);
+	assert.equal(state.session?.status, "stale");
+	assert.equal(state.rounds.length, 0);
+	assert.equal(state.actions.length, 0);
+});
+
+test("legacy rounds use their recorded freeze on either side of the 24-hour boundary", async () => {
+	for (const [time, status] of [
+		["2026-01-04T02:59:59.999Z", "processed"],
+		["2026-01-04T03:00:00.000Z", "rejected"],
+	] as const) {
+		const context = await setup();
+		const { round, session } = await prepareOneWebCandidate(context);
+		const legacy = { ...round };
+		delete legacy.expiresAt;
+		const frozenAt = "2026-01-03T03:00:00.000Z";
+		await context.storage.transaction(async (tx) => {
+			await tx.rounds.put(legacy);
+			const alert = (await tx.investigationAlerts.all())[0];
+			assert.ok(alert);
+			await tx.investigationAlerts.put({
+				...alert,
+				events: alert.events.map((event) =>
+					event.type === "candidate_created" ? { ...event, at: frozenAt } : event),
+			});
+		});
+		assert.notEqual(frozenAt, session.createdAt);
+		const choiceAction = await context.storage.transaction(async (tx) =>
+			(await tx.actions.all()).find((action) => action.roundId === round.id),
+		);
+		assert.ok(choiceAction);
+		context.setTime(time);
+		const inbox = await context.orchestrator.receiveChoice({
+			sourceId: "console",
+			eventId: "expired-legacy-choice",
+			actionRef: choiceAction.id,
+			actor: { kind: "console", userId: "owner" },
+		});
+		assert.equal(await context.worker.runOnce(), true);
+		const result = await context.storage.transaction((tx) => tx.inbox.get(inbox.id));
+		assert.equal(result?.status, status);
+		assert.equal(result?.reason, status === "rejected" ? "expired" : undefined);
+	}
 });
 
 test("evidence revisions invalidate open candidates and only reevaluation can consume another logical round", async () => {
@@ -235,6 +355,7 @@ test("evidence revisions invalidate open candidates and only reevaluation can co
 	});
 	storedAlert = (await listAlerts(context.storage))[0]!;
 	assert.equal(storedAlert.status, "stale");
+	context.setTime("2026-01-04T01:00:00.000Z");
 	const revised = await context.comparisons.evaluate("owner", "compare-2", {
 		current: { evidenceId: head.id, version: 2 },
 	});
@@ -246,6 +367,8 @@ test("evidence revisions invalidate open candidates and only reevaluation can co
 	storedAlert = (await listAlerts(context.storage))[0]!;
 	assert.equal(storedAlert.logicalRounds, 2);
 	assert.equal(storedAlert.current.evidence.version, 2);
+	const nextRound = await context.storage.transaction((tx) => tx.rounds.get(session.id + ":2"));
+	assert.equal(nextRound?.expiresAt, "2026-01-05T01:00:00.000Z");
 
 	const notNewEvidence = await context.comparisons.evaluate("owner", "compare-2b", {
 		current: { evidenceId: head.id, version: 2 },

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, CircleDot } from "lucide-react";
+import { useEffect, useReducer } from "react";
 import { Link, useParams } from "react-router";
 import { consoleClient } from "../../../adpulse-client";
 import { Badge } from "../../../components/ui/badge";
@@ -27,13 +28,26 @@ export default function SessionDetailPage() {
 		},
 	});
 
+	const activeWebRound = data?.session.deliveryMode === "web" &&
+		data.session.status === "awaiting_input"
+		? data.rounds.find((round) => round.roundNo === data.session.roundNo)
+		: undefined;
+	const expiresAt = activeWebRound?.expiresAt;
+	const [, refreshExpiry] = useReducer((revision: number) => revision + 1, 0);
+	useEffect(() => {
+		const remaining = Date.parse(expiresAt ?? "") - Date.now();
+		if (!(remaining > 0)) return;
+		const timer = window.setTimeout(refreshExpiry, remaining);
+		return () => window.clearTimeout(timer);
+	}, [expiresAt]);
+
 	if (isLoading) return <div className="p-6">正在加载会话详情…</div>;
 	if (error) return <div className="p-6 text-red-600">{String(error)}</div>;
 	if (!data) return <div className="p-6">没有找到该会话。</div>;
 
 	const session = data.session;
 	const status = sessionStatus(session.status);
-	const expired = isExpired(session.expiresAt);
+	const expired = isExpired(session.expiresAt) || isExpired(expiresAt);
 
 	return (
 		<div className="p-6 space-y-4">
@@ -117,8 +131,12 @@ export default function SessionDetailPage() {
 											: round.status === "invalidated"
 												? `已失效${round.invalidationReason ? ` · ${round.invalidationReason}` : ""}`
 												: round.expiresAt
-													? `到期 ${formatTime(round.expiresAt)}`
-													: "无到期时间"}
+													? session.deliveryMode === "web"
+														? `按钮可操作至 ${formatTime(round.expiresAt, "Asia/Shanghai")}（北京时间）`
+														: `到期 ${formatTime(round.expiresAt)}`
+													: session.deliveryMode === "web"
+														? "由系统核验按钮有效期"
+														: "无到期时间"}
 									</span>
 								</div>
 
