@@ -823,6 +823,9 @@ test("Feishu sessions accept only the current user's verified identity", async (
     400,
     "a user recipient must be the current user",
   );
+  const group = await create({ recipient: { accountId: "account-a", kind: "group", externalId: "oc-unapproved" } });
+  assert.equal(group.status, 400);
+  assert.equal((await group.json()).error, "personal sessions require a user recipient");
   assert.equal((await create({})).status, 201);
 });
 
@@ -840,3 +843,38 @@ test("webhook is ACKed only after an inbox record exists and keeps provider resp
   assert.equal((await runtime.storage.transaction((tx) => tx.inbox.all())).length, 1);
   assert.equal((await fetch(`${url}/webhooks/missing`, { method: "POST", body: "{}" })).status, 404);
 });
+
+for (const invalidation of ["binding", "user"] as const) {
+  test(`queued platform choices recheck ${invalidation} before execution`, async (t) => {
+    const { runtime, service, url, headers, ownerUserId, setWebhook } = await serve(t);
+    const created = await fetch(`${url}/api/sessions`, {
+      method: "POST", headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify(startInput()),
+    });
+    assert.equal(created.status, 201);
+    const session = await created.json();
+    await runtime.worker.runOnce();
+    await runtime.worker.runOnce();
+    const action = await runtime.storage.transaction(async (tx) => (await tx.actions.all())[0]);
+    setWebhook({ actorExternalId: "ou-owner", actionRef: action.id });
+    assert.equal((await fetch(`${url}/webhooks/account-a`, { method: "POST", body: "{}" })).status, 200);
+    if (invalidation === "binding") {
+      const bindings = await runtime.storage.transaction((tx) => tx.identityBindings.all());
+      const binding = bindings.find((binding) => binding.userId === ownerUserId)!;
+      await service.revokeIdentity(binding.id, new Date().toISOString());
+    } else {
+      await runtime.storage.transaction(async (tx) => {
+        const user = await tx.users.get(ownerUserId);
+        assert.ok(user);
+        await tx.users.put({ ...user, status: "disabled" });
+      });
+    }
+    await runtime.worker.runOnce();
+    const result = await runtime.storage.transaction(async (tx) => ({
+      session: await tx.sessions.get(session.id), inbox: (await tx.inbox.all())[0],
+    }));
+    assert.equal(result.inbox.status, "rejected");
+    assert.equal(result.inbox.reason, "forbidden");
+    assert.equal(result.session?.version, 0);
+  });
+}

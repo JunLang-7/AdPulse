@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FC } from "react";
 import { Outlet, useNavigate } from "react-router";
+import { announceSessionIdentity } from "src/views/auth/session-sync";
 import { consoleClient } from "src/adpulse-client";
 import { SidebarInset, SidebarProvider } from "src/components/ui/sidebar";
 import { cn } from "src/lib/utils";
@@ -19,6 +20,8 @@ const FullLayout: FC = () => {
 				setLogoutError(true);
 				return;
 			}
+			announceSessionIdentity(null);
+			await queryClient.cancelQueries();
 			queryClient.clear();
 			navigate("/login", { replace: true });
 		} catch {
