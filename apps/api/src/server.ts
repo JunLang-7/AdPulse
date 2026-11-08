@@ -2,6 +2,8 @@ import { timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { WebhookError } from "@adpluse/channels";
 import {
+	ComparisonConflictError,
+	ComparisonValidationError,
 	EvidenceConflictError,
 	EvidenceValidationError,
 	TaskInputValidationError,
@@ -51,8 +53,17 @@ export function createApi(
 				return json(res, error.status, { error: error.message });
 			if (error instanceof TaskInputValidationError)
 				return json(res, 400, { error: `invalid field: ${error.fieldPath}` });
-			if (error instanceof EvidenceConflictError)
+			if (
+				error instanceof EvidenceConflictError ||
+				error instanceof ComparisonConflictError
+			)
 				return json(res, 409, { error: error.message });
+			if (error instanceof ComparisonValidationError) {
+				const status = ["task not found", "evidence not found", "follow-up not found", "task version not found"].includes(error.message)
+					? 404
+					: 400;
+				return json(res, status, { error: error.message });
+			}
 			if (error instanceof EvidenceValidationError) {
 				const status = ["task not found", "evidence not found"].includes(
 					error.message,

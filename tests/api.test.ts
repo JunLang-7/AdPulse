@@ -278,6 +278,89 @@ test("evidence JSON imports preserve provenance, deduplicate, revise immutably, 
   assert.equal((await (await fetch(`${url}/api/tasks/${task.taskId}/evidence`, { headers })).json()).items.length, 1);
 });
 
+test("comparison API requires explicit evidence versions and exposes immutable results and verified follow-ups", async (t) => {
+  const { url, headers } = await serve(t);
+  const taskResponse = await fetch(`${url}/api/tasks`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify({
+      product: "产品 A",
+      strategy: { objective: "咨询", audience: [], channels: {}, sellingPoints: [] },
+      observation: {},
+      rules: {
+        metricKey: "cost_per_consultation",
+        currency: "CNY",
+        unit: "分",
+        statWindowDays: 1,
+        alertThresholdMinor: 100,
+        minimumSpendMinor: 0,
+        minimumConsultations: 0,
+      },
+    }),
+  });
+  const task = await taskResponse.json();
+  const makeRecord = (startsAt: string, endsAt: string) => ({
+    source: { platform: "web-report", accountRef: "account-1", reportRef: `${startsAt}-report` },
+    scope: { planRef: "plan-1", campaignRefs: ["campaign-1"] },
+    period: { startsAt, endsAt, timeZone: "Asia/Shanghai", completeness: "complete" },
+    metricsContract: {
+      spendMinor: { definition: "消耗", formula: "原始值换算为分", sourceField: "spend" },
+      consultations: { definition: "咨询数", formula: "报表咨询数", sourceField: "consultations" },
+    },
+    currency: { code: "CNY", minorUnit: "分", minorUnitsPerMajor: 100 },
+    attribution: { model: "click", windowDays: 7 },
+    callbackStatus: "complete",
+    rawValues: { spend: "10.00", consultations: "10" },
+    values: { spendMinor: 1000, consultations: 10 },
+  });
+  const importRecord = async (item: ReturnType<typeof makeRecord>) => {
+    const response = await fetch(`${url}/api/evidence/imports`, {
+      method: "POST",
+      headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify({
+        schemaVersion: 1,
+        taskRef: { taskId: task.taskId, taskVersion: 1 },
+        records: [item],
+      }),
+    });
+    assert.equal(response.status, 201);
+    const imported = (await response.json()).items[0] as { evidenceId: string; version: number };
+    return { evidenceId: imported.evidenceId, version: imported.version };
+  };
+  const current = await importRecord(
+    makeRecord("2026-01-02T00:00:00+08:00", "2026-01-03T00:00:00+08:00"),
+  );
+  const compare = (body: unknown, key = crypto.randomUUID()) => fetch(`${url}/api/comparisons/evaluate`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": key },
+    body: JSON.stringify(body),
+  });
+  const key = crypto.randomUUID();
+  const body = { current, baseline: undefined };
+  const firstResponse = await compare(body, key);
+  assert.equal(firstResponse.status, 201, await firstResponse.clone().text());
+  const first = await firstResponse.json();
+  assert.equal(first.status, "missing_baseline");
+  assert.equal(first.canEvaluateCurrentThreshold, true);
+  assert.equal((await compare(body, key)).status, 201);
+  assert.equal((await compare({ current: { evidenceId: current.evidenceId, version: 99 } })).status, 404);
+  assert.equal((await fetch(`${url}/api/tasks/${task.taskId}/comparisons`, { headers })).status, 200);
+  const followUpResponse = await fetch(`${url}/api/tasks/${task.taskId}/comparison-follow-ups`, { headers });
+  const followUps = (await followUpResponse.json()).items;
+  const missingBaseline = followUps.find((item: { reasonCode: string }) => item.reasonCode === "NO_BASELINE");
+  assert.ok(missingBaseline);
+  const baseline = await importRecord(
+    makeRecord("2026-01-01T00:00:00+08:00", "2026-01-02T00:00:00+08:00"),
+  );
+  const resolve = await fetch(`${url}/api/comparison-follow-ups/${missingBaseline.id}/resolve`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify({ material: { kind: "evidence", ...baseline } }),
+  });
+  assert.equal(resolve.status, 200);
+  assert.equal((await resolve.json()).status, "completed");
+});
+
 test("sessions freeze the referenced task version and incomplete rules disable monetary suggestions", async (t) => {
   const { runtime, url, headers } = await serve(t);
   const taskBody = {

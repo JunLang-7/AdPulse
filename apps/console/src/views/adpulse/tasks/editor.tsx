@@ -31,6 +31,7 @@ type FormState = {
 	startsAt: string;
 	endsAt: string;
 	metricDefinition: string;
+	metricKey: string;
 	currency: string;
 	unit: string;
 	statWindowDays: string;
@@ -51,6 +52,7 @@ const emptyForm: FormState = {
 	startsAt: "",
 	endsAt: "",
 	metricDefinition: "",
+	metricKey: "",
 	currency: "",
 	unit: "",
 	statWindowDays: "",
@@ -103,6 +105,7 @@ function fromVersion(task: TaskVersion): FormState {
 		startsAt: localDateTime(task.observation.startsAt),
 		endsAt: localDateTime(task.observation.endsAt),
 		metricDefinition: rules.metricDefinition ?? "",
+		metricKey: rules.metricKey ?? "",
 		currency: rules.currency ?? "",
 		unit: rules.unit ?? "",
 		statWindowDays: rules.statWindowDays?.toString() ?? "",
@@ -121,6 +124,9 @@ function toInput(form: FormState): TaskInput {
 	const rules: TaskRules = {
 		...(optionalString(form.metricDefinition)
 			? { metricDefinition: optionalString(form.metricDefinition) }
+			: {}),
+		...(form.metricKey === "cost_per_consultation"
+			? { metricKey: "cost_per_consultation" as const }
 			: {}),
 		...(optionalString(form.currency)
 			? { currency: optionalString(form.currency) }
@@ -341,6 +347,7 @@ export default function TaskEditorPage() {
 					<CardHeader><CardTitle>已确认的核查规则（可暂不填写）</CardTitle></CardHeader>
 					<CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
 						<OptionalField label="指标定义" value={form.metricDefinition} onChange={(v) => set("metricDefinition", v)} />
+						<Field label="阈值指标"><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={form.metricKey} onChange={(e) => set("metricKey", e.target.value)}><option value="">未确认</option><option value="cost_per_consultation">单次咨询成本</option></select></Field>
 						<OptionalField label="币种" value={form.currency} onChange={(v) => set("currency", v)} />
 						<OptionalField label="金额单位" value={form.unit} onChange={(v) => set("unit", v)} />
 						<OptionalField label="统计窗口（天）" type="number" min="0" value={form.statWindowDays} onChange={(v) => set("statWindowDays", v)} />
