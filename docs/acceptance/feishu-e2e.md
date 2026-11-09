@@ -257,8 +257,8 @@ bun run feishu:acceptance -- --scenario dm --open-id ou_xxx --write
   `local-real`（真实凭据或平台 API 由本地发起）、`synthetic`（假凭据或 mock）。只有 `platform-real` 可勾选真机项；
   脚本输出 `blocked`（未等到人工动作）与 `skip` 一样不计入验收。
 - `docs/acceptance/records/` 默认被 `.gitignore` 忽略。确需入库时先逐行复核脱敏，再用 `git add -f` 显式提交。
-- 约定：**支撑已收口 Issue 的验收记录应入库**（否则评审与后续核对无从查证），提交时在 PR 描述里说明是显式入库的证据；
-  主机名/域名/完整外部标识仍需脱敏，只保留 `***` 形式。
+- 约定：**逐次运行的明细记录不入库**（避免把仓库当日志盘）；每个已收口 Issue 只在本文件对应章节保留一段
+  ≤10 行的脱敏结论摘要（见 §14 末尾），明细留在本地 `docs/acceptance/records/`，Issue 正文持有结论与未覆盖项。
 - 不粘贴平台响应中的 token、secret、`tenant_access_token` 或带签名头的完整请求。
 
 ## 12. 结论填写规则
@@ -382,3 +382,15 @@ curl -sS -X POST -H "Cookie: $COOKIE" -H "Origin: $ORIGIN" -H 'content-type: app
 - 系统发起会话目前只有告警路径（web-only）；构造 `system` 会话验证抑制属 `local-real`，
   不当作平台推送证据。
 - **实际收到主动消息要等 #37**，本节不宣称送达能力。
+
+### 14.6 验收结论摘要（2026-11-09）
+
+| 项 | 结论 | 来源 |
+| --- | --- | --- |
+| 目的地由真实飞书身份确认 | `verified`（`ou_83d5b***…`），非手填 | 受控试点库直查 |
+| 授权状态机 | 真机走到 `active` v1；撤销/恢复由领域与页面测试覆盖 | 真机 + 测试 |
+| 投递闸门 | `system` 未授权 → `suppressed` 且不调渠道 | `local-real`（夹具构造会话） |
+| 地址失效判定 | 平台不可达一次即 `invalidated`；他人地址失败不牵连 | 测试（含变异验证） |
+| 主动推送真实送达 | **未覆盖**，属 #37 | — |
+
+明细（含时间戳与逐项证据）留在本地记录，不随仓库分发；未覆盖项与边界见 #35 收口说明。
