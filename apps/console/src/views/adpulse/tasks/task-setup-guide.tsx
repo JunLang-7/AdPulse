@@ -1,5 +1,5 @@
 import { Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { consoleClient, type components } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent } from "../../../components/ui/card";
@@ -53,6 +53,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const [localStages, setLocalStages] = useState<Partial<Record<TaskDraftStage, boolean>>>({});
 	const busyRef = useRef(false);
 	const fileInput = useRef<HTMLInputElement>(null);
+	const fileHelpId = useId();
 	const [dragging, setDragging] = useState(false);
 	const stage = taskStages[step];
 	const busy = processing || reading || saving;
@@ -204,7 +205,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 										event.currentTarget.value = "";
 										if (file) void loadFile(file);
 									}} />
-								<button type="button" disabled={busy} aria-label="选择资料文件"
+								<button type="button" disabled={busy} aria-label="选择资料文件" aria-describedby={fileHelpId}
 									className={"flex w-full cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 " +
 										(dragging ? "border-primary bg-primary/10" : "border-primary/40 bg-muted/55 hover:border-primary hover:bg-muted")}
 									onClick={() => fileInput.current?.click()}
@@ -227,8 +228,8 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 									<Upload aria-hidden="true" className="size-5" />
 									<span className="rounded-md bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground">{reading ? "正在读取文件…" : "选择文件"}</span>
 									<span className="text-xs text-muted-foreground">也可以把文件拖到这里</span>
-									<span className="text-xs text-muted-foreground">PDF、Word、Excel、TXT、Markdown、CSV · 文档最多 8 MB</span>
 								</button>
+								<p id={fileHelpId} className="text-xs text-muted-foreground">支持 PDF、Word、Excel、TXT、Markdown、CSV，单份文件最多 8 MB。</p>
 								{attachment ? (
 									<div role="status" className="space-y-1 break-words text-sm">
 										<p>已读入 {attachment.name}。{attachment.clipped ? "仅预览前 30,000 字，请核对并保留相关内容。" : "可在上方核对和修改文字。"}</p>

@@ -61,6 +61,10 @@ export function formatBeijingTime(value: string): string {
 	return toBeijingInput(value).replace("T", " ") + "（北京时间）";
 }
 
+export function formatBeijingPeriod({ startsAt, endsAt }: { startsAt: string; endsAt: string }): string {
+	return `${toBeijingInput(startsAt).replace("T", " ")} 至 ${toBeijingInput(endsAt).replace("T", " ")}`;
+}
+
 function fromBeijingInput(value: string): string {
 	const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(value);
 	if (!match) throw new Error("请选择有效的北京时间。");

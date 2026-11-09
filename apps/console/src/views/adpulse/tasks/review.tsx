@@ -50,7 +50,6 @@ export default function TaskReviewPage() {
 				</Link>
 				<h1 className="text-2xl font-bold tracking-tight">推广效果复盘</h1>
 				<p className="font-medium">{task.product}</p>
-				<p className="text-sm text-muted-foreground">查看已导入的报表、对比不同时段的推广效果，并跟进成本提醒。</p>
 			</header>
 
 			<EvidencePanel key={task.taskId} taskId={task.taskId} taskVersion={task.version} />

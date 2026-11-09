@@ -9,12 +9,12 @@ import {
 	CardTitle,
 } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
+import { formatBeijingPeriod } from "./task-form";
 
 type EvidenceVersion = components["schemas"]["EvidenceVersion"];
 type EvidenceRef = components["schemas"]["EvidenceRef"];
 type ComparisonResult = components["schemas"]["ComparisonResult"];
 type ComparisonFollowUp = components["schemas"]["ComparisonFollowUp"];
-type EvidenceDetail = components["schemas"]["EvidenceDetail"];
 
 const statusLabels: Record<ComparisonResult["status"], string> = {
 	comparable: "可比较",
@@ -50,10 +50,6 @@ const completionLabels: Record<
 	manual_review: "人工审查后处理",
 };
 
-function versionLabel(version: EvidenceVersion) {
-	return `v${version.version} · ${version.period.startsAt} – ${version.period.endsAt} (${version.period.timeZone})`;
-}
-
 function EvidenceSelector({
 	label,
 	items,
@@ -66,7 +62,7 @@ function EvidenceSelector({
 	items: EvidenceVersion[];
 	evidenceId: string;
 	version: string;
-	onEvidenceChange: (value: string) => void;
+	onEvidenceChange: (item: EvidenceVersion | undefined) => void;
 	onVersionChange: (value: string) => void;
 }) {
 	const detail = useQuery({
@@ -77,50 +73,45 @@ function EvidenceSelector({
 				params: { path: { evidenceId } },
 			});
 			if (!result.data) throw new Error(JSON.stringify(result.error));
-			return result.data as EvidenceDetail;
+			return result.data;
 		},
 	});
 	const options = detail.data?.versions ?? [];
 	return (
 		<div className="space-y-2">
 			<label className="block space-y-1 text-sm">
-				<span>{label}证据</span>
+				<span>{label}</span>
 				<select
 					className="w-full rounded-md border bg-background p-2"
 					value={evidenceId}
-					onChange={(event) => onEvidenceChange(event.target.value)}
+					onChange={(event) => onEvidenceChange(items.find((item) => item.evidenceId === event.target.value))}
 				>
-					<option value="">请选择证据</option>
+					<option value="">请选择报表</option>
 					{items.map((item) => (
 						<option key={item.evidenceId} value={item.evidenceId}>
-							{item.period.startsAt} – {item.period.endsAt} · {item.scope.planRef} ·
-							当前 v{item.version}
+							{formatBeijingPeriod(item.period)} · {item.scope.planRef} · 第 {item.version} 版
 						</option>
 					))}
 				</select>
 			</label>
-			<label className="block space-y-1 text-sm">
-				<span>{label}版本（须显式选择）</span>
+			{options.length > 1 ? <label className="block space-y-1 text-sm">
+				<span>使用哪版报表</span>
 				<select
 					className="w-full rounded-md border bg-background p-2"
 					value={version}
 					disabled={!evidenceId || detail.isLoading}
 					onChange={(event) => onVersionChange(event.target.value)}
 				>
-					<option value="">请选择不可变版本</option>
 					{options.map((item) => (
 						<option key={item.id} value={String(item.version)}>
-							{versionLabel(item)}
-							{item.version === detail.data?.current.version ? " · 当前" : " · 历史"}
+							第 {item.version} 版{item.version === detail.data?.current.version ? "（最新）" : ""}
 						</option>
 					))}
 				</select>
-				{detail.error ? (
-					<span role="alert" className="text-xs text-red-600">
-						读取证据版本失败：{String(detail.error)}
-					</span>
-				) : null}
-			</label>
+			</label> : null}
+			{detail.error ? (
+				<p className="text-xs text-muted-foreground">暂时无法查看这份报表的旧版本。</p>
+			) : null}
 		</div>
 	);
 }
@@ -164,9 +155,9 @@ export function ComparisonPanel({
 	const evaluate = useMutation({
 		mutationFn: async () => {
 			if (!currentId || !currentVersion || !baselineChoice)
-				throw new Error("请显式选择当前证据版本，并选择是否使用历史基线");
+				throw new Error("请选择本期报表和查看方式。");
 			if (baselineChoice === "selected" && (!baselineId || !baselineVersion))
-				throw new Error("请显式选择历史证据及其不可变版本");
+				throw new Error("请选择要对比的报表。");
 			const current: EvidenceRef = {
 				evidenceId: currentId,
 				version: Number(currentVersion),
@@ -204,22 +195,22 @@ export function ComparisonPanel({
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle>显式证据比较</CardTitle>
+				<CardTitle>检查投放效果</CardTitle>
 				<p className="text-sm text-muted-foreground">
-					不会自动选择历史基线。比较仅说明数据是否可比及数值变化，不代表因果关系，也不会执行广告操作。
+					时间均为北京时间。选两期报表后，系统会先核对两期数据的统计方式是否一致。
 				</p>
 			</CardHeader>
 			<CardContent className="space-y-4">
 				<div className="grid gap-4 md:grid-cols-2">
 					<EvidenceSelector
-						label="当前"
+						label="本期报表"
 						items={items}
 						evidenceId={currentId}
 						version={currentVersion}
-						onEvidenceChange={(value) => {
+						onEvidenceChange={(item) => {
 							resetKey();
-						setCurrentId(value);
-						setCurrentVersion("");
+							setCurrentId(item?.evidenceId ?? "");
+							setCurrentVersion(item ? String(item.version) : "");
 						}}
 						onVersionChange={(value) => {
 							resetKey();
@@ -228,7 +219,7 @@ export function ComparisonPanel({
 					/>
 					<div className="space-y-2">
 						<label className="block space-y-1 text-sm">
-							<span>历史基线</span>
+							<span>想看什么</span>
 							<select
 								className="w-full rounded-md border bg-background p-2"
 								value={baselineChoice}
@@ -239,21 +230,21 @@ export function ComparisonPanel({
 									setBaselineVersion("");
 								}}
 							>
-								<option value="">请选择比较方式</option>
-								<option value="none">不使用历史基线（只评估当前阈值）</option>
-								<option value="selected">显式选择历史基线</option>
+								<option value="">请选择</option>
+								<option value="none">只检查本期成本</option>
+								<option value="selected">对比两个时段</option>
 							</select>
 						</label>
 						{baselineChoice === "selected" ? (
 							<EvidenceSelector
-								label="历史"
+								label="对照报表"
 								items={items}
 								evidenceId={baselineId}
 								version={baselineVersion}
-								onEvidenceChange={(value) => {
+								onEvidenceChange={(item) => {
 									resetKey();
-									setBaselineId(value);
-									setBaselineVersion("");
+									setBaselineId(item?.evidenceId ?? "");
+									setBaselineVersion(item ? String(item.version) : "");
 								}}
 								onVersionChange={(value) => {
 									resetKey();
@@ -280,11 +271,11 @@ export function ComparisonPanel({
 					}
 					onClick={() => evaluate.mutate()}
 				>
-					{evaluate.isPending ? "评估中…" : "保存不可变评估"}
+					{evaluate.isPending ? "检查中…" : "检查并保存结果"}
 				</Button>
 
 				<section className="space-y-3 border-t pt-4">
-					<h3 className="font-semibold">比较历史</h3>
+					<h3 className="font-semibold">检查结果</h3>
 					{comparisons.isLoading ? <p className="text-sm">正在加载…</p> : null}
 					{comparisons.error ? (
 						<p role="alert" className="text-sm text-red-600">
@@ -298,7 +289,7 @@ export function ComparisonPanel({
 							))}
 						</ol>
 					) : !comparisons.isLoading ? (
-						<p className="text-sm text-muted-foreground">尚无评估历史。</p>
+						<p className="text-sm text-muted-foreground">完成检查后，结果会显示在这里。</p>
 					) : null}
 				</section>
 

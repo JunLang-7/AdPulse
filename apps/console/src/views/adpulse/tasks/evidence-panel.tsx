@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { ChevronRight, FileUp } from "lucide-react";
+import { type ReactNode, useRef, useState } from "react";
 import { type components, consoleClient } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
 import {
@@ -12,6 +13,7 @@ import { Input } from "../../../components/ui/input";
 import { ComparisonPanel } from "./comparison-panel";
 import { readEvidenceCorrection, readEvidenceImport } from "./evidence-file";
 import { InvestigationAlertsPanel } from "./investigation-alerts-panel";
+import { formatBeijingPeriod } from "./task-form";
 
 type EvidenceImportInput = components["schemas"]["EvidenceImportInput"];
 type EvidenceRevision = components["schemas"]["EvidenceRevision"];
@@ -92,77 +94,114 @@ export function EvidencePanel({
 		),
 	});
 
+	const reports = [...(evidence.data ?? [])].sort((a, b) =>
+		b.period.endsAt.localeCompare(a.period.endsAt) ||
+		b.period.startsAt.localeCompare(a.period.startsAt),
+	);
+	const [latestReport, ...earlierReports] = reports;
+	const empty = evidence.isSuccess && !latestReport;
+
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle>效果报表</CardTitle>
-				<p className="text-sm text-muted-foreground">
-					查看各时段的花费与咨询量。
-				</p>
-			</CardHeader>
-			<CardContent className="space-y-4">
-				<details className="rounded-lg border">
-					<summary className="cursor-pointer px-4 py-3 text-sm font-medium">
-						导入报表文件
-					</summary>
-					<form
-						className="space-y-3 border-t p-4"
-						onSubmit={(event) => {
-							event.preventDefault();
-							if (!reportFile || importMutation.isPending) return;
-							setError("");
-							setConfirmation("");
-							importMutation.mutate(reportFile);
-						}}
-					>
-						<p className="text-sm text-muted-foreground">
-							选择为本任务第 {taskVersion} 版准备的 AdPulse 报表（.json），每份可含 1 至 2 个时段。平台原始报表需要先转换为此格式。
-						</p>
-						<label className="block space-y-1 text-sm">
-							<span className="font-medium">选择报表文件</span>
-							<Input
-								ref={fileInput}
-								type="file"
-								accept=".json,application/json"
-								className="h-auto py-2"
-								disabled={importMutation.isPending || importOperation.current !== null}
-								onChange={(event) => {
-									setReportFile(event.target.files?.[0] ?? null);
-									setError("");
-									setConfirmation("");
-								}}
-							/>
-						</label>
-						{error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
-						{confirmation ? <p role="status" className="text-sm">{confirmation}</p> : null}
-						<Button type="submit" disabled={importMutation.isPending || !reportFile}>
-							{importMutation.isPending
-								? "导入中…"
-								: importOperation.current ? "重试导入" : "导入报表"}
-						</Button>
-					</form>
-				</details>
-				{evidence.isLoading ? <p className="text-sm">正在读取报表…</p> : null}
-				{evidence.error ? (
-					<p role="alert" className="text-sm text-red-600">
-						暂时无法读取报表，请稍后重试。
+		<>
+			<Card>
+				<CardHeader>
+					<CardTitle>{latestReport ? "最近一期投放" : "投放数据"}</CardTitle>
+					<p className="text-sm text-muted-foreground">
+						{empty ? "还没有投放数据。有了报表，就能在这里看到花了多少钱、收到了多少次咨询。" : "按报表的结束时间排列，时间均为北京时间。"}
 					</p>
-				) : null}
-				{evidence.data?.length ? (
-					<div className="space-y-3">
-						{evidence.data.map((item) => (
-							<EvidenceItem key={item.evidenceId} item={item} />
-						))}
-					</div>
-				) : evidence.isSuccess ? (
-					<p className="text-sm text-muted-foreground">导入效果报表后，可在这里查看和对比投放表现。</p>
-				) : null}
-			</CardContent>
-			<div className="space-y-4 px-6 pb-6">
-				<ComparisonPanel taskId={taskId} items={evidence.data ?? []} />
-				<InvestigationAlertsPanel taskId={taskId} />
-			</div>
-		</Card>
+				</CardHeader>
+				<CardContent className="space-y-4">
+					{evidence.isLoading ? <p role="status" className="text-sm">正在读取报表…</p> : null}
+					{evidence.error ? (
+						<div className="space-y-2">
+							<p role="alert" className="text-sm text-destructive">暂时无法读取报表。</p>
+							<Button type="button" variant="outline" onClick={() => void evidence.refetch()}>重新读取</Button>
+						</div>
+					) : null}
+					{latestReport ? <EvidenceItem key={latestReport.evidenceId} item={latestReport} /> : null}
+					{earlierReports.length ? (
+						<details className="rounded-lg border">
+							<summary className="cursor-pointer px-4 py-3 text-sm font-medium">其他时段（{earlierReports.length}）</summary>
+							<div className="space-y-3 border-t p-4">
+								{earlierReports.map((item) => <EvidenceItem key={item.evidenceId} item={item} />)}
+							</div>
+						</details>
+					) : null}
+					<details className={empty ? "rounded-lg border border-dashed bg-muted/30" : "rounded-lg border"} open={empty || undefined}>
+						<summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+							<FileUp aria-hidden="true" className="mr-2 inline size-4" />
+							{latestReport ? "添加投放报表" : "导入投放报表"}
+						</summary>
+						<form
+							className="space-y-3 border-t p-4"
+							onSubmit={(event) => {
+								event.preventDefault();
+								if (!reportFile || importMutation.isPending) return;
+								setError("");
+								setConfirmation("");
+								importMutation.mutate(reportFile);
+							}}
+						>
+							<p className="text-sm text-muted-foreground">
+								已有 AdPulse 报表？选择为当前任务准备的文件，每份可包含一到两个时段。
+							</p>
+							<label className="block space-y-1 text-sm">
+								<span className="font-medium">选择 AdPulse 报表文件（.json）</span>
+								<Input
+									ref={fileInput}
+									type="file"
+									accept=".json,application/json"
+									className="h-auto py-2"
+									disabled={importMutation.isPending || importOperation.current !== null}
+									onChange={(event) => {
+										setReportFile(event.target.files?.[0] ?? null);
+										setError("");
+										setConfirmation("");
+									}}
+								/>
+							</label>
+							<p className="text-xs text-muted-foreground">广告平台导出的表格需要先转换为 AdPulse 报表。</p>
+							<Button type="submit" disabled={importMutation.isPending || !reportFile}>
+								{importMutation.isPending
+									? "导入中…"
+									: importOperation.current ? "重试导入" : "导入报表"}
+							</Button>
+						</form>
+					</details>
+					{error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+					{confirmation ? <p role="status" className="text-sm">{confirmation}</p> : null}
+				</CardContent>
+			</Card>
+			{latestReport ? (
+				<>
+					<ReviewSection title="对比表现或检查成本" description="选择要查看的报表，检查成本是否超标，或与另一时段对比。">
+						<ComparisonPanel taskId={taskId} items={reports} />
+					</ReviewSection>
+					<ReviewSection title="成本提醒" description="查看需要跟进的成本异常和处理进度。">
+						<InvestigationAlertsPanel taskId={taskId} />
+					</ReviewSection>
+				</>
+			) : null}
+		</>
+	);
+}
+
+function ReviewSection({ title, description, children }: {
+	title: string;
+	description: string;
+	children: ReactNode;
+}) {
+	return (
+		<details className="group rounded-xl border bg-card">
+			<summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 marker:hidden">
+				<ChevronRight aria-hidden="true" className="size-4 shrink-0 group-open:rotate-90" />
+				<span>
+					<span className="block text-sm font-semibold">{title}</span>
+					<span className="block text-xs text-muted-foreground">{description}</span>
+				</span>
+			</summary>
+			<div className="px-3 pb-3">{children}</div>
+		</details>
 	);
 }
 
@@ -236,31 +275,37 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 	});
 
 	return (
-		<div className="rounded border p-3 text-sm">
+		<div className="rounded-lg border bg-muted/25 p-4 text-sm">
 			<div className="flex flex-wrap items-start justify-between gap-2">
 				<div>
 					<p className="font-medium">
-						{item.period.startsAt} – {item.period.endsAt} (
-						{item.period.timeZone})
+						{formatBeijingPeriod(item.period)}
 					</p>
 					<p className="text-muted-foreground">
-						计划 {item.scope.planRef} · 任务 v{item.taskVersion} / 证据 v
-						{item.version} ·{" "}
-						{item.period.completeness === "complete" ? "完整区间" : "部分区间"}
-					</p>
-					<p className="text-muted-foreground">
-						消耗：{formatValue(item.values.spendMinor, item.currency.minorUnit)}{" "}
-						· 咨询：{formatValue(item.values.consultations, "次")}
+						计划 {item.scope.planRef}
+						{item.period.completeness === "partial" ? " · 部分时段" : ""}
 					</p>
 				</div>
 				<Button
 					type="button"
-					variant="outline"
+					variant="ghost"
+					size="sm"
+					aria-expanded={expanded}
 					onClick={() => setExpanded((value) => !value)}
 				>
-					{expanded ? "收起详情" : "来源与修订记录"}
+					{expanded ? "收起详情" : "报表详情"}
 				</Button>
 			</div>
+			<dl className="mt-4 grid grid-cols-2 gap-3 border-t pt-3">
+				<div>
+					<dt className="text-muted-foreground">投放花费</dt>
+					<dd className="break-words text-xl font-semibold tabular-nums">{formatSpend(item)}</dd>
+				</div>
+				<div className="border-l pl-3">
+					<dt className="text-muted-foreground">咨询次数</dt>
+					<dd className="break-words text-xl font-semibold tabular-nums">{formatValue(item.values.consultations, "次")}</dd>
+				</div>
+			</dl>
 			{expanded ? (
 				<div className="mt-3 space-y-3 border-t pt-3">
 					{detail.isLoading ? <p>正在读取详情…</p> : null}
@@ -301,6 +346,7 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 							</div>
 							<div className="rounded bg-muted/40 p-2">
 								<h3 className="font-medium">口径与归因</h3>
+								<p>任务第 {item.taskVersion} 版 · 报表第 {item.version} 版 · 来源时区 {item.period.timeZone}</p>
 								<p>
 									范围：{detail.data.current.scope.planRef} ·{" "}
 									{detail.data.current.scope.campaignRefs.join(", ") ||
@@ -408,7 +454,18 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 }
 
 function formatValue(value: number | null | undefined, unit: string): string {
-	if (value === undefined) return "未知";
-	if (value === null) return "来源为空";
-	return `${value} ${unit}`;
+	if (value === undefined) return "未提供";
+	if (value === null) return "报表留空";
+	return `${value.toLocaleString("zh-CN")} ${unit}`;
+}
+
+function formatSpend({ values, currency }: EvidenceVersion): string {
+	const { spendMinor } = values;
+	const { code, minorUnit, minorUnitsPerMajor } = currency;
+	if (spendMinor == null || minorUnitsPerMajor !== 100) {
+		return formatValue(spendMinor, `${minorUnit} (${code})`);
+	}
+	const whole = Math.floor(spendMinor / 100).toLocaleString("zh-CN");
+	const cents = String(spendMinor % 100).padStart(2, "0");
+	return `${whole}.${cents} ${code === "CNY" ? "元" : code}`;
 }
