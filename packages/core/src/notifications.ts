@@ -291,30 +291,40 @@ export class NotificationService {
 	 * 迫使本人重新确认地址。身份绑定失效不走这里——那是权限事实，只抑制不改地址。
 	 */
 	async noteUnreachable(userId: string): Promise<NotificationDestination | null> {
-		return this.storage.transaction(async (tx) => {
-			const destinations = (
-				await tx.notificationDestinations.all()
-			).filter((item) => item.userId === userId && item.status === "verified");
-			const destination = destinations[0];
-			if (!destination) return null;
-			const count = (destination.unreachableCount ?? 0) + 1;
-			const invalidated = count >= DESTINATION_UNREACHABLE_THRESHOLD;
-			const next: NotificationDestination = {
-				...destination,
-				unreachableCount: count,
-				...(invalidated
-					? { status: "invalidated", invalidatedAt: this.now() }
-					: {}),
-			};
-			await tx.notificationDestinations.put(next);
-			return next;
-		});
+		return this.storage.transaction((tx) =>
+			noteUnreachableIn(tx, userId, this.now()),
+		);
 	}
 
 	/** 投递前的唯一判断；worker 与用例共用，避免各自实现一套。 */
 	async canSendProactive(userId: string): Promise<boolean> {
 		return this.storage.transaction((tx) => canSendProactiveIn(tx, userId));
 	}
+}
+
+/**
+ * 事务内的「不可达」记账，供 worker 在同一次事务里与租约校验一起提交：
+ * 过期 worker 不得在别人已经接受这次投递后把目的地置为失效。
+ */
+export async function noteUnreachableIn(
+	tx: Transaction,
+	userId: string,
+	now: string,
+): Promise<NotificationDestination | null> {
+	const destinations = (
+		await tx.notificationDestinations.all()
+	).filter((item) => item.userId === userId && item.status === "verified");
+	const destination = destinations[0];
+	if (!destination) return null;
+	const count = (destination.unreachableCount ?? 0) + 1;
+	const invalidated = count >= DESTINATION_UNREACHABLE_THRESHOLD;
+	const next: NotificationDestination = {
+		...destination,
+		unreachableCount: count,
+		...(invalidated ? { status: "invalidated", invalidatedAt: now } : {}),
+	};
+	await tx.notificationDestinations.put(next);
+	return next;
 }
 
 /** 事务内的闸门实现，供 worker 在投递事务里复用。 */

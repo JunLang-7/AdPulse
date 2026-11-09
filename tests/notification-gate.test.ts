@@ -192,3 +192,125 @@ test("gate: 目的地失效后系统卡片改为抑制，不再尝试发送", as
 	assert.equal(decision?.suppressionReason, "destination_invalidated");
 	assert.deepEqual(sent, []);
 });
+
+test("gate: 投递被抑制后即使任务被重新领取也不会补发", async () => {
+	const { runtime, session, notifications, sent, startSession, drain } = await setup();
+	await notifications.verifyDestination(session.userId, identity);
+	const alertSession = await startSession(true);
+	await runtime.decisions.prepareRound(alertSession.id, 0);
+	await drain();
+
+	const suppressed = (
+		await runtime.storage.transaction((tx) => tx.deliveries.all())
+	).find((item) => item.sessionId === alertSession.id);
+	assert.equal(suppressed?.status, "suppressed");
+
+	// 模拟「写 suppressed 后进程退出」：任务回到 pending 并被重新领取，
+	// 此时用户已经授权——已抑制的卡片仍不得补发。
+	const destination = await notifications.verifyDestination(session.userId, identity);
+	await notifications.grantConsent(session.userId, destination.id, 0);
+	await runtime.storage.transaction(async (tx) => {
+		const jobs = await tx.jobs.all();
+		for (const job of jobs) {
+			if (job.task.kind !== "send_delivery" || job.task.deliveryId !== suppressed?.id)
+				continue;
+			// exactOptionalPropertyTypes：用解构去掉 leaseToken，而不是写 undefined。
+			const { leaseToken: _lease, ...rest } = job;
+			await tx.jobs.put({ ...rest, status: "pending" });
+		}
+	});
+	sent.length = 0;
+	await drain();
+
+	assert.deepEqual(sent, [], "已抑制的投递不得因任务恢复而重新发送");
+	const after = (
+		await runtime.storage.transaction((tx) => tx.deliveries.all())
+	).find((item) => item.id === suppressed?.id);
+	assert.equal(after?.status, "suppressed");
+});
+
+test("gate: 租约过期后旧 worker 不得把目的地判为失效", async () => {
+	let stolenJobId: string | null = null;
+	let storage: {
+		transaction: <T>(work: (tx: unknown) => Promise<T>) => Promise<T>;
+	} | null = null;
+	const sent: string[] = [];
+	const identityLocal: PlatformIdentity = {
+		platform: "feishu",
+		applicationId: "cli_test",
+		tenantId: "tenant-a",
+		idType: "open_id",
+		externalId: "ou-owner",
+	};
+	const runtime = compose(
+		new MemoryStorage(),
+		[
+			{
+				id: "account-a",
+				inbound: {
+					async parse() {
+						throw new Error("unused");
+					},
+				},
+				outbound: {
+					async send(delivery) {
+						// 发送期间租约被新 worker 接管，然后平台才返回不可达。
+						if (storage && stolenJobId)
+							await storage.transaction(async (tx) => {
+								const jobs = await (
+									tx as { jobs: { all(): Promise<Array<Record<string, unknown>>>; put(v: unknown): Promise<void> } }
+								).jobs.all();
+								for (const job of jobs)
+									if (job.id === stolenJobId)
+										await (
+											tx as { jobs: { put(v: unknown): Promise<void> } }
+										).jobs.put({
+											...job,
+											status: "done",
+											leaseToken: "new-lease",
+										});
+							});
+						sent.push(delivery.id);
+						throw new RecipientUnreachableError();
+					},
+				},
+			},
+		],
+		{
+			propose: async () => ({
+				card,
+				candidates: [{ id: "observe", label: "继续观察", changes: [], complete: false }],
+			}),
+		},
+	);
+	storage = runtime.storage as unknown as typeof storage;
+	const auth = new AuthenticationService(runtime.storage);
+	const session = await auth.createWebSession(identityLocal, hash("b".repeat(43)), "2026-01-01T00:00:00.000Z");
+	const notifications = new NotificationService(runtime.storage);
+	const destination = await notifications.verifyDestination(session.userId, identityLocal);
+	await notifications.grantConsent(session.userId, destination.id, 0);
+
+	const created = await runtime.decisions.startSession({
+		requestId: crypto.randomUUID(),
+		ownerId: session.userId,
+		recipient: { accountId: "account-a", kind: "user", externalId: "ou-owner" },
+		allowedActorIds: ["ou-owner"],
+		strategy: { objective: "leads", audience: [], channels: {}, sellingPoints: [] },
+		limits: { maxBidChangeRatio: 0.2, maxBudgetChangeRatio: 0.2 },
+		signal: { id: "sig", title: "t", summary: "s", evidence: [] },
+		expiresAt: "2030-01-02T00:00:00.000Z",
+	});
+	await runtime.storage.transaction(async (tx) => {
+		const current = await tx.sessions.get(created.id);
+		if (current) await tx.sessions.put({ ...current, initiatedBy: "system" });
+	});
+	await runtime.decisions.prepareRound(created.id, 0);
+	const jobs = await runtime.storage.transaction((tx) => tx.jobs.all());
+	stolenJobId = jobs.find((job) => job.task.kind === "send_delivery")?.id ?? null;
+
+	for (let i = 0; i < 6; i += 1) if (!(await runtime.worker.runOnce())) break;
+
+	const status = await notifications.status(session.userId);
+	assert.equal(status.destination?.status, "verified", "过期 worker 不得让地址失效");
+	assert.equal(status.canSendProactive, true, "新 worker 已接管，闸门不应被旧结果关闭");
+});

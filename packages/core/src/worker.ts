@@ -1,6 +1,10 @@
 import type { Orchestrator } from "./orchestrator.js";
 import type { InvestigationAlertService } from "./investigation-alerts.js";
-import { canSendProactiveIn, type NotificationService } from "./notifications.js";
+import {
+	canSendProactiveIn,
+	noteUnreachableIn,
+	type NotificationService,
+} from "./notifications.js";
 import { RecipientUnreachableError, type OutboundChannel } from "./ports/channel.js";
 import type { Storage } from "./ports/storage.js";
 import type { Job } from "./state/model.js";
@@ -101,7 +105,10 @@ export class Worker {
 		if (
 			!delivery ||
 			delivery.status === "sent" ||
-			delivery.status === "cancelled"
+			delivery.status === "cancelled" ||
+			// 已抑制的投递是终态：写入 suppressed 与 job 完成分属两个事务，
+			// 若中途退出导致任务被重新领取，不能把这张卡补发出去。
+			delivery.status === "suppressed"
 		)
 			return;
 		const round = await this.storage.transaction((tx) =>
@@ -173,19 +180,27 @@ export class Worker {
 		try {
 			receipt = await channel.send(delivery);
 		} catch (error) {
-			// 平台明确说「收件人不可达」：重试无意义，直接终态失败并计一次；
-			// 连续达阈值会把目的地置为 invalidated，迫使本人重新确认地址。
+			// 平台明确说「收件人不可达」：重试无意义，直接终态失败并记一次。
+			// 与成功分支一样先校验租约：若新 worker 已接管并发送成功，
+			// 过期 worker 不得改写投递状态，也不得把地址判为失效。
 			if (!(error instanceof RecipientUnreachableError)) throw error;
-			if (this.notifications && session)
-				await this.notifications.noteUnreachable(session.ownerId);
 			await this.storage.transaction(async (tx) => {
+				const currentJob = await tx.jobs.get(job.id);
+				if (
+					currentJob?.status !== "running" ||
+					currentJob.leaseToken !== job.leaseToken
+				)
+					return;
 				const current = await tx.deliveries.get(deliveryId);
-				if (current && current.status !== "sent")
-					await tx.deliveries.put({
-						...current,
-						status: "failed",
-						lastError: "recipient unreachable",
-					});
+				if (!current || current.status === "sent" || current.status === "suppressed")
+					return;
+				await tx.deliveries.put({
+					...current,
+					status: "failed",
+					lastError: "recipient unreachable",
+				});
+				if (this.notifications && session)
+					await noteUnreachableIn(tx, session.ownerId, now);
 			});
 			return;
 		}
