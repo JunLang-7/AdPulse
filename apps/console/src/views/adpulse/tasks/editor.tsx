@@ -6,7 +6,6 @@ import { consoleClient } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
-import { EvidencePanel } from "./evidence-panel";
 import { TaskSetupGuide } from "./task-setup-guide";
 import {
 	operationAfterSaveError,
@@ -17,7 +16,6 @@ import {
 import {
 	emptyChannel,
 	emptyForm,
-	formatBeijingTime,
 	fromVersion,
 	toInput,
 	type ChannelForm,
@@ -188,9 +186,17 @@ export default function TaskEditorPage() {
 				<Link to="/tasks" className="text-sm text-muted-foreground hover:text-foreground">
 					← 返回任务列表
 				</Link>
-				<h1 className="text-2xl font-bold tracking-tight">{creating ? "新建推广任务" : form.product || "推广任务"}</h1>
+				<div className="flex flex-wrap items-center justify-between gap-3">
+					<h1 className="text-2xl font-bold tracking-tight">{creating ? "新建推广任务" : form.product || "推广任务"}</h1>
+					{detail.data && !creating ? (
+						<Link to={`/tasks/${detail.data.task.taskId}/review`} className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
+							onClick={(event) => { if (dirty && !window.confirm("当前任务有未保存的修改，仍要前往查看推广效果吗？")) event.preventDefault(); }}>
+							查看推广效果
+						</Link>
+					) : null}
+				</div>
 				<p className="text-sm text-muted-foreground">
-					{creating ? "填一个产品或服务名称就能创建任务。投放细节可以随时补充。" : "在这里记录当前推广计划，下方可以查看效果数据。"}
+					{creating ? "填一个产品或服务名称就能创建任务。投放细节可以随时补充。" : "记录当前推广计划。查看报表或对比成效时，打开推广效果。"}
 				</p>
 			</header>
 
@@ -216,8 +222,8 @@ export default function TaskEditorPage() {
 							<Field label="推广什么？" hint="必填">
 								<Input required maxLength={200} placeholder="例如：新品试用装" value={form.product} onChange={(e) => set("product", e.target.value)} />
 							</Field>
-							<Field label="想达成什么？" hint="选填">
-								<Input maxLength={2000} placeholder="例如：让更多客户来咨询" value={form.objective} onChange={(e) => set("objective", e.target.value)} />
+							<Field label="想达成什么？" hint="选填 · 多个目标可换行">
+								<textarea className={textAreaClass} rows={2} maxLength={2000} placeholder="例如：让更多客户来咨询" value={form.objective} onChange={(e) => set("objective", e.target.value)} />
 							</Field>
 						</CardContent>
 					</Card>
@@ -347,20 +353,6 @@ export default function TaskEditorPage() {
 				</div>
 			</form>
 
-			{detail.data && !creating ? (
-				<>
-					<EvidencePanel taskId={detail.data.task.taskId} taskVersion={detail.data.task.version} />
-					<OptionalSection title="历史版本" summary={`${detail.data.versions.length} 个版本`}>
-						<ul className="flex flex-wrap gap-2">
-							{detail.data.versions.map((version) => (
-								<li key={version.id} className="rounded border px-2 py-1 text-xs">
-									v{version.version} · {formatBeijingTime(version.createdAt)}
-								</li>
-							))}
-						</ul>
-					</OptionalSection>
-				</>
-			) : null}
 		</div>
 	);
 }

@@ -53,7 +53,6 @@ function readList(text: string): string[] {
 
 export function selectedValues(form: FormState, field: ChoiceField): string[] {
 	if (field === "channels") return form.channels.map((channel) => channel.name).filter(Boolean);
-	if (field === "objective") return form.objective.trim() ? [form.objective.trim()] : [];
 	return readList(form[field]);
 }
 
@@ -65,7 +64,6 @@ export function withSelectedValue(form: FormState, field: ChoiceField, value: st
 	const items = selectedValues(form, field);
 	const selected = items.includes(value);
 	const values = selected ? items.filter((item) => item !== value) : [...items, value];
-	if (field === "objective") return { ...form, objective: selected ? "" : value };
 	if (field === "channels") {
 		const channels = selected
 			? form.channels.filter(({ name }) => name !== value)

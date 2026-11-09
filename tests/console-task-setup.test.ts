@@ -43,5 +43,13 @@ test("explicitly removed items stay removed when resubmitting an edited stage", 
 	const removed = withSelectedValue(selected, "channels", "抖音");
 	const updated = applyStageSuggestions(removed, "channels", { channels: ["抖音", "微信公众号"] }, { channels: ["抖音"] });
 	assert.deepEqual(toInput(updated).strategy.channels, { 微信公众号: {} });
-	assert.equal(withSelectedValue(withSelectedValue(form, "objective", "增加咨询"), "objective", "促进购买").objective, "促进购买");
+});
+
+test("multiple promotion objectives retain order, old free text and independent removal", () => {
+	const existing = { ...emptyForm, product: "新品", objective: "原有目标、补充说明" };
+	const selected = withSelectedValue(withSelectedValue(existing, "objective", "增加咨询"), "objective", "促进购买");
+	assert.equal(toInput(selected).strategy.objective, "原有目标、补充说明\n增加咨询\n促进购买");
+	const revised = withSelectedValue(selected, "objective", "增加咨询");
+	assert.equal(toInput(revised).strategy.objective, "原有目标、补充说明\n促进购买");
+	assert.match(stageBrief(revised, taskStages[0], ""), /原有目标、补充说明、促进购买/);
 });

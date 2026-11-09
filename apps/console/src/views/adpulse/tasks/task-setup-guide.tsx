@@ -43,7 +43,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const [returnToReview, setReturnToReview] = useState(false);
 	const [notes, setNotes] = useState(emptyNotes);
 	const [excluded, setExcluded] = useState<ExcludedChoices>({});
-	const [attached, setAttached] = useState<Partial<Record<TaskDraftStage, { name: string; clipped: boolean }>>>({});
+	const [attached, setAttached] = useState<Partial<Record<TaskDraftStage, { name: string; clipped: boolean; pagesWithoutText?: number }>>>({});
 	const [processing, setProcessing] = useState(false);
 	const [reading, setReading] = useState(false);
 	const [error, setError] = useState("");
@@ -58,6 +58,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const busy = processing || reading || saving;
 	const brief = stage ? stageBrief(form, stage, notes[stage.id]) : "";
 	const remaining = TASK_SETUP_BRIEF_LIMIT - brief.length;
+	const attachment = stage ? attached[stage.id] : undefined;
 	const suggestionCurrent = suggestion?.brief === brief ? suggestion : undefined;
 	const draft = stage && suggestionCurrent?.data ? applyStageSuggestions(form, stage.id, suggestionCurrent.data, excluded) : undefined;
 	const additions = stage?.fields.filter((field) => draft && stageValue(draft, field) !== stageValue(form, field)) ?? [];
@@ -79,12 +80,12 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 		onBusyChange(true);
 		setFileError("");
 		try {
-			const { text, clipped } = await readTaskSetupAttachment(file);
+			const { text, clipped, pagesWithoutText } = await readTaskSetupAttachment(file);
 			const combined = [notes[stage.id].trim(), text].filter(Boolean).join("\n");
 			if (combined.length > TASK_SETUP_PREVIEW_LIMIT)
 				throw new Error("合并后超过预览上限。请先精简现有资料，再选择文件。");
 			setNotes((previous) => ({ ...previous, [stage.id]: combined }));
-			setAttached((previous) => ({ ...previous, [stage.id]: { name: file.name, clipped } }));
+			setAttached((previous) => ({ ...previous, [stage.id]: { name: file.name, clipped, pagesWithoutText } }));
 		} catch (problem) {
 			setFileError(problem instanceof Error ? problem.message : "无法读取这个文件。");
 		} finally {
@@ -228,8 +229,11 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 									<span className="text-xs text-muted-foreground">也可以把文件拖到这里</span>
 									<span className="text-xs text-muted-foreground">PDF、Word、Excel、TXT、Markdown、CSV · 文档最多 8 MB</span>
 								</button>
-								{attached[stage.id] ? (
-									<p role="status" className="break-words text-sm">已读入 {attached[stage.id]?.name}。{attached[stage.id]?.clipped ? "仅预览前 30,000 字，请核对并保留相关内容。" : "可在上方核对和修改文字。"}</p>
+								{attachment ? (
+									<div role="status" className="space-y-1 break-words text-sm">
+										<p>已读入 {attachment.name}。{attachment.clipped ? "仅预览前 30,000 字，请核对并保留相关内容。" : "可在上方核对和修改文字。"}</p>
+										{attachment.pagesWithoutText ? <p>已检查的页面中有 {attachment.pagesWithoutText} 页没有可读取文字。如有需要，请识别文字后补充。</p> : null}
+									</div>
 								) : null}
 								{fileError ? <p role="alert" className="text-sm text-red-600">{fileError}</p> : null}
 								<p className={remaining >= 0 ? "text-xs text-muted-foreground" : "text-sm text-red-600"}>
@@ -323,7 +327,7 @@ function StageChoices({ field, form, disabled, onSelect }: {
 	const choices = [...new Set([...presets, ...selected])];
 	return (
 		<fieldset className="space-y-2" disabled={disabled}>
-			<legend className="text-sm font-medium">{fieldLabels[field]} <span className="font-normal text-muted-foreground">（选填）</span></legend>
+			<legend className="text-sm font-medium">{fieldLabels[field]} <span className="font-normal text-muted-foreground">（选填，可多选）</span></legend>
 			<div className="flex flex-wrap gap-2">
 				{choices.map((value) => {
 					const chosen = selected.includes(value);
