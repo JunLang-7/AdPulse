@@ -197,7 +197,12 @@ bun run dev
 用户名下方另显示一个平台标签，取自 `identities[].platform`（`feishu→飞书`、`dingtalk→钉钉`、
 `wecom→企业微信`，未知平台原样显示），不在界面里硬编码平台名。用户名来自登录时 `/authen/v1/user_info` 的 `name` 字段（与 `open_id` 同一次响应，不需要额外权限），
 只存在用户记录的 `displayName`，不参与身份唯一性判断；取不到时界面显示「已登录」。内容区不再放账号动作。
-左侧导航是完整会话列表，与顶栏「待处理」是两种视角，不要互相复制。当前没有创建会话表单，可先运行 `bun run demo` 生成演示记录；该脚本生成的是已完成会话。创建可操作的会话可参考脚本中的 POST /api/sessions 调用。
+左侧导航是完整会话列表，与顶栏「待处理」是两种视角，不要互相复制。
+
+「通知设置」（`/settings/notifications`）用于确认单聊地址与开启/撤销主动提醒：状态来自
+`GET /api/me/notification-status`，动作走 `PUT /api/me/notification-destination` 与
+`POST /api/me/notification-consent`（授权/撤销都带 `expectedVersion`，版本不符提示刷新）。
+页面明确写出「撤销不影响登录、不删除地址、不发群消息」。当前没有创建会话表单，可先运行 `bun run demo` 生成演示记录；该脚本生成的是已完成会话。创建可操作的会话可参考脚本中的 POST /api/sessions 调用。
 
 Vite 将同源 `/api`、`/auth`、`/webhooks` 请求代理到 127.0.0.1:3000，控制台与 API 不做跨域部署。`PUBLIC_ORIGIN` 必须与浏览器 origin 完全一致；Feishu 后台须登记 `${PUBLIC_ORIGIN}/auth/feishu/callback`。
 

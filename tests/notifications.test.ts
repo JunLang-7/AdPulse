@@ -239,3 +239,34 @@ test("destination: 失效但绑定已撤销时不能靠重验恢复", async () =
 			error instanceof NotificationError && error.reason === "identity_not_verified",
 	);
 });
+
+test("consent: 地址失效后仍能直接撤销，不必先重新确认", async () => {
+	const { notifications, first, identity, storage } = await setup();
+	const destination = await notifications.verifyDestination(first.userId, identity.a);
+	const granted = await notifications.grantConsent(first.userId, destination.id, 0);
+	assert.equal(await notifications.canSendProactive(first.userId), true);
+
+	// 地址失效（触发条件留待 PR4），此时闸门已关闭。
+	await storage.transaction(async (tx) => {
+		const current = await tx.notificationDestinations.get(destination.id);
+		if (current)
+			await tx.notificationDestinations.put({ ...current, status: "invalidated" });
+	});
+	assert.equal(await notifications.canSendProactive(first.userId), false);
+
+	// 关键：可以直接撤销，不需要先「重新确认地址」恢复发送资格。
+	const revoked = await notifications.revokeConsent(
+		first.userId,
+		destination.id,
+		granted.version,
+	);
+	assert.equal(revoked.status, "revoked");
+	assert.equal(await notifications.canSendProactive(first.userId), false);
+
+	// 失效地址上不能直接授权：必须先重新确认。
+	await assert.rejects(
+		() => notifications.grantConsent(first.userId, destination.id, revoked.version),
+		(error: unknown) =>
+			error instanceof NotificationError && error.reason === "destination_not_found",
+	);
+});
