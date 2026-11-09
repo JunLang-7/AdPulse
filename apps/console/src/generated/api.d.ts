@@ -355,6 +355,8 @@ export interface components {
             userId: string;
             /** Format: date-time */
             sessionExpiresAt: string;
+            /** @description 平台返回的显示名，仅用于界面展示 */
+            displayName?: string;
             identities: components["schemas"]["VerifiedIdentity"][];
         };
         Error: {

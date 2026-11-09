@@ -7,13 +7,19 @@ export interface OAuthAuthorizationParameters {
 	redirectUri: string;
 }
 
+/** 登录结果：身份作用域用于唯一性与权限；displayName 仅用于界面展示。 */
+export interface VerifiedLogin {
+	identity: VerifiedIdentity;
+	displayName?: string;
+}
+
 export interface IdentityProvider {
 	authorizationUrl(parameters: OAuthAuthorizationParameters): string;
 	verifyAuthorizationCode(
 		code: string,
 		codeVerifier: string,
 		redirectUri: string,
-	): Promise<VerifiedIdentity>;
+	): Promise<VerifiedLogin>;
 }
 
 const tokenResponseSchema = z.object({
@@ -25,6 +31,8 @@ const userInfoSchema = z.object({
 	data: z.object({
 		open_id: z.string().min(1),
 		tenant_key: z.string().min(1),
+		// 同一响应里即带显示名，无需额外权限；缺失时界面自行降级。
+		name: z.string().trim().min(1).max(200).optional(),
 	}),
 });
 
@@ -58,7 +66,7 @@ export class FeishuIdentityProvider implements IdentityProvider {
 		code: string,
 		codeVerifier: string,
 		redirectUri: string,
-	): Promise<VerifiedIdentity> {
+	): Promise<VerifiedLogin> {
 		if (!/^[A-Za-z0-9._~-]{43,128}$/.test(codeVerifier))
 			throw new Error("invalid PKCE verifier");
 		// This authorize endpoint currently supports PKCE with the v2 token endpoint.
@@ -100,11 +108,14 @@ export class FeishuIdentityProvider implements IdentityProvider {
 			throw new Error("identity tenant not allowed");
 
 		return {
-			platform: "feishu",
-			applicationId: this.configuration.applicationId,
-			tenantId: user.data.data.tenant_key,
-			idType: "open_id",
-			externalId: user.data.data.open_id,
+			identity: {
+				platform: "feishu",
+				applicationId: this.configuration.applicationId,
+				tenantId: user.data.data.tenant_key,
+				idType: "open_id",
+				externalId: user.data.data.open_id,
+			},
+			...(user.data.data.name ? { displayName: user.data.data.name } : {}),
 		};
 	}
 }

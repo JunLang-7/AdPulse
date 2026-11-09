@@ -225,9 +225,9 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					clearCookie(res, OAUTH_COOKIE);
 					return redirect(res, "/login?error=authorization");
 				}
-				let identity;
+				let login;
 				try {
-					identity = await auth.provider.verifyAuthorizationCode(
+					login = await auth.provider.verifyAuthorizationCode(
 						code,
 						transaction.codeVerifier,
 						callbackUri,
@@ -244,9 +244,10 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					await auth.service.revokeSession(digest(previousToken), currentTime.toISOString());
 				const sessionToken = randomBytes(32).toString("base64url");
 				await auth.service.createWebSession(
-					identity,
+					login.identity,
 					digest(sessionToken),
 					currentTime.toISOString(),
+					login.displayName,
 				);
 				appendCookie(res, SESSION_COOKIE, sessionToken, SESSION_TTL_SECONDS);
 				clearCookie(res, OAUTH_COOKIE);
@@ -278,6 +279,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					return json(res, 200, {
 						userId: session.userId,
 						sessionExpiresAt: session.expiresAt,
+						...(session.displayName ? { displayName: session.displayName } : {}),
 						identities: await auth.service.listIdentities(session.userId),
 					});
 				if (path === "/api/logout" && req.method === "POST") {

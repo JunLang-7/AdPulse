@@ -2,8 +2,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Icon } from "@iconify/react";
+import { UserRound } from "lucide-react";
 import { consoleClient } from "src/adpulse-client";
-import { Avatar, AvatarFallback, AvatarImage } from "src/components/ui/avatar";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -12,20 +12,21 @@ import {
 	DropdownMenuTrigger,
 } from "src/components/ui/dropdown-menu";
 import { announceSessionIdentity } from "src/views/auth/session-sync";
-import {
-	describeIdentity,
-	formatSessionExpiry,
-} from "src/views/adpulse/account/account-display";
 import { profileDD } from "./data";
 
 const isExternal = (href: string) => href.startsWith("http");
 
+/**
+ * 账号菜单只放可操作项：外部标识、租户、应用、会话到期属于运维/验收信息，
+ * 不呈现给使用者。
+ */
 export default function ProfileMenu() {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const [logoutError, setLogoutError] = useState(false);
 	const [loggingOut, setLoggingOut] = useState(false);
 
+	// 只展示平台返回的显示名；取不到时用中性占位，不编造称呼。
 	const { data: me } = useQuery({
 		queryKey: ["me"],
 		queryFn: async () => {
@@ -34,10 +35,7 @@ export default function ProfileMenu() {
 			return result.data;
 		},
 	});
-
-	const identity = me?.identities?.[0];
-	const summary = describeIdentity(identity);
-	const expiry = formatSessionExpiry(me?.sessionExpiresAt);
+	const displayName = me?.displayName?.trim() || "已登录";
 
 	const logout = async () => {
 		if (loggingOut) return;
@@ -66,20 +64,13 @@ export default function ProfileMenu() {
 		<DropdownMenu>
 			<DropdownMenuTrigger>
 				<div className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-primary/5">
-					<Avatar className="h-8 w-8">
-						<AvatarImage src="" alt="账号" />
-						<AvatarFallback>AD</AvatarFallback>
-					</Avatar>
+					<div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+						<UserRound className="size-4" />
+					</div>
 				</div>
 			</DropdownMenuTrigger>
-			<DropdownMenuContent align="end" className="w-72 py-2">
-				<div className="flex flex-col gap-1 px-3 py-2">
-					<p className="text-sm font-semibold">{summary.title}</p>
-					<p className="text-xs text-muted-foreground">{summary.scope}</p>
-					{expiry ? (
-						<p className="text-xs text-muted-foreground">本次会话 {expiry}</p>
-					) : null}
-				</div>
+			<DropdownMenuContent align="end" className="w-48 py-2">
+				<p className="truncate px-3 py-2 text-sm font-medium">{displayName}</p>
 				<DropdownMenuSeparator />
 				{profileDD.map((item) => {
 					const content = (
