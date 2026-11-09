@@ -158,6 +158,22 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (7)",
 				);
 			}
+			if (!current.has(8)) {
+				for (const name of [
+					"notificationDestinations",
+					"notificationConsents",
+				]) await this.createEntityTable(client, name);
+			// 每人每个平台作用域只有一个目的地：唯一约束兜住并发与串号。
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_notification_destination_scope
+					ON adpulse_notificationDestinations ((data->>'userId'), (data->>'platform'),
+					(data->>'applicationId'), (data->>'tenantId'), (data->>'idType'),
+					(data->>'externalId'))`);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_notification_consent_unique
+					ON adpulse_notificationConsents ((data->>'userId'), (data->>'destinationId'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (8)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");
