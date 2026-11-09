@@ -257,6 +257,8 @@ bun run feishu:acceptance -- --scenario dm --open-id ou_xxx --write
   `local-real`（真实凭据或平台 API 由本地发起）、`synthetic`（假凭据或 mock）。只有 `platform-real` 可勾选真机项；
   脚本输出 `blocked`（未等到人工动作）与 `skip` 一样不计入验收。
 - `docs/acceptance/records/` 默认被 `.gitignore` 忽略。确需入库时先逐行复核脱敏，再用 `git add -f` 显式提交。
+- 约定：**支撑已收口 Issue 的验收记录应入库**（否则评审与后续核对无从查证），提交时在 PR 描述里说明是显式入库的证据；
+  主机名/域名/完整外部标识仍需脱敏，只保留 `***` 形式。
 - 不粘贴平台响应中的 token、secret、`tenant_access_token` 或带签名头的完整请求。
 
 ## 12. 结论填写规则
