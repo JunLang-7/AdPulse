@@ -50,6 +50,11 @@ export class Orchestrator {
 			tx: Transaction,
 			actor: Extract<Actor, { kind: "platform" }>,
 		) => Promise<boolean>,
+		/**
+		 * 卡片上的站内详情链接。由装配层按控制台公开 origin 提供，核心不感知域名；
+		 * 返回 undefined 时卡片不带链接（与未配置控制台入口时的行为一致）。
+		 */
+		private detailUrlFor?: (sessionId: string) => string | undefined,
 	) {}
 
 	async startSession(input: StartSession): Promise<Session> {
@@ -456,6 +461,9 @@ export class Orchestrator {
 	): Promise<void> {
 		if (!session.recipient || !round.expiresAt)
 			throw new Error("channel delivery requires a recipient and expiry");
+		// 直达链接只指站内对象详情，不含 token 或他人可见内容。
+		const detailUrl = this.detailUrlFor?.(session.id);
+		const cardWithDetail = detailUrl ? { ...card, detailUrl } : card;
 		const delivery: Delivery = {
 			id: this.id(),
 			recipient: session.recipient,
@@ -464,7 +472,7 @@ export class Orchestrator {
 			purpose,
 			expiresAt: round.expiresAt,
 			status: "pending",
-			card,
+			card: cardWithDetail,
 			actions,
 		};
 		await tx.deliveries.put(delivery);

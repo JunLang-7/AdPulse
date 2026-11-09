@@ -284,3 +284,25 @@ test("policy output is checked against limits before any round is stored", async
 	await assert.rejects(decisions.prepareRound(session.id, 0), /exceeds limits/);
 	assert.equal((await rows(f, "rounds")).length, 0);
 });
+
+test("delivery cards carry the console detail link when the assembly layer provides one", async () => {
+	const linked = fixture(undefined, {
+		detailUrlFor: (sessionId) => `https://console.example.com/sessions/${sessionId}`,
+	});
+	const session = await linked.start();
+	await linked.worker.runOnce();
+	await linked.worker.runOnce();
+	const sent = [...linked.sent.values()];
+	assert.ok(sent.length > 0, "决策卡应已投递");
+	assert.equal(sent[0]?.card.detailUrl, `https://console.example.com/sessions/${session.id}`);
+
+	// 未注入时不带链接：卡片渲染强制 https，本地/未配置环境保持原行为。
+	const plain = fixture();
+	const plainSession = await plain.start();
+	await plain.worker.runOnce();
+	await plain.worker.runOnce();
+	const plainSent = [...plain.sent.values()];
+	assert.ok(plainSent.length > 0);
+	assert.equal(plainSent[0]?.card.detailUrl, undefined);
+	assert.ok(plainSession.id);
+});
