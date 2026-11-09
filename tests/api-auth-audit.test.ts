@@ -46,7 +46,7 @@ async function serve(
 		},
 		async verifyAuthorizationCode() {
 			if (options.rejectIdentity) throw new Error("tenant mismatch");
-			return identity;
+			return { identity, displayName: "小明" };
 		},
 	};
 	const server = createApi(runtime, {
@@ -166,4 +166,37 @@ test("auth audit: 回调重放记为事务无效，平台身份失败记为 iden
 	);
 	assert.equal(rejecting.events.at(-1)?.reason, "identity_rejected");
 	assert.equal(rejecting.events.at(-1)?.path, "/auth/feishu/callback");
+});
+
+test("login carries the platform display name into the current-user payload", async (t) => {
+	const { url, service } = await serve(t);
+	const login = await fetch(`${url}/auth/feishu/login`, { redirect: "manual" });
+	const location = new URL(login.headers.get("location") ?? "");
+	const state = location.searchParams.get("state") ?? "";
+	const nonce = (login.headers.getSetCookie?.() ?? [])
+		.map((value) => /adpulse_oauth_nonce=([^;]+)/.exec(value)?.[1])
+		.find((value) => value !== undefined);
+	const callback = await fetch(
+		`${url}/auth/feishu/callback?state=${encodeURIComponent(state)}&code=one-time`,
+		{ redirect: "manual", headers: { cookie: `adpulse_oauth_nonce=${nonce}` } },
+	);
+	const sessionCookie = (callback.headers.getSetCookie?.() ?? [])
+		.map((value) => /adpulse_session=([^;]+)/.exec(value)?.[1])
+		.find((value) => value !== undefined);
+	assert.ok(sessionCookie, "登录成功应下发会话 cookie");
+
+	const me = await fetch(`${url}/api/me`, {
+		headers: { cookie: `adpulse_session=${sessionCookie}` },
+	});
+	const payload = (await me.json()) as { displayName?: string; identities?: unknown[] };
+	assert.equal(payload.displayName, "小明");
+	// 显示名不进身份作用域：identities 里的字段保持不变。
+	assert.deepEqual(Object.keys((payload.identities as Array<object>)[0] ?? {}).sort(), [
+		"applicationId",
+		"externalId",
+		"idType",
+		"platform",
+		"tenantId",
+	]);
+	assert.ok(await service.authenticateSession !== undefined);
 });

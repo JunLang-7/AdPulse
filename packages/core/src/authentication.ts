@@ -22,6 +22,8 @@ export interface AuthenticatedSession {
 	sessionId: string;
 	createdAt: string;
 	expiresAt: string;
+	/** 展示用名称，来自平台返回；缺省时界面自行降级。 */
+	displayName?: string;
 }
 
 const digestPattern = /^[a-f0-9]{64}$/;
@@ -145,6 +147,7 @@ export class AuthenticationService {
 		identity: VerifiedIdentity,
 		sessionTokenHash: string,
 		now: string,
+		displayName?: string,
 	): Promise<AuthenticatedSession> {
 		if (!digestPattern.test(sessionTokenHash) || !Number.isFinite(Date.parse(now)))
 			throw new Error("invalid session token or timestamp");
@@ -167,6 +170,9 @@ export class AuthenticationService {
 						// contend on the same row. It records when the binding was established.
 						binding = existing;
 						userId = user.id;
+						// 展示名只在变化时更新，避免普通登录产生不必要的行重写。
+						if (displayName && user.displayName !== displayName)
+							await tx.users.put({ ...user, displayName });
 					} else {
 						userId = crypto.randomUUID();
 						binding = {
@@ -176,7 +182,12 @@ export class AuthenticationService {
 							status: "active",
 							verifiedAt: now,
 						};
-						await tx.users.put({ id: userId, status: "active", createdAt: now });
+						await tx.users.put({
+							id: userId,
+							status: "active",
+							createdAt: now,
+							...(displayName ? { displayName } : {}),
+						});
 						await tx.identityBindings.put(binding);
 					}
 					const session: AuthenticatedSession = {
@@ -184,6 +195,7 @@ export class AuthenticationService {
 						sessionId: sessionTokenHash,
 						createdAt: now,
 						expiresAt: new Date(Date.parse(now) + MAX_WEB_SESSION_MS).toISOString(),
+						...(displayName ? { displayName } : {}),
 					};
 					await tx.webSessions.put({
 						id: sessionTokenHash,
@@ -254,6 +266,7 @@ export class AuthenticationService {
 				sessionId: session.id,
 				createdAt: session.createdAt,
 				expiresAt: session.expiresAt,
+				...(user.displayName ? { displayName: user.displayName } : {}),
 			};
 		});
 	}

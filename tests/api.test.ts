@@ -77,7 +77,7 @@ async function serve(
       target.searchParams.set("redirect_uri", parameters.redirectUri);
       return target.toString();
     },
-    async verifyAuthorizationCode() { return ownerIdentity; },
+    async verifyAuthorizationCode() { return { identity: ownerIdentity }; },
   };
   const server = createApi(runtime, {
     service,

@@ -16,6 +16,8 @@ export interface User {
 	id: string;
 	status: "active" | "disabled";
 	createdAt: string;
+	/** 平台返回的显示名；仅用于界面展示，不参与身份唯一性判断。 */
+	displayName?: string;
 }
 export interface IdentityBinding {
 	id: string;

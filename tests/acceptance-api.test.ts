@@ -30,7 +30,7 @@ async function fixture(t: TestContext, markFault = true, failOutbound = true) {
 	await service.createWebSession({ ...identity, externalId: "ou_other" }, createHash("sha256").update("other").digest("hex"), new Date().toISOString());
 	const server = createApi(runtime, {
 		service, publicOrigin: "http://localhost", audit() {},
-		provider: { authorizationUrl() { throw new Error("unused"); }, async verifyAuthorizationCode() { return identity; } },
+		provider: { authorizationUrl() { throw new Error("unused"); }, async verifyAuthorizationCode() { return { identity }; } },
 	});
 	if (markFault) server.prependListener("request", (_req, res) => res.setHeader(FAULT_HEADER, FAULT_MARKER));
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
