@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
+	NotificationService,
 	SourceService,
 	type ChoiceCommand,
 } from "../packages/core/dist/index.js";
@@ -225,18 +226,21 @@ test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse
 	);
 	assert.deepEqual(
 		migrations.rows.map((row) => Number(row.version)),
-		[1, 2, 3, 4, 5, 6, 7],
+		[1, 2, 3, 4, 5, 6, 7, 8],
 	);
 	const indexes = await admin.query(
 		`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()
 		AND indexname IN ('adpulse_identity_binding_scope', 'adpulse_web_sessions_user',
-		'adpulse_login_transactions_expiry') ORDER BY indexname`,
+		'adpulse_login_transactions_expiry', 'adpulse_notification_destination_scope',
+		'adpulse_notification_consent_unique') ORDER BY indexname`,
 	);
 	assert.deepEqual(
 		indexes.rows.map((row) => row.indexname),
 		[
 			"adpulse_identity_binding_scope",
 			"adpulse_login_transactions_expiry",
+			"adpulse_notification_consent_unique",
+			"adpulse_notification_destination_scope",
 			"adpulse_web_sessions_user",
 		],
 	);
@@ -325,7 +329,7 @@ test("PostgreSQL: a failed auth migration rolls back atomically and can be retri
 		);
 		assert.deepEqual(
 			versions.rows.map((row) => Number(row.version)),
-			[1, 2, 3, 4, 5, 6, 7],
+			[1, 2, 3, 4, 5, 6, 7, 8],
 		);
 	} finally {
 		await check.end();
@@ -462,4 +466,61 @@ test("PostgreSQL: queued platform action is refused after its binding is revoked
 	assert.equal(result.inbox?.status, "rejected");
 	assert.equal(result.inbox?.reason, "forbidden");
 	assert.equal(result.session?.version, 0);
+});
+
+test("PostgreSQL: notification destination scope and consent are unique per user", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async (t) => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const storage = PostgresStorage.connect(databaseUrl);
+	t.after(() => storage.close());
+	await storage.initialize();
+
+	const identity = {
+		platform: "feishu",
+		applicationId: "cli_test",
+		tenantId: "tenant-a",
+		idType: "open_id",
+		externalId: `ou-${crypto.randomUUID()}`,
+	};
+	const now = new Date().toISOString();
+	const userId = crypto.randomUUID();
+	await storage.transaction(async (tx) => {
+		await tx.users.put({ id: userId, status: "active", createdAt: now });
+		await tx.identityBindings.put({
+			id: crypto.randomUUID(),
+			...identity,
+			userId,
+			status: "active",
+			verifiedAt: now,
+		});
+	});
+	const notifications = new NotificationService(storage);
+	const destination = await notifications.verifyDestination(userId, identity);
+
+	// 同一用户同一作用域只能有一条目的地（唯一索引兜并发）。
+	await assert.rejects(
+		() =>
+			storage.transaction((tx) =>
+				tx.notificationDestinations.put({ ...destination, id: crypto.randomUUID() }),
+			),
+		/duplicate key|unique/i,
+	);
+
+	// 同一用户的同一目的地只能有一条授权记录。
+	const consent = await notifications.grantConsent(userId, destination.id);
+	await assert.rejects(
+		() =>
+			storage.transaction((tx) =>
+				tx.notificationConsents.put({ ...consent, id: `${userId}:${destination.id}x` }),
+			),
+		/duplicate key|unique/i,
+	);
+
+	// 迁移是可重复执行的：再次 initialize 不应报错。
+	await storage.initialize();
+	const status = await notifications.status(userId);
+	assert.equal(status.destination?.id, destination.id);
+	assert.equal(status.consent?.status, "active");
+	assert.equal(status.canSendProactive, true);
 });

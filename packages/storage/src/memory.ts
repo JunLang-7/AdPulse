@@ -5,6 +5,8 @@ export const tableNames = [
 	"identityBindings",
 	"webSessions",
 	"loginTransactions",
+	"notificationDestinations",
+	"notificationConsents",
 	"tasks",
 	"taskVersions",
 	"taskOperations",

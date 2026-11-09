@@ -30,6 +30,35 @@ export interface IdentityBinding {
 	status: "active" | "revoked";
 	verifiedAt: string;
 }
+/**
+ * 机器人单聊目的地：只记录「本人的已验证身份对应哪个单聊」，不含授权状态。
+ * 作用域与身份绑定一致，避免用裸 open_id 串号。
+ */
+export interface NotificationDestination {
+	id: string;
+	userId: string;
+	platform: string;
+	applicationId: string;
+	tenantId: string;
+	idType: string;
+	externalId: string;
+	status: "verified" | "invalidated";
+	verifiedAt: string;
+}
+
+/**
+ * 通知授权：与目的地、登录绑定分开建模。撤销不等于注销账号，
+ * 目的地仍保留，只是不再允许主动发送。
+ */
+export interface NotificationConsent {
+	id: string;
+	userId: string;
+	destinationId: string;
+	status: "active" | "revoked";
+	grantedAt: string;
+	revokedAt?: string;
+}
+
 export interface WebSession {
 	/** SHA-256 digest of the opaque cookie value; never store the cookie itself. */
 	id: string;
@@ -507,6 +536,8 @@ export interface SourceState {
 export interface Entities {
 	users: User;
 	identityBindings: IdentityBinding;
+	notificationDestinations: NotificationDestination;
+	notificationConsents: NotificationConsent;
 	webSessions: WebSession;
 	loginTransactions: LoginTransaction;
 	tasks: Task;
