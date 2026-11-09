@@ -423,6 +423,7 @@ export class InvestigationAlertService {
 					...existing,
 					deliveryMode: "web",
 					investigationAlertId: alert.id,
+					initiatedBy: "system",
 					alertEvidenceRef: { evidenceId: evidence.evidenceId, version: evidence.version },
 					taskRef: { taskId: task.id, taskVersion: version.version },
 					strategy: version.strategy,

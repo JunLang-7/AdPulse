@@ -1491,6 +1491,7 @@
           },
           "monetarySuggestionsAllowed": { "type": "boolean" },
           "deliveryMode": { "type": "string", "enum": ["channel", "web"] },
+          "initiatedBy": { "type": "string", "enum": ["self", "system"], "description": "system 表示系统主动提醒，投递受通知授权闸门约束" },
           "investigationAlertId": { "type": "string" },
           "alertEvidenceRef": { "$ref": "#/components/schemas/EvidenceRef" },
           "recipient": {
@@ -1724,7 +1725,9 @@
             "enum": [
               "pending",
               "sent",
-              "failed"
+              "failed",
+              "cancelled",
+              "suppressed"
             ]
           },
           "externalMessageId": {
@@ -1735,6 +1738,10 @@
           },
           "lastError": {
             "type": "string"
+          },
+          "suppressionReason": {
+            "type": "string",
+            "description": "suppressed 时的原因：未授权、目的地失效或身份绑定失效"
           },
           "purpose": {
             "type": "string",

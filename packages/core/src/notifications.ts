@@ -38,6 +38,8 @@ export interface NotificationStatus {
 		externalId: string;
 		status: NotificationDestination["status"];
 		verifiedAt: string;
+		unreachableCount?: number;
+		invalidatedAt?: string;
 	} | null;
 	/** 授权状态：撤销后目的地仍在，但不再允许主动发送。 */
 	consent: {
@@ -75,6 +77,9 @@ const sameScope = (
 
 const consentId = (userId: string, destinationId: string): string =>
 	`${userId}:${destinationId}`;
+
+/** 连续多少次「平台报告收件人不可达」判定地址失效。 */
+export const DESTINATION_UNREACHABLE_THRESHOLD = 2;
 
 /** 目的地只能由本人当前已验证的身份产生：不接收前端传来的 externalId。 */
 async function requireActiveUser(
@@ -255,6 +260,12 @@ export class NotificationService {
 							externalId: destination.externalId,
 							status: destination.status,
 							verifiedAt: destination.verifiedAt,
+							...(destination.unreachableCount === undefined
+								? {}
+								: { unreachableCount: destination.unreachableCount }),
+							...(destination.invalidatedAt === undefined
+								? {}
+								: { invalidatedAt: destination.invalidatedAt }),
 						}
 					: null,
 				consent: consent
@@ -270,13 +281,39 @@ export class NotificationService {
 		});
 	}
 
+	/**
+	 * 平台报告「收件人不可达」时记录一次；连续达阈值即把目的地置为 invalidated，
+	 * 迫使本人重新确认地址。身份绑定失效不走这里——那是权限事实，只抑制不改地址。
+	 */
+	async noteUnreachable(userId: string): Promise<NotificationDestination | null> {
+		return this.storage.transaction(async (tx) => {
+			const destinations = (
+				await tx.notificationDestinations.all()
+			).filter((item) => item.userId === userId && item.status === "verified");
+			const destination = destinations[0];
+			if (!destination) return null;
+			const count = (destination.unreachableCount ?? 0) + 1;
+			const invalidated = count >= DESTINATION_UNREACHABLE_THRESHOLD;
+			const next: NotificationDestination = {
+				...destination,
+				unreachableCount: count,
+				...(invalidated
+					? { status: "invalidated", invalidatedAt: this.now() }
+					: {}),
+			};
+			await tx.notificationDestinations.put(next);
+			return next;
+		});
+	}
+
 	/** 投递前的唯一判断；worker 与用例共用，避免各自实现一套。 */
 	async canSendProactive(userId: string): Promise<boolean> {
 		return this.storage.transaction((tx) => canSendProactiveIn(tx, userId));
 	}
 }
 
-async function canSendProactiveIn(
+/** 事务内的闸门实现，供 worker 在投递事务里复用。 */
+export async function canSendProactiveIn(
 	tx: Transaction,
 	userId: string,
 ): Promise<boolean> {

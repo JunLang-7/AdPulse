@@ -1,6 +1,7 @@
 import type { Orchestrator } from "./orchestrator.js";
 import type { InvestigationAlertService } from "./investigation-alerts.js";
-import type { OutboundChannel } from "./ports/channel.js";
+import { canSendProactiveIn, type NotificationService } from "./notifications.js";
+import { RecipientUnreachableError, type OutboundChannel } from "./ports/channel.js";
 import type { Storage } from "./ports/storage.js";
 import type { Job } from "./state/model.js";
 
@@ -13,6 +14,8 @@ export class Worker {
 		private now: () => string = () => new Date().toISOString(),
 		private maxAttempts = 5,
 		private investigationAlerts?: InvestigationAlertService,
+		/** 主动通知闸门；未注入时不做抑制（保持既有测试与旧装配的行为）。 */
+		private notifications?: NotificationService,
 	) {}
 
 	async runOnce(): Promise<boolean> {
@@ -128,10 +131,64 @@ export class Worker {
 			});
 			return;
 		}
+		// 主动通知闸门：只拦系统主动发起的会话（initiatedBy=system）。
+		// 用户自己在控制台创建/处理的会话属于本人操作回执，不受授权影响。
+		if (
+			this.notifications &&
+			session &&
+			delivery.purpose === "decision" &&
+			session.initiatedBy === "system"
+		) {
+			const status = await this.notifications.status(session.ownerId);
+			const allowed = await this.storage.transaction((tx) =>
+				canSendProactiveIn(tx, session.ownerId),
+			);
+			if (!allowed) {
+				const reason = !status.destination
+					? "destination_missing"
+					: status.destination.status !== "verified"
+						? "destination_invalidated"
+						: !status.consent
+							? "consent_missing"
+							: status.consent.status !== "active"
+								? "consent_revoked"
+								: "identity_inactive";
+				await this.storage.transaction(async (tx) => {
+					const current = await tx.deliveries.get(deliveryId);
+					if (current && current.status === "pending")
+						await tx.deliveries.put({
+							...current,
+							status: "suppressed",
+							suppressionReason: reason,
+						});
+				});
+				return;
+			}
+		}
+
 		const channel = this.channels.get(delivery.recipient.accountId);
 		if (!channel) throw new Error("outbound account is not configured");
 		// No database lock is held during a network request. Stable ID survives retries/crashes.
-		const receipt = await channel.send(delivery);
+		let receipt;
+		try {
+			receipt = await channel.send(delivery);
+		} catch (error) {
+			// 平台明确说「收件人不可达」：重试无意义，直接终态失败并计一次；
+			// 连续达阈值会把目的地置为 invalidated，迫使本人重新确认地址。
+			if (!(error instanceof RecipientUnreachableError)) throw error;
+			if (this.notifications && session)
+				await this.notifications.noteUnreachable(session.ownerId);
+			await this.storage.transaction(async (tx) => {
+				const current = await tx.deliveries.get(deliveryId);
+				if (current && current.status !== "sent")
+					await tx.deliveries.put({
+						...current,
+						status: "failed",
+						lastError: "recipient unreachable",
+					});
+			});
+			return;
+		}
 		await this.storage.transaction(async (tx) => {
 			const currentJob = await tx.jobs.get(job.id);
 			if (
