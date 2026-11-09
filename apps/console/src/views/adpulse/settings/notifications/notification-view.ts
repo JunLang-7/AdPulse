@@ -78,11 +78,29 @@ export function describeNotificationStatus(
 	};
 
 	if (destination.status === "invalidated") {
+		// 地址失效期间不发送；但若授权仍是 active，必须允许直接撤销——
+		// 否则用户被迫先「重新确认地址」（会立即恢复发送资格）才能撤销。
+		const activeConsent =
+			status.consent?.status === "active" ? status.consent : null;
 		return {
 			title: "单聊地址已失效",
-			detail: "需要重新确认一次地址；确认不会自动恢复已撤销的提醒授权。",
+			detail: activeConsent
+				? "地址失效期间不会发送提醒。你可以重新确认地址，也可以直接撤销提醒授权。"
+				: "需要重新确认一次地址；确认不会自动恢复已撤销的提醒授权。",
 			destination: shown,
-			actions: [{ kind: "verify", label: "重新确认地址" }],
+			actions: activeConsent
+				? [
+						{ kind: "verify", label: "重新确认地址" },
+						{
+							kind: "revoke",
+							label: "撤销主动提醒",
+							expectedVersion: activeConsent.version,
+						},
+					]
+				: [{ kind: "verify", label: "重新确认地址" }],
+			...(activeConsent
+				? { warning: "地址失效，当前不会发送任何提醒。" }
+				: {}),
 		};
 	}
 

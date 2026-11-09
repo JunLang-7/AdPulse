@@ -69,6 +69,36 @@ test("notification view: 撤销后说明不影响登录，并允许重新开启"
 	]);
 });
 
+test("notification view: 地址失效但授权仍 active 时必须能直接撤销", () => {
+	const view = describeNotificationStatus({
+		destination: { ...destination, status: "invalidated" },
+		consent: { status: "active", version: 5 },
+		canSendProactive: false,
+	});
+	assert.deepEqual(view.actions, [
+		{ kind: "verify", label: "重新确认地址" },
+		{ kind: "revoke", label: "撤销主动提醒", expectedVersion: 5 },
+	]);
+	assert.match(view.detail, /不会发送/);
+	assert.match(view.detail, /直接撤销/);
+	assert.match(view.warning ?? "", /不会发送/);
+});
+
+test("notification view: 地址失效且无有效授权时只提供重新确认", () => {
+	const withoutConsent = describeNotificationStatus({
+		destination: { ...destination, status: "invalidated" },
+		consent: null,
+		canSendProactive: false,
+	});
+	assert.deepEqual(withoutConsent.actions.map((a) => a.kind), ["verify"]);
+	const revoked = describeNotificationStatus({
+		destination: { ...destination, status: "invalidated" },
+		consent: { status: "revoked", version: 2 },
+		canSendProactive: false,
+	});
+	assert.deepEqual(revoked.actions.map((a) => a.kind), ["verify"]);
+});
+
 test("notification view: 地址失效时先重新确认，不自动恢复授权", () => {
 	const view = describeNotificationStatus({
 		destination: { ...destination, status: "invalidated" },
