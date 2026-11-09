@@ -99,12 +99,14 @@ test("consent: 授权/撤销/恢复与主动发送闸门", async () => {
 	const { notifications, first, identity } = await setup();
 	const destination = await notifications.verifyDestination(first.userId, identity.a);
 
-	const granted = await notifications.grantConsent(first.userId, destination.id);
+	const granted = await notifications.grantConsent(first.userId, destination.id, 0);
 	assert.equal(granted.status, "active");
+	assert.equal(granted.version, 1);
 	assert.equal(await notifications.canSendProactive(first.userId), true);
 
 	clock.value = "2026-01-01T01:00:00.000Z";
-	const revoked = await notifications.revokeConsent(first.userId, destination.id);
+	const revoked = await notifications.revokeConsent(first.userId, destination.id, granted.version);
+	assert.equal(revoked.version, 2);
 	assert.equal(revoked.status, "revoked");
 	assert.equal(revoked.revokedAt, clock.value);
 	assert.equal(
@@ -117,8 +119,21 @@ test("consent: 授权/撤销/恢复与主动发送闸门", async () => {
 	assert.equal(status.destination?.id, destination.id);
 	assert.equal(status.consent?.status, "revoked");
 
-	const restored = await notifications.grantConsent(first.userId, destination.id);
+	// 旧请求重放（携旧版本）不得把撤销重新打开。
+	await assert.rejects(
+		() => notifications.grantConsent(first.userId, destination.id, granted.version),
+		(error: unknown) =>
+			error instanceof NotificationError && error.reason === "consent_conflict",
+	);
+	assert.equal(await notifications.canSendProactive(first.userId), false);
+	// 显式恢复需带当前版本。
+	const restored = await notifications.grantConsent(
+		first.userId,
+		destination.id,
+		revoked.version,
+	);
 	assert.equal(restored.status, "active");
+	assert.equal(restored.version, 3);
 	assert.equal(await notifications.canSendProactive(first.userId), true);
 });
 
@@ -126,13 +141,13 @@ test("consent: 不能替他人授权或撤销", async () => {
 	const { notifications, first, second, identity, storage } = await setup();
 	const destination = await notifications.verifyDestination(first.userId, identity.a);
 	await assert.rejects(
-		() => notifications.grantConsent(second.userId, destination.id),
+		() => notifications.grantConsent(second.userId, destination.id, 0),
 		(error: unknown) =>
 			error instanceof NotificationError && error.reason === "destination_not_found",
 	);
-	const granted = await notifications.grantConsent(first.userId, destination.id);
+	const granted = await notifications.grantConsent(first.userId, destination.id, 0);
 	await assert.rejects(
-		() => notifications.revokeConsent(second.userId, granted.destinationId),
+		() => notifications.revokeConsent(second.userId, granted.destinationId, granted.version),
 		(error: unknown) =>
 			error instanceof NotificationError && error.reason === "consent_not_granted",
 	);
@@ -145,7 +160,7 @@ test("consent: 不能替他人授权或撤销", async () => {
 test("canSendProactive: 身份绑定撤销或用户停用后抑制", async () => {
 	const { notifications, first, identity, storage } = await setup();
 	const destination = await notifications.verifyDestination(first.userId, identity.a);
-	await notifications.grantConsent(first.userId, destination.id);
+	await notifications.grantConsent(first.userId, destination.id, 0);
 	assert.equal(await notifications.canSendProactive(first.userId), true);
 
 	await storage.transaction(async (tx) => {
@@ -171,8 +186,8 @@ test("canSendProactive: 身份绑定撤销或用户停用后抑制", async () =>
 test("destination: 失效后重新验证可恢复，且不顺带恢复已撤销的授权", async () => {
 	const { notifications, first, identity, storage } = await setup();
 	const destination = await notifications.verifyDestination(first.userId, identity.a);
-	await notifications.grantConsent(first.userId, destination.id);
-	await notifications.revokeConsent(first.userId, destination.id);
+	await notifications.grantConsent(first.userId, destination.id, 0);
+	await notifications.revokeConsent(first.userId, destination.id, 1);
 	assert.equal(await notifications.canSendProactive(first.userId), false);
 
 	// 目的地失效（当前无自动失效路径，按将来的排查/失效处理直接置状态）。
@@ -195,8 +210,13 @@ test("destination: 失效后重新验证可恢复，且不顺带恢复已撤销�
 	assert.equal(status.consent?.status, "revoked");
 	assert.equal(status.canSendProactive, false);
 
-	// 显式重新授权后才可主动发送。
-	await notifications.grantConsent(first.userId, destination.id);
+	// 显式重新授权后才可主动发送（版本需匹配当前撤销后的值）。
+	const current = await notifications.status(first.userId);
+	await notifications.grantConsent(
+		first.userId,
+		destination.id,
+		current.consent?.version ?? 0,
+	);
 	assert.equal(await notifications.canSendProactive(first.userId), true);
 });
 

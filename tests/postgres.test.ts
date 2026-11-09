@@ -508,7 +508,7 @@ test("PostgreSQL: notification destination scope and consent are unique per user
 	);
 
 	// 同一用户的同一目的地只能有一条授权记录。
-	const consent = await notifications.grantConsent(userId, destination.id);
+	const consent = await notifications.grantConsent(userId, destination.id, 0);
 	await assert.rejects(
 		() =>
 			storage.transaction((tx) =>
@@ -540,6 +540,7 @@ test("PostgreSQL: notification destination scope and consent are unique per user
 	assert.equal(afterReverify.canSendProactive, false);
 
 	// 重新授权后恢复可用：证明恢复路径不再被 destination_not_found 卡住。
-	await notifications.grantConsent(userId, destination.id);
+	// 版本语义：置 revoked 时手写的数据保留了原 version(1)，显式恢复需传 1。
+	await notifications.grantConsent(userId, destination.id, consent.version);
 	assert.equal(await notifications.canSendProactive(userId), true);
 });

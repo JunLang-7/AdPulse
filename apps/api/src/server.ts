@@ -8,12 +8,14 @@ import {
 	EvidenceConflictError,
 	EvidenceValidationError,
 	InvestigationAlertValidationError,
+	NotificationError,
+	NotificationService,
 	TaskInputValidationError,
 } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
 import { ZodError } from "zod";
 import type { IdentityProvider } from "./feishu-auth.js";
-import { HttpError, json } from "./http.js";
+import { HttpError, json, readJson } from "./http.js";
 import { handleAdmin } from "./routes/admin.js";
 import { handleWebhook } from "./routes/webhooks.js";
 
@@ -40,6 +42,17 @@ export interface AuthAuditEvent {
 	path: string;
 }
 
+/** 通知目的地/授权的操作留痕：只有动作与结果，不含 open_id 等外部标识。 */
+export interface NotificationAuditEvent {
+	event:
+		| "notification.destination.verified"
+		| "notification.consent.granted"
+		| "notification.consent.revoked";
+	path: string;
+}
+
+export type AuditEvent = AuthAuditEvent | NotificationAuditEvent;
+
 export interface ApiAuthentication {
 	service: AuthenticationService;
 	provider: IdentityProvider;
@@ -49,7 +62,7 @@ export interface ApiAuthentication {
 	 * 拒绝留痕的落点。默认写一行 JSON 到 stdout，便于验收脚本与日志检索断言；
 	 * 参数已裁剪为原因/方法/路径，调用方不得补充 cookie、code、state、open_id 等。
 	 */
-	audit?: (event: AuthAuditEvent) => void;
+	audit?: (event: AuditEvent) => void;
 }
 
 const digest = (value: string): string =>
@@ -104,9 +117,24 @@ function validatePublicOrigin(value: string): URL {
 
 export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 	const publicOrigin = validatePublicOrigin(auth.publicOrigin);
+	const notifications = new NotificationService(runtime.storage);
+	const notificationErrorStatus = (reason: NotificationError["reason"]): number => {
+		switch (reason) {
+			case "user_unavailable":
+				return 401;
+			case "identity_not_verified":
+				return 403;
+			case "destination_not_found":
+				return 404;
+			case "destination_conflict":
+			case "consent_not_granted":
+			case "consent_conflict":
+				return 409;
+		}
+	};
 	const audit =
 		auth.audit ??
-		((event: AuthAuditEvent) => {
+		((event: AuditEvent) => {
 			process.stdout.write(`${JSON.stringify(event)}\n`);
 		});
 	const secureCookies = publicOrigin.protocol === "https:";
@@ -282,6 +310,88 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						...(session.displayName ? { displayName: session.displayName } : {}),
 						identities: await auth.service.listIdentities(session.userId),
 					});
+				if (path === "/api/me/notification-status" && req.method === "GET") {
+					return json(res, 200, await notifications.status(session.userId));
+				}
+				if (
+					path === "/api/me/notification-destination" &&
+					req.method === "PUT"
+				) {
+					// 身份来自当前会话绑定的作用域，不接受请求体传入 externalId。
+					if (!session.identity)
+						throw new HttpError(403, "session has no verified identity");
+					try {
+						const destination = await notifications.verifyDestination(
+							session.userId,
+							session.identity,
+						);
+						audit({
+							event: "notification.destination.verified",
+							path,
+						});
+						return json(res, 200, destination);
+					} catch (error) {
+						if (error instanceof NotificationError)
+							throw new HttpError(
+								notificationErrorStatus(error.reason),
+								error.reason,
+							);
+						throw error;
+					}
+				}
+				if (
+					path === "/api/me/notification-consent" &&
+					req.method === "POST"
+				) {
+					const body = await readJson(req).catch(() => null);
+					const parsed =
+						body && typeof body === "object"
+							? (body as { action?: unknown; expectedVersion?: unknown })
+							: {};
+					const action = parsed.action;
+					const expectedVersion = parsed.expectedVersion;
+					if (action !== "grant" && action !== "revoke")
+						throw new HttpError(400, "invalid action");
+					// 版本是必填的：没有它就无法区分「用户再次确认」与「旧请求重放」。
+					if (
+						typeof expectedVersion !== "number" ||
+						!Number.isInteger(expectedVersion) ||
+						expectedVersion < 0
+					)
+						throw new HttpError(400, "invalid expectedVersion");
+					const status = await notifications.status(session.userId);
+					if (!status.destination)
+						throw new HttpError(404, "destination_not_found");
+					try {
+						const consent =
+							action === "grant"
+								? await notifications.grantConsent(
+										session.userId,
+										status.destination.id,
+										expectedVersion,
+									)
+								: await notifications.revokeConsent(
+										session.userId,
+										status.destination.id,
+										expectedVersion,
+									);
+						audit({
+							event:
+								action === "grant"
+									? "notification.consent.granted"
+									: "notification.consent.revoked",
+							path,
+						});
+						return json(res, 200, consent);
+					} catch (error) {
+						if (error instanceof NotificationError)
+							throw new HttpError(
+								notificationErrorStatus(error.reason),
+								error.reason,
+							);
+						throw error;
+					}
+				}
 				if (path === "/api/logout" && req.method === "POST") {
 					await auth.service.revokeSession(session.sessionId, now().toISOString());
 					clearCookie(res, SESSION_COOKIE);

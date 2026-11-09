@@ -39,6 +39,45 @@
         }
       }
     },
+    "/api/me/notification-status": {
+      "get": {
+        "operationId": "getNotificationStatus",
+        "responses": {
+          "200": { "description": "Destination, consent and proactive-send gate", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotificationStatus" } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/me/notification-destination": {
+      "put": {
+        "operationId": "verifyNotificationDestination",
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
+        "responses": {
+          "200": { "description": "Destination verified for the session identity", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotificationDestination" } } } },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Session has no verified identity, or identity no longer bound" },
+          "409": { "description": "Destination conflict (another identity scope already verified)" }
+        }
+      }
+    },
+    "/api/me/notification-consent": {
+      "post": {
+        "operationId": "changeNotificationConsent",
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "properties": { "action": { "type": "string", "enum": ["grant", "revoke"] }, "expectedVersion": { "type": "integer", "minimum": 0, "description": "调用方看到的授权版本；从未授权时为 0。旧请求重放会因版本不符被拒" } }, "required": ["action", "expectedVersion"], "additionalProperties": false } } }
+        },
+        "responses": {
+          "200": { "description": "Consent granted or revoked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotificationConsent" } } } },
+          "400": { "description": "Invalid action" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Same-origin request required" },
+          "404": { "description": "Destination not found" },
+          "409": { "description": "Consent not granted or version conflict" }
+        }
+      }
+    },
     "/api/logout": {
       "post": {
         "operationId": "logout",
@@ -877,6 +916,70 @@
           }
         },
         "required": ["userId", "sessionExpiresAt", "identities"],
+        "additionalProperties": false
+      },
+      "NotificationDestination": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "userId": { "type": "string" },
+          "platform": { "type": "string" },
+          "applicationId": { "type": "string" },
+          "tenantId": { "type": "string" },
+          "idType": { "type": "string" },
+          "externalId": { "type": "string" },
+          "status": { "type": "string", "enum": ["verified", "invalidated"] },
+          "verifiedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "userId", "platform", "applicationId", "tenantId", "idType", "externalId", "status", "verifiedAt"],
+        "additionalProperties": false
+      },
+      "NotificationConsent": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "userId": { "type": "string" },
+          "destinationId": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "revoked"] },
+          "grantedAt": { "type": "string", "format": "date-time" },
+          "revokedAt": { "type": "string", "format": "date-time" },
+          "version": { "type": "integer", "minimum": 1 }
+        },
+        "required": ["id", "userId", "destinationId", "status", "grantedAt", "version"],
+        "additionalProperties": false
+      },
+      "NotificationStatus": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "type": ["object", "null"],
+            "properties": {
+              "id": { "type": "string" },
+              "platform": { "type": "string" },
+              "applicationId": { "type": "string" },
+              "tenantId": { "type": "string" },
+              "idType": { "type": "string" },
+              "externalId": { "type": "string" },
+              "status": { "type": "string", "enum": ["verified", "invalidated"] },
+              "verifiedAt": { "type": "string", "format": "date-time" }
+            },
+            "required": ["id", "platform", "applicationId", "tenantId", "idType", "externalId", "status", "verifiedAt"],
+            "additionalProperties": false
+          },
+          "consent": {
+            "type": ["object", "null"],
+            "properties": {
+              "status": { "type": "string", "enum": ["active", "revoked"] },
+              "grantedAt": { "type": "string", "format": "date-time" },
+              "revokedAt": { "type": "string", "format": "date-time" },
+              "version": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["status", "grantedAt", "version"],
+            "additionalProperties": false
+          },
+          "canSendProactive": { "type": "boolean" }
+        },
+        "required": ["destination", "consent", "canSendProactive"],
         "additionalProperties": false
       },
       "Error": {

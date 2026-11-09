@@ -4,7 +4,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 
 import { createApi } from "../apps/api/dist/server.js";
-import type { AuthAuditEvent } from "../apps/api/dist/server.js";
+import type { AuditEvent } from "../apps/api/dist/server.js";
 import {
 	AuthenticationService,
 	type PlatformIdentity,
@@ -22,6 +22,14 @@ const identity: PlatformIdentity = {
 };
 const publicOrigin = "http://localhost";
 
+/** 只取认证拒绝事件，避免与通知审计事件混用。 */
+const lastReject = (events: AuditEvent[]) => {
+	const event = events.at(-1);
+	assert.equal(event?.event, "auth.reject");
+	return event as Extract<AuditEvent, { event: "auth.reject" }>;
+};
+
+
 /** 只搭认证相关端点：不注册渠道账户，避免把业务路径带进这组用例。 */
 async function serve(
 	t: TestContext,
@@ -29,7 +37,7 @@ async function serve(
 ) {
 	const runtime = compose(new MemoryStorage(), []);
 	const service = new AuthenticationService(runtime.storage);
-	const events: AuthAuditEvent[] = [];
+	const events: AuditEvent[] = [];
 	const provider = {
 		authorizationUrl(parameters: {
 			state: string;
@@ -53,7 +61,7 @@ async function serve(
 		service,
 		provider,
 		publicOrigin,
-		audit: (event: AuthAuditEvent) => events.push(event),
+		audit: (event: AuditEvent) => events.push(event),
 	});
 	await new Promise<void>((resolve) =>
 		server.listen(0, "127.0.0.1", () => resolve()),
@@ -82,7 +90,7 @@ test("auth audit: 会话缺失 / 无效 / 跨源分别留痕，且不含凭据",
 
 	const unknown = randomBytes(32).toString("base64url");
 	await fetch(`${url}/api/me`, { headers: { cookie: `adpulse_session=${unknown}` } });
-	assert.equal(events.at(-1)?.reason, "session_invalid");
+	assert.equal(lastReject(events).reason, "session_invalid");
 
 	const token = await freshSessionToken(service);
 	const crossOrigin = await fetch(`${url}/api/sessions`, {
@@ -95,7 +103,7 @@ test("auth audit: 会话缺失 / 无效 / 跨源分别留痕，且不含凭据",
 		body: "{}",
 	});
 	assert.equal(crossOrigin.status, 403);
-	assert.equal(events.at(-1)?.reason, "origin_mismatch");
+	assert.equal(lastReject(events).reason, "origin_mismatch");
 
 	// 日志里不得出现会话值：审计事件只有原因、方法与路径三个维度。
 	const serialized = JSON.stringify(events);
@@ -138,7 +146,7 @@ test("auth audit: 回调重放记为事务无效，平台身份失败记为 iden
 		),
 		"authorization",
 	);
-	assert.equal(events.at(-1)?.reason, "login_transaction_invalid");
+	assert.equal(lastReject(events).reason, "login_transaction_invalid");
 
 	const serialized = JSON.stringify(events);
 	assert.ok(!serialized.includes(code), "审计日志泄露了授权码");
@@ -164,8 +172,8 @@ test("auth audit: 回调重放记为事务无效，平台身份失败记为 iden
 		),
 		"identity",
 	);
-	assert.equal(rejecting.events.at(-1)?.reason, "identity_rejected");
-	assert.equal(rejecting.events.at(-1)?.path, "/auth/feishu/callback");
+	assert.equal(lastReject(rejecting.events).reason, "identity_rejected");
+	assert.equal(lastReject(rejecting.events).path, "/auth/feishu/callback");
 });
 
 test("login carries the platform display name into the current-user payload", async (t) => {
