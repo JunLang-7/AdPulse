@@ -1,8 +1,9 @@
 // failure 场景：投递失败与业务成功分离，且任务重试复用同一 delivery.id（runbook 第 8 节）。
-// 不需要真实收件人：故意用一个不存在的 open_id，让平台真实返回发送失败。
-// 业务动作由控制台接口提交（local-real），因此证明「失败的是投递，不是业务」。
-// 证据为 local-real：请求由本脚本发起，不是平台推送或用户交互。
+// 使用本人身份；只连接 failure-server.mjs 的出站故障夹具，不发送真实 IM。
+// 业务动作由控制台接口提交；仅替换出站网络，不替换 API/领域/worker。
+// 证据为 synthetic：故障夹具替代出站网络，不证明飞书平台行为。
 
+import { OUTBOUND_FAILURE_MESSAGE } from "../fault-injection.mjs";
 import { EVIDENCE } from "../checks.mjs";
 import { mask } from "../redact.mjs";
 import { assertEqual, defineScenario, verdict } from "../scenario.mjs";
@@ -13,9 +14,6 @@ import { acceptanceSessionInput, actionRefOf, inboxFor, roundByNo } from "./fixt
  * @typedef {import("../console-api.mjs").SessionDetail} SessionDetail
  * @typedef {import("../scenario.mjs").ScenarioContext} ScenarioContext
  */
-
-/** 平台必然拒绝的收件人：格式正确但不存在。 */
-const UNREACHABLE_OPEN_ID = "ou_0000000000000000000000000000000000";
 
 /** @param {ScenarioContext} ctx */
 const readDetail = async (ctx) => ({
@@ -28,26 +26,21 @@ const readDetail = async (ctx) => ({
 const sendJobs = (/** @type {SessionDetail} */ detail) =>
 	detail.jobs.filter((job) => job.task.kind === "send_delivery");
 
+const deliveryForRound = (detail, roundNo) =>
+	detail?.deliveries.find((delivery) => delivery.roundId === roundByNo(detail, roundNo)?.id);
+
 const failedDelivery = (/** @type {SessionDetail} */ detail) =>
 	detail.deliveries.find((item) => item.status === "failed");
 
 export const failureScenario = defineScenario({
 	id: "failure",
 	title: "投递失败与业务成功分离",
-	evidence: EVIDENCE.localReal,
+	evidence: EVIDENCE.synthetic,
 	timeoutMs: 180_000,
 	setup: async (ctx) => {
 		const client = /** @type {ConsoleClient} */ (ctx.client);
-		const session = await client.createSession(
-			acceptanceSessionInput(ctx, {
-				// 收件人不可达：投递注定失败，业务侧仍可继续。
-				recipient: {
-					accountId: ctx.env?.FEISHU_ACCOUNT_ID ?? "feishu-internal",
-					kind: "user",
-					externalId: UNREACHABLE_OPEN_ID,
-				},
-			}),
-		);
+		await client.assertFaultInjection();
+		const session = await client.createSession(acceptanceSessionInput(ctx));
 		const detail = await client.getSession(session.id);
 		ctx.vars.sessionId = session.id;
 		ctx.vars.baseline = {
@@ -55,7 +48,7 @@ export const failureScenario = defineScenario({
 			snapshots: detail.snapshots.length,
 		};
 		ctx.log?.(
-			`会话已建立 session=${mask(session.id, 8, 0)}；收件人故意不可达，不发真实信息。`,
+			`会话已建立 session=${mask(session.id, 8, 0)}；出站故障夹具已确认，不发真实信息。`,
 		);
 	},
 	steps: [
@@ -73,7 +66,7 @@ export const failureScenario = defineScenario({
 					check: (state) => {
 						const delivery = failedDelivery(state.detail ?? {});
 						return verdict(
-							Boolean(delivery) && Boolean(delivery?.lastError) && !delivery?.externalMessageId,
+							Boolean(delivery) && delivery?.lastError === OUTBOUND_FAILURE_MESSAGE && !delivery?.externalMessageId,
 							`status=${delivery?.status ?? "缺失"} message=${mask(delivery?.externalMessageId ?? "", 6, 4)} 错误=${(delivery?.lastError ?? "-").slice(0, 60)}`,
 							"投递未标记失败：确认出站适配器把平台错误向上抛出",
 						);
@@ -113,7 +106,7 @@ export const failureScenario = defineScenario({
 			read: readDetail,
 			until: (state) =>
 				roundByNo(state.detail ?? {}, 1)?.status === "answered" &&
-				Boolean(failedDelivery(state.detail ?? {})),
+				sendJobs(state.detail ?? {}).some((job) => job.status === "failed" && job.task.deliveryId === deliveryForRound(state.detail, 2)?.id),
 			assertions: [
 				{
 					id: "failure.business-succeeded",
@@ -144,16 +137,16 @@ export const failureScenario = defineScenario({
 					check: (state, ctx) => {
 						const detail = state.detail;
 						const job = sendJobs(detail ?? {}).find(
-							(item) => item.status === "failed",
+							(item) => item.status === "failed" && item.task.deliveryId === deliveryForRound(detail, 2)?.id,
 						);
 						ctx.vars.jobId = job?.id;
 						ctx.vars.deliveryId = job?.task.deliveryId;
-						ctx.vars.attemptsBefore = job?.attempts ?? 0;
+						ctx.vars.leaseBefore = job?.leaseToken;
 						ctx.vars.deliveryCount =
 							(detail?.deliveries ?? []).length;
 						return verdict(
 							Boolean(job) &&
-								(job?.attempts ?? 0) > 1 &&
+								(job?.attempts ?? 0) > 1 && Boolean(job?.leaseToken) &&
 								(detail?.deliveries ?? []).some(
 									(item) => item.id === job?.task.deliveryId && item.status === "failed",
 								),
@@ -172,10 +165,11 @@ export const failureScenario = defineScenario({
 			},
 			read: readDetail,
 			until: (state, ctx) => {
-				const before = Number(ctx.vars.attemptsBefore ?? 0);
-				const jobId = String(ctx.vars.jobId ?? "");
-				const job = (state.detail?.jobs ?? []).find((item) => item.id === jobId);
-				return Boolean(job) && (job !== undefined && (job.attempts < before || job.status === "pending"));
+				const job = state.detail?.jobs.find((item) => item.id === ctx.vars.jobId);
+				const delivery = state.detail?.deliveries.find((item) => item.id === ctx.vars.deliveryId);
+				return Boolean(ctx.vars.leaseBefore) && job?.status === "failed" && job.attempts > 0 &&
+					Boolean(job.leaseToken) && job.leaseToken !== ctx.vars.leaseBefore &&
+					delivery?.status === "failed" && delivery.lastError === OUTBOUND_FAILURE_MESSAGE;
 			},
 			assertions: [
 				{
@@ -187,7 +181,8 @@ export const failureScenario = defineScenario({
 						const deliveries = state.detail?.deliveries ?? [];
 						const current = deliveries.find((item) => item.id === before);
 						return verdict(
-							Boolean(before) && Boolean(current) && deliveries.length === countBefore,
+							Boolean(before) && Boolean(current) && deliveries.length === countBefore &&
+								state.detail?.jobs.find((item) => item.id === ctx.vars.jobId)?.task.deliveryId === before,
 							`同一 delivery=${Boolean(current)} 条数 ${countBefore} → ${deliveries.length} status=${current?.status ?? "缺失"}`,
 							"重试新增了 delivery：平台去重（uuid）语义会被破坏",
 						);
@@ -195,14 +190,14 @@ export const failureScenario = defineScenario({
 				},
 				{
 					id: "failure.retry-restarted",
-					title: "重试确实重新执行（attempts 归零后重跑）",
+					title: "新 worker 执行已再次到达投递失败终态",
 					check: (state, ctx) => {
 						const jobId = String(ctx.vars.jobId ?? "");
 						const job = (state.detail?.jobs ?? []).find((item) => item.id === jobId);
-						const before = Number(ctx.vars.attemptsBefore ?? 0);
+						const before = ctx.vars.leaseBefore;
 						return verdict(
-							Boolean(job) && (job?.attempts ?? 0) < before,
-							`attempts ${before} → ${job?.attempts ?? "-"} status=${job?.status ?? "-"}`,
+							job?.status === "failed" && job.attempts > 0 && Boolean(job.leaseToken) && job.leaseToken !== before,
+							`新执行=${Boolean(job?.leaseToken) && job?.leaseToken !== before} attempts=${job?.attempts ?? "-"} status=${job?.status ?? "-"}`,
 							"未观察到重试生效：确认 /api/jobs/{id}/retry 只接受 failed 任务",
 						);
 					},

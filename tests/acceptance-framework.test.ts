@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import {
@@ -19,7 +21,8 @@ import {
 	redactDatabaseUrl,
 } from "../scripts/acceptance/redact.mjs";
 import { USAGE, parseArgs } from "../scripts/acceptance/cli.mjs";
-import { authHeaders, createConsoleClient } from "../scripts/acceptance/console-api.mjs";
+import { ConsoleApiError, authHeaders, createConsoleClient } from "../scripts/acceptance/console-api.mjs";
+import { OUTBOUND_FAILURE_MESSAGE } from "../scripts/acceptance/fault-injection.mjs";
 import { main } from "../scripts/acceptance/cli.mjs";
 import {
 	recordFileName,
@@ -472,6 +475,7 @@ type FakeSession = {
 		id: string;
 		status: string;
 		attempts: number;
+		leaseToken?: string;
 		lastError?: string;
 		task: { kind: string; deliveryId?: string };
 	}>;
@@ -491,6 +495,8 @@ function fakeServer(clock: { value: number }) {
 		lastCreatedId: "",
 		/** 置 true 可模拟「服务端缺少已答轮次校验」的回归。 */
 		acceptStale: false,
+		failOutbound: false,
+		async assertFaultInjection() { server.failOutbound = true; },
 		/** 模拟某个真人在飞书客户端点一次卡片。 */
 		humanClick(sessionId: string, optionId: string, actorId = "ou_test") {
 			const session = sessions.get(sessionId);
@@ -506,6 +512,7 @@ function fakeServer(clock: { value: number }) {
 			sequence += 1;
 			const id = `sess-${sequence}`;
 			const recipient = input.recipient as FakeSession["recipient"];
+			if (recipient.kind === "group") throw new ConsoleApiError("personal sessions require a user recipient", 400, { error: "personal sessions require a user recipient" });
 			const session: FakeSession = {
 				id,
 				recipient,
@@ -541,23 +548,24 @@ function fakeServer(clock: { value: number }) {
 					roundId,
 					optionId: candidate.id,
 				});
-			const unreachable = session.recipient.externalId.startsWith("ou_0000");
+			const unreachable = server.failOutbound;
 			session.deliveries.push({
 				id: `del-${roundId}`,
 				roundId,
 				purpose: "decision",
 				status: unreachable ? "failed" : "sent",
 				...(unreachable
-					? { lastError: "Feishu send failed (HTTP 400, code 230002)" }
+					? { lastError: OUTBOUND_FAILURE_MESSAGE }
 					: { externalMessageId: `om_${roundId}` }),
 			});
 			session.jobs.push({
 				id: `job-${roundId}`,
 				status: unreachable ? "failed" : "done",
 				attempts: unreachable ? 5 : 1,
+					leaseToken: `lease-${roundId}`,
 				task: { kind: "send_delivery", deliveryId: `del-${roundId}` },
 				...(unreachable
-					? { lastError: "Feishu send failed (HTTP 400, code 230002)" }
+					? { lastError: OUTBOUND_FAILURE_MESSAGE }
 					: {}),
 			});
 		},
@@ -643,8 +651,9 @@ function fakeServer(clock: { value: number }) {
 			for (const session of sessions.values()) {
 				const job = session.jobs.find((item) => item.id === jobId);
 				if (job) {
-					job.status = "pending";
-					job.attempts = 0;
+					job.status = "failed";
+					job.attempts = 5;
+					job.leaseToken = `retry-${job.leaseToken}`;
 				}
 			}
 			return { ok: true };
@@ -799,33 +808,16 @@ test("rounds 场景：服务端把重复提交当成功时会判失败", async (
 	assert.equal(checks.exitCode(), 1);
 });
 
-test("group 场景：群聊收件人下走完整往返，断言前缀为 group", async () => {
+test("group 场景：个人身份拒绝群收件人，不发送卡片", async () => {
 	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
 	const server = fakeServer(clock);
-	const { checks, ctx } = scenarioContext(server, clock, {
-		clicks: ["observe", "acknowledge"],
-		chatId: "oc_test_chat",
-	});
+	const { checks, ctx } = scenarioContext(server, clock);
 	const outcome = await runScenario(groupScenario, ctx);
 	assert.equal(outcome.matched, true);
-	assert.equal(outcome.aborted, false);
-	assert.deepEqual(
-		checks.results.map((item) => [item.id, item.status]),
-		[
-			["group.card.delivered", "ok"],
-			["group.card.round", "ok"],
-			["group.card.options", "ok"],
-			["group.round1.selected", "ok"],
-			["group.round1.persisted", "ok"],
-			["group.round1.inbox", "ok"],
-			["group.round1.observed-interval", "skip"],
-			["group.round2-card.delivered", "ok"],
-			["group.completed", "ok"],
-			["group.round2.selected", "ok"],
-			["group.round2.persisted", "ok"],
-		],
-	);
-	assert.equal(checks.exitCode(), 0);
+	assert.equal(checks.results[0].id, "group.recipient-rejected");
+	assert.equal(checks.results[0].status, "ok");
+	assert.equal(checks.results[0].evidence, EVIDENCE.localReal);
+	assert.equal(server.lastCreatedId, "");
 });
 
 test("reject 场景：未授权成员被拒且策略不变，授权成员随后生效", async () => {
@@ -858,7 +850,7 @@ test("reject 场景：未授权成员被拒且策略不变，授权成员随后�
 	assert.equal(checks.exitCode(), 0);
 });
 
-test("reject 场景：服务端把群成员当有权限时会判失败", async () => {
+test("reject 场景：服务端把转发接收人当有权限时会判失败", async () => {
 	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
 	const server = fakeServer(clock);
 	const { checks, ctx } = scenarioContext(server, clock, {
@@ -898,45 +890,37 @@ test("failure 场景：业务成功与投递失败分离，重试复用同一 de
 			["failure.retry-restarted", "ok"],
 		],
 	);
-	assert.match(checks.results[0].detail, /code 230002/);
-	assert.ok(checks.results.every((item) => item.evidence === "local-real"));
+	assert.ok(checks.results[0].detail?.includes(OUTBOUND_FAILURE_MESSAGE));
+	assert.ok(checks.results.every((item) => item.evidence === "synthetic"));
 	assert.equal(checks.exitCode(), 0);
 });
 
-test("failure 场景：重试换新 delivery 或未真正重跑都会判失败", async () => {
+test("failure 场景：worker 已重跑但换新 delivery 时判失败", async () => {
 	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
 	const server = fakeServer(clock);
 	const { checks, ctx } = scenarioContext(server, clock, { clicks: [] });
-	const originalRetry = server.retryJob.bind(server);
-	// 模拟回归：重试时新建 delivery，且任务 attempts 未重置。
+	// 模拟回归：新的 worker 执行已经终结，但重试错误地换了 delivery。
 	server.retryJob = (jobId: string) => {
 		const detail = server.getSession(server.lastCreatedId);
 		const job = detail.jobs.find((item) => item.id === jobId);
 		const oldId = (job?.task.deliveryId ?? "") as string;
 		if (job && oldId) {
 			job.attempts = 5;
+			job.leaseToken = "retry-new-lease";
 			job.task.deliveryId = `${oldId}-new`;
 			detail.deliveries.push({
 				id: `${oldId}-new`,
 				roundId: oldId.replace("del-", ""),
 				purpose: "decision",
 				status: "failed",
-				lastError: "Feishu send failed (HTTP 400, code 230002)",
+				lastError: OUTBOUND_FAILURE_MESSAGE,
 			});
 		}
 		return { ok: true };
 	};
 	const outcome = await runScenario(failureScenario, ctx);
-	// 重试后 attempts 未回退，等待会超时 → blocked；断言不通过。
-	const aborted = checks.results.at(-1);
-	assert.ok(
-		aborted?.status === "blocked" || aborted?.status === "fail",
-		`实际状态 ${aborted?.status}`,
-	);
-	const same = checks.results.find(
-		(item) => item.id === "failure.retry-same-delivery",
-	);
-	if (same) assert.equal(same.status, "fail");
+	assert.equal(outcome.matched, true);
+	assert.equal(checks.results.find((item) => item.id === "failure.retry-same-delivery")?.status, "fail");
 });
 
 test("docker: 只操作带前缀与自有 label 的容器", () => {
@@ -1027,6 +1011,39 @@ test("docker: 只有指向受管端口与库时允许停库", () => {
 		false,
 	);
 	assert.equal(pointsAtManagedDb(""), false);
+});
+
+test("docker: 固定验收库拒绝驱动覆盖参数、非 PostgreSQL 协议与片段", () => {
+	const base = "postgres://postgres:pw@127.0.0.1:5433/adpulse_acceptance";
+	for (const suffix of [
+		"?host=192.0.2.10&port=5432",
+		"?port=5432",
+		"?database=other",
+		"?dbname=other",
+		"?host=/tmp/pg-socket",
+		"?%68ost=192.0.2.10",
+		"?host=127.0.0.1&host=192.0.2.10",
+		"?sslmode=require", // 固定验收夹具不接受任何驱动选项。
+		"#fragment",
+	]) assert.equal(pointsAtManagedDb(base + suffix), false, suffix);
+	assert.equal(pointsAtManagedDb(base.replace("postgres:", "http:")), false);
+	assert.equal(pointsAtManagedDb(base.replace("postgres:", "postgresql:")), true);
+});
+
+test("fault server: 覆盖连接地址的 URL 在读取应用配置、连接或建容器前被拒绝", () => {
+	const script = fileURLToPath(new URL("../scripts/acceptance/failure-server.mjs", import.meta.url));
+	for (const query of ["host=192.0.2.10&port=5432", "database=other", "%68ost=192.0.2.10"]) {
+		// 不传飞书配置；守卫若被绕过，启动会到达配置校验，从而令本测试失败。
+		const result = spawnSync(process.execPath, [script], {
+			env: { DATABASE_URL: `postgres://test:test@127.0.0.1:5433/adpulse_acceptance?${query}` },
+			encoding: "utf8",
+			timeout: 5000,
+		});
+		assert.equal(result.error, undefined);
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /fault fixture requires 127\.0\.0\.1:5433\/adpulse_acceptance/);
+		assert.doesNotMatch(result.stderr, /FEISHU_APP_ID is required/);
+	}
 });
 
 test("db-down 场景：未授权停库时全部 skip，且不触碰 docker 与会话", async () => {

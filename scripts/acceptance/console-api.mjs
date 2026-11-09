@@ -1,5 +1,6 @@
 // 控制台 API 客户端：验收场景只经生成契约的 HTTP 接口访问，不直接引用后端源码。
 
+import { FAULT_HEADER, FAULT_MARKER } from "./fault-injection.mjs";
 import { randomUUID } from "node:crypto";
 
 import { callJson } from "./http.mjs";
@@ -48,7 +49,7 @@ import { maskBody } from "./redact.mjs";
  * @property {DetailInboxEntry[]} inbox
  * @property {DetailDelivery[]} deliveries
  * @property {Array<{ version: number }>} snapshots
- * @property {Array<{ id: string, status: string, attempts: number, lastError?: string, task: { kind: string, deliveryId?: string } }>} jobs
+ * @property {Array<{ id: string, status: string, attempts: number, leaseToken?: string, lastError?: string, task: { kind: string, deliveryId?: string } }>} jobs
  *
  * @typedef {Object} ChoiceReceipt
  * @property {string} inboxId
@@ -60,6 +61,7 @@ import { maskBody } from "./redact.mjs";
  * @property {string} [origin] 与 PUBLIC_ORIGIN 一致的同源 Origin
  *
  * @typedef {Object} ConsoleClient
+ * @property {() => Promise<void>} assertFaultInjection
  * @property {(input: object) => Promise<DetailSession>} createSession
  * @property {(id: string) => Promise<SessionDetail>} getSession
  * @property {(actionRef: string) => Promise<ChoiceReceipt>} submitChoice
@@ -126,6 +128,11 @@ export function createConsoleClient({ baseUrl, auth, timeoutMs = 10_000 }) {
 	}
 
 	return {
+		async assertFaultInjection() {
+			const { response } = await callJson(base + "/api/me", { headers: authHeaders(auth) }, { timeoutMs });
+			if (!response.ok || response.headers.get(FAULT_HEADER) !== FAULT_MARKER)
+				throw new Error("该场景只允许 scripts/acceptance/failure-server.mjs 的隔离出站故障夹具；尚未创建会话");
+		},
 		/** 每次新建会话用独立幂等键；同键重放由服务端返回原会话。 */
 		createSession: (input) =>
 			request("/api/sessions", {

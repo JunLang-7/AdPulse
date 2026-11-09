@@ -1,5 +1,5 @@
 // reject 场景：非允许成员的点击必须被拒，且策略不被修改（runbook 第 7 节）。
-// 用群聊是因为需要第二个真实用户参与：未授权成员点 → rejected/forbidden，
+// 本人单聊卡片转发给第二个真实用户：未授权成员点 → rejected/forbidden，
 // 随后授权成员点 → 正常生效，证明拒绝只针对未授权者，而不是整条链路不可用。
 
 import { EVIDENCE } from "../checks.mjs";
@@ -7,7 +7,6 @@ import { mask } from "../redact.mjs";
 import { assertEqual, defineScenario, verdict } from "../scenario.mjs";
 import {
 	actionRefOf,
-	inboxFor,
 	roundByNo,
 	roundDelivered,
 	startAcceptanceSession,
@@ -39,10 +38,10 @@ export const rejectScenario = defineScenario({
 	evidence: EVIDENCE.platformReal,
 	timeoutMs: 600_000,
 	setup: async (ctx) => {
-		// 群聊收件人 + 只授权一位成员：另一位成员即为未授权者。
-		const session = await startAcceptanceSession(ctx, { kind: "group" });
+		// 收件人及操作者均为当前用户；转发不授予其他用户权限。
+		const session = await startAcceptanceSession(ctx);
 		ctx.log?.(
-			`会话已建立 session=${mask(session.id, 8, 0)}；群成员不自动获得决策权。`,
+			`会话已建立 session=${mask(session.id, 8, 0)}；转发不授予决策权。`,
 		);
 	},
 	steps: [
@@ -53,7 +52,7 @@ export const rejectScenario = defineScenario({
 			assertions: [
 				{
 					id: "reject.card.delivered",
-					title: "群内第 1 轮决策卡已投递",
+					title: "本人单聊第 1 轮决策卡已投递",
 					check: (detail) =>
 						verdict(
 							roundDelivered(detail, 1),
@@ -67,7 +66,7 @@ export const rejectScenario = defineScenario({
 			id: "reject.forbidden",
 			stopOnFail: true,
 			prompt:
-				"请让**未被授权**的群成员（--other-open-id 那位）在群里点任意一个按钮",
+				"请将本人单聊中的验收卡片转发给 --other-open-id 那位测试成员，请他点击任意按钮；若客户端不保留交互，本项保持 blocked",
 			read: detailOf,
 			until: (detail) => settled(detail).length > 0,
 			assertions: [
@@ -79,7 +78,7 @@ export const rejectScenario = defineScenario({
 						return verdict(
 							inbox?.status === "rejected" && inbox?.reason === "forbidden",
 							`status=${inbox?.status ?? "缺失"} reason=${inbox?.reason ?? "-"} actor=${mask(actorIdOf(inbox) ?? "", 6, 4)}`,
-							"预期 rejected/forbidden：若为 processed，说明群成员被默认授予决策权",
+							"预期 rejected/forbidden：若为 processed，说明转发卡片被错误授予决策权",
 						);
 					},
 				},
@@ -125,7 +124,7 @@ export const rejectScenario = defineScenario({
 		{
 			id: "reject.authorized",
 			stopOnFail: true,
-			prompt: "请由**已授权**成员（--open-id 那位）在群里点「继续观察」",
+			prompt: "请由本人（--open-id 那位）在原单聊卡片点「继续观察」",
 			read: detailOf,
 			until: (detail) => roundByNo(detail, 1)?.status === "answered",
 			assertions: [
@@ -137,10 +136,8 @@ export const rejectScenario = defineScenario({
 							/** @type {{ version: number, snapshots: number }} */ (
 								ctx.vars.baseline
 							);
-						const inbox = inboxFor(
-							detail,
-							actionRefOf(detail, 1, "observe"),
-						);
+						const actionRef = actionRefOf(detail, 1, "observe");
+						const inbox = detail.inbox.find((item) => item.command.actionRef === actionRef && item.status === "processed");
 						const actorId = actorIdOf(inbox);
 						const openId = /** @type {{ openId?: string }} */ (ctx.options)
 							?.openId;
