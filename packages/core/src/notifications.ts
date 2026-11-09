@@ -96,8 +96,10 @@ export class NotificationService {
 	) {}
 
 	/**
-	 * 用当前会话已验证的身份确认单聊目的地。重复确认同一作用域是幂等的；
-	 * 换成另一个作用域属首期不支持的换绑，直接拒绝。
+	 * 用当前会话已验证的身份确认单聊目的地。
+	 * - 已 verified：幂等返回；
+	 * - 已 invalidated：重新核验身份后恢复为 verified（授权状态不受影响）；
+	 * - 换成另一个作用域属首期不支持的换绑，直接拒绝。
 	 */
 	async verifyDestination(
 		userId: string,
@@ -125,7 +127,18 @@ export class NotificationService {
 			const all = await tx.notificationDestinations.all();
 			const mine = all.filter((item) => item.userId === userId);
 			const existing = mine.find((item) => sameScope(item, identity));
-			if (existing) return existing;
+			if (existing?.status === "verified") return existing;
+			if (existing) {
+				// 失效目的地经本人目前的有效身份重新核验后恢复为 verified；
+				// 只改目的地，授权状态保持独立——已撤销的授权不会被这次重验顺带恢复。
+				const reverified: NotificationDestination = {
+					...existing,
+					status: "verified",
+					verifiedAt: this.now(),
+				};
+				await tx.notificationDestinations.put(reverified);
+				return reverified;
+			}
 
 			// 首期每人一个目的地：换成新作用域属换绑，不在本 Issue 范围。
 			if (mine.length > 0)

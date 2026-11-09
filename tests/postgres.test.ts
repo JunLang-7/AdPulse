@@ -523,4 +523,23 @@ test("PostgreSQL: notification destination scope and consent are unique per user
 	assert.equal(status.destination?.id, destination.id);
 	assert.equal(status.consent?.status, "active");
 	assert.equal(status.canSendProactive, true);
+
+	// 审阅复现：本人绑定保持 active，目的地置 invalidated 后重新验证必须恢复，
+	// 否则授权会以 destination_not_found 卡死，且授权状态不应被顺带恢复。
+	await storage.transaction(async (tx) => {
+		const current = await tx.notificationDestinations.get(destination.id);
+		if (current)
+			await tx.notificationDestinations.put({ ...current, status: "invalidated" });
+		await tx.notificationConsents.put({ ...consent, status: "revoked", revokedAt: now });
+	});
+	const reverified = await notifications.verifyDestination(userId, identity);
+	assert.equal(reverified.id, destination.id);
+	assert.equal(reverified.status, "verified");
+	const afterReverify = await notifications.status(userId);
+	assert.equal(afterReverify.consent?.status, "revoked", "重验不得恢复已撤销的授权");
+	assert.equal(afterReverify.canSendProactive, false);
+
+	// 重新授权后恢复可用：证明恢复路径不再被 destination_not_found 卡住。
+	await notifications.grantConsent(userId, destination.id);
+	assert.equal(await notifications.canSendProactive(userId), true);
 });

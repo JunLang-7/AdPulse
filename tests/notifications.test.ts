@@ -167,3 +167,55 @@ test("canSendProactive: 身份绑定撤销或用户停用后抑制", async () =>
 	});
 	assert.equal(await notifications.canSendProactive(first.userId), false);
 });
+
+test("destination: 失效后重新验证可恢复，且不顺带恢复已撤销的授权", async () => {
+	const { notifications, first, identity, storage } = await setup();
+	const destination = await notifications.verifyDestination(first.userId, identity.a);
+	await notifications.grantConsent(first.userId, destination.id);
+	await notifications.revokeConsent(first.userId, destination.id);
+	assert.equal(await notifications.canSendProactive(first.userId), false);
+
+	// 目的地失效（当前无自动失效路径，按将来的排查/失效处理直接置状态）。
+	clock.value = "2026-01-01T02:00:00.000Z";
+	await storage.transaction(async (tx) => {
+		const current = await tx.notificationDestinations.get(destination.id);
+		if (current)
+			await tx.notificationDestinations.put({ ...current, status: "invalidated" });
+	});
+	assert.equal((await notifications.status(first.userId)).destination?.status, "invalidated");
+
+	// 本人绑定仍然有效时，重新确认应恢复为 verified。
+	const reverified = await notifications.verifyDestination(first.userId, identity.a);
+	assert.equal(reverified.id, destination.id, "恢复应复用原记录，不新建目的地");
+	assert.equal(reverified.status, "verified");
+	assert.equal(reverified.verifiedAt, clock.value);
+
+	// 授权状态独立：之前撤销的授权不能被这次重验顺带恢复。
+	const status = await notifications.status(first.userId);
+	assert.equal(status.consent?.status, "revoked");
+	assert.equal(status.canSendProactive, false);
+
+	// 显式重新授权后才可主动发送。
+	await notifications.grantConsent(first.userId, destination.id);
+	assert.equal(await notifications.canSendProactive(first.userId), true);
+});
+
+test("destination: 失效但绑定已撤销时不能靠重验恢复", async () => {
+	const { notifications, first, identity, storage } = await setup();
+	const destination = await notifications.verifyDestination(first.userId, identity.a);
+	await storage.transaction(async (tx) => {
+		const current = await tx.notificationDestinations.get(destination.id);
+		if (current)
+			await tx.notificationDestinations.put({ ...current, status: "invalidated" });
+		const bindings = (await tx.identityBindings.all()).filter(
+			(item) => item.userId === first.userId,
+		);
+		for (const binding of bindings)
+			await tx.identityBindings.put({ ...binding, status: "revoked" });
+	});
+	await assert.rejects(
+		() => notifications.verifyDestination(first.userId, identity.a),
+		(error: unknown) =>
+			error instanceof NotificationError && error.reason === "identity_not_verified",
+	);
+});
