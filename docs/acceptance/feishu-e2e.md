@@ -308,6 +308,19 @@ API 对登录/会话拒绝输出一行 JSON（默认 stdout；测试可注入 `a
 边界：`login_transaction_invalid` 不区分「过期」与「重放」，`identity_rejected` 不区分具体平台错误；
 日志只含原因/方法/**不含查询串的路径**，不写 cookie、`code`、`state`、`open_id` 或租户值。
 
+### 卡片直达（#59）
+
+卡片在 `PUBLIC_ORIGIN` 为 HTTPS 时带「查看详情」，指向 `${PUBLIC_ORIGIN}/sessions/<id>`。
+
+| 场景 | 预期 |
+| --- | --- |
+| 未登录点开卡片链接 | 先到登录页，完成飞书授权后**回到该会话详情**，不落首页 |
+| 已登录点开 | 直接进入该会话详情 |
+| 站外/伪造 `returnTo` | 被 `safeReturnTo` 与服务端校验拒绝，回落到首页 |
+| 转发给他人 / 篡改对象 ID | 不因链接本身获得访问权；无权的对象给不泄露他人数据的提示 |
+
+记录打开形态（飞书内嵌浏览器 / 外部浏览器）与回跳目标；链接不含 token 或私有内容。
+
 ### 场景驱动器的凭据
 
 #34 之后控制台只有会话 Cookie：先人工登录一次，把 `adpulse_session` 放进 `ADPULSE_SESSION_COOKIE`，

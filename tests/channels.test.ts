@@ -425,3 +425,43 @@ test("Feishu outbound uses correct recipient type, caches token and reuses deliv
 	assert.match(calls[1].url, /receive_id_type=open_id/);
 	assert.equal(calls[1].body.msg_type, "interactive");
 });
+
+test("decision cards carry a same-origin detail link only when https", () => {
+	const base = {
+		id: "delivery-1",
+		recipient: { accountId: "account-a", kind: "user" as const, externalId: "user-a" },
+		sessionId: "session-1",
+		roundId: "round-1",
+		expiresAt: "2026-01-01T01:00:00.000Z",
+		status: "pending" as const,
+		actions: [{ optionId: "observe", actionRef: "ref-1" }],
+	};
+	const card = {
+		title: "复核出价",
+		summary: "仅调整方案草案",
+		evidence: [],
+		options: [{ id: "observe", label: "继续观察" }],
+	};
+
+	const withLink = JSON.stringify(
+		toFeishuCard({
+			...base,
+			card: { ...card, detailUrl: "https://console.example.com/sessions/session-1" },
+		}),
+	);
+	assert.match(withLink, /查看详情/);
+	assert.match(withLink, /https:\/\/console\.example\.com\/sessions\/session-1/);
+
+	const withoutLink = JSON.stringify(toFeishuCard({ ...base, card }));
+	assert.ok(!withoutLink.includes("查看详情"));
+
+	// 非 HTTPS 的链接必须在渲染期被拒，避免把明文链接发给平台。
+	assert.throws(
+		() =>
+			toFeishuCard({
+				...base,
+				card: { ...card, detailUrl: "http://console.example.com/sessions/session-1" },
+			}),
+		/HTTPS/,
+	);
+});
