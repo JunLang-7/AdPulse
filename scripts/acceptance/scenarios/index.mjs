@@ -24,9 +24,9 @@ const REQUIREMENTS = {
 	group: ["chatId", "openId"],
 	rounds: ["openId"],
 	// 需要第二个真实用户：由未授权成员点击，才能验证拒绝。
-	reject: ["chatId", "openId", "otherOpenId"],
-	// 不需要人工点击；收件人故意不可达。
-	failure: [],
+	reject: ["openId", "otherOpenId"],
+	// 使用本人身份及本地出站故障夹具，无需人工点击。
+	failure: ["openId"],
 	// 停库注入需要显式授权，且只对自建一次性数据库生效。
 	"db-down": ["openId"],
 };

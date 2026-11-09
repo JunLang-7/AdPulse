@@ -70,6 +70,12 @@ const skipped = (/** @type {string} */ reason) => ({
 	hint: "按 docs/development.md 用隔离实例验证；不要对生产库停库",
 });
 
+/** 与故障夹具核对后，按本人身份创建停库验收会话；独立导出供真实 API 接线回归。 */
+export async function prepareDbDownSession(ctx) {
+	await ctx.client.assertFaultInjection();
+	return startAcceptanceSession(ctx);
+}
+
 export const dbDownScenario = defineScenario({
 	id: "db-down",
 	title: "落库前失败与恢复后单次处理",
@@ -90,14 +96,7 @@ export const dbDownScenario = defineScenario({
 		docker.ensureDb();
 		await docker.waitReady();
 
-		// 收件人不可达：本场景只需要 actionRef，不期望卡片真的送达。
-		const session = await startAcceptanceSession(ctx, {
-			recipient: {
-				accountId: ctx.env?.FEISHU_ACCOUNT_ID ?? "feishu-internal",
-				kind: "user",
-				externalId: "ou_0000000000000000000000000000000000",
-			},
-		});
+		const session = await prepareDbDownSession(ctx);
 		ctx.log?.(`隔离会话 session=${mask(session.id, 8, 0)}`);
 	},
 	steps: [

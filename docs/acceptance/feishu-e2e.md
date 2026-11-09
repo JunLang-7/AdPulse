@@ -97,20 +97,16 @@ bun run feishu:acceptance -- \
 - 无人点击 → 该步 `blocked`、退出码非 0；本次不计入验收，重跑即可（不产生 `fail`）。
 - 这些断言标为 `platform-real`：由平台真实推送与真实点击驱动。
 
-## 5. 群聊全链路
+## 5. 个人会话禁止发群
 
 ```bash
 bun run feishu:acceptance -- \
-  --scenario group --chat-id oc_真实群 --open-id ou_授权成员 \
-  --public-url https://你的域名/webhooks/feishu-internal --write
+  --scenario group --chat-id oc_测试群 --open-id ou_本人 --write
 ```
 
-判据与第 4 节完全相同（同一套 `dm`/`group` 断言），差别只有收件人是群 `chat_id`：
-
-- 群成员不会自动获得决策权：`allowedActorIds` 只含 `--open-id` 那一位。
-- 群内其他成员误点会被记 `rejected/forbidden`，不影响本次判定（断言取「存在 processed」）；
-  这类记录本身是第 7 节的证据。
-- 群聊证据不代表允许把个人订阅或决策记录默认发到群里。
+#34 的个人身份规则禁止群收件人。`group` 命令现在断言建会话返回
+`400 personal sessions require a user recipient`，不创建或发送群卡片；证据为 `local-real`。
+旧版本群聊往返记录只证明当时的实现，不适用于当前个人权限模型。
 
 ## 6. 落库前失败与重复点击
 
@@ -125,7 +121,7 @@ bun run feishu:acceptance -- --scenario rounds --open-id ou_授权成员 --write
 ```
 
 `db-down` 的前置：`DATABASE_URL` 必须指向本脚本自建的一次性库
-（`127.0.0.1:5433/adpulse_acceptance`），且 API 也连这条库。不满足时整步记 `skip`，
+（`127.0.0.1:5433/adpulse_acceptance`），且 API 必须是下述出站故障夹具、用当前用户的真实登录会话。不满足停库条件时整步记 `skip`，
 **不会**停止任何其他数据库。一次性容器只由脚本创建（名称前缀 `adpulse-acceptance-`、
 label `adpulse.acceptance=1`、固定端口 5433），默认退出即清理，`--keep` 保留。
 
@@ -141,47 +137,76 @@ label `adpulse.acceptance=1`、固定端口 5433），默认退出即清理，`-
 | 同键重放返回原 inbox | 同 `sourceId+eventId` 返回同一条 | 见第 11 节的既有记录（2026-11-06 replay） |
 
 补充说明：`db-down` 与 `rounds` 的回调由脚本按真实密钥签名（`local-real`），
-不是平台推送；平台推送下的同类行为以第 4/5 节的真实点击证据为准。
+不是平台推送；平台推送下的同类行为以第 4 节的真实点击证据为准。
 
 ## 7. 拒绝类场景
 
 ```bash
 bun run feishu:acceptance -- \
-  --scenario reject --chat-id oc_真实群 \
+  --scenario reject \
   --open-id ou_授权成员 --other-open-id ou_未授权成员 --write
 ```
 
-需要真实第二位成员配合：由 `--other-open-id` 那位点一次，再由授权成员点一次。
+使用本人单聊收件人。将该验收卡片转发给 `--other-open-id` 指定的第二位真实测试成员，
+由他点击一次，再由本人在原单聊卡片点击「继续观察」。转发不授予访问/决策权限。
+若客户端转发不保留交互，或无人配合，该项保持 `blocked`，不能以自签回调追认为平台验收。
 
 判读：
 
 | 断言 | 通过条件 | 失败时先看 |
 | --- | --- | --- |
-| 未授权成员点击被拒 | `rejected` + `reason=forbidden` | 若为 processed，说明群成员被默认授权 |
+| 未授权成员点击被拒 | `rejected` + `reason=forbidden` | 若为 processed，说明转发接收人被错误授权 |
 | 策略与轮次未被修改 | `version`、快照、`round1=open` 不变 | 领域校验是否先于状态变更 |
 | 被拒的确实是未授权账户 | `actor != --open-id`，且等于 `--other-open-id` | 点名的是否同一人 |
 | 授权成员点击正常生效 | `processed` 且 `version` +1 | `allowedActorIds` 与投递账户是否一致 |
 | 被拒记录不被改写 | `rejected` 记录仍存在且原因不变 | inbox 终态不可变 |
 
-群聊误点、同轮重复、旧卡与过期的其余组合由第 6 节的 `rounds` 覆盖。
+同轮重复、旧卡与过期的其余组合由第 6 节的 `rounds` 覆盖。
 
 ## 8. 投递失败与业务成功分离
 
 ```bash
-bun run feishu:acceptance -- --scenario failure --open-id ou_授权成员 --write
+bun run feishu:acceptance -- --scenario failure --open-id ou_本人 \
+  --api http://127.0.0.1:3301 --skip-preflight --write
 ```
 
-场景用一个不存在的 `open_id` 让平台真实返回发送失败；**不需要人工点击、不会发出真实消息**。
+当前场景使用本人收件人，连接 **仅本地验收工具** `failure-server.mjs`，由出站端口注入失败，
+不调用飞书发送 API、不发送真实 IM。证据为 `synthetic`，不能证明飞书错误码或平台去重窗口。
+正式 API 没有故障开关、测试会话注入或旁路认证；场景先在已认证的 `/api/me` 响应核对夹具标记，
+未核对通过则在建会话前 `blocked`。
 
-判读：
+准备一次性环境（先 `bun run build`；凭据仍只放本地 `.env`）：
+
+```bash
+# 固定验收库，禁止指向旧库；脚本只监听 127.0.0.1:3301。
+# 使用受管容器约定的本地密码，详见 scripts/acceptance/docker.mjs。
+DATABASE_URL=postgres://postgres:acceptance-local-password@127.0.0.1:5433/adpulse_acceptance \
+  node --env-file=.env scripts/acceptance/failure-server.mjs
+```
+
+`PUBLIC_ORIGIN` 必须与访问该隔离实例的浏览器同源。通过正常飞书 OAuth 登录此实例，
+把本次 `adpulse_session` 仅注入执行终端的 `ADPULSE_SESSION_COOKIE`（不能复用其它库的会话）。
+在同一 `DATABASE_URL` / `PUBLIC_ORIGIN` 下执行：
+
+```bash
+# 本地故障注入不做平台留证，可跳过平台自检。
+bun run feishu:acceptance -- --scenario failure --open-id ou_本人 \
+  --api http://127.0.0.1:3301 --skip-preflight --write
+# db-down 使用同一个夹具及会话，回调仍走真实验签/身份映射。
+bun run feishu:acceptance -- --scenario db-down --open-id ou_本人 \
+  --api http://127.0.0.1:3301 --managed-db --skip-preflight --write
+```
+
+停止夹具时会关闭 API/worker/连接池，并只清理它本次创建的容器；已存在且符合归属约束的容器不会删除。
+不启动其它 worker 连接该库，避免另一进程使用真实出站适配器发送卡片。
 
 | 断言 | 通过条件 | 说明 |
 | --- | --- | --- |
-| 投递失败且错误可定位 | `delivery=failed` + `lastError` 含平台错误码，无消息 ID | 实测 `code 99992351` |
+| 投递失败 | `delivery=failed`、固定故障标记、无消息 ID | 出站端口本地失败 |
 | 业务侧不受影响 | 轮次 `answered`、`version` +1、快照 +1、inbox `processed` | 投递失败不改写业务结论 |
-| 任务可重试 | 发送任务 `failed`、`attempts>1` | worker 重试上限 |
-| 重试复用同一 `delivery.id` | 投递条数不增加、原 `id` 仍在 | 平台 `uuid` 去重语义 |
-| 重试确实重新执行 | `attempts` 回退（5 → 0） | `/api/jobs/{id}/retry` 只接受 failed |
+| 任务可重试 | 活跃第 2 轮的发送任务 `failed`、`attempts>1` | 不重试已答轮次的旧卡 |
+| 重试复用同一 `delivery.id` | 任务仍引用原投递、条数不增加 | 不将本地测试当作平台去重证据 |
+| worker 确实重新执行 | 同任务有新的 `leaseToken`、`attempts>0`，且再次到达投递失败终态 | 仅 pending/attempts=0 不通过；worker 停止则 blocked |
 
 系统**不承诺 exactly-once**：外部已发送但本地未回写时重复发送是已知风险；
 窗口内外差异见 `2026-11-06-dedup-within/outside.json` 的单样本观察。
@@ -205,7 +230,7 @@ bun run feishu:acceptance -- --scenario failure --open-id ou_授权成员 --writ
 - 缺少服务端 `webhook 接收 → ACK` 的显式时延指标，需另开 Issue 补日志/指标；在此之前用第 9 节替代取数。
   场景里的「点击到观测」区间含人工耗时，已在记录中标 `skip`，不得充当时延证据。
 - `db-down`、`rounds` 的回调由脚本按真实密钥签名（`local-real`），不是平台推送；
-  平台推送下的同类行为以第 4/5 节的真实点击证据为准。
+  平台推送下的同类行为以第 4 节的真实点击证据为准。
 - `reject` 需要第二位真实成员配合；缺人时该项保持未覆盖，不追认。
 - 控制台尚未跟踪异步终态（[#11](https://github.com/JunLang-7/AdPulse/issues/11)），核对终态需刷新或查 API。
 - 撤回/更新已送达卡片、worker 租约续期、版本化数据库迁移未实现；不要把这些列入本次验收。

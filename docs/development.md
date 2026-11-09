@@ -119,7 +119,7 @@ POSIX shell 可用反斜杠续行；这里使用单行以便在 Windows PowerShe
 只读、脱敏探测：本地配置项、离线协议自检（真实 encrypt key 构造的验签/解密/身份拒绝/卡片动作）、
 平台连通（`tenant_access_token`、租户匹配、机器人启用状态、时钟偏差）、可选收件人、本机 `/healthz`，
 以及公网回调的未鉴权拒绝（401/403）与自签 challenge 往返。它不发送业务消息、不写业务数据，也**不能替代真机验收**：
-平台触发的 challenge、单聊/群聊点击链路、失败与拒绝场景仍需人工执行。
+平台触发的 challenge 及单聊/转发点击仍需人工动作，其余状态断言由下述场景编排器执行。
 
 `fail` 需先处理，`skip` 不计入验收，退出码非 0 表示存在 `fail`。
 加 `--write` 会在 `docs/acceptance/records/` 生成验收记录骨架（该目录默认不入库）。
@@ -129,7 +129,7 @@ POSIX shell 可用反斜杠续行；这里使用单行以便在 Windows PowerShe
 实现在 `scripts/acceptance/`：`scripts/feishu-acceptance.mjs` 只是入口转发，参数、输出与退出码保持不变；
 框架提供脱敏（`redact.mjs`）、HTTP 调用（`http.mjs`）、轮询断言（`poll.mjs`）、场景描述（`scenario.mjs`）
 与记录渲染（`record.mjs`）。后续真机链路场景按 `{ setup, prompt, read, until, assertions }` 注册，不各写一套脚本；
-当前只有只读自检，单聊/群聊等场景驱动器尚未接入。
+除只读自检外，可按下文运行场景驱动器；个人身份禁止群投递。
 
 输出的每条结果都带证据来源，记录里同样保留该列：
 
@@ -146,7 +146,7 @@ bun run feishu:acceptance -- --list-scenarios
 bun run feishu:acceptance -- --scenario dm --open-id ou_xxx
 bun run feishu:acceptance -- --scenario group --chat-id oc_xxx --open-id ou_xxx
 bun run feishu:acceptance -- --scenario rounds --open-id ou_xxx
-bun run feishu:acceptance -- --scenario reject --chat-id oc_xxx \
+bun run feishu:acceptance -- --scenario reject \
   --open-id ou_授权成员 --other-open-id ou_未授权成员
 ```
 
@@ -159,22 +159,22 @@ bun run feishu:acceptance -- --scenario reject --chat-id oc_xxx \
 场景先跑一遍只读自检作为前置：存在 `fail` 即中止，避免在错配置上让人白点。`--skip-preflight` 只供本地调试，不能用于真机留证。
 
 - `dm`：建会话 → 等第 1 轮卡片送达 → 提示点击「继续观察」→ 提示点击「确认已阅」；断言投递、`rounds`、`inbox`、`version`、`snapshots`、结束确认卡，并记录点击后的观测区间。
-- `group`：与 `dm` 同一套往返判据，收件人为群 `chat_id`；群成员不自动获得决策权，
-  `allowedActorIds` 仍只含 `--open-id` 指定的成员。
-- `reject`：群聊下先让 `--other-open-id` 那位点一次，断言 `rejected/forbidden` 且
-  `version`/快照/轮次不变；再让授权成员点一次，断言正常生效且被拒记录不被改写。
-  需要第二个真实用户配合，缺人时该场景无法取证。
-- `failure`：不需要人工点击。收件人故意不可达，断言「业务侧成功（`version`/快照/
-  `inbox processed`）与投递失败（`delivery=failed` + 发送任务 failed）分离」，
-  再用 `POST /api/jobs/{id}/retry` 验证重试复用同一 `delivery.id`（投递条数不增加）。
+- `group`：验证个人身份的群收件人在建会话时被拒绝（HTTP400），不发群卡；证据为 `local-real`。
+- `reject`：本人单聊卡片转发给 `--other-open-id` 那位测试成员，点击被拒后，
+  本人在原单聊卡片点击正常生效。转发无交互或缺人则保持 `blocked`。
+- `failure`：使用本人收件人与 `scripts/acceptance/failure-server.mjs` 的出站故障夹具，
+  不发送真实 IM，证据为 `synthetic`。断言业务与投递终态分离；重试活跃第2轮的任务，
+  等新的 worker 执行令牌、非零尝试数及再次失败终态，不能只凭 attempts 归零通过。
+  夹具只监听回环3301、只连接固定验收库；正常 OAuth 登录，无会话注入。配置与命令见
+  [runbook §8](acceptance/feishu-e2e.md#8-投递失败与业务成功分离)。
 - `db-down`：停库注入，需同时满足 `--managed-db` 与 `DATABASE_URL` 指向本脚本自建的
   一次性库（`127.0.0.1:5433/adpulse_acceptance`）；否则整步记 `skip`，**不会**停任何其它库。
-  断言：停库时回调返回 5xx 且无成功 ACK；恢复后同一事件只处理一次。
+  API 必须连接上述故障夹具，按本人身份建立会话。断言停库时无成功 ACK；恢复后同一事件只处理一次。
   一次性容器只由本脚本创建（名称前缀 `adpulse-acceptance-`、label `adpulse.acceptance=1`、
   固定端口 5433），默认运行结束即清理，`--keep` 保留；不接受任意容器名或端口，不使用 `sudo`。
 - `rounds`：只需点一次卡片建立已答轮次，其余由脚本提交并断言旧卡、同轮重复被拒（`already_handled`），以及过期会话提交被拒（`expired`）；过期分支要求短有效期会话能及时送出第 1 轮卡片，否则记 `skip`。
 
-场景会新建验收会话并按提示请你在飞书客户端点击，不删除或改写既有数据。断言结果标为 `platform-real`（由真实点击驱动）。
+场景仅新建验收会话，不删除或改写既有数据；各行分别标注真实点击、本地请求或合成故障的证据来源。
 
 没人点击时步骤记 `blocked` 并且退出码非 0：本次结果不计入验收，完成动作后重跑即可。
 真机上人往往不会立刻在客户端前，可用 `--step-timeout <秒>` 放宽单步人工窗口（例如 1800），

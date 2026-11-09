@@ -22,11 +22,11 @@ export const USAGE = `用法：bun run feishu:acceptance [-- 选项]
 
   --api <url>         本机 API 地址，默认 http://127.0.0.1:3000
   --public-url <url>  公网回调地址，如 https://example.com/webhooks/feishu-internal
-  --chat-id <oc_...>  群聊收件人；group / reject 场景必填
+  --chat-id <oc_...>  群收件人；group 拒绝场景必填
   --open-id <ou_...>  授权成员（单聊收件人）；--scenario 时多数必填
   --other-open-id <ou_...>
                       未授权成员，仅 reject 场景需要
-  --scenario <id>     运行验收场景（dm / rounds）；先跑只读自检作为前置
+  --scenario <id>     运行验收场景；先跑只读自检作为前置
   --list-scenarios    列出可用场景
   --step-timeout <s>  场景单步等待人工动作的秒数，默认用场景内置值
   --managed-db        允许 db-down 场景停启本脚本自建的一次性数据库
