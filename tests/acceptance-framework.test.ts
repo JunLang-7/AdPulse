@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import {
@@ -1009,6 +1011,39 @@ test("docker: 只有指向受管端口与库时允许停库", () => {
 		false,
 	);
 	assert.equal(pointsAtManagedDb(""), false);
+});
+
+test("docker: 固定验收库拒绝驱动覆盖参数、非 PostgreSQL 协议与片段", () => {
+	const base = "postgres://postgres:pw@127.0.0.1:5433/adpulse_acceptance";
+	for (const suffix of [
+		"?host=192.0.2.10&port=5432",
+		"?port=5432",
+		"?database=other",
+		"?dbname=other",
+		"?host=/tmp/pg-socket",
+		"?%68ost=192.0.2.10",
+		"?host=127.0.0.1&host=192.0.2.10",
+		"?sslmode=require", // 固定验收夹具不接受任何驱动选项。
+		"#fragment",
+	]) assert.equal(pointsAtManagedDb(base + suffix), false, suffix);
+	assert.equal(pointsAtManagedDb(base.replace("postgres:", "http:")), false);
+	assert.equal(pointsAtManagedDb(base.replace("postgres:", "postgresql:")), true);
+});
+
+test("fault server: 覆盖连接地址的 URL 在读取应用配置、连接或建容器前被拒绝", () => {
+	const script = fileURLToPath(new URL("../scripts/acceptance/failure-server.mjs", import.meta.url));
+	for (const query of ["host=192.0.2.10&port=5432", "database=other", "%68ost=192.0.2.10"]) {
+		// 不传飞书配置；守卫若被绕过，启动会到达配置校验，从而令本测试失败。
+		const result = spawnSync(process.execPath, [script], {
+			env: { DATABASE_URL: `postgres://test:test@127.0.0.1:5433/adpulse_acceptance?${query}` },
+			encoding: "utf8",
+			timeout: 5000,
+		});
+		assert.equal(result.error, undefined);
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /fault fixture requires 127\.0\.0\.1:5433\/adpulse_acceptance/);
+		assert.doesNotMatch(result.stderr, /FEISHU_APP_ID is required/);
+	}
 });
 
 test("db-down 场景：未授权停库时全部 skip，且不触碰 docker 与会话", async () => {

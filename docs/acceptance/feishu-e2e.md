@@ -180,6 +180,7 @@ bun run feishu:acceptance -- --scenario failure --open-id ou_本人 \
 ```bash
 # 固定验收库，禁止指向旧库；脚本只监听 127.0.0.1:3301。
 # 使用受管容器约定的本地密码，详见 scripts/acceptance/docker.mjs。
+# 仅允许 postgres/postgresql URL，不接受查询参数或片段（包括 host/port/database 覆盖）。
 DATABASE_URL=postgres://postgres:acceptance-local-password@127.0.0.1:5433/adpulse_acceptance \
   node --env-file=.env scripts/acceptance/failure-server.mjs
 ```

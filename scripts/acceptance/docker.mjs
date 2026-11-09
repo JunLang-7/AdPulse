@@ -158,11 +158,14 @@ export function createManagedDocker(options = {}) {
 	};
 }
 
-/** 判断 DATABASE_URL 是否指向受管容器的固定端口；不是则不允许停库。 */
+/** 固定验收目标；拒绝所有查询参数，避免 pg 用 host/port/database 等覆盖 URL 地址。 */
 export function pointsAtManagedDb(databaseUrl) {
 	try {
 		const url = new URL(databaseUrl);
 		return (
+			(url.protocol === "postgres:" || url.protocol === "postgresql:") &&
+			url.search === "" &&
+			url.hash === "" &&
 			url.hostname === "127.0.0.1" &&
 			url.port === String(MANAGED_DB_PORT) &&
 			url.pathname.replace(/^\//, "") === MANAGED_DB_NAME_FOR_PG
