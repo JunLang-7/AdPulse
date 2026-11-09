@@ -24,6 +24,8 @@ export interface AuthenticatedSession {
 	expiresAt: string;
 	/** 展示用名称，来自平台返回；缺省时界面自行降级。 */
 	displayName?: string;
+	/** 该会话所属绑定的身份作用域：边界层据此决定「为谁确认目的地」，不接受客户端传入。 */
+	identity?: VerifiedIdentity;
 }
 
 const digestPattern = /^[a-f0-9]{64}$/;
@@ -267,6 +269,13 @@ export class AuthenticationService {
 				createdAt: session.createdAt,
 				expiresAt: session.expiresAt,
 				...(user.displayName ? { displayName: user.displayName } : {}),
+				identity: {
+					platform: binding.platform,
+					applicationId: binding.applicationId,
+					tenantId: binding.tenantId,
+					idType: binding.idType,
+					externalId: binding.externalId,
+				},
 			};
 		});
 	}

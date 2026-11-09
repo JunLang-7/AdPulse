@@ -18,6 +18,7 @@ export class NotificationError extends Error {
 			| "destination_conflict"
 			| "destination_not_found"
 			| "consent_not_granted"
+			| "consent_conflict"
 			| "user_unavailable",
 		message: string,
 	) {
@@ -43,6 +44,7 @@ export interface NotificationStatus {
 		status: NotificationConsent["status"];
 		grantedAt: string;
 		revokedAt?: string;
+		version: number;
 	} | null;
 	/** 唯一出口：登录绑定有效 && 目的地已验证 && 授权 active。 */
 	canSendProactive: boolean;
@@ -170,11 +172,18 @@ export class NotificationService {
 		});
 	}
 
-	/** 授权主动通知：必须是本人已验证的目的地。 */
+	/**
+	 * 授权主动通知：必须是本人已验证的目的地。
+	 * `expectedVersion` 是调用方看到的授权版本（从未授权时为 0）：旧请求重放会因
+	 * 版本不符被拒，不能把用户后来的撤销重新打开；显式恢复需传当前版本。
+	 */
 	async grantConsent(
 		userId: string,
 		destinationId: string,
+		expectedVersion: number,
 	): Promise<NotificationConsent> {
+		if (!Number.isInteger(expectedVersion) || expectedVersion < 0)
+			throw new NotificationError("consent_conflict", "invalid expected version");
 		return this.storage.transaction(async (tx) => {
 			await requireActiveUser(tx, userId);
 			const destination = await tx.notificationDestinations.get(destinationId);
@@ -182,6 +191,8 @@ export class NotificationService {
 				throw new NotificationError("destination_not_found", "destination not found");
 			const id = consentId(userId, destinationId);
 			const existing = await tx.notificationConsents.get(id);
+			if ((existing?.version ?? 0) !== expectedVersion)
+				throw new NotificationError("consent_conflict", "consent version conflict");
 			if (existing?.status === "active") return existing;
 			const consent: NotificationConsent = {
 				id,
@@ -189,27 +200,34 @@ export class NotificationService {
 				destinationId,
 				status: "active",
 				grantedAt: this.now(),
+				version: expectedVersion + 1,
 			};
 			await tx.notificationConsents.put(consent);
 			return consent;
 		});
 	}
 
-	/** 撤销授权：不删除目的地，也不注销账号。 */
+	/** 撤销授权：不删除目的地，也不注销账号；同样要求版本匹配。 */
 	async revokeConsent(
 		userId: string,
 		destinationId: string,
+		expectedVersion: number,
 	): Promise<NotificationConsent> {
+		if (!Number.isInteger(expectedVersion) || expectedVersion <= 0)
+			throw new NotificationError("consent_conflict", "invalid expected version");
 		return this.storage.transaction(async (tx) => {
 			const id = consentId(userId, destinationId);
 			const existing = await tx.notificationConsents.get(id);
 			if (!existing || existing.userId !== userId)
 				throw new NotificationError("consent_not_granted", "consent not granted");
+			if (existing.version !== expectedVersion)
+				throw new NotificationError("consent_conflict", "consent version conflict");
 			if (existing.status === "revoked") return existing;
 			const consent: NotificationConsent = {
 				...existing,
 				status: "revoked",
 				revokedAt: this.now(),
+				version: existing.version + 1,
 			};
 			await tx.notificationConsents.put(consent);
 			return consent;
@@ -244,6 +262,7 @@ export class NotificationService {
 							status: consent.status,
 							grantedAt: consent.grantedAt,
 							...(consent.revokedAt ? { revokedAt: consent.revokedAt } : {}),
+							version: consent.version,
 						}
 					: null,
 				canSendProactive: await canSendProactiveIn(tx, userId),

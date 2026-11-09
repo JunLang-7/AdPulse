@@ -57,6 +57,8 @@ export interface NotificationConsent {
 	status: "active" | "revoked";
 	grantedAt: string;
 	revokedAt?: string;
+	/** 乐观并发：每次授权/撤销自增；旧请求重放会因版本不符被拒。 */
+	version: number;
 }
 
 export interface WebSession {
