@@ -78,8 +78,13 @@ const sameScope = (
 const consentId = (userId: string, destinationId: string): string =>
 	`${userId}:${destinationId}`;
 
-/** 连续多少次「平台报告收件人不可达」判定地址失效。 */
-export const DESTINATION_UNREACHABLE_THRESHOLD = 2;
+/**
+ * 多少次「平台报告收件人不可达」判定地址失效。
+ * 取 1：230002/230013/99992351 都是确定性事实（用户不存在、机器人不在会话、
+ * receive_id 非法），重试或等待都不会变好；让用户尽早重新确认地址，
+ * 好过继续往一个发不到的地方投递。
+ */
+export const DESTINATION_UNREACHABLE_THRESHOLD = 1;
 
 /** 目的地只能由本人当前已验证的身份产生：不接收前端传来的 externalId。 */
 async function requireActiveUser(

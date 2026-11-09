@@ -203,7 +203,8 @@ bun run dev
 `canSendProactive`，不通过则把投递记为 `suppressed` 并写明原因，**不调用渠道**；
 用户自己创建/处理的会话不受影响（本人操作回执）。告警会话目前是 web-only，该闸门的
 真实触发要等 #37 的订阅推送；平台明确返回"收件人不可达"时投递终态失败并计数，
-连续两次会把目的地置为 `invalidated`，要求本人重新确认。
+平台报告不可达即把目的地置为 `invalidated`（这些错误码是确定性事实，不是抖动），
+要求本人重新确认。
 
 「通知设置」（`/settings/notifications`）用于确认单聊地址与开启/撤销主动提醒：状态来自
 `GET /api/me/notification-status`，动作走 `PUT /api/me/notification-destination` 与

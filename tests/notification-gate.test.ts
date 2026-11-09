@@ -149,7 +149,7 @@ test("gate: 用户自己创建的会话不受通知授权影响", async () => {
 	assert.equal(sent.length, 1);
 });
 
-test("gate: 平台报告不可达时终态失败且连续两次后地址失效", async () => {
+test("gate: 平台报告不可达时终态失败并立即判定地址失效", async () => {
 	const { runtime, session, notifications, startSession, drain } = await setup({
 		unreachable: true,
 	});
@@ -165,16 +165,12 @@ test("gate: 平台报告不可达时终态失败且连续两次后地址失效",
 		"failed",
 		"不可达应终态失败；重试无意义",
 	);
+	// 平台说「用户不存在/机器人不在会话」是确定性事实，一次即可判定失效。
 	let status = await notifications.status(session.userId);
-	assert.equal(status.destination?.status, "verified", "第一次不下结论");
+	assert.equal(status.destination?.status, "invalidated");
 	assert.equal(status.destination?.unreachableCount, 1);
-
-	const second = await startSession(true);
-	await runtime.decisions.prepareRound(second.id, 0);
-	await drain();
-	status = await notifications.status(session.userId);
-	assert.equal(status.destination?.status, "invalidated", "连续两次后置失效");
 	assert.equal(status.canSendProactive, false);
+	assert.ok(status.destination?.invalidatedAt);
 });
 
 test("gate: 目的地失效后系统卡片改为抑制，不再尝试发送", async () => {
@@ -183,7 +179,6 @@ test("gate: 目的地失效后系统卡片改为抑制，不再尝试发送", as
 	});
 	const destination = await notifications.verifyDestination(session.userId, identity);
 	await notifications.grantConsent(session.userId, destination.id, 0);
-	await notifications.noteUnreachable(session.userId);
 	await notifications.noteUnreachable(session.userId);
 	assert.equal((await notifications.status(session.userId)).destination?.status, "invalidated");
 
