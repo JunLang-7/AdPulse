@@ -12,6 +12,7 @@ import {
 	DropdownMenuTrigger,
 } from "src/components/ui/dropdown-menu";
 import { announceSessionIdentity } from "src/views/auth/session-sync";
+import { platformLabel } from "src/views/auth/platform-label";
 import { profileDD } from "./data";
 
 const isExternal = (href: string) => href.startsWith("http");
@@ -36,6 +37,8 @@ export default function ProfileMenu() {
 		},
 	});
 	const displayName = me?.displayName?.trim() || "已登录";
+	// 平台标签来自真实绑定，不在界面里硬编码平台名。
+	const platform = platformLabel(me?.identities?.[0]?.platform);
 
 	const logout = async () => {
 		if (loggingOut) return;
@@ -70,7 +73,12 @@ export default function ProfileMenu() {
 				</div>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" className="w-48 py-2">
-				<p className="truncate px-3 py-2 text-sm font-medium">{displayName}</p>
+				<div className="px-3 py-2">
+					<p className="truncate text-sm font-medium">{displayName}</p>
+					{platform ? (
+						<p className="text-xs text-muted-foreground">{platform}</p>
+					) : null}
+				</div>
 				<DropdownMenuSeparator />
 				{profileDD.map((item) => {
 					const content = (
