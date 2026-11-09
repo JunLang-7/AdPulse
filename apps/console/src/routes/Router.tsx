@@ -9,6 +9,7 @@ import { announceSessionIdentity, watchSessionIdentity } from "../views/auth/ses
 import SessionDetailPage from "../views/adpulse/session-detail";
 import SessionsPage from "../views/adpulse/sessions";
 import TaskEditorPage from "../views/adpulse/tasks/editor";
+import NotificationSettingsPage from "../views/adpulse/settings/notifications";
 import TasksPage from "../views/adpulse/tasks";
 
 function RouteError({ error }: { error: unknown }): ReactNode {
@@ -108,6 +109,7 @@ const Router = [
 					{ path: "/sessions/:sessionId", element: <SessionDetailPage /> },
 					{ path: "/tasks", element: <TasksPage /> },
 					{ path: "/tasks/:taskId", element: <TaskEditorPage /> },
+					{ path: "/settings/notifications", element: <NotificationSettingsPage /> },
 				],
 			},
 		],
