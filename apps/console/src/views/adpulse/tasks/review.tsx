@@ -52,7 +52,7 @@ export default function TaskReviewPage() {
 				<p className="font-medium">{task.product}</p>
 			</header>
 
-			<EvidencePanel key={task.taskId} taskId={task.taskId} taskVersion={task.version} />
+			<EvidencePanel key={task.taskId} taskId={task.taskId} taskVersion={task.version} rules={task.rules} />
 
 			<details className="group rounded-xl border bg-card">
 				<summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm marker:hidden">

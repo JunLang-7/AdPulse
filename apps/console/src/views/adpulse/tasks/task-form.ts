@@ -76,7 +76,7 @@ function fromBeijingInput(value: string): string {
 	return new Date(epoch).toISOString();
 }
 
-function displayMoney(amount: number | undefined, inYuan: boolean): string {
+export function displayMoney(amount: number | undefined, inYuan: boolean): string {
 	if (amount === undefined) return "";
 	if (!inYuan) return String(amount);
 	const cents = String(amount).padStart(3, "0");
@@ -124,14 +124,14 @@ function parseAmount(value: string, label: string): number | undefined {
 	return amount;
 }
 
-function parseCount(value: string, label: string, min = 0): number | undefined {
+export function parseCount(value: string, label: string, min = 0): number | undefined {
 	const count = parseAmount(value, label);
 	if (count !== undefined && (!Number.isSafeInteger(count) || count < min))
 		throw new Error(`${label}请填写大于或等于 ${min} 的整数。`);
 	return count;
 }
 
-function parseYuan(value: string, label: string): number | undefined {
+export function parseYuan(value: string, label: string): number | undefined {
 	const text = value.trim();
 	if (!text) return undefined;
 	const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(text);

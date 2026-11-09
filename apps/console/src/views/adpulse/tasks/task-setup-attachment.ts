@@ -108,6 +108,28 @@ async function readPdf(bytes: ArrayBuffer): Promise<DocumentText> {
 	}
 }
 
+async function readWorkbookRows<ParsedNumber = number>(
+	bytes: ArrayBuffer,
+	parseNumber?: (value: string) => ParsedNumber,
+) {
+	await checkOfficeArchive(bytes, "xl/workbook.xml");
+	const { default: readWorkbook } = await import("read-excel-file/browser");
+	return readWorkbook<ParsedNumber>(bytes, parseNumber ? { parseNumber } : undefined);
+}
+
+export async function readReviewWorkbook(file: File) {
+	if (!file.name.toLowerCase().endsWith(".xlsx"))
+		throw new AttachmentError("请选择 Excel（.xlsx）文件。");
+	if (file.size > maxDocumentBytes)
+		throw new AttachmentError("文件超过 8 MB，请把所需工作表另存后重试。");
+	try {
+		return await readWorkbookRows(await file.arrayBuffer(), (value) => value);
+	} catch (error) {
+		if (error instanceof AttachmentError) throw error;
+		throw new AttachmentError("无法读取这份表格，请用 Excel 或 WPS 另存为 .xlsx 后重试。");
+	}
+}
+
 async function readDocument(bytes: ArrayBuffer, extension: string): Promise<DocumentText> {
 	if (extension === ".pdf") return readPdf(bytes);
 	if (extension === ".docx") {
@@ -116,9 +138,7 @@ async function readDocument(bytes: ArrayBuffer, extension: string): Promise<Docu
 		return { text: (await mammoth.extractRawText({ arrayBuffer: bytes })).value };
 	}
 
-	await checkOfficeArchive(bytes, "xl/workbook.xml");
-	const { default: readWorkbook } = await import("read-excel-file/browser");
-	const sheets = await readWorkbook(bytes);
+	const sheets = await readWorkbookRows(bytes);
 	let text = "";
 	for (const { sheet, data } of sheets) {
 		let rows = "";
