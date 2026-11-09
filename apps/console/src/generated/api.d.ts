@@ -614,6 +614,11 @@ export interface components {
             monetarySuggestionsAllowed?: boolean;
             /** @enum {string} */
             deliveryMode?: "channel" | "web";
+            /**
+             * @description system 表示系统主动提醒，投递受通知授权闸门约束
+             * @enum {string}
+             */
+            initiatedBy?: "self" | "system";
             investigationAlertId?: string;
             alertEvidenceRef?: components["schemas"]["EvidenceRef"];
             recipient?: components["schemas"]["Recipient"];
@@ -673,10 +678,12 @@ export interface components {
             sessionId: string;
             roundId: string;
             /** @enum {string} */
-            status: "pending" | "sent" | "failed";
+            status: "pending" | "sent" | "failed" | "cancelled" | "suppressed";
             externalMessageId?: string;
             sentAt?: string;
             lastError?: string;
+            /** @description suppressed 时的原因：未授权、目的地失效或身份绑定失效 */
+            suppressionReason?: string;
             /** @enum {string} */
             purpose: "decision" | "confirmation";
             expiresAt: string;

@@ -44,6 +44,9 @@ export interface NotificationDestination {
 	externalId: string;
 	status: "verified" | "invalidated";
 	verifiedAt: string;
+	/** 平台报告「收件人不可达」的连续次数；达阈值即置 invalidated。 */
+	unreachableCount?: number;
+	invalidatedAt?: string;
 }
 
 /**
@@ -418,6 +421,11 @@ export interface Session {
 	taskRef?: { taskId: string; taskVersion: number };
 	monetarySuggestionsAllowed?: boolean;
 	deliveryMode?: "channel" | "web";
+	/**
+	 * 谁发起这次会话：`self` 是用户本人的操作，`system` 是系统主动提醒。
+	 * 只有 `system` 的投递受通知授权闸门约束（见 #35）；缺省视为 self。
+	 */
+	initiatedBy?: "self" | "system";
 	investigationAlertId?: string;
 	alertEvidenceRef?: EvidenceRef;
 	recipient?: Recipient;
@@ -470,10 +478,12 @@ export interface Delivery extends CardDelivery {
 	roundId: string;
 	purpose: "decision" | "confirmation";
 	expiresAt: string;
-	status: "pending" | "sent" | "failed" | "cancelled";
+	status: "pending" | "sent" | "failed" | "cancelled" | "suppressed";
 	externalMessageId?: string;
 	sentAt?: string;
 	lastError?: string;
+	/** suppressed 的原因：未授权 / 目的地失效 / 身份绑定失效。 */
+	suppressionReason?: string;
 }
 export type JobTask =
 	| { kind: "process_inbox"; inboxId: string }

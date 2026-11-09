@@ -1,9 +1,13 @@
-import type {
-	CardDelivery,
-	DeliveryReceipt,
-	OutboundChannel,
+import {
+	type CardDelivery,
+	type DeliveryReceipt,
+	type OutboundChannel,
+	RecipientUnreachableError,
 } from "@adpluse/core";
 import { toFeishuCard } from "./feishuRenderer.js";
+
+/** 平台表示收件人不可达的错误码：重试无意义，可能意味着地址已失效。 */
+const UNREACHABLE_CODES = new Set([230002, 230013, 99992351]);
 
 export interface FeishuOutboundConfig {
 	accountId: string;
@@ -50,6 +54,10 @@ export class FeishuOutbound implements OutboundChannel {
 		if (!response.ok || body.code !== 0 || !body.data?.message_id) {
 			// Invalidate on failure; job retry will obtain a fresh token. Do not log provider bodies/secrets.
 			this.token = undefined;
+			// 230002 用户不存在/不在范围、230013 机器人不在会话、99992351 receive_id 非法：
+			// 这些是「收件人不可达」，重试也不会成功，交给上层决定是否让目的地失效。
+			if (UNREACHABLE_CODES.has(Number(body.code)))
+				throw new RecipientUnreachableError();
 			throw new Error(
 				`Feishu send failed (HTTP ${response.status}, code ${body.code ?? "unknown"})`,
 			);

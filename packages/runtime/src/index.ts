@@ -8,6 +8,7 @@ import {
 	ComparisonService,
 	EvidenceService,
 	InvestigationAlertService,
+	NotificationService,
 	Orchestrator,
 	resolveActiveIdentity,
 	SOURCE_DEFINITIONS,
@@ -68,6 +69,7 @@ export function compose(
 	const evidence = new EvidenceService(storage);
 	const comparisons = new ComparisonService(storage);
 	const investigationAlerts = new InvestigationAlertService(storage);
+	const notifications = new NotificationService(storage);
 	return {
 		storage,
 		channels,
@@ -76,7 +78,16 @@ export function compose(
 		evidence,
 		comparisons,
 		investigationAlerts,
-		worker: new Worker(storage, decisions, channels.outbound(), undefined, 5, investigationAlerts),
+		notifications,
+		worker: new Worker(
+			storage,
+			decisions,
+			channels.outbound(),
+			undefined,
+			5,
+			investigationAlerts,
+			notifications,
+		),
 	};
 }
 export type Runtime = ReturnType<typeof compose>;

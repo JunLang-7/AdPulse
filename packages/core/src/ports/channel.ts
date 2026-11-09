@@ -42,3 +42,14 @@ export interface ChoiceCommand {
 	actionRef: string;
 	actor: Actor;
 }
+
+/**
+ * 平台明确表示「收件人不可达」（用户不存在/不在可用范围/机器人不在会话）。
+ * 与限流、网络故障区分：只有这一类才可能让目的地失效。
+ */
+export class RecipientUnreachableError extends Error {
+	constructor(message = "recipient unreachable") {
+		super(message);
+		this.name = "RecipientUnreachableError";
+	}
+}
