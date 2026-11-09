@@ -310,12 +310,20 @@ export async function noteUnreachableIn(
 	tx: Transaction,
 	userId: string,
 	now: string,
+	recipient?: { accountId: string; kind: "user" | "group"; externalId: string },
 ): Promise<NotificationDestination | null> {
 	const destinations = (
 		await tx.notificationDestinations.all()
 	).filter((item) => item.userId === userId && item.status === "verified");
 	const destination = destinations[0];
 	if (!destination) return null;
+	// 只有「发往本人已确认目的地」的失败才说明该地址有问题；
+	// 发往别的收件人失败（例如验收里故意不可达的地址）不能牵连本人地址。
+	if (
+		recipient &&
+		(recipient.kind !== "user" || recipient.externalId !== destination.externalId)
+	)
+		return destination;
 	const count = (destination.unreachableCount ?? 0) + 1;
 	const invalidated = count >= DESTINATION_UNREACHABLE_THRESHOLD;
 	const next: NotificationDestination = {

@@ -326,3 +326,57 @@ API 对登录/会话拒绝输出一行 JSON（默认 stdout；测试可注入 `a
 #34 之后控制台只有会话 Cookie：先人工登录一次，把 `adpulse_session` 放进 `ADPULSE_SESSION_COOKIE`，
 并把 `PUBLIC_ORIGIN` 设为浏览器实际 origin。Cookie 只注入当前终端，不写入仓库、记录或 CI。
 **不引入测试会话注入入口**；如将来需要，须单独评审并限制在测试环境。
+
+## 14. 通知目的地与授权（#35）
+
+**边界**：本节只覆盖「机器人的单聊地址」与「是否允许主动发送」；真正的主动推送属 #37。
+未授权时系统**不会**发送，因此本节的通过不代表推送能力已完成。
+
+### 14.1 前置
+
+- 控制台可登录（`ADPULSE_SESSION_COOKIE` + `PUBLIC_ORIGIN`，见 §13）。
+- 服务端迁移已到 v8（`adpulse_notificationDestinations` / `adpulse_notificationConsents`）。
+
+### 14.2 操作与命令
+
+设置页：`/settings/notifications`，按状态给出动作（确认地址 → 开启 → 撤销 → 重新开启）。
+
+等价接口：
+
+```bash
+COOKIE="adpulse_session=<值>"; ORIGIN=https://你的控制台 origin
+curl -sS -H "Cookie: $COOKIE" $ORIGIN/api/me/notification-status
+curl -sS -X PUT -H "Cookie: $COOKIE" -H "Origin: $ORIGIN" $ORIGIN/api/me/notification-destination
+curl -sS -X POST -H "Cookie: $COOKIE" -H "Origin: $ORIGIN" -H 'content-type: application/json' \
+  -d '{"action":"grant","expectedVersion":0}' $ORIGIN/api/me/notification-consent
+```
+
+**身份不接受客户端传入**：`PUT` 用会话绑定的作用域确定目的地；请求体里的 `externalId` 被忽略。
+授权/撤销必须带 `expectedVersion`（从未授权为 0），旧请求重放会返回 409，不能覆盖后来的撤销。
+
+### 14.3 判读
+
+| 状态 | `canSendProactive` | 说明 |
+| --- | --- | --- |
+| 无目的地 | false | 未确认地址 |
+| `verified` + 无授权 | false | 地址可用，但未同意接收 |
+| `verified` + `active` | true | 允许主动发送 |
+| `verified` + `revoked` | false | 撤销不等于注销，地址仍在 |
+| `invalidated`（任意授权） | false | 地址失效，需本人重新确认 |
+
+### 14.4 投递闸门与地址失效
+
+| 场景 | 预期 | 判读依据 |
+| --- | --- | --- |
+| 系统发起（`initiatedBy=system`）且未授权 | 投递 `suppressed`，渠道未被调用 | `suppressionReason` = `consent_missing` / `consent_revoked` / `destination_missing` / `destination_invalidated` / `identity_inactive` |
+| 用户自己创建/处理的会话 | 照常投递 | `initiatedBy` 缺省为 `self`，不受授权闸门限制 |
+| 平台报告收件人不可达（Feishu `230002`/`230013`/`99992351`） | 投递 `failed` 且**不重试**；地址置 `invalidated` | 这些码是确定性事实，一次即判，需本人重新确认 |
+| 发往**他人**地址失败 | 只记该投递失败，本人地址不受影响 | 不可达记账要求收件人与本人已确认地址一致 |
+| 身份绑定撤销 / 用户停用 | 抑制投递，但地址状态不变 | 绑定恢复后地址仍可用 |
+
+### 14.5 真机边界
+
+- 地址来源必须是**真实飞书登录身份**（`identity_bindings` 的 `open_id`），不能手填。
+- 系统发起会话目前只有告警路径（web-only）；构造 `system` 会话验证抑制属 `local-real`，
+  不当作平台推送证据。
+- **实际收到主动消息要等 #37**，本节不宣称送达能力。

@@ -200,7 +200,7 @@ export class Worker {
 					lastError: "recipient unreachable",
 				});
 				if (this.notifications && session)
-					await noteUnreachableIn(tx, session.ownerId, now);
+					await noteUnreachableIn(tx, session.ownerId, now, delivery.recipient);
 			});
 			return;
 		}
