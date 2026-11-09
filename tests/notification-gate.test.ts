@@ -314,3 +314,37 @@ test("gate: 租约过期后旧 worker 不得把目的地判为失效", async () 
 	assert.equal(status.destination?.status, "verified", "过期 worker 不得让地址失效");
 	assert.equal(status.canSendProactive, true, "新 worker 已接管，闸门不应被旧结果关闭");
 });
+
+test("gate: 发往他人地址的失败不能牵连本人已确认目的地", async () => {
+	const { runtime, session, notifications, startSession, drain } = await setup({
+		unreachable: true,
+	});
+	const destination = await notifications.verifyDestination(session.userId, identity);
+	await notifications.grantConsent(session.userId, destination.id, 0);
+
+	// 会话发给另一个（不可达的）收件人：失败属实，但不应让本人目的地失效。
+	const other = await runtime.decisions.startSession({
+		requestId: crypto.randomUUID(),
+		ownerId: session.userId,
+		recipient: { accountId: "account-a", kind: "user", externalId: "ou-someone-else" },
+		allowedActorIds: ["ou-owner"],
+		strategy: { objective: "leads", audience: [], channels: {}, sellingPoints: [] },
+		limits: { maxBidChangeRatio: 0.2, maxBudgetChangeRatio: 0.2 },
+		signal: { id: "sig", title: "t", summary: "s", evidence: [] },
+		expiresAt: "2030-01-02T00:00:00.000Z",
+	});
+	await runtime.decisions.prepareRound(other.id, 0);
+	await drain();
+
+	const deliveries = await runtime.storage.transaction((tx) => tx.deliveries.all());
+	assert.equal(
+		deliveries.find((item) => item.sessionId === other.id)?.status,
+		"failed",
+		"投递本身仍应记为失败",
+	);
+	const status = await notifications.status(session.userId);
+	assert.equal(status.destination?.status, "verified", "他人地址失败不得让本人地址失效");
+	assert.equal(status.canSendProactive, true);
+	assert.equal(status.destination?.unreachableCount, undefined, "不应累计不可达次数");
+	assert.ok(await startSession);
+});
