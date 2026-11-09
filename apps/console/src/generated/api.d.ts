@@ -13,7 +13,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Extract editable suggestions from a brief explicitly submitted to the configured provider. This operation does not save a draft or create a task. */
+        /** @description Extract editable suggestions from the submitted stage. Omitting stage keeps all fields eligible. This operation does not save a draft or create a task. */
         post: operations["extractTaskDraft"];
         delete?: never;
         options?: never;
@@ -322,7 +322,13 @@ export interface components {
         };
         TaskDraftExtractionInput: {
             brief: string;
+            stage?: components["schemas"]["TaskDraftStage"];
         };
+        /**
+         * @description Overview limits suggestions to product and objective, audience to audience and sellingPoints, and channels to channel names.
+         * @enum {string}
+         */
+        TaskDraftStage: "overview" | "audience" | "channels";
         TaskDraftSuggestions: {
             product?: string;
             objective?: string;

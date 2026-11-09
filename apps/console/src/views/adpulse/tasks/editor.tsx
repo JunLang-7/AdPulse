@@ -55,6 +55,7 @@ export default function TaskEditorPage() {
 	const [formError, setFormError] = useState("");
 	const [entryMode, setEntryMode] = useState<"guide" | "form">("guide");
 	const guided = creating && entryMode === "guide";
+	const [guideBusy, setGuideBusy] = useState(false);
 	const operation = useRef<SaveOperation | null>(null);
 	const detail = useQuery({
 		queryKey: ["task", taskId],
@@ -199,14 +200,14 @@ export default function TaskEditorPage() {
 			}} noValidate className="space-y-4">
 				{creating ? (
 					<div role="group" aria-label="任务填写方式" className="flex flex-wrap gap-2">
-						<Button type="button" variant={guided ? "secondary" : "ghost"} aria-pressed={guided} onClick={() => setEntryMode("guide")}>逐题引导</Button>
-						<Button type="button" variant={!guided ? "secondary" : "ghost"} aria-pressed={!guided} onClick={() => setEntryMode("form")}>直接填表</Button>
+						<Button type="button" variant={guided ? "secondary" : "ghost"} aria-pressed={guided} disabled={guideBusy || save.isPending} onClick={() => setEntryMode("guide")}>分阶段填写</Button>
+						<Button type="button" variant={!guided ? "secondary" : "ghost"} aria-pressed={!guided} disabled={guideBusy || save.isPending} onClick={() => setEntryMode("form")}>直接填表</Button>
 					</div>
 				) : null}
 				{creating ? (
 					<div hidden={!guided}>
 						<TaskSetupGuide form={form} onChange={(nextForm) => dispatch({ type: "edit", form: nextForm })}
-							onEdit={() => setEntryMode("form")} onSave={submitTask} saving={save.isPending} />
+							onEdit={() => setEntryMode("form")} onSave={submitTask} onBusyChange={setGuideBusy} saving={save.isPending} />
 					</div>
 				) : null}
 				<div hidden={guided} className="space-y-4">

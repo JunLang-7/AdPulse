@@ -1,178 +1,274 @@
-import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { consoleClient } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import {
-	addGuideAnswer,
-	applyTaskSuggestions,
-	guideQuestions,
-	guideValue,
-	nextGuideQuestion,
+	applyStageSuggestions,
+	fieldLabels,
+	fieldOptions,
+	selectedValues,
+	stageBrief,
+	stageValue,
+	taskStages,
+	withSelectedValue,
+	type ChoiceField,
+	type ExcludedChoices,
+	type TaskDraftStage,
 } from "./task-setup.js";
+import { readTaskSetupFile, TASK_SETUP_BRIEF_LIMIT, TASK_SETUP_FILE_ACCEPT } from "./task-setup-file.js";
 import type { FormState } from "./task-form.js";
 
-const BRIEF_LIMIT = 2500;
-const textAreaClass = "min-h-24 w-full rounded-md border bg-background p-3 text-sm";
+const reviewIndex = taskStages.length;
+const stepTitles = [...taskStages.map(({ title }) => title), "核对并创建"];
+const emptyNotes: Record<TaskDraftStage, string> = { overview: "", audience: "", channels: "" };
 
-export function TaskSetupGuide({ form, onChange, onEdit, onSave, saving }: {
+export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, saving }: {
 	form: FormState;
 	onChange: (form: FormState) => void;
 	onEdit: () => void;
 	onSave: () => void;
+	onBusyChange: (busy: boolean) => void;
 	saving: boolean;
 }) {
-	const [step, setStep] = useState<number | "brief" | "review">("brief");
-	const [brief, setBrief] = useState("");
-	const [answer, setAnswer] = useState("");
-	const [answerError, setAnswerError] = useState("");
-	const extraction = useMutation({
-		mutationFn: async () => {
-			const result = await consoleClient.POST("/api/task-drafts/extract", {
-				body: { brief: brief.trim() },
-			});
-			if (!result.data) throw new Error("提取服务暂时不可用，可以直接逐题填写。");
-			return result.data;
-		},
-	});
+	const [step, setStep] = useState(0);
+	const [returnToReview, setReturnToReview] = useState(false);
+	const [notes, setNotes] = useState(emptyNotes);
+	const [excluded, setExcluded] = useState<ExcludedChoices>({});
+	const [attached, setAttached] = useState<Partial<Record<TaskDraftStage, string>>>({});
+	const [processing, setProcessing] = useState(false);
+	const [reading, setReading] = useState(false);
+	const [error, setError] = useState("");
+	const [fileError, setFileError] = useState("");
+	const [failed, setFailed] = useState(false);
+	const [useEnteredValues, setUseEnteredValues] = useState(false);
+	const [localStages, setLocalStages] = useState<Partial<Record<TaskDraftStage, boolean>>>({});
+	const busyRef = useRef(false);
+	const stage = taskStages[step];
+	const busy = processing || reading || saving;
+	const brief = stage ? stageBrief(form, stage, notes[stage.id]) : "";
+	const remaining = TASK_SETUP_BRIEF_LIMIT - brief.length;
 
-	function next(nextForm: FormState, after = -1) {
-		const index = nextGuideQuestion(nextForm, after);
-		setStep(index === -1 ? "review" : index);
-		setAnswer("");
-		setAnswerError("");
+	function go(index: number, fromReview = false) {
+		setStep(index);
+		setReturnToReview(fromReview);
+		setError("");
+		setFileError("");
+		setFailed(false);
+		setUseEnteredValues(false);
 	}
 
-	function finishAnswer(review = false, skip = false) {
-		if (typeof step !== "number") return;
-		const question = guideQuestions[step];
-		if (!question) return;
+	async function loadFile(file: File) {
+		if (!stage || busyRef.current) return;
+		busyRef.current = true;
+		setReading(true);
+		onBusyChange(true);
+		setFileError("");
 		try {
-			const nextForm = skip ? form : addGuideAnswer(form, question.field, answer);
-			if (nextForm !== form) onChange(nextForm);
-			if (review) {
-				setStep("review");
-				setAnswer("");
-				setAnswerError("");
-			} else {
-				next(nextForm, step);
-			}
-		} catch (error) {
-			setAnswerError(error instanceof Error ? error.message : "请检查这一项。");
+			const contents = await readTaskSetupFile(file);
+			const combined = [notes[stage.id].trim(), contents].filter(Boolean).join("\n");
+			if (stageBrief(form, stage, combined).length > TASK_SETUP_BRIEF_LIMIT)
+				throw new Error("合并后超过本阶段文字上限。请先精简说明，再选择文件。");
+			setNotes((previous) => ({ ...previous, [stage.id]: combined }));
+			setAttached((previous) => ({ ...previous, [stage.id]: file.name }));
+		} catch (problem) {
+			setFileError(problem instanceof Error ? problem.message : "无法读取这个文件。");
+		} finally {
+			busyRef.current = false;
+			setReading(false);
+			onBusyChange(false);
 		}
 	}
 
-	if (step === "brief") {
-		const suggestion = extraction.data;
-		const proposedForm = suggestion ? applyTaskSuggestions(form, suggestion) : null;
-		const added = proposedForm ? guideQuestions.filter(({ field }) =>
-			!guideValue(form, field) && guideValue(proposedForm, field)) : [];
-		return (
-			<Card className="border-t-2 border-t-primary">
-				<CardContent className="space-y-4">
-					<div className="space-y-1">
-						<h2 className="text-lg font-semibold">用一句话开始</h2>
-						<p className="text-sm text-muted-foreground">可以粘贴已有的推广说明，也可以直接回答问题。只要知道要推广什么，就能创建任务。</p>
-					</div>
-					<label className="block space-y-1 text-sm">
-						<span className="font-medium">已有的推广说明（选填）</span>
-						<textarea className={textAreaClass} maxLength={BRIEF_LIMIT} value={brief}
-							disabled={extraction.isPending} onChange={(event) => {
-								setBrief(event.target.value);
-								extraction.reset();
-							}}
-							placeholder="例如：我要在小红书推广新品试用装，想让准备装修的业主来咨询，可以免费领取样品。" />
-					</label>
-					<p className="text-xs text-muted-foreground">选择提取时，这段文字会发送给 DeepSeek。请先删去手机号、客户姓名等个人资料。</p>
-					{extraction.isError ? <p role="alert" className="text-sm text-red-600">提取服务暂时不可用。可以直接逐题填写。</p> : null}
-					{proposedForm && added.length > 0 ? (
-						<div className="space-y-2 rounded-lg border bg-muted/40 p-3">
-							<p className="text-sm font-medium">从说明提取的内容</p>
-							<dl className="grid gap-2 text-sm sm:grid-cols-2">
-								{added.map(({ field, label }) => (
-									<div key={field} className="min-w-0">
-										<dt className="text-xs text-muted-foreground">{label}</dt>
-										<dd className="whitespace-pre-wrap break-words">{guideValue(proposedForm, field)}</dd>
-									</div>
-								))}
-							</dl>
-							<Button type="button" onClick={() => {
-								onChange(proposedForm);
-								extraction.reset();
-								next(proposedForm);
-							}}>带入草稿并补答</Button>
-						</div>
-					) : null}
-					{proposedForm && added.length === 0 ? (
-						<p role="status" className="text-sm text-muted-foreground">这段说明没有可补充的内容，可以直接逐题填写。</p>
-					) : null}
-					<div className="flex flex-wrap gap-2">
-						<Button type="button" variant={brief.trim() ? "default" : "outline"}
-							disabled={!brief.trim() || extraction.isPending} onClick={() => extraction.mutate()}>
-							{extraction.isPending ? "正在提取…" : extraction.isError ? "重试提取" : "用 DeepSeek 提取"}
-						</Button>
-						<Button type="button" variant={brief.trim() ? "outline" : "default"} onClick={() => next(form)}>直接回答问题</Button>
-					</div>
-				</CardContent>
-			</Card>
-		);
+	async function submitStage() {
+		if (!stage || busyRef.current || saving) return;
+		setError("");
+		if (remaining < 0 && !useEnteredValues) {
+			setError("说明和选项共超过 2,500 字，请先精简资料。");
+			return;
+		}
+		let nextForm = form;
+		if (brief && !useEnteredValues) {
+			busyRef.current = true;
+			setProcessing(true);
+			onBusyChange(true);
+			try {
+				const result = await consoleClient.POST("/api/task-drafts/extract", {
+					body: { brief, stage: stage.id },
+				});
+				if (!result.data) throw new Error("整理服务不可用");
+				nextForm = applyStageSuggestions(form, stage.id, result.data, excluded);
+			} catch {
+				setFailed(true);
+				setError("暂时无法整理资料。可以重试，或按已填写的内容继续。");
+				return;
+			} finally {
+				busyRef.current = false;
+				setProcessing(false);
+				onBusyChange(false);
+			}
+		}
+		if (stage.id === "overview" && !nextForm.product.trim()) {
+			setError("请填写一个产品或服务名称，或在补充资料里明确说明要推广什么。");
+			return;
+		}
+		if (nextForm !== form) onChange(nextForm);
+		setLocalStages((previous) => ({ ...previous, [stage.id]: useEnteredValues }));
+		go(returnToReview ? reviewIndex : step + 1);
 	}
 
-	if (step === "review") {
-		return (
-			<Card>
-				<CardContent className="space-y-4">
-					<h2 className="text-lg font-semibold">核对推广任务</h2>
-					<dl className="grid gap-3 rounded-lg border p-4 text-sm sm:grid-cols-2">
-						{guideQuestions.map(({ field, label }) => (
-							<div key={field} className="min-w-0">
-								<dt className="text-xs text-muted-foreground">{label}</dt>
-								<dd className="whitespace-pre-wrap break-words">{guideValue(form, field) || "待补充"}</dd>
-							</div>
-						))}
-					</dl>
-					<p className="text-sm text-muted-foreground">观察时间、预算和提醒条件可以稍后补充。创建任务后，可回到任务详情继续填写。</p>
-					<div className="flex flex-wrap gap-2">
-						<Button type="button" disabled={saving || !form.product.trim()} onClick={onSave}>{saving ? "保存中…" : "确认并创建任务"}</Button>
-						<Button type="button" variant="outline" onClick={onEdit}>打开表单修改</Button>
-					</div>
-				</CardContent>
-			</Card>
-		);
-	}
-
-	const question = guideQuestions[step];
-	if (!question) return null;
-	const required = question.field === "product";
 	return (
 		<Card>
-			<CardContent className="space-y-4">
-				<p className="text-xs font-medium text-muted-foreground">补充信息 · {required ? "唯一必填项" : "选填"}</p>
-				<label className="block space-y-2">
-					<span className="block text-lg font-semibold">{question.question}</span>
-					<Input key={question.field} value={answer} maxLength={question.maxLength} placeholder={question.example}
-						onKeyDown={(event) => {
-							if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
-							event.preventDefault();
-							finishAnswer();
-						}}
-						onChange={(event) => {
-							setAnswer(event.target.value);
-							setAnswerError("");
-						}} />
-				</label>
-				{answerError ? <p role="alert" className="text-sm text-red-600">{answerError}</p> : null}
-				<div className="flex flex-wrap gap-2">
-					<Button type="button" onClick={() => finishAnswer()}>下一题</Button>
-					{required ? null : (
-						<Button type="button" variant="outline" onClick={() => finishAnswer(false, true)}>我还不知道，先跳过</Button>
-					)}
-					{!required || answer.trim() ? (
-						<Button type="button" variant="ghost" onClick={() => finishAnswer(true)}>现在核对草稿</Button>
-					) : null}
-				</div>
+			<CardContent className="space-y-5">
+				<ol aria-label="填写进度" className="grid grid-cols-2 gap-2 border-b pb-4 sm:grid-cols-4">
+					{stepTitles.map((title, index) => (
+						<li key={title} aria-current={step === index ? "step" : undefined}
+							className={step === index ? "flex items-center gap-2 text-sm font-semibold" : "flex items-center gap-2 text-sm text-muted-foreground"}>
+							<span aria-hidden="true" className={step === index
+								? "grid size-6 shrink-0 place-items-center rounded-full bg-primary text-xs text-primary-foreground"
+								: "grid size-6 shrink-0 place-items-center rounded-full border text-xs"}>
+								{index + 1}
+							</span>
+							{title}
+						</li>
+					))}
+				</ol>
+
+				{stage ? (
+					<div className="space-y-5">
+						<div className="space-y-1">
+							<h2 className="text-lg font-semibold">{stage.title}</h2>
+							<p className="text-sm text-muted-foreground">{stage.description}</p>
+						</div>
+						{stage.fields.map((field) => field === "product" ? (
+							<label key={field} className="block space-y-1 text-sm font-medium">
+								<span>产品或服务名称</span>
+								<Input value={form.product} maxLength={200} disabled={busy} placeholder="例如：新品试用装"
+									onChange={(event) => onChange({ ...form, product: event.target.value })} />
+								<span className="block text-xs font-normal text-muted-foreground">任务唯一必填项。也可从下方资料整理出来。</span>
+							</label>
+						) : (
+							<StageChoices key={field} field={field} form={form} disabled={busy} onSelect={(value, chosen) => {
+								setExcluded((previous) => {
+									const omitted = previous[field] ?? [];
+									return { ...previous, [field]: chosen ? [...omitted, value] : omitted.filter((item) => item !== value) };
+								});
+								onChange(withSelectedValue(form, field, value));
+							}} />
+						))}
+
+						<details key={stage.id} className="rounded-lg border px-3 py-2">
+							<summary className="cursor-pointer text-sm font-medium">
+								补充说明或文件（选填）{notes[stage.id] ? " · 已填写" : ""}
+							</summary>
+							<div className="mt-3 space-y-3">
+								<div className="space-y-1 text-sm">
+									<label htmlFor={"task-setup-notes-" + stage.id}>补充资料</label>
+									<textarea id={"task-setup-notes-" + stage.id} className="min-h-24 w-full rounded-md border bg-background p-3 text-sm"
+										value={notes[stage.id]} maxLength={TASK_SETUP_BRIEF_LIMIT} disabled={busy}
+										placeholder={stage.placeholder} onChange={(event) => {
+											const value = event.target.value;
+											setNotes((previous) => ({ ...previous, [stage.id]: value }));
+										}} />
+								</div>
+								<label className="block space-y-1 text-sm">
+									<span>选择资料文件</span>
+									<Input type="file" accept={TASK_SETUP_FILE_ACCEPT} disabled={busy}
+										onChange={(event) => {
+											const file = event.currentTarget.files?.[0];
+											event.currentTarget.value = "";
+											if (file) void loadFile(file);
+										}} />
+								</label>
+								{attached[stage.id] ? (
+									<p role="status" className="text-xs text-muted-foreground">已读入 {attached[stage.id]}，可在上方检查和修改文字。</p>
+								) : null}
+								{fileError ? <p role="alert" className="text-sm text-red-600">{fileError}</p> : null}
+								<p className="text-xs text-muted-foreground">
+									支持 UTF-8 的 TXT、Markdown、CSV。提交前可以修改读入的文字。本阶段{remaining >= 0 ? "还可输入 " + remaining + " 字" : "已超过文字上限"}。
+								</p>
+							</div>
+						</details>
+
+						{error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
+						{failed ? (
+							<label className="flex items-center gap-2 text-sm">
+								<input type="checkbox" checked={useEnteredValues} disabled={busy}
+									onChange={(event) => setUseEnteredValues(event.target.checked)} />
+								本阶段按已填写的内容继续
+							</label>
+						) : null}
+						<p className="text-xs text-muted-foreground">
+							提交会发送本阶段选择和填写的资料用于整理。选填项未确定时，可以留空提交。
+						</p>
+						<div className="flex flex-wrap gap-2">
+							<Button type="button" variant="outline" disabled={step === 0 || busy} onClick={() => go(step - 1, returnToReview)}>上一步</Button>
+							<Button type="button" disabled={busy} onClick={() => void submitStage()}>
+								{processing ? "正在整理…" : reading ? "正在读取…" : "提交本阶段"}
+							</Button>
+						</div>
+					</div>
+				) : (
+					<div className="space-y-4">
+						<div className="space-y-1">
+							<h2 className="text-lg font-semibold">核对推广任务</h2>
+							<p className="text-sm text-muted-foreground">请确认整理后的内容。可以修改任一阶段，也可以先创建，再补预算、时间和提醒条件。</p>
+						</div>
+						<div className="divide-y rounded-lg border">
+							{taskStages.map(({ id, title, fields }, index) => (
+								<section key={id} className="space-y-2 p-3">
+									<div className="flex items-center justify-between gap-2">
+										<h3 className="text-sm font-semibold">{title}</h3>
+										<Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => go(index, true)}>修改{title}</Button>
+									</div>
+									{localStages[id] ? <p className="text-xs text-muted-foreground">本阶段按填写内容记录。</p> : null}
+									<dl className="grid gap-2 text-sm sm:grid-cols-2">
+										{fields.map((field) => (
+											<div key={field} className="min-w-0">
+												<dt className="text-xs text-muted-foreground">{fieldLabels[field]}</dt>
+												<dd className="whitespace-pre-wrap break-words">{stageValue(form, field) || "待补充"}</dd>
+											</div>
+										))}
+									</dl>
+								</section>
+							))}
+						</div>
+						<div className="flex flex-wrap gap-2">
+							<Button type="button" variant="outline" disabled={saving} onClick={() => go(reviewIndex - 1, true)}>上一步</Button>
+							<Button type="button" disabled={saving || !form.product.trim()} onClick={onSave}>
+								{saving ? "正在创建…" : "确认并创建任务"}
+							</Button>
+							<Button type="button" variant="ghost" disabled={saving} onClick={onEdit}>在表单中修改</Button>
+						</div>
+					</div>
+				)}
 			</CardContent>
 		</Card>
+	);
+}
+
+function StageChoices({ field, form, disabled, onSelect }: {
+	field: ChoiceField;
+	form: FormState;
+	disabled: boolean;
+	onSelect: (value: string, chosen: boolean) => void;
+}) {
+	const selected = selectedValues(form, field);
+	const presets = fieldOptions[field];
+	const choices = [...new Set([...presets, ...selected])];
+	return (
+		<fieldset className="space-y-2" disabled={disabled}>
+			<legend className="text-sm font-medium">{fieldLabels[field]} <span className="font-normal text-muted-foreground">（选填）</span></legend>
+			<div className="flex flex-wrap gap-2">
+				{choices.map((value) => {
+					const chosen = selected.includes(value);
+					return (
+						<Button key={value} type="button" size="sm" variant={chosen ? "secondary" : "outline"}
+							aria-pressed={chosen} className="max-w-full whitespace-normal text-left"
+							onClick={() => onSelect(value, chosen)}>{value}</Button>
+					);
+				})}
+			</div>
+		</fieldset>
 	);
 }

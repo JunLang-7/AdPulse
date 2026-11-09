@@ -1,52 +1,125 @@
 import type { components } from "../../../generated/api.js";
 import { emptyChannel, type FormState } from "./task-form.ts";
 
-export type TaskDraftSuggestions = components["schemas"]["TaskDraftSuggestions"];
+type TaskDraftSuggestions = components["schemas"]["TaskDraftSuggestions"];
+export type TaskDraftStage = components["schemas"]["TaskDraftStage"];
 
-export const guideQuestions = [
-	{ field: "product", label: "产品或服务", question: "这次要推广什么？", example: "例如：新品试用装", maxLength: 200 },
-	{ field: "objective", label: "推广目标", question: "你希望这次推广带来什么？", example: "例如：让更多客户来咨询", maxLength: 2000 },
-	{ field: "audience", label: "目标人群", question: "你最想让哪些人看到？", example: "例如：准备装修的新房业主", maxLength: 2000 },
-	{ field: "sellingPoints", label: "卖点", question: "有什么值得告诉客户的？", example: "例如：可以先领取免费样品", maxLength: 2000 },
-	{ field: "channels", label: "投放渠道", question: "打算在哪里推广？", example: "例如：小红书、抖音", maxLength: 2000 },
-] as const;
+export const taskStages = [
+	{
+		id: "overview", title: "推广内容", description: "先确定推广什么、希望带来什么结果。",
+		placeholder: "例如：准备推广门店的新品试用装，希望增加到店咨询。",
+		fields: ["product", "objective"],
+	},
+	{
+		id: "audience", title: "人群与卖点", description: "选出你已确定的人群和优势，也可以补充一段已有的客户或产品说明。",
+		placeholder: "例如：面向最近准备装修的业主，可以预约免费上门测量。",
+		fields: ["audience", "sellingPoints"],
+	},
+	{
+		id: "channels", title: "投放渠道", description: "选出已确定的平台。渠道未定时，可以直接进入核对。",
+		placeholder: "例如：计划先在品牌公众号和小红书发布新品介绍。",
+		fields: ["channels"],
+	},
+] as const satisfies readonly {
+	id: TaskDraftStage;
+	title: string;
+	description: string;
+	placeholder: string;
+	fields: readonly (keyof TaskDraftSuggestions)[];
+}[];
 
-type GuideField = typeof guideQuestions[number]["field"];
+type DraftField = keyof TaskDraftSuggestions;
+export type ChoiceField = Exclude<DraftField, "product">;
+export type ExcludedChoices = Partial<Record<ChoiceField, readonly string[]>>;
 
-export function guideValue(form: FormState, field: GuideField): string {
-	return field === "channels" ? form.channels.map((channel) => channel.name).filter(Boolean).join("、") : form[field].trim();
+export const fieldLabels: Record<DraftField, string> = {
+	product: "产品或服务",
+	objective: "推广目标",
+	audience: "目标人群",
+	sellingPoints: "主要卖点",
+	channels: "投放渠道",
+};
+
+export const fieldOptions: Record<ChoiceField, readonly string[]> = {
+	objective: ["增加咨询", "促进购买", "提高品牌曝光", "吸引客户到店"],
+	audience: ["新客户", "老客户", "有明确需求的人", "企业客户"],
+	sellingPoints: ["可免费试用", "价格优惠", "专业服务", "快速交付"],
+	channels: ["小红书", "抖音", "微信视频号", "微信公众号", "搜索广告"],
+};
+
+function readList(text: string): string[] {
+	return text.split("\n").map((item) => item.trim()).filter(Boolean);
 }
 
-export function nextGuideQuestion(form: FormState, after = -1): number {
-	return guideQuestions.findIndex(({ field }, index) => index > after && !guideValue(form, field));
+export function selectedValues(form: FormState, field: ChoiceField): string[] {
+	if (field === "channels") return form.channels.map((channel) => channel.name).filter(Boolean);
+	if (field === "objective") return form.objective.trim() ? [form.objective.trim()] : [];
+	return readList(form[field]);
 }
 
-export function applyTaskSuggestions(form: FormState, draft: TaskDraftSuggestions): FormState {
+export function stageValue(form: FormState, field: DraftField): string {
+	return field === "product" ? form.product.trim() : selectedValues(form, field).join("、");
+}
+
+export function withSelectedValue(form: FormState, field: ChoiceField, value: string): FormState {
+	const items = selectedValues(form, field);
+	const selected = items.includes(value);
+	const values = selected ? items.filter((item) => item !== value) : [...items, value];
+	if (field === "objective") return { ...form, objective: selected ? "" : value };
+	if (field === "channels") {
+		const channels = selected
+			? form.channels.filter(({ name }) => name !== value)
+			: [...form.channels, { ...emptyChannel, name: value }];
+		return { ...form, channels };
+	}
+	return { ...form, [field]: values.join("\n") };
+}
+
+export function stageBrief(form: FormState, stage: typeof taskStages[number], notes: string): string {
+	const known = stage.fields.flatMap((field) => {
+		const value = stageValue(form, field);
+		return value ? [fieldLabels[field] + "：" + value] : [];
+	});
+	return [...known, notes.trim()].filter(Boolean).join("\n");
+}
+
+export function applyStageSuggestions(
+	form: FormState,
+	stage: TaskDraftStage,
+	draft: TaskDraftSuggestions,
+	excluded: ExcludedChoices = {},
+): FormState {
+	const available = (field: ChoiceField, values: readonly string[] = []) =>
+		values.filter((value) => !excluded[field]?.includes(value));
+	if (stage === "overview") {
+		return {
+			...form,
+			product: form.product.trim() ? form.product : draft.product ?? form.product,
+			objective: form.objective.trim() ? form.objective
+				: available("objective", draft.objective ? [draft.objective] : [])[0] ?? form.objective,
+		};
+	}
+	if (stage === "audience") {
+		return {
+			...form,
+			audience: mergeList(form.audience, available("audience", draft.audience)),
+			sellingPoints: mergeList(form.sellingPoints, available("sellingPoints", draft.sellingPoints)),
+		};
+	}
 	return {
 		...form,
-		product: form.product.trim() ? form.product : draft.product ?? form.product,
-		objective: form.objective.trim() ? form.objective : draft.objective ?? form.objective,
-		audience: form.audience.trim() ? form.audience : draft.audience?.join("\n") ?? form.audience,
-		sellingPoints: form.sellingPoints.trim() ? form.sellingPoints : draft.sellingPoints?.join("\n") ?? form.sellingPoints,
-		channels: form.channels.length > 0 || !draft.channels
-			? form.channels
-			: draft.channels.map((name) => ({ ...emptyChannel, name })),
+		channels: [
+			...form.channels,
+			...available("channels", draft.channels)
+				.filter((name) => !form.channels.some((channel) => channel.name === name))
+				.map((name) => ({ ...emptyChannel, name })),
+		],
 	};
 }
 
-export function addGuideAnswer(form: FormState, field: GuideField, value: string): FormState {
-	const answer = value.trim();
-	if (field === "product" && !answer) throw new Error("填个名称就可以，例如“新品试用装”。");
-	if (!answer) return form;
-	if (field === "product" || field === "objective") return { ...form, [field]: answer };
-	const items = [...new Set(answer.split(/[\n、，,]+/).map((item) => item.trim()).filter(Boolean))];
-	if (items.length > 100) throw new Error("请先记录最重要的 100 项。");
-	if (field !== "channels") return { ...form, [field]: items.join("\n") };
-	if (items.some((name) => name.length > 128 || ["__proto__", "prototype", "constructor"].includes(name)))
-		throw new Error("请填写有效的渠道名称，每项最多 128 字。");
-	if (form.channels.length > 0) {
-		const newNames = items.filter((name) => !form.channels.some((channel) => channel.name === name));
-		return { ...form, channels: [...form.channels, ...newNames.map((name) => ({ ...emptyChannel, name }))] };
-	}
-	return { ...form, channels: items.map((name) => ({ ...emptyChannel, name })) };
+function mergeList(current: string, suggestions: string[]): string {
+	if (!suggestions.length) return current;
+	const existing = readList(current);
+	const added = suggestions.filter((value) => !existing.includes(value)).slice(0, Math.max(0, 100 - existing.length));
+	return added.length ? [current.trim(), ...added].filter(Boolean).join("\n") : current;
 }
