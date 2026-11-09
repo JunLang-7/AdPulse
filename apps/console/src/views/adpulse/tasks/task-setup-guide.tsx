@@ -1,3 +1,4 @@
+import { Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { consoleClient, type components } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
@@ -16,7 +17,8 @@ import {
 	type ExcludedChoices,
 	type TaskDraftStage,
 } from "./task-setup.js";
-import { readTaskSetupFile, TASK_SETUP_BRIEF_LIMIT, TASK_SETUP_FILE_ACCEPT } from "./task-setup-file.js";
+import { TASK_SETUP_BRIEF_LIMIT } from "./task-setup-file.js";
+import { readTaskSetupAttachment, TASK_SETUP_ATTACHMENT_ACCEPT, TASK_SETUP_PREVIEW_LIMIT } from "./task-setup-attachment.js";
 import type { FormState } from "./task-form.js";
 
 import { TaskModelSettings, type TaskDraftProvider } from "./task-model-settings.js";
@@ -41,7 +43,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const [returnToReview, setReturnToReview] = useState(false);
 	const [notes, setNotes] = useState(emptyNotes);
 	const [excluded, setExcluded] = useState<ExcludedChoices>({});
-	const [attached, setAttached] = useState<Partial<Record<TaskDraftStage, string>>>({});
+	const [attached, setAttached] = useState<Partial<Record<TaskDraftStage, { name: string; clipped: boolean }>>>({});
 	const [processing, setProcessing] = useState(false);
 	const [reading, setReading] = useState(false);
 	const [error, setError] = useState("");
@@ -50,6 +52,8 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const [useEnteredValues, setUseEnteredValues] = useState(false);
 	const [localStages, setLocalStages] = useState<Partial<Record<TaskDraftStage, boolean>>>({});
 	const busyRef = useRef(false);
+	const fileInput = useRef<HTMLInputElement>(null);
+	const [dragging, setDragging] = useState(false);
 	const stage = taskStages[step];
 	const busy = processing || reading || saving;
 	const brief = stage ? stageBrief(form, stage, notes[stage.id]) : "";
@@ -75,12 +79,12 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 		onBusyChange(true);
 		setFileError("");
 		try {
-			const contents = await readTaskSetupFile(file);
-			const combined = [notes[stage.id].trim(), contents].filter(Boolean).join("\n");
-			if (stageBrief(form, stage, combined).length > TASK_SETUP_BRIEF_LIMIT)
-				throw new Error("合并后超过本阶段文字上限。请先精简说明，再选择文件。");
+			const { text, clipped } = await readTaskSetupAttachment(file);
+			const combined = [notes[stage.id].trim(), text].filter(Boolean).join("\n");
+			if (combined.length > TASK_SETUP_PREVIEW_LIMIT)
+				throw new Error("合并后超过预览上限。请先精简现有资料，再选择文件。");
 			setNotes((previous) => ({ ...previous, [stage.id]: combined }));
-			setAttached((previous) => ({ ...previous, [stage.id]: file.name }));
+			setAttached((previous) => ({ ...previous, [stage.id]: { name: file.name, clipped } }));
 		} catch (problem) {
 			setFileError(problem instanceof Error ? problem.message : "无法读取这个文件。");
 		} finally {
@@ -187,27 +191,49 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 								<div className="space-y-1 text-sm">
 									<label htmlFor={"task-setup-notes-" + stage.id}>补充资料</label>
 									<textarea id={"task-setup-notes-" + stage.id} className="min-h-24 w-full rounded-md border bg-background p-3 text-sm"
-										value={notes[stage.id]} maxLength={TASK_SETUP_BRIEF_LIMIT} disabled={busy}
+										value={notes[stage.id]} maxLength={TASK_SETUP_PREVIEW_LIMIT} disabled={busy}
 										placeholder={stage.placeholder} onChange={(event) => {
 											const value = event.target.value;
 											setNotes((previous) => ({ ...previous, [stage.id]: value }));
 										}} />
 								</div>
-								<label className="block space-y-1 text-sm">
-									<span>选择资料文件</span>
-									<Input type="file" accept={TASK_SETUP_FILE_ACCEPT} disabled={busy}
-										onChange={(event) => {
-											const file = event.currentTarget.files?.[0];
-											event.currentTarget.value = "";
-											if (file) void loadFile(file);
-										}} />
-								</label>
+								<input ref={fileInput} type="file" accept={TASK_SETUP_ATTACHMENT_ACCEPT} hidden
+									onChange={(event) => {
+										const file = event.currentTarget.files?.[0];
+										event.currentTarget.value = "";
+										if (file) void loadFile(file);
+									}} />
+								<button type="button" disabled={busy} aria-label="选择资料文件"
+									className={"flex w-full cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 " +
+										(dragging ? "border-primary bg-primary/10" : "border-primary/40 bg-muted/55 hover:border-primary hover:bg-muted")}
+									onClick={() => fileInput.current?.click()}
+									onDragOver={(event) => {
+										event.preventDefault();
+										if (!busy) setDragging(true);
+									}} onDragLeave={() => setDragging(false)}
+									onDrop={(event) => {
+										event.preventDefault();
+										setDragging(false);
+										if (busy) return;
+										const files = event.dataTransfer.files;
+										if (files.length > 1) {
+											setFileError("请每次选择一个文件。");
+											return;
+										}
+										const file = files[0];
+										if (file) void loadFile(file);
+									}}>
+									<Upload aria-hidden="true" className="size-5" />
+									<span className="rounded-md bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground">{reading ? "正在读取文件…" : "选择文件"}</span>
+									<span className="text-xs text-muted-foreground">也可以把文件拖到这里</span>
+									<span className="text-xs text-muted-foreground">PDF、Word、Excel、TXT、Markdown、CSV · 文档最多 8 MB</span>
+								</button>
 								{attached[stage.id] ? (
-									<p role="status" className="text-xs text-muted-foreground">已读入 {attached[stage.id]}，可在上方检查和修改文字。</p>
+									<p role="status" className="break-words text-sm">已读入 {attached[stage.id]?.name}。{attached[stage.id]?.clipped ? "仅预览前 30,000 字，请核对并保留相关内容。" : "可在上方核对和修改文字。"}</p>
 								) : null}
 								{fileError ? <p role="alert" className="text-sm text-red-600">{fileError}</p> : null}
-								<p className="text-xs text-muted-foreground">
-									支持 UTF-8 的 TXT、Markdown、CSV。提交前可以修改读入的文字。本阶段{remaining >= 0 ? "还可输入 " + remaining + " 字" : "已超过文字上限"}。
+								<p className={remaining >= 0 ? "text-xs text-muted-foreground" : "text-sm text-red-600"}>
+									{remaining >= 0 ? "先在本机预览，提交前可编辑。本阶段还可输入 " + remaining + " 字。" : "超过本阶段 2,500 字上限，请在上方删减 " + (-remaining) + " 字后提交。"}
 								</p>
 							</div>
 						</details>
