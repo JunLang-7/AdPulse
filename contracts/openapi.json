@@ -14,24 +14,8 @@
       "get": {
         "operationId": "beginFeishuLogin",
         "security": [],
-        "parameters": [
-          {
-            "name": "returnTo",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "302": {
-            "description": "Redirect to Feishu authorization"
-          },
-          "400": {
-            "description": "Invalid return target"
-          }
-        }
+        "parameters": [{ "name": "returnTo", "in": "query", "required": false, "schema": { "type": "string" } }],
+        "responses": { "302": { "description": "Redirect to Feishu authorization" }, "400": { "description": "Invalid return target" } }
       }
     },
     "/auth/feishu/callback": {
@@ -39,103 +23,30 @@
         "operationId": "completeFeishuLogin",
         "security": [],
         "parameters": [
-          {
-            "name": "code",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "state",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "error",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
+          { "name": "code", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "state", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "error", "in": "query", "required": false, "schema": { "type": "string" } }
         ],
-        "responses": {
-          "303": {
-            "description": "Redirect to the validated in-app target"
-          },
-          "503": {
-            "description": "Temporarily unavailable"
-          }
-        }
+        "responses": { "303": { "description": "Redirect to the validated in-app target" }, "503": { "description": "Temporarily unavailable" } }
       }
     },
     "/api/me": {
       "get": {
         "operationId": "getCurrentUser",
         "responses": {
-          "200": {
-            "description": "Current authenticated user",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CurrentUser"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "200": { "description": "Current authenticated user", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CurrentUser" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/api/logout": {
       "post": {
         "operationId": "logout",
-        "security": [
-          {
-            "sessionCookie": [],
-            "sameOriginOrigin": []
-          }
-        ],
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
         "responses": {
-          "200": {
-            "description": "Session revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Same-origin request required"
-          }
+          "200": { "description": "Session revoked", "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } }, "required": ["ok"], "additionalProperties": false } } } },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Same-origin request required" }
         }
       }
     },
@@ -145,816 +56,158 @@
         "responses": {
           "200": {
             "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/TaskVersion"
-                      }
-                    }
-                  },
-                  "required": [
-                    "items"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/TaskVersion" } } }, "required": ["items"], "additionalProperties": false } } }
           },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       },
       "post": {
         "operationId": "createTask",
-        "security": [
-          {
-            "sessionCookie": [],
-            "sameOriginOrigin": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TaskInput"
-              }
-            }
-          }
-        },
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
+        "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskInput" } } } },
         "responses": {
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskVersion"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Idempotency conflict",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskVersion" } } } },
+          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Idempotency conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/api/tasks/{taskId}": {
-      "parameters": [
-        {
-          "name": "taskId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
+      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
       "get": {
         "operationId": "getTask",
         "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskDetail"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDetail" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       },
       "patch": {
         "operationId": "reviseTask",
-        "security": [
-          {
-            "sessionCookie": [],
-            "sameOriginOrigin": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TaskRevision"
-              }
-            }
-          }
-        },
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
+        "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskRevision" } } } },
         "responses": {
-          "200": {
-            "description": "Updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskVersion"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Idempotency or task version conflict",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskVersion" } } } },
+          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Idempotency or task version conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/api/evidence/imports": {
       "post": {
         "operationId": "importEvidence",
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EvidenceImportInput"
-              }
-            }
-          }
-        },
+        "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EvidenceImportInput" } } } },
         "responses": {
-          "200": {
-            "description": "Evidence reused",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EvidenceImportResultList"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Evidence imported",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EvidenceImportResultList"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Idempotency or content conflict",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "200": { "description": "Evidence reused", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EvidenceImportResultList" } } } },
+          "201": { "description": "Evidence imported", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EvidenceImportResultList" } } } },
+          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Idempotency or content conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/api/tasks/{taskId}/evidence": {
-      "parameters": [
-        {
-          "name": "taskId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
+      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
       "get": {
         "operationId": "listTaskEvidence",
         "responses": {
-          "200": {
-            "description": "Current evidence for the task",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/EvidenceVersion"
-                      }
-                    }
-                  },
-                  "required": [
-                    "items"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Task not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "200": { "description": "Current evidence for the task", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/EvidenceVersion" } } }, "required": ["items"], "additionalProperties": false } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Task not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/api/evidence/{evidenceId}": {
-      "parameters": [
-        {
-          "name": "evidenceId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
+      "parameters": [{ "name": "evidenceId", "in": "path", "required": true, "schema": { "type": "string" } }],
       "get": {
         "operationId": "getEvidence",
         "responses": {
-          "200": {
-            "description": "Evidence detail and immutable revisions",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EvidenceDetail"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Evidence not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "200": { "description": "Evidence detail and immutable revisions", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EvidenceDetail" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Evidence not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/api/evidence/{evidenceId}/revisions": {
-      "parameters": [
-        {
-          "name": "evidenceId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
+      "parameters": [{ "name": "evidenceId", "in": "path", "required": true, "schema": { "type": "string" } }],
       "post": {
         "operationId": "reviseEvidence",
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EvidenceRevision"
-              }
-            }
-          }
-        },
+        "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EvidenceRevision" } } } },
         "responses": {
-          "201": {
-            "description": "New immutable version",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EvidenceImportResult"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Evidence not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Idempotency or version conflict",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "201": { "description": "New immutable version", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EvidenceImportResult" } } } },
+          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Evidence not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Idempotency or version conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/api/tasks/{taskId}/comparisons": {
-      "parameters": [
-        {
-          "name": "taskId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
+      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
       "get": {
         "operationId": "listTaskComparisons",
         "responses": {
-          "200": {
-            "description": "Immutable comparison history",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ComparisonResultList"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Task not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "200": { "description": "Immutable comparison history", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ComparisonResultList" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Task not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/api/tasks/{taskId}/comparison-follow-ups": {
-      "parameters": [
-        {
-          "name": "taskId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
+      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
       "get": {
         "operationId": "listTaskComparisonFollowUps",
         "responses": {
-          "200": {
-            "description": "Deduplicated follow-up history",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ComparisonFollowUpList"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Task not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "200": { "description": "Deduplicated follow-up history", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ComparisonFollowUpList" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Task not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/api/tasks/{taskId}/investigation-alerts": {
-      "parameters": [
-        {
-          "name": "taskId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
+      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
       "get": {
         "operationId": "listTaskInvestigationAlerts",
         "responses": {
-          "200": {
-            "description": "Web-only investigation reminders and history",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvestigationAlertList"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Task not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "200": { "description": "Web-only investigation reminders and history", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvestigationAlertList" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Task not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/api/comparisons/evaluate": {
       "post": {
         "operationId": "evaluateComparison",
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ComparisonInput"
-              }
-            }
-          }
-        },
+        "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ComparisonInput" } } } },
         "responses": {
-          "201": {
-            "description": "Immutable comparison evaluation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ComparisonResult"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Evidence or task not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Idempotency conflict",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "201": { "description": "Immutable comparison evaluation", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ComparisonResult" } } } },
+          "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Evidence or task not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Idempotency conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
     "/api/comparison-follow-ups/{followUpId}/resolve": {
-      "parameters": [
-        {
-          "name": "followUpId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
+      "parameters": [{ "name": "followUpId", "in": "path", "required": true, "schema": { "type": "string" } }],
       "post": {
         "operationId": "resolveComparisonFollowUp",
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FollowUpResolutionInput"
-              }
-            }
-          }
-        },
+        "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FollowUpResolutionInput" } } } },
         "responses": {
-          "200": {
-            "description": "Verified follow-up completion",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ComparisonFollowUp"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Material does not satisfy follow-up",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Follow-up or material not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Idempotency or state conflict",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
+          "200": { "description": "Verified follow-up completion", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ComparisonFollowUp" } } } },
+          "400": { "description": "Material does not satisfy follow-up", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Follow-up or material not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Idempotency or state conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
@@ -1059,12 +312,7 @@
       },
       "post": {
         "operationId": "startSession",
-        "security": [
-          {
-            "sessionCookie": [],
-            "sameOriginOrigin": []
-          }
-        ],
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -1270,12 +518,7 @@
     "/api/choices": {
       "post": {
         "operationId": "submitChoice",
-        "security": [
-          {
-            "sessionCookie": [],
-            "sameOriginOrigin": []
-          }
-        ],
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -1490,12 +733,7 @@
     "/api/jobs/{jobId}/retry": {
       "post": {
         "operationId": "retryJob",
-        "security": [
-          {
-            "sessionCookie": [],
-            "sameOriginOrigin": []
-          }
-        ],
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
         "parameters": [
           {
             "name": "jobId",
@@ -1618,57 +856,27 @@
       "VerifiedIdentity": {
         "type": "object",
         "properties": {
-          "platform": {
-            "type": "string"
-          },
-          "applicationId": {
-            "type": "string"
-          },
-          "tenantId": {
-            "type": "string"
-          },
-          "idType": {
-            "type": "string"
-          },
-          "externalId": {
-            "type": "string"
-          }
+          "platform": { "type": "string" },
+          "applicationId": { "type": "string" },
+          "tenantId": { "type": "string" },
+          "idType": { "type": "string" },
+          "externalId": { "type": "string" }
         },
-        "required": [
-          "platform",
-          "applicationId",
-          "tenantId",
-          "idType",
-          "externalId"
-        ],
+        "required": ["platform", "applicationId", "tenantId", "idType", "externalId"],
         "additionalProperties": false
       },
       "CurrentUser": {
         "type": "object",
         "properties": {
-          "userId": {
-            "type": "string"
-          },
-          "sessionExpiresAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "displayName": {
-            "type": "string",
-            "description": "平台返回的显示名，仅用于界面展示"
-          },
+          "userId": { "type": "string" },
+          "sessionExpiresAt": { "type": "string", "format": "date-time" },
+          "displayName": { "type": "string", "description": "平台返回的显示名，仅用于界面展示" },
           "identities": {
             "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/VerifiedIdentity"
-            }
+            "items": { "$ref": "#/components/schemas/VerifiedIdentity" }
           }
         },
-        "required": [
-          "userId",
-          "sessionExpiresAt",
-          "identities"
-        ],
+        "required": ["userId", "sessionExpiresAt", "identities"],
         "additionalProperties": false
       },
       "Error": {
@@ -1686,17 +894,9 @@
       "TaskObservation": {
         "type": "object",
         "properties": {
-          "scope": {
-            "type": "string"
-          },
-          "startsAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "endsAt": {
-            "type": "string",
-            "format": "date-time"
-          }
+          "scope": { "type": "string" },
+          "startsAt": { "type": "string", "format": "date-time" },
+          "endsAt": { "type": "string", "format": "date-time" }
         },
         "required": [],
         "additionalProperties": false
@@ -1704,45 +904,16 @@
       "TaskRules": {
         "type": "object",
         "properties": {
-          "metricDefinition": {
-            "type": "string"
-          },
-          "metricKey": {
-            "type": "string",
-            "enum": [
-              "cost_per_consultation"
-            ]
-          },
-          "currency": {
-            "type": "string"
-          },
-          "unit": {
-            "type": "string"
-          },
-          "statWindowDays": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "alertThresholdMinor": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "minimumSpendMinor": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "minimumConsultations": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "handlingDeadlineHours": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "maxPushRounds": {
-            "type": "integer",
-            "minimum": 1
-          }
+          "metricDefinition": { "type": "string" },
+          "metricKey": { "type": "string", "enum": ["cost_per_consultation"] },
+          "currency": { "type": "string" },
+          "unit": { "type": "string" },
+          "statWindowDays": { "type": "integer", "minimum": 0 },
+          "alertThresholdMinor": { "type": "integer", "minimum": 0 },
+          "minimumSpendMinor": { "type": "integer", "minimum": 0 },
+          "minimumConsultations": { "type": "integer", "minimum": 0 },
+          "handlingDeadlineHours": { "type": "integer", "minimum": 0 },
+          "maxPushRounds": { "type": "integer", "minimum": 1 }
         },
         "required": [],
         "additionalProperties": false
@@ -1750,105 +921,45 @@
       "TaskInput": {
         "type": "object",
         "properties": {
-          "product": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "strategy": {
-            "$ref": "#/components/schemas/Strategy"
-          },
-          "observation": {
-            "$ref": "#/components/schemas/TaskObservation"
-          },
-          "rules": {
-            "$ref": "#/components/schemas/TaskRules"
-          }
+          "product": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "strategy": { "$ref": "#/components/schemas/Strategy" },
+          "observation": { "$ref": "#/components/schemas/TaskObservation" },
+          "rules": { "$ref": "#/components/schemas/TaskRules" }
         },
-        "required": [
-          "product",
-          "strategy",
-          "observation",
-          "rules"
-        ],
+        "required": ["product", "strategy", "observation", "rules"],
         "additionalProperties": false
       },
       "TaskVersion": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
-          },
-          "taskId": {
-            "type": "string"
-          },
-          "version": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "product": {
-            "type": "string"
-          },
-          "strategy": {
-            "$ref": "#/components/schemas/Strategy"
-          },
-          "observation": {
-            "$ref": "#/components/schemas/TaskObservation"
-          },
-          "rules": {
-            "$ref": "#/components/schemas/TaskRules"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
+          "id": { "type": "string" },
+          "taskId": { "type": "string" },
+          "version": { "type": "integer", "minimum": 1 },
+          "product": { "type": "string" },
+          "strategy": { "$ref": "#/components/schemas/Strategy" },
+          "observation": { "$ref": "#/components/schemas/TaskObservation" },
+          "rules": { "$ref": "#/components/schemas/TaskRules" },
+          "createdAt": { "type": "string", "format": "date-time" }
         },
-        "required": [
-          "id",
-          "taskId",
-          "version",
-          "product",
-          "strategy",
-          "observation",
-          "rules",
-          "createdAt"
-        ],
+        "required": ["id", "taskId", "version", "product", "strategy", "observation", "rules", "createdAt"],
         "additionalProperties": false
       },
       "TaskRevision": {
         "type": "object",
         "properties": {
-          "expectedTaskVersion": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "task": {
-            "$ref": "#/components/schemas/TaskInput"
-          }
+          "expectedTaskVersion": { "type": "integer", "minimum": 1 },
+          "task": { "$ref": "#/components/schemas/TaskInput" }
         },
-        "required": [
-          "expectedTaskVersion",
-          "task"
-        ],
+        "required": ["expectedTaskVersion", "task"],
         "additionalProperties": false
       },
       "TaskDetail": {
         "type": "object",
         "properties": {
-          "task": {
-            "$ref": "#/components/schemas/TaskVersion"
-          },
-          "versions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaskVersion"
-            }
-          }
+          "task": { "$ref": "#/components/schemas/TaskVersion" },
+          "versions": { "type": "array", "items": { "$ref": "#/components/schemas/TaskVersion" } }
         },
-        "required": [
-          "task",
-          "versions"
-        ],
+        "required": ["task", "versions"],
         "additionalProperties": false
       },
       "Strategy": {
@@ -2216,18 +1327,10 @@
           "taskRef": {
             "type": "object",
             "properties": {
-              "taskId": {
-                "type": "string"
-              },
-              "taskVersion": {
-                "type": "integer",
-                "minimum": 1
-              }
+              "taskId": { "type": "string" },
+              "taskVersion": { "type": "integer", "minimum": 1 }
             },
-            "required": [
-              "taskId",
-              "taskVersion"
-            ],
+            "required": ["taskId", "taskVersion"],
             "additionalProperties": false
           },
           "recipient": {
@@ -2277,36 +1380,16 @@
           "taskRef": {
             "type": "object",
             "properties": {
-              "taskId": {
-                "type": "string"
-              },
-              "taskVersion": {
-                "type": "integer",
-                "minimum": 1
-              }
+              "taskId": { "type": "string" },
+              "taskVersion": { "type": "integer", "minimum": 1 }
             },
-            "required": [
-              "taskId",
-              "taskVersion"
-            ],
+            "required": ["taskId", "taskVersion"],
             "additionalProperties": false
           },
-          "monetarySuggestionsAllowed": {
-            "type": "boolean"
-          },
-          "deliveryMode": {
-            "type": "string",
-            "enum": [
-              "channel",
-              "web"
-            ]
-          },
-          "investigationAlertId": {
-            "type": "string"
-          },
-          "alertEvidenceRef": {
-            "$ref": "#/components/schemas/EvidenceRef"
-          },
+          "monetarySuggestionsAllowed": { "type": "boolean" },
+          "deliveryMode": { "type": "string", "enum": ["channel", "web"] },
+          "investigationAlertId": { "type": "string" },
+          "alertEvidenceRef": { "$ref": "#/components/schemas/EvidenceRef" },
           "recipient": {
             "$ref": "#/components/schemas/Recipient"
           },
@@ -2385,9 +1468,7 @@
               "invalidated"
             ]
           },
-          "invalidationReason": {
-            "type": "string"
-          },
+          "invalidationReason": { "type": "string" },
           "expiresAt": {
             "type": "string"
           },
@@ -2664,14 +1745,9 @@
                   "prepare_investigation_alert_session"
                 ]
               },
-              "alertId": {
-                "type": "string"
-              }
+              "alertId": { "type": "string" }
             },
-            "required": [
-              "kind",
-              "alertId"
-            ],
+            "required": ["kind", "alertId"],
             "additionalProperties": false
           },
           {
@@ -2795,301 +1871,109 @@
       "EvidenceImportInput": {
         "type": "object",
         "properties": {
-          "schemaVersion": {
-            "type": "integer",
-            "enum": [
-              1
-            ]
-          },
-          "taskRef": {
-            "$ref": "#/components/schemas/TaskRef"
-          },
-          "records": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 2,
-            "items": {
-              "$ref": "#/components/schemas/EvidenceRecordInput"
-            }
-          }
+          "schemaVersion": { "type": "integer", "enum": [1] },
+          "taskRef": { "$ref": "#/components/schemas/TaskRef" },
+          "records": { "type": "array", "minItems": 1, "maxItems": 2, "items": { "$ref": "#/components/schemas/EvidenceRecordInput" } }
         },
-        "required": [
-          "schemaVersion",
-          "taskRef",
-          "records"
-        ],
+        "required": ["schemaVersion", "taskRef", "records"],
         "additionalProperties": false
       },
       "TaskRef": {
         "type": "object",
-        "properties": {
-          "taskId": {
-            "type": "string"
-          },
-          "taskVersion": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "taskId",
-          "taskVersion"
-        ],
+        "properties": { "taskId": { "type": "string" }, "taskVersion": { "type": "integer", "minimum": 1 } },
+        "required": ["taskId", "taskVersion"],
         "additionalProperties": false
       },
       "EvidenceRecordInput": {
         "type": "object",
         "properties": {
-          "source": {
-            "$ref": "#/components/schemas/EvidenceSourceInput"
-          },
-          "scope": {
-            "$ref": "#/components/schemas/EvidenceScope"
-          },
-          "period": {
-            "$ref": "#/components/schemas/EvidencePeriod"
-          },
-          "metricsContract": {
-            "$ref": "#/components/schemas/EvidenceMetricsContract"
-          },
-          "currency": {
-            "$ref": "#/components/schemas/EvidenceCurrency"
-          },
-          "attribution": {
-            "$ref": "#/components/schemas/EvidenceAttribution"
-          },
-          "callbackStatus": {
-            "type": "string",
-            "enum": [
-              "complete",
-              "pending",
-              "not_applicable",
-              "unknown"
-            ]
-          },
-          "rawValues": {
-            "$ref": "#/components/schemas/EvidenceRawValues"
-          },
-          "values": {
-            "$ref": "#/components/schemas/EvidenceValues"
-          }
+          "source": { "$ref": "#/components/schemas/EvidenceSourceInput" },
+          "scope": { "$ref": "#/components/schemas/EvidenceScope" },
+          "period": { "$ref": "#/components/schemas/EvidencePeriod" },
+          "metricsContract": { "$ref": "#/components/schemas/EvidenceMetricsContract" },
+          "currency": { "$ref": "#/components/schemas/EvidenceCurrency" },
+          "attribution": { "$ref": "#/components/schemas/EvidenceAttribution" },
+          "callbackStatus": { "type": "string", "enum": ["complete", "pending", "not_applicable", "unknown"] },
+          "rawValues": { "$ref": "#/components/schemas/EvidenceRawValues" },
+          "values": { "$ref": "#/components/schemas/EvidenceValues" }
         },
-        "required": [
-          "source",
-          "scope",
-          "period",
-          "metricsContract",
-          "currency",
-          "attribution",
-          "callbackStatus",
-          "rawValues",
-          "values"
-        ],
+        "required": ["source", "scope", "period", "metricsContract", "currency", "attribution", "callbackStatus", "rawValues", "values"],
         "additionalProperties": false
       },
       "EvidenceSourceInput": {
         "type": "object",
         "properties": {
-          "platform": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          },
-          "accountRef": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          },
-          "reportRef": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          },
-          "sourceUri": {
-            "type": "string",
-            "format": "uri"
-          }
+          "platform": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "accountRef": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "reportRef": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "sourceUri": { "type": "string", "format": "uri" }
         },
-        "required": [
-          "platform",
-          "accountRef",
-          "reportRef"
-        ],
+        "required": ["platform", "accountRef", "reportRef"],
         "additionalProperties": false
       },
       "EvidenceScope": {
         "type": "object",
         "properties": {
-          "planRef": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          },
-          "campaignRefs": {
-            "type": "array",
-            "maxItems": 100,
-            "uniqueItems": true,
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            }
-          }
+          "planRef": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "campaignRefs": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 256 } }
         },
-        "required": [
-          "planRef",
-          "campaignRefs"
-        ],
+        "required": ["planRef", "campaignRefs"],
         "additionalProperties": false
       },
       "EvidencePeriod": {
         "type": "object",
         "properties": {
-          "startsAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "endsAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "timeZone": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          },
-          "completeness": {
-            "type": "string",
-            "enum": [
-              "complete",
-              "partial"
-            ]
-          }
+          "startsAt": { "type": "string", "format": "date-time" },
+          "endsAt": { "type": "string", "format": "date-time" },
+          "timeZone": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "completeness": { "type": "string", "enum": ["complete", "partial"] }
         },
-        "required": [
-          "startsAt",
-          "endsAt",
-          "timeZone",
-          "completeness"
-        ],
+        "required": ["startsAt", "endsAt", "timeZone", "completeness"],
         "additionalProperties": false
       },
       "EvidenceMetricDefinition": {
         "type": "object",
         "properties": {
-          "definition": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 500
-          },
-          "formula": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1000
-          },
-          "sourceField": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          }
+          "definition": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "formula": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "sourceField": { "type": "string", "minLength": 1, "maxLength": 256 }
         },
-        "required": [
-          "definition",
-          "formula",
-          "sourceField"
-        ],
+        "required": ["definition", "formula", "sourceField"],
         "additionalProperties": false
       },
       "EvidenceMetricsContract": {
         "type": "object",
         "properties": {
-          "spendMinor": {
-            "$ref": "#/components/schemas/EvidenceMetricDefinition"
-          },
-          "consultations": {
-            "$ref": "#/components/schemas/EvidenceMetricDefinition"
-          }
+          "spendMinor": { "$ref": "#/components/schemas/EvidenceMetricDefinition" },
+          "consultations": { "$ref": "#/components/schemas/EvidenceMetricDefinition" }
         },
-        "required": [
-          "spendMinor",
-          "consultations"
-        ],
+        "required": ["spendMinor", "consultations"],
         "additionalProperties": false
       },
       "EvidenceCurrency": {
         "type": "object",
         "properties": {
-          "code": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 16
-          },
-          "minorUnit": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 32
-          },
-          "minorUnitsPerMajor": {
-            "type": "integer",
-            "minimum": 1
-          }
+          "code": { "type": "string", "minLength": 1, "maxLength": 16 },
+          "minorUnit": { "type": "string", "minLength": 1, "maxLength": 32 },
+          "minorUnitsPerMajor": { "type": "integer", "minimum": 1 }
         },
-        "required": [
-          "code",
-          "minorUnit",
-          "minorUnitsPerMajor"
-        ],
+        "required": ["code", "minorUnit", "minorUnitsPerMajor"],
         "additionalProperties": false
       },
       "EvidenceAttribution": {
         "type": "object",
         "properties": {
-          "model": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "windowDays": {
-            "type": "integer",
-            "minimum": 0
-          }
+          "model": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "windowDays": { "type": "integer", "minimum": 0 }
         },
-        "required": [
-          "model"
-        ],
+        "required": ["model"],
         "additionalProperties": false
       },
       "EvidenceRawValues": {
         "type": "object",
         "properties": {
-          "spend": {
-            "oneOf": [
-              {
-                "type": "string",
-                "maxLength": 500
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "consultations": {
-            "oneOf": [
-              {
-                "type": "string",
-                "maxLength": 500
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
+          "spend": { "oneOf": [{ "type": "string", "maxLength": 500 }, { "type": "number" }, { "type": "null" }] },
+          "consultations": { "oneOf": [{ "type": "string", "maxLength": 500 }, { "type": "number" }, { "type": "null" }] }
         },
         "required": [],
         "additionalProperties": false
@@ -3097,16 +1981,8 @@
       "EvidenceValues": {
         "type": "object",
         "properties": {
-          "spendMinor": {
-            "type": "integer",
-            "minimum": 0,
-            "nullable": true
-          },
-          "consultations": {
-            "type": "integer",
-            "minimum": 0,
-            "nullable": true
-          }
+          "spendMinor": { "type": "integer", "minimum": 0, "nullable": true },
+          "consultations": { "type": "integer", "minimum": 0, "nullable": true }
         },
         "required": [],
         "additionalProperties": false
@@ -3114,1219 +1990,221 @@
       "EvidenceVersion": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
-          },
-          "evidenceId": {
-            "type": "string"
-          },
-          "ownerId": {
-            "type": "string"
-          },
-          "taskId": {
-            "type": "string"
-          },
-          "taskVersion": {
-            "type": "integer"
-          },
-          "version": {
-            "type": "integer"
-          },
-          "businessKey": {
-            "type": "string"
-          },
-          "contentDigest": {
-            "type": "string"
-          },
-          "scope": {
-            "$ref": "#/components/schemas/EvidenceScope"
-          },
-          "period": {
-            "$ref": "#/components/schemas/EvidencePeriod"
-          },
-          "metricsContract": {
-            "$ref": "#/components/schemas/EvidenceMetricsContract"
-          },
-          "currency": {
-            "$ref": "#/components/schemas/EvidenceCurrency"
-          },
-          "attribution": {
-            "$ref": "#/components/schemas/EvidenceAttribution"
-          },
-          "callbackStatus": {
-            "type": "string",
-            "enum": [
-              "complete",
-              "pending",
-              "not_applicable",
-              "unknown"
-            ]
-          },
-          "values": {
-            "$ref": "#/components/schemas/EvidenceValues"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "reason": {
-            "type": "string"
-          }
+          "id": { "type": "string" }, "evidenceId": { "type": "string" }, "ownerId": { "type": "string" },
+          "taskId": { "type": "string" }, "taskVersion": { "type": "integer" }, "version": { "type": "integer" },
+          "businessKey": { "type": "string" }, "contentDigest": { "type": "string" },
+          "scope": { "$ref": "#/components/schemas/EvidenceScope" }, "period": { "$ref": "#/components/schemas/EvidencePeriod" },
+          "metricsContract": { "$ref": "#/components/schemas/EvidenceMetricsContract" }, "currency": { "$ref": "#/components/schemas/EvidenceCurrency" },
+          "attribution": { "$ref": "#/components/schemas/EvidenceAttribution" }, "callbackStatus": { "type": "string", "enum": ["complete", "pending", "not_applicable", "unknown"] },
+          "values": { "$ref": "#/components/schemas/EvidenceValues" }, "createdAt": { "type": "string", "format": "date-time" }, "reason": { "type": "string" }
         },
-        "required": [
-          "id",
-          "evidenceId",
-          "ownerId",
-          "taskId",
-          "taskVersion",
-          "version",
-          "businessKey",
-          "contentDigest",
-          "scope",
-          "period",
-          "metricsContract",
-          "currency",
-          "attribution",
-          "callbackStatus",
-          "values",
-          "createdAt"
-        ],
+        "required": ["id", "evidenceId", "ownerId", "taskId", "taskVersion", "version", "businessKey", "contentDigest", "scope", "period", "metricsContract", "currency", "attribution", "callbackStatus", "values", "createdAt"],
         "additionalProperties": false
       },
       "EvidenceSource": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
-          },
-          "ownerId": {
-            "type": "string"
-          },
-          "evidenceId": {
-            "type": "string"
-          },
-          "evidenceVersion": {
-            "type": "integer"
-          },
-          "source": {
-            "$ref": "#/components/schemas/EvidenceSourceInput"
-          },
-          "rawValues": {
-            "$ref": "#/components/schemas/EvidenceRawValues"
-          },
-          "digest": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
+          "id": { "type": "string" }, "ownerId": { "type": "string" }, "evidenceId": { "type": "string" }, "evidenceVersion": { "type": "integer" },
+          "source": { "$ref": "#/components/schemas/EvidenceSourceInput" }, "rawValues": { "$ref": "#/components/schemas/EvidenceRawValues" },
+          "digest": { "type": "string" }, "createdAt": { "type": "string", "format": "date-time" }
         },
-        "required": [
-          "id",
-          "ownerId",
-          "evidenceId",
-          "evidenceVersion",
-          "source",
-          "rawValues",
-          "digest",
-          "createdAt"
-        ],
+        "required": ["id", "ownerId", "evidenceId", "evidenceVersion", "source", "rawValues", "digest", "createdAt"],
         "additionalProperties": false
       },
       "EvidenceDetail": {
         "type": "object",
         "properties": {
-          "current": {
-            "$ref": "#/components/schemas/EvidenceVersion"
-          },
-          "versions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EvidenceVersion"
-            }
-          },
-          "sources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EvidenceSource"
-            }
-          }
+          "current": { "$ref": "#/components/schemas/EvidenceVersion" },
+          "versions": { "type": "array", "items": { "$ref": "#/components/schemas/EvidenceVersion" } },
+          "sources": { "type": "array", "items": { "$ref": "#/components/schemas/EvidenceSource" } }
         },
-        "required": [
-          "current",
-          "versions",
-          "sources"
-        ],
+        "required": ["current", "versions", "sources"],
         "additionalProperties": false
       },
       "EvidenceImportResult": {
         "type": "object",
         "properties": {
-          "evidenceId": {
-            "type": "string"
-          },
-          "version": {
-            "type": "integer"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "created",
-              "reused",
-              "revised"
-            ]
-          }
+          "evidenceId": { "type": "string" }, "version": { "type": "integer" }, "status": { "type": "string", "enum": ["created", "reused", "revised"] }
         },
-        "required": [
-          "evidenceId",
-          "version",
-          "status"
-        ],
+        "required": ["evidenceId", "version", "status"],
         "additionalProperties": false
       },
       "EvidenceImportResultList": {
         "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EvidenceImportResult"
-            }
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "additionalProperties": false
+        "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/EvidenceImportResult" } } },
+        "required": ["items"], "additionalProperties": false
       },
       "EvidenceRevision": {
         "type": "object",
         "properties": {
-          "expectedEvidenceVersion": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1000
-          },
-          "record": {
-            "$ref": "#/components/schemas/EvidenceRecordInput"
-          }
+          "expectedEvidenceVersion": { "type": "integer", "minimum": 1 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "record": { "$ref": "#/components/schemas/EvidenceRecordInput" }
         },
-        "required": [
-          "expectedEvidenceVersion",
-          "reason",
-          "record"
-        ],
+        "required": ["expectedEvidenceVersion", "reason", "record"],
         "additionalProperties": false
       },
       "EvidenceRef": {
-        "type": "object",
-        "properties": {
-          "evidenceId": {
-            "type": "string"
-          },
-          "version": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "evidenceId",
-          "version"
-        ],
-        "additionalProperties": false
+        "type": "object", "properties": { "evidenceId": { "type": "string" }, "version": { "type": "integer", "minimum": 1 } },
+        "required": ["evidenceId", "version"], "additionalProperties": false
       },
       "FollowUpPeriod": {
-        "type": "object",
-        "properties": {
-          "startsAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "endsAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "timeZone": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "startsAt",
-          "endsAt",
-          "timeZone"
-        ],
-        "additionalProperties": false
+        "type": "object", "properties": { "startsAt": { "type": "string", "format": "date-time" }, "endsAt": { "type": "string", "format": "date-time" }, "timeZone": { "type": "string" } },
+        "required": ["startsAt", "endsAt", "timeZone"], "additionalProperties": false
       },
       "ComparisonEvidenceRef": {
         "type": "object",
         "properties": {
-          "evidenceId": {
-            "type": "string"
-          },
-          "version": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "taskId": {
-            "type": "string"
-          },
-          "taskVersion": {
-            "type": "integer",
-            "minimum": 1
-          }
+          "evidenceId": { "type": "string" }, "version": { "type": "integer", "minimum": 1 },
+          "taskId": { "type": "string" }, "taskVersion": { "type": "integer", "minimum": 1 }
         },
-        "required": [
-          "evidenceId",
-          "version",
-          "taskId",
-          "taskVersion"
-        ],
+        "required": ["evidenceId", "version", "taskId", "taskVersion"],
         "additionalProperties": false
       },
       "ComparisonInput": {
         "type": "object",
         "properties": {
-          "current": {
-            "$ref": "#/components/schemas/EvidenceRef"
-          },
-          "baseline": {
-            "$ref": "#/components/schemas/EvidenceRef"
-          }
+          "current": { "$ref": "#/components/schemas/EvidenceRef" },
+          "baseline": { "$ref": "#/components/schemas/EvidenceRef" }
         },
-        "required": [
-          "current"
-        ],
-        "additionalProperties": false
+        "required": ["current"], "additionalProperties": false
       },
       "ComparisonReason": {
         "type": "object",
         "properties": {
-          "code": {
-            "type": "string",
-            "enum": [
-              "NO_BASELINE",
-              "TASK_MISMATCH",
-              "ACCOUNT_MISMATCH",
-              "SOURCE_MISSING",
-              "SCOPE_MISMATCH",
-              "METRICS_CONTRACT_MISMATCH",
-              "CURRENCY_MISMATCH",
-              "ATTRIBUTION_MISMATCH",
-              "TIME_ZONE_MISMATCH",
-              "PERIOD_INVALID",
-              "PERIOD_OVERLAP",
-              "PERIOD_NOT_ADJACENT",
-              "DURATION_MISMATCH",
-              "PERIOD_INCOMPLETE",
-              "CALLBACK_PENDING",
-              "CALLBACK_UNKNOWN",
-              "VALUE_MISSING",
-              "VALUE_NULL",
-              "VALUE_INVALID",
-              "RULE_METRIC_MISSING",
-              "RULE_METRIC_UNSUPPORTED",
-              "RULE_THRESHOLD_MISSING",
-              "RULE_CURRENCY_MISSING",
-              "RULE_UNIT_MISSING",
-              "RULE_WINDOW_MISSING",
-              "RULE_MINIMUMS_MISSING",
-              "RULE_CURRENCY_MISMATCH",
-              "RULE_UNIT_MISMATCH",
-              "WINDOW_MISMATCH",
-              "SAMPLE_BELOW_MINIMUM",
-              "ZERO_DENOMINATOR"
-            ]
-          },
-          "axis": {
-            "type": "string",
-            "enum": [
-              "period_comparison",
-              "current_threshold",
-              "both"
-            ]
-          },
-          "metric": {
-            "type": "string",
-            "enum": [
-              "spendMinor",
-              "consultations",
-              "cost_per_consultation"
-            ]
-          },
-          "evidenceRef": {
-            "$ref": "#/components/schemas/EvidenceRef"
-          },
-          "details": {
-            "type": "object",
-            "additionalProperties": {
-              "oneOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "boolean"
-                }
-              ]
-            }
-          },
-          "remediation": {
-            "type": "object",
-            "properties": {
-              "action": {
-                "type": "string",
-                "enum": [
-                  "provide_evidence",
-                  "revise_task_rules",
-                  "verify_source",
-                  "none"
-                ]
-              },
-              "completionCriteria": {
-                "type": "string",
-                "enum": [
-                  "matching_complete_evidence_version",
-                  "complete_task_rule_version",
-                  "source_confirms_zero",
-                  "manual_review"
-                ]
-              }
-            },
-            "required": [
-              "action",
-              "completionCriteria"
-            ],
-            "additionalProperties": false
-          }
+          "code": { "type": "string", "enum": ["NO_BASELINE", "TASK_MISMATCH", "ACCOUNT_MISMATCH", "SOURCE_MISSING", "SCOPE_MISMATCH", "METRICS_CONTRACT_MISMATCH", "CURRENCY_MISMATCH", "ATTRIBUTION_MISMATCH", "TIME_ZONE_MISMATCH", "PERIOD_INVALID", "PERIOD_OVERLAP", "PERIOD_NOT_ADJACENT", "DURATION_MISMATCH", "PERIOD_INCOMPLETE", "CALLBACK_PENDING", "CALLBACK_UNKNOWN", "VALUE_MISSING", "VALUE_NULL", "VALUE_INVALID", "RULE_METRIC_MISSING", "RULE_METRIC_UNSUPPORTED", "RULE_THRESHOLD_MISSING", "RULE_CURRENCY_MISSING", "RULE_UNIT_MISSING", "RULE_WINDOW_MISSING", "RULE_MINIMUMS_MISSING", "RULE_CURRENCY_MISMATCH", "RULE_UNIT_MISMATCH", "WINDOW_MISMATCH", "SAMPLE_BELOW_MINIMUM", "ZERO_DENOMINATOR"] },
+          "axis": { "type": "string", "enum": ["period_comparison", "current_threshold", "both"] },
+          "metric": { "type": "string", "enum": ["spendMinor", "consultations", "cost_per_consultation"] },
+          "evidenceRef": { "$ref": "#/components/schemas/EvidenceRef" },
+          "details": { "type": "object", "additionalProperties": { "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }] } },
+          "remediation": { "type": "object", "properties": { "action": { "type": "string", "enum": ["provide_evidence", "revise_task_rules", "verify_source", "none"] }, "completionCriteria": { "type": "string", "enum": ["matching_complete_evidence_version", "complete_task_rule_version", "source_confirms_zero", "manual_review"] } }, "required": ["action", "completionCriteria"], "additionalProperties": false }
         },
-        "required": [
-          "code",
-          "axis",
-          "remediation"
-        ],
-        "additionalProperties": false
+        "required": ["code", "axis", "remediation"], "additionalProperties": false
       },
       "ComparisonResult": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
-          },
-          "ownerId": {
-            "type": "string"
-          },
-          "taskId": {
-            "type": "string"
-          },
-          "current": {
-            "$ref": "#/components/schemas/ComparisonEvidenceRef"
-          },
-          "baseline": {
-            "$ref": "#/components/schemas/ComparisonEvidenceRef"
-          },
-          "rulesRef": {
-            "type": "object",
-            "properties": {
-              "taskId": {
-                "type": "string"
-              },
-              "version": {
-                "type": "integer",
-                "minimum": 1
-              }
-            },
-            "required": [
-              "taskId",
-              "version"
-            ],
-            "additionalProperties": false
-          },
-          "evaluatorVersion": {
-            "type": "integer",
-            "enum": [
-              1
-            ]
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "comparable",
-              "incomparable",
-              "awaiting_supplementation",
-              "missing_baseline",
-              "temporarily_uncomputable"
-            ]
-          },
-          "canComparePeriods": {
-            "type": "boolean"
-          },
-          "canEvaluateCurrentThreshold": {
-            "type": "boolean"
-          },
-          "comparisons": {
-            "type": "object",
-            "properties": {
-              "spendMinor": {
-                "type": "object",
-                "properties": {
-                  "baseline": {
-                    "type": "integer"
-                  },
-                  "current": {
-                    "type": "integer"
-                  },
-                  "delta": {
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "baseline",
-                  "current",
-                  "delta"
-                ],
-                "additionalProperties": false
-              },
-              "consultations": {
-                "type": "object",
-                "properties": {
-                  "baseline": {
-                    "type": "integer"
-                  },
-                  "current": {
-                    "type": "integer"
-                  },
-                  "delta": {
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "baseline",
-                  "current",
-                  "delta"
-                ],
-                "additionalProperties": false
-              },
-              "costPerConsultation": {
-                "type": "object",
-                "properties": {
-                  "baseline": {
-                    "$ref": "#/components/schemas/RatioValue"
-                  },
-                  "current": {
-                    "$ref": "#/components/schemas/RatioValue"
-                  },
-                  "direction": {
-                    "type": "string",
-                    "enum": [
-                      "increased",
-                      "decreased",
-                      "unchanged"
-                    ]
-                  }
-                },
-                "required": [
-                  "baseline",
-                  "current",
-                  "direction"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [],
-            "additionalProperties": false
-          },
-          "thresholdEvaluation": {
-            "type": "object",
-            "properties": {
-              "status": {
-                "type": "string",
-                "enum": [
-                  "exceeded",
-                  "not_exceeded",
-                  "not_evaluated"
-                ]
-              },
-              "metricKey": {
-                "type": "string",
-                "enum": [
-                  "cost_per_consultation"
-                ]
-              },
-              "value": {
-                "$ref": "#/components/schemas/RatioValue"
-              },
-              "thresholdMinor": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "currency": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "status"
-            ],
-            "additionalProperties": false
-          },
-          "reasons": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ComparisonReason"
-            }
-          },
-          "followUpIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
+          "id": { "type": "string" }, "ownerId": { "type": "string" }, "taskId": { "type": "string" },
+          "current": { "$ref": "#/components/schemas/ComparisonEvidenceRef" }, "baseline": { "$ref": "#/components/schemas/ComparisonEvidenceRef" },
+          "rulesRef": { "type": "object", "properties": { "taskId": { "type": "string" }, "version": { "type": "integer", "minimum": 1 } }, "required": ["taskId", "version"], "additionalProperties": false },
+          "evaluatorVersion": { "type": "integer", "enum": [1] },
+          "status": { "type": "string", "enum": ["comparable", "incomparable", "awaiting_supplementation", "missing_baseline", "temporarily_uncomputable"] },
+          "canComparePeriods": { "type": "boolean" }, "canEvaluateCurrentThreshold": { "type": "boolean" },
+          "comparisons": { "type": "object", "properties": {
+            "spendMinor": { "type": "object", "properties": { "baseline": { "type": "integer" }, "current": { "type": "integer" }, "delta": { "type": "integer" } }, "required": ["baseline", "current", "delta"], "additionalProperties": false },
+            "consultations": { "type": "object", "properties": { "baseline": { "type": "integer" }, "current": { "type": "integer" }, "delta": { "type": "integer" } }, "required": ["baseline", "current", "delta"], "additionalProperties": false },
+            "costPerConsultation": { "type": "object", "properties": {
+              "baseline": { "$ref": "#/components/schemas/RatioValue" }, "current": { "$ref": "#/components/schemas/RatioValue" }, "direction": { "type": "string", "enum": ["increased", "decreased", "unchanged"] }
+            }, "required": ["baseline", "current", "direction"], "additionalProperties": false }
+          }, "required": [], "additionalProperties": false },
+          "thresholdEvaluation": { "type": "object", "properties": {
+            "status": { "type": "string", "enum": ["exceeded", "not_exceeded", "not_evaluated"] }, "metricKey": { "type": "string", "enum": ["cost_per_consultation"] },
+            "value": { "$ref": "#/components/schemas/RatioValue" }, "thresholdMinor": { "type": "integer", "minimum": 0 }, "currency": { "type": "string" }
+          }, "required": ["status"], "additionalProperties": false },
+          "reasons": { "type": "array", "items": { "$ref": "#/components/schemas/ComparisonReason" } },
+          "followUpIds": { "type": "array", "items": { "type": "string" } }, "createdAt": { "type": "string", "format": "date-time" }
         },
-        "required": [
-          "id",
-          "ownerId",
-          "taskId",
-          "current",
-          "rulesRef",
-          "evaluatorVersion",
-          "status",
-          "canComparePeriods",
-          "canEvaluateCurrentThreshold",
-          "comparisons",
-          "thresholdEvaluation",
-          "reasons",
-          "followUpIds",
-          "createdAt"
-        ],
+        "required": ["id", "ownerId", "taskId", "current", "rulesRef", "evaluatorVersion", "status", "canComparePeriods", "canEvaluateCurrentThreshold", "comparisons", "thresholdEvaluation", "reasons", "followUpIds", "createdAt"],
         "additionalProperties": false
       },
       "RatioValue": {
         "type": "object",
-        "properties": {
-          "numeratorMinor": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "denominatorConsultations": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "numeratorMinor",
-          "denominatorConsultations"
-        ],
-        "additionalProperties": false
+        "properties": { "numeratorMinor": { "type": "integer", "minimum": 0 }, "denominatorConsultations": { "type": "integer", "minimum": 0 } },
+        "required": ["numeratorMinor", "denominatorConsultations"], "additionalProperties": false
       },
       "ComparisonResultList": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ComparisonResult"
-            }
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "additionalProperties": false
+        "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/ComparisonResult" } } },
+        "required": ["items"], "additionalProperties": false
       },
       "ComparisonFollowUp": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
-          },
-          "ownerId": {
-            "type": "string"
-          },
-          "taskId": {
-            "type": "string"
-          },
-          "taskVersion": {
-            "type": "integer"
-          },
-          "dedupKey": {
-            "type": "string"
-          },
-          "reasonCode": {
-            "type": "string",
-            "enum": [
-              "NO_BASELINE",
-              "TASK_MISMATCH",
-              "ACCOUNT_MISMATCH",
-              "SOURCE_MISSING",
-              "SCOPE_MISMATCH",
-              "METRICS_CONTRACT_MISMATCH",
-              "CURRENCY_MISMATCH",
-              "ATTRIBUTION_MISMATCH",
-              "TIME_ZONE_MISMATCH",
-              "PERIOD_INVALID",
-              "PERIOD_OVERLAP",
-              "PERIOD_NOT_ADJACENT",
-              "DURATION_MISMATCH",
-              "PERIOD_INCOMPLETE",
-              "CALLBACK_PENDING",
-              "CALLBACK_UNKNOWN",
-              "VALUE_MISSING",
-              "VALUE_NULL",
-              "VALUE_INVALID",
-              "RULE_METRIC_MISSING",
-              "RULE_METRIC_UNSUPPORTED",
-              "RULE_THRESHOLD_MISSING",
-              "RULE_CURRENCY_MISSING",
-              "RULE_UNIT_MISSING",
-              "RULE_WINDOW_MISSING",
-              "RULE_MINIMUMS_MISSING",
-              "RULE_CURRENCY_MISMATCH",
-              "RULE_UNIT_MISMATCH",
-              "WINDOW_MISMATCH",
-              "SAMPLE_BELOW_MINIMUM",
-              "ZERO_DENOMINATOR"
-            ]
-          },
-          "axis": {
-            "type": "string",
-            "enum": [
-              "period_comparison",
-              "current_threshold",
-              "both"
-            ]
-          },
-          "metric": {
-            "type": "string",
-            "enum": [
-              "spendMinor",
-              "consultations",
-              "cost_per_consultation"
-            ]
-          },
-          "remediation": {
-            "type": "object",
-            "properties": {
-              "action": {
-                "type": "string",
-                "enum": [
-                  "provide_evidence",
-                  "revise_task_rules",
-                  "verify_source",
-                  "none"
-                ]
-              },
-              "completionCriteria": {
-                "type": "string",
-                "enum": [
-                  "matching_complete_evidence_version",
-                  "complete_task_rule_version",
-                  "source_confirms_zero",
-                  "manual_review"
-                ]
-              }
-            },
-            "required": [
-              "action",
-              "completionCriteria"
-            ],
-            "additionalProperties": false
-          },
-          "evidenceRef": {
-            "$ref": "#/components/schemas/EvidenceRef"
-          },
-          "anchorEvidenceRef": {
-            "$ref": "#/components/schemas/EvidenceRef"
-          },
-          "resolutionKind": {
-            "type": "string",
-            "enum": [
-              "evidence",
-              "task_version"
-            ]
-          },
-          "source": {
-            "type": "object",
-            "properties": {
-              "platform": {
-                "type": "string"
-              },
-              "accountRef": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "platform",
-              "accountRef"
-            ],
-            "additionalProperties": false
-          },
-          "expectedRelation": {
-            "type": "string",
-            "enum": [
-              "same_period",
-              "previous_adjacent",
-              "adjacent_pair"
-            ]
-          },
-          "minimumSpendMinor": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "minimumConsultations": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "scope": {
-            "$ref": "#/components/schemas/EvidenceScope"
-          },
-          "period": {
-            "$ref": "#/components/schemas/FollowUpPeriod"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "open",
-              "completed"
-            ]
-          },
-          "comparisonResultIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "events": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ComparisonFollowUpEvent"
-            }
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
+          "id": { "type": "string" }, "ownerId": { "type": "string" }, "taskId": { "type": "string" }, "taskVersion": { "type": "integer" }, "dedupKey": { "type": "string" },
+          "reasonCode": { "type": "string", "enum": ["NO_BASELINE", "TASK_MISMATCH", "ACCOUNT_MISMATCH", "SOURCE_MISSING", "SCOPE_MISMATCH", "METRICS_CONTRACT_MISMATCH", "CURRENCY_MISMATCH", "ATTRIBUTION_MISMATCH", "TIME_ZONE_MISMATCH", "PERIOD_INVALID", "PERIOD_OVERLAP", "PERIOD_NOT_ADJACENT", "DURATION_MISMATCH", "PERIOD_INCOMPLETE", "CALLBACK_PENDING", "CALLBACK_UNKNOWN", "VALUE_MISSING", "VALUE_NULL", "VALUE_INVALID", "RULE_METRIC_MISSING", "RULE_METRIC_UNSUPPORTED", "RULE_THRESHOLD_MISSING", "RULE_CURRENCY_MISSING", "RULE_UNIT_MISSING", "RULE_WINDOW_MISSING", "RULE_MINIMUMS_MISSING", "RULE_CURRENCY_MISMATCH", "RULE_UNIT_MISMATCH", "WINDOW_MISMATCH", "SAMPLE_BELOW_MINIMUM", "ZERO_DENOMINATOR"] },
+          "axis": { "type": "string", "enum": ["period_comparison", "current_threshold", "both"] }, "metric": { "type": "string", "enum": ["spendMinor", "consultations", "cost_per_consultation"] },
+          "remediation": { "type": "object", "properties": { "action": { "type": "string", "enum": ["provide_evidence", "revise_task_rules", "verify_source", "none"] }, "completionCriteria": { "type": "string", "enum": ["matching_complete_evidence_version", "complete_task_rule_version", "source_confirms_zero", "manual_review"] } }, "required": ["action", "completionCriteria"], "additionalProperties": false },
+          "evidenceRef": { "$ref": "#/components/schemas/EvidenceRef" }, "anchorEvidenceRef": { "$ref": "#/components/schemas/EvidenceRef" },
+          "resolutionKind": { "type": "string", "enum": ["evidence", "task_version"] }, "source": { "type": "object", "properties": { "platform": { "type": "string" }, "accountRef": { "type": "string" } }, "required": ["platform", "accountRef"], "additionalProperties": false },
+          "expectedRelation": { "type": "string", "enum": ["same_period", "previous_adjacent", "adjacent_pair"] }, "minimumSpendMinor": { "type": "integer", "minimum": 0 }, "minimumConsultations": { "type": "integer", "minimum": 0 },
+          "scope": { "$ref": "#/components/schemas/EvidenceScope" }, "period": { "$ref": "#/components/schemas/FollowUpPeriod" }, "status": { "type": "string", "enum": ["open", "completed"] },
+          "comparisonResultIds": { "type": "array", "items": { "type": "string" } }, "events": { "type": "array", "items": { "$ref": "#/components/schemas/ComparisonFollowUpEvent" } },
+          "createdAt": { "type": "string", "format": "date-time" }, "updatedAt": { "type": "string", "format": "date-time" }
         },
-        "required": [
-          "id",
-          "ownerId",
-          "taskId",
-          "taskVersion",
-          "dedupKey",
-          "reasonCode",
-          "axis",
-          "remediation",
-          "resolutionKind",
-          "status",
-          "comparisonResultIds",
-          "events",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "ownerId", "taskId", "taskVersion", "dedupKey", "reasonCode", "axis", "remediation", "resolutionKind", "status", "comparisonResultIds", "events", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "ComparisonFollowUpEvent": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "opened",
-              "observed",
-              "completed",
-              "reopened"
-            ]
-          },
-          "at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "resultId": {
-            "type": "string"
-          },
-          "material": {
-            "oneOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "evidence"
-                    ]
-                  },
-                  "evidenceId": {
-                    "type": "string"
-                  },
-                  "version": {
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "evidenceId",
-                  "version"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "task_version"
-                    ]
-                  },
-                  "taskId": {
-                    "type": "string"
-                  },
-                  "version": {
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "taskId",
-                  "version"
-                ],
-                "additionalProperties": false
-              }
-            ]
-          }
-        },
-        "required": [
-          "type",
-          "at"
-        ],
-        "additionalProperties": false
+        "type": "object", "properties": {
+          "type": { "type": "string", "enum": ["opened", "observed", "completed", "reopened"] }, "at": { "type": "string", "format": "date-time" }, "resultId": { "type": "string" },
+          "material": { "oneOf": [
+            { "type": "object", "properties": { "kind": { "type": "string", "enum": ["evidence"] }, "evidenceId": { "type": "string" }, "version": { "type": "integer" } }, "required": ["kind", "evidenceId", "version"], "additionalProperties": false },
+            { "type": "object", "properties": { "kind": { "type": "string", "enum": ["task_version"] }, "taskId": { "type": "string" }, "version": { "type": "integer" } }, "required": ["kind", "taskId", "version"], "additionalProperties": false }
+          ] }
+        }, "required": ["type", "at"], "additionalProperties": false
       },
       "ComparisonFollowUpList": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ComparisonFollowUp"
-            }
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "additionalProperties": false
+        "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/ComparisonFollowUp" } } },
+        "required": ["items"], "additionalProperties": false
       },
       "InvestigationAlertEvidence": {
         "type": "object",
         "properties": {
-          "comparisonResultId": {
-            "type": "string"
-          },
-          "evidence": {
-            "$ref": "#/components/schemas/ComparisonEvidenceRef"
-          },
-          "source": {
-            "type": "object",
-            "properties": {
-              "platform": {
-                "type": "string"
-              },
-              "accountRef": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "platform",
-              "accountRef"
-            ],
-            "additionalProperties": false
-          },
-          "scope": {
-            "$ref": "#/components/schemas/EvidenceScope"
-          },
-          "period": {
-            "$ref": "#/components/schemas/EvidencePeriod"
-          },
-          "metric": {
-            "type": "string",
-            "enum": [
-              "cost_per_consultation"
-            ]
-          },
-          "metricDefinition": {
-            "type": "string"
-          },
-          "metricFormula": {
-            "type": "string"
-          },
-          "spendMinor": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "consultations": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "currency": {
-            "$ref": "#/components/schemas/EvidenceCurrency"
-          },
-          "thresholdMinor": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "comparisonStatus": {
-            "type": "string",
-            "enum": [
-              "comparable",
-              "incomparable",
-              "awaiting_supplementation",
-              "missing_baseline",
-              "temporarily_uncomputable"
-            ]
-          },
-          "canComparePeriods": {
-            "type": "boolean"
-          },
-          "limitations": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "handlingDeadlineHours": {
-            "type": "integer",
-            "minimum": 0
-          }
+          "comparisonResultId": { "type": "string" },
+          "evidence": { "$ref": "#/components/schemas/ComparisonEvidenceRef" },
+          "source": { "type": "object", "properties": { "platform": { "type": "string" }, "accountRef": { "type": "string" } }, "required": ["platform", "accountRef"], "additionalProperties": false },
+          "scope": { "$ref": "#/components/schemas/EvidenceScope" },
+          "period": { "$ref": "#/components/schemas/EvidencePeriod" },
+          "metric": { "type": "string", "enum": ["cost_per_consultation"] },
+          "metricDefinition": { "type": "string" }, "metricFormula": { "type": "string" },
+          "spendMinor": { "type": ["integer", "null"], "minimum": 0 },
+          "consultations": { "type": ["integer", "null"], "minimum": 0 },
+          "currency": { "$ref": "#/components/schemas/EvidenceCurrency" },
+          "thresholdMinor": { "type": "integer", "minimum": 0 },
+          "comparisonStatus": { "type": "string", "enum": ["comparable", "incomparable", "awaiting_supplementation", "missing_baseline", "temporarily_uncomputable"] },
+          "canComparePeriods": { "type": "boolean" },
+          "limitations": { "type": "array", "items": { "type": "string" } },
+          "handlingDeadlineHours": { "type": "integer", "minimum": 0 }
         },
-        "required": [
-          "comparisonResultId",
-          "evidence",
-          "source",
-          "scope",
-          "period",
-          "metric",
-          "metricDefinition",
-          "metricFormula",
-          "currency",
-          "comparisonStatus",
-          "canComparePeriods",
-          "limitations"
-        ],
+        "required": ["comparisonResultId", "evidence", "source", "scope", "period", "metric", "metricDefinition", "metricFormula", "currency", "comparisonStatus", "canComparePeriods", "limitations"],
         "additionalProperties": false
       },
       "InvestigationAlertEvent": {
         "type": "object",
         "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "opened",
-              "observed",
-              "candidate_created",
-              "deferred",
-              "handled",
-              "cleared",
-              "invalidated",
-              "capped"
-            ]
-          },
-          "at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "comparisonResultId": {
-            "type": "string"
-          },
-          "evidence": {
-            "$ref": "#/components/schemas/ComparisonEvidenceRef"
-          },
-          "reason": {
-            "type": "string"
-          }
+          "type": { "type": "string", "enum": ["opened", "observed", "candidate_created", "deferred", "handled", "cleared", "invalidated", "capped"] },
+          "at": { "type": "string", "format": "date-time" },
+          "comparisonResultId": { "type": "string" },
+          "evidence": { "$ref": "#/components/schemas/ComparisonEvidenceRef" },
+          "reason": { "type": "string" }
         },
-        "required": [
-          "type",
-          "at",
-          "comparisonResultId",
-          "evidence"
-        ],
+        "required": ["type", "at", "comparisonResultId", "evidence"],
         "additionalProperties": false
       },
       "InvestigationAlert": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
-          },
-          "ownerId": {
-            "type": "string"
-          },
-          "taskId": {
-            "type": "string"
-          },
-          "logicalKey": {
-            "type": "string"
-          },
-          "sessionId": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "open",
-              "awaiting_evidence",
-              "handled",
-              "cleared",
-              "stale",
-              "capped"
-            ]
-          },
-          "statusReason": {
-            "type": "string"
-          },
-          "current": {
-            "$ref": "#/components/schemas/InvestigationAlertEvidence"
-          },
-          "comparisonResultIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "maxPushRounds": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "logicalRounds": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "events": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InvestigationAlertEvent"
-            }
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
+          "id": { "type": "string" }, "ownerId": { "type": "string" }, "taskId": { "type": "string" },
+          "logicalKey": { "type": "string" }, "sessionId": { "type": "string" },
+          "status": { "type": "string", "enum": ["open", "awaiting_evidence", "handled", "cleared", "stale", "capped"] },
+          "statusReason": { "type": "string" },
+          "current": { "$ref": "#/components/schemas/InvestigationAlertEvidence" },
+          "comparisonResultIds": { "type": "array", "items": { "type": "string" } },
+          "maxPushRounds": { "type": "integer", "minimum": 1 }, "logicalRounds": { "type": "integer", "minimum": 0 },
+          "events": { "type": "array", "items": { "$ref": "#/components/schemas/InvestigationAlertEvent" } },
+          "createdAt": { "type": "string", "format": "date-time" }, "updatedAt": { "type": "string", "format": "date-time" }
         },
-        "required": [
-          "id",
-          "ownerId",
-          "taskId",
-          "logicalKey",
-          "sessionId",
-          "status",
-          "current",
-          "comparisonResultIds",
-          "maxPushRounds",
-          "logicalRounds",
-          "events",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "ownerId", "taskId", "logicalKey", "sessionId", "status", "current", "comparisonResultIds", "maxPushRounds", "logicalRounds", "events", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "InvestigationAlertList": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InvestigationAlert"
-            }
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "additionalProperties": false
+        "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/InvestigationAlert" } } },
+        "required": ["items"], "additionalProperties": false
       },
       "FollowUpResolutionInput": {
-        "type": "object",
-        "properties": {
-          "material": {
-            "oneOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "evidence"
-                    ]
-                  },
-                  "evidenceId": {
-                    "type": "string"
-                  },
-                  "version": {
-                    "type": "integer",
-                    "minimum": 1
-                  }
-                },
-                "required": [
-                  "kind",
-                  "evidenceId",
-                  "version"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "task_version"
-                    ]
-                  },
-                  "taskId": {
-                    "type": "string"
-                  },
-                  "version": {
-                    "type": "integer",
-                    "minimum": 1
-                  }
-                },
-                "required": [
-                  "kind",
-                  "taskId",
-                  "version"
-                ],
-                "additionalProperties": false
-              }
-            ]
-          }
-        },
-        "required": [
-          "material"
-        ],
-        "additionalProperties": false
+        "type": "object", "properties": { "material": { "oneOf": [
+          { "type": "object", "properties": { "kind": { "type": "string", "enum": ["evidence"] }, "evidenceId": { "type": "string" }, "version": { "type": "integer", "minimum": 1 } }, "required": ["kind", "evidenceId", "version"], "additionalProperties": false },
+          { "type": "object", "properties": { "kind": { "type": "string", "enum": ["task_version"] }, "taskId": { "type": "string" }, "version": { "type": "integer", "minimum": 1 } }, "required": ["kind", "taskId", "version"], "additionalProperties": false }
+        ] } }, "required": ["material"], "additionalProperties": false
       },
       "ChoiceReceipt": {
         "type": "object",
