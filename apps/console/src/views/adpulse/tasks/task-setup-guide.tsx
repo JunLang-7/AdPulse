@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { consoleClient } from "../../../adpulse-client";
+import { consoleClient, type components } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
@@ -19,6 +19,10 @@ import {
 import { readTaskSetupFile, TASK_SETUP_BRIEF_LIMIT, TASK_SETUP_FILE_ACCEPT } from "./task-setup-file.js";
 import type { FormState } from "./task-form.js";
 
+import { TaskModelSettings, type TaskDraftProvider } from "./task-model-settings.js";
+
+type Suggestions = components["schemas"]["TaskDraftSuggestions"];
+
 const reviewIndex = taskStages.length;
 const stepTitles = [...taskStages.map(({ title }) => title), "核对并创建"];
 const emptyNotes: Record<TaskDraftStage, string> = { overview: "", audience: "", channels: "" };
@@ -32,6 +36,8 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	saving: boolean;
 }) {
 	const [step, setStep] = useState(0);
+	const [provider, setProvider] = useState<TaskDraftProvider>();
+	const [suggestion, setSuggestion] = useState<{ brief: string; data?: Suggestions }>();
 	const [returnToReview, setReturnToReview] = useState(false);
 	const [notes, setNotes] = useState(emptyNotes);
 	const [excluded, setExcluded] = useState<ExcludedChoices>({});
@@ -48,6 +54,9 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const busy = processing || reading || saving;
 	const brief = stage ? stageBrief(form, stage, notes[stage.id]) : "";
 	const remaining = TASK_SETUP_BRIEF_LIMIT - brief.length;
+	const suggestionCurrent = suggestion?.brief === brief ? suggestion : undefined;
+	const draft = stage && suggestionCurrent?.data ? applyStageSuggestions(form, stage.id, suggestionCurrent.data, excluded) : undefined;
+	const additions = stage?.fields.filter((field) => draft && stageValue(draft, field) !== stageValue(form, field)) ?? [];
 
 	function go(index: number, fromReview = false) {
 		setStep(index);
@@ -56,6 +65,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 		setFileError("");
 		setFailed(false);
 		setUseEnteredValues(false);
+		setSuggestion(undefined);
 	}
 
 	async function loadFile(file: File) {
@@ -80,7 +90,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 		}
 	}
 
-	async function submitStage() {
+	async function submitStage(preview = false) {
 		if (!stage || busyRef.current || saving) return;
 		setError("");
 		if (remaining < 0 && !useEnteredValues) {
@@ -88,15 +98,21 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 			return;
 		}
 		let nextForm = form;
-		if (brief && !useEnteredValues) {
+		if (brief && (preview || (!useEnteredValues && !suggestionCurrent))) {
 			busyRef.current = true;
 			setProcessing(true);
 			onBusyChange(true);
 			try {
 				const result = await consoleClient.POST("/api/task-drafts/extract", {
-					body: { brief, stage: stage.id },
+					body: { brief, stage: stage.id, ...(provider ? { provider } : {}) },
 				});
 				if (!result.data) throw new Error("整理服务不可用");
+				if (preview) {
+					setSuggestion({ brief, data: result.data });
+					setFailed(false);
+					setUseEnteredValues(false);
+					return;
+				}
 				nextForm = applyStageSuggestions(form, stage.id, result.data, excluded);
 			} catch {
 				setFailed(true);
@@ -120,6 +136,12 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	return (
 		<Card>
 			<CardContent className="space-y-5">
+				<div className="flex justify-end">
+					<TaskModelSettings selected={provider} disabled={busy} onSelect={(choice) => {
+						setProvider(choice);
+						setSuggestion(undefined);
+					}} />
+				</div>
 				<ol aria-label="填写进度" className="grid grid-cols-2 gap-2 border-b pb-4 sm:grid-cols-4">
 					{stepTitles.map((title, index) => (
 						<li key={title} aria-current={step === index ? "step" : undefined}
@@ -190,6 +212,23 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 							</div>
 						</details>
 
+						<div className="space-y-2 rounded-lg border p-3">
+							<div className="flex flex-wrap items-center justify-between gap-2">
+								<p className="text-sm text-muted-foreground">根据本阶段填写的内容和资料，先生成建议供你核对。</p>
+								<Button type="button" variant="outline" disabled={busy || !brief || remaining < 0}
+									onClick={() => void submitStage(true)}>AI 辅助填写</Button>
+							</div>
+							{draft && additions.length ? (
+								<div className="space-y-2 rounded-md bg-muted/40 p-2 text-sm">
+									<p className="font-medium">待核对建议</p>
+									{additions.map((field) => <p key={field}>{fieldLabels[field]} · {stageValue(draft, field)}</p>)}
+									<Button type="button" size="sm" disabled={busy} onClick={() => {
+										onChange(draft);
+										setSuggestion({ brief: stageBrief(draft, stage, notes[stage.id]) });
+									}}>应用建议</Button>
+								</div>
+							) : draft ? <p role="status" className="text-sm">没有可补充的建议，可以继续手填。</p> : null}
+						</div>
 						{error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
 						{failed ? (
 							<label className="flex items-center gap-2 text-sm">

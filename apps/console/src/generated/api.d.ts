@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/task-drafts/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listTaskDraftModels"];
+        /** @description Verify a temporary API key on a preconfigured route. The credential is write-only and remains in server memory for up to eight hours. */
+        put: operations["connectTaskDraftModel"];
+        post?: never;
+        delete: operations["disconnectTaskDraftModel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/task-drafts/extract": {
         parameters: {
             query?: never;
@@ -323,6 +340,26 @@ export interface components {
         TaskDraftExtractionInput: {
             brief: string;
             stage?: components["schemas"]["TaskDraftStage"];
+            provider?: components["schemas"]["TaskDraftProvider"];
+        };
+        /** @enum {string} */
+        TaskDraftProvider: "deepseek" | "openai-compatible";
+        TaskDraftModelConnection: {
+            provider: components["schemas"]["TaskDraftProvider"];
+            /** Format: password */
+            apiKey: string;
+        };
+        TaskDraftModelCatalog: {
+            /** @enum {string|null} */
+            defaultProvider: "deepseek" | "openai-compatible" | null;
+            canConnect: boolean;
+            models: {
+                id: components["schemas"]["TaskDraftProvider"];
+                label: string;
+                model: string;
+                /** @enum {string} */
+                status: "configured" | "connected" | "unconfigured";
+            }[];
         };
         /**
          * @description Overview limits suggestions to product and objective, audience to audience and sellingPoints, and channels to channel names.
@@ -936,6 +973,171 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listTaskDraftModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Available routes and connection states for the authenticated user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDraftModelCatalog"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    connectTaskDraftModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskDraftModelConnection"];
+            };
+        };
+        responses: {
+            /** @description Available routes and connection states for the authenticated user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDraftModelCatalog"];
+                };
+            };
+            /** @description Invalid provider or API key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporary model connections disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description JSON required */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Connection could not be verified */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    disconnectTaskDraftModel: {
+        parameters: {
+            query: {
+                provider: components["schemas"]["TaskDraftProvider"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Available routes and connection states for the authenticated user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDraftModelCatalog"];
+                };
+            };
+            /** @description Invalid provider or API key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporary model connections disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Connection test is in progress */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     extractTaskDraft: {
         parameters: {
             query?: never;

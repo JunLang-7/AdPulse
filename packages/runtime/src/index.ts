@@ -18,7 +18,8 @@ import {
 } from "@adpluse/core";
 import { MemoryStorage, PostgresStorage } from "@adpluse/storage";
 import { HttpSourceFetcher } from "./source-fetch.js";
-import { createTaskDraftExtractor, type TaskDraftExtractor } from "./task-draft-extractor.js";
+import type { TaskDraftExtractor } from "./task-draft-extractor.js";
+import { createTaskDraftModels } from "./task-draft-models.js";
 
 export const reviewPolicy: PolicyEngine = {
 	async propose({ signal, roundNo }) {
@@ -60,8 +61,9 @@ export function compose(
 		worker: new Worker(storage, decisions, channels.outbound(), undefined, 5, investigationAlerts),
 	};
 }
-export type Runtime = ReturnType<typeof compose> & { extractTaskDraft?: TaskDraftExtractor };
+export type Runtime = ReturnType<typeof compose> & { extractTaskDraft?: TaskDraftExtractor; taskDraftModels?: ReturnType<typeof createTaskDraftModels> };
 
+export { taskDraftProviderIds } from "./task-draft-models.js";
 export { taskDraftBriefMaxLength, taskDraftStages } from "./task-draft-extractor.js";
 
 export {
@@ -137,10 +139,10 @@ export async function fromEnvironment(
 				},
 			},
 		});
-	const extractTaskDraft = createTaskDraftExtractor(env);
+	const taskDraftModels = createTaskDraftModels(env);
 	return {
 		...compose(postgres ?? new MemoryStorage(), accounts),
-		...(extractTaskDraft ? { extractTaskDraft } : {}),
+		taskDraftModels,
 		close: async () => {
 			await postgres?.close();
 		},

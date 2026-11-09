@@ -3,6 +3,7 @@ import test, { type TestContext } from "node:test";
 import { createApi } from "../apps/api/dist/server.js";
 import { compose, type Runtime } from "../packages/runtime/dist/index.js";
 import { createTaskDraftExtractor, type TaskDraftStage } from "../packages/runtime/dist/task-draft-extractor.js";
+import { createTaskDraftModels } from "../packages/runtime/dist/task-draft-models.js";
 import { MemoryStorage } from "../packages/storage/dist/index.js";
 
 const deepseekEnv = { DEEPSEEK_API_KEY: "synthetic-provider-key" };
@@ -246,4 +247,66 @@ test("task draft uses an explicitly configured HTTPS gateway and never falls bac
 		assert.equal(createTaskDraftExtractor({ ...env, TASK_DRAFT_GATEWAY_BASE_URL: baseUrl }), undefined);
 	assert.equal(createTaskDraftExtractor({ ...env, TASK_DRAFT_GATEWAY_API_KEY: undefined }), undefined);
 	assert.equal(createTaskDraftExtractor({ ...env, TASK_DRAFT_PROVIDER: "unsupported" }), undefined);
+});
+
+test("configured model selection routes only to the chosen provider", async () => {
+	const urls: string[] = [];
+	const models = createTaskDraftModels({
+		...deepseekEnv,
+		TASK_DRAFT_GATEWAY_BASE_URL: "https://gateway.example/v1",
+		TASK_DRAFT_GATEWAY_MODEL: "synthetic-alt",
+		TASK_DRAFT_GATEWAY_API_KEY: "synthetic-gateway-key",
+	}, async (input, init) => {
+		const sent = new Request(input, init);
+		urls.push(sent.url);
+		return providerReply("{}");
+	});
+	assert.deepEqual(models.list("owner").models.map(({ id, status }) => [id, status]), [
+		["deepseek", "configured"], ["openai-compatible", "configured"],
+	]);
+	assert.deepEqual(await models.extract("owner", "openai-compatible", "产品", "overview"), {});
+	assert.deepEqual(await models.extract("owner", undefined, "产品", "overview"), {});
+	assert.deepEqual(urls, ["https://gateway.example/v1/chat/completions", "https://api.deepseek.com/chat/completions"]);
+});
+
+test("temporary model credentials are verified, isolated, redacted, removable and expire", async (t) => {
+	let now = 0;
+	const requests: { auth: string | null; brief: string }[] = [];
+	const models = createTaskDraftModels({ TASK_DRAFT_USER_KEYS_ENABLED: "1" }, async (input, init) => {
+		const sent = new Request(input, init);
+		const body = await sent.json();
+		requests.push({ auth: sent.headers.get("authorization"), brief: body.messages[1].content });
+		return providerReply("{}");
+	}, () => now);
+	const base = await serve(t, { ...compose(new MemoryStorage(), []), taskDraftModels: models });
+	const url = base + "/api/task-drafts/models";
+	assert.equal((await fetch(url)).status, 401);
+	const headers = { authorization: "Bearer " + token, "content-type": "application/json" };
+	const connect = () => fetch(url, { method: "PUT", headers, body: JSON.stringify({ provider: "deepseek", apiKey: "synthetic-personal-key" }) });
+	const connected = await connect();
+	assert.equal(connected.status, 200);
+	assert.equal(connected.headers.get("cache-control"), "no-store");
+	const result = await connected.text();
+	assert.match(result, /connected/);
+	assert.doesNotMatch(result, /synthetic-personal-key/);
+	assert.equal(models.list("other-owner").models[0]?.status, "unconfigured");
+	assert.equal(await models.extract("other-owner", "deepseek", "其他用户资料"), null);
+	assert.deepEqual(requests, [{ auth: "Bearer synthetic-personal-key", brief: "产品：连接测试" }]);
+	assert.equal((await request(base, { provider: "deepseek", stage: "overview", brief: "本用户资料" })).status, 200);
+	assert.equal((await fetch(url + "?provider=deepseek", { method: "DELETE", headers })).status, 200);
+	assert.equal((await request(base, { provider: "deepseek", brief: "不能再调用" })).status, 503);
+	assert.equal((await connect()).status, 200);
+	now = 8 * 60 * 60 * 1000;
+	assert.equal(models.list("task-draft-test-owner").models[0]?.status, "unconfigured");
+});
+
+test("connection changes are disabled unless enabled by deployment", async (t) => {
+	const models = createTaskDraftModels({}, async () => { throw new Error("unexpected network"); });
+	const base = await serve(t, { ...compose(new MemoryStorage(), []), taskDraftModels: models });
+	const response = await fetch(base + "/api/task-drafts/models", {
+		method: "PUT",
+		headers: { authorization: "Bearer " + token, "content-type": "application/json" },
+		body: JSON.stringify({ provider: "deepseek", apiKey: "synthetic-personal-key" }),
+	});
+	assert.equal(response.status, 403);
 });

@@ -125,6 +125,15 @@ type ProviderRoute = {
 	key: string;
 };
 
+export function getTaskDraftGateway(env: Record<string, string | undefined>) {
+	const modelId = env.TASK_DRAFT_GATEWAY_MODEL?.trim();
+	const configuredUrl = env.TASK_DRAFT_GATEWAY_BASE_URL?.trim();
+	if (!modelId || !configuredUrl || !URL.canParse(configuredUrl)) return;
+	const url = new URL(configuredUrl);
+	if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) return;
+	return { modelId, baseUrl: url.href.replace(/\/+$/u, "") };
+}
+
 function configureProvider(env: Record<string, string | undefined>): ProviderRoute | undefined {
 	const selected = env.TASK_DRAFT_PROVIDER?.trim() || "deepseek";
 	if (selected === "deepseek") {
@@ -133,13 +142,10 @@ function configureProvider(env: Record<string, string | undefined>): ProviderRou
 		return;
 	}
 	if (selected !== "openai-compatible") return;
-	const modelId = env.TASK_DRAFT_GATEWAY_MODEL?.trim();
+	const gateway = getTaskDraftGateway(env);
 	const key = env.TASK_DRAFT_GATEWAY_API_KEY?.trim();
-	const configuredUrl = env.TASK_DRAFT_GATEWAY_BASE_URL?.trim();
-	if (!modelId || !key || !configuredUrl || !URL.canParse(configuredUrl)) return;
-	const url = new URL(configuredUrl);
-	if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) return;
-	const baseUrl = url.href.replace(/\/+$/u, "");
+	if (!gateway || !key) return;
+	const { modelId, baseUrl } = gateway;
 	const providerId = "task-draft-gateway";
 	const model: Model<"openai-completions"> = {
 		id: modelId,
@@ -174,6 +180,7 @@ function configureProvider(env: Record<string, string | undefined>): ProviderRou
 export function createTaskDraftExtractor(
 	env: Record<string, string | undefined>,
 	fetchImpl: typeof fetch = fetch,
+	limit = createTaskDraftRequestLimit(),
 ): TaskDraftExtractor | undefined {
 	const route = configureProvider(env);
 	if (!route) return;
@@ -182,40 +189,49 @@ export function createTaskDraftExtractor(
 	const model = models.getModel(route.provider.id, route.modelId);
 	if (!model) return;
 	const guardedFetch = providerFetch(model.baseUrl + "/chat/completions", fetchImpl);
-	let recentRequests: number[] = [];
-	let inFlight = 0;
 	return async (brief, stage) => {
 		if (!brief.trim() || brief.length > taskDraftBriefMaxLength) return null;
+		return limit(async () => {
+			try {
+				const fields = stage ? suggestionFields.filter((entry) => entry.stage === stage) : suggestionFields;
+				const response = await models.completeSimple(model, {
+					systemPrompt: prompt(fields),
+					messages: [{ role: "user", content: brief, timestamp: Date.now() }],
+				}, {
+					apiKey: route.key,
+					fetch: guardedFetch,
+					signal: AbortSignal.timeout(requestTimeoutMs),
+					timeoutMs: requestTimeoutMs,
+					maxRetries: 0,
+					cacheRetention: "none",
+					maxTokens: maxOutputTokens,
+					temperature: 0,
+					samplingParams: {
+						response_format: { type: "json_object" },
+						...(model.provider === "deepseek" ? { thinking: { type: "disabled" } } : {}),
+					},
+				});
+				if (response.stopReason !== "stop") return null;
+				const text = response.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("");
+				return extractSuggestions(text, brief, fields);
+			} catch {
+				return null;
+			}
+		});
+	};
+}
+
+export function createTaskDraftRequestLimit() {
+	let recentRequests: number[] = [];
+	let inFlight = 0;
+	return async (request: () => Promise<TaskDraftSuggestions | null>) => {
 		const now = performance.now();
 		recentRequests = recentRequests.filter((start) => now - start < requestWindowMs);
-		if (inFlight >= maxConcurrentRequests || recentRequests.length >= maxRequestsPerWindow)
-			return null;
+		if (inFlight >= maxConcurrentRequests || recentRequests.length >= maxRequestsPerWindow) return null;
 		recentRequests.push(now);
 		inFlight++;
 		try {
-			const fields = stage ? suggestionFields.filter((entry) => entry.stage === stage) : suggestionFields;
-			const response = await models.completeSimple(model, {
-				systemPrompt: prompt(fields),
-				messages: [{ role: "user", content: brief, timestamp: Date.now() }],
-			}, {
-				apiKey: route.key,
-				fetch: guardedFetch,
-				signal: AbortSignal.timeout(requestTimeoutMs),
-				timeoutMs: requestTimeoutMs,
-				maxRetries: 0,
-				cacheRetention: "none",
-				maxTokens: maxOutputTokens,
-				temperature: 0,
-				samplingParams: {
-					response_format: { type: "json_object" },
-					...(model.provider === "deepseek" ? { thinking: { type: "disabled" } } : {}),
-				},
-			});
-			if (response.stopReason !== "stop") return null;
-			const text = response.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("");
-			return extractSuggestions(text, brief, fields);
-		} catch {
-			return null;
+			return await request();
 		} finally {
 			inFlight--;
 		}

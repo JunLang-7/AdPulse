@@ -10,6 +10,184 @@
     }
   ],
   "paths": {
+    "/api/task-drafts/models": {
+      "get": {
+        "operationId": "listTaskDraftModels",
+        "responses": {
+          "200": {
+            "description": "Available routes and connection states for the authenticated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDraftModelCatalog"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "connectTaskDraftModel",
+        "description": "Verify a temporary API key on a preconfigured route. The credential is write-only and remains in server memory for up to eight hours.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskDraftModelConnection"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Available routes and connection states for the authenticated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDraftModelCatalog"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid provider or API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Temporary model connections disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "JSON required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Connection could not be verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "disconnectTaskDraftModel",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/TaskDraftProvider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Available routes and connection states for the authenticated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDraftModelCatalog"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid provider or API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Temporary model connections disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Connection test is in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/task-drafts/extract": {
       "post": {
         "operationId": "extractTaskDraft",
@@ -859,10 +1037,87 @@
         "type": "object",
         "properties": {
           "brief": { "type": "string", "minLength": 1, "maxLength": 2500 },
-          "stage": { "$ref": "#/components/schemas/TaskDraftStage" }
+          "stage": { "$ref": "#/components/schemas/TaskDraftStage" },
+          "provider": { "$ref": "#/components/schemas/TaskDraftProvider" }
         },
         "required": ["brief"],
         "additionalProperties": false
+      },
+      "TaskDraftProvider": {"type":"string","enum":["deepseek","openai-compatible"]},
+      "TaskDraftModelConnection": {
+        "type": "object",
+        "required": [
+          "provider",
+          "apiKey"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/TaskDraftProvider"
+          },
+          "apiKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 512,
+            "writeOnly": true,
+            "format": "password"
+          }
+        }
+      },
+      "TaskDraftModelCatalog": {
+        "type": "object",
+        "required": [
+          "defaultProvider",
+          "canConnect",
+          "models"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "defaultProvider": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "deepseek",
+              "openai-compatible",
+              null
+            ]
+          },
+          "canConnect": {
+            "type": "boolean"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "label",
+                "model",
+                "status"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "#/components/schemas/TaskDraftProvider"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "configured",
+                    "connected",
+                    "unconfigured"
+                  ]
+                }
+              }
+            }
+          }
+        }
       },
       "TaskDraftStage": {
         "type": "string",
