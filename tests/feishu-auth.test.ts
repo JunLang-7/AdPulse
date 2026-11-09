@@ -50,7 +50,7 @@ test("authorization URL uses Feishu OAuth and S256 PKCE without leaking app secr
 test("authorization code is exchanged with PKCE and returns only a tenant-scoped open ID", async () => {
 	const { calls, fetcher } = responder([
 		{ code: 0, access_token: "short-lived-access-token", refresh_token: "never-store" },
-		{ code: 0, data: { open_id: "ou-user-a", tenant_key: "tenant-a", name: "江朗" } },
+		{ code: 0, data: { open_id: "ou-user-a", tenant_key: "tenant-a", name: "小明" } },
 	]);
 	const provider = new FeishuIdentityProvider(configuration, fetcher);
 	const login = await provider.verifyAuthorizationCode(
@@ -66,7 +66,7 @@ test("authorization code is exchanged with PKCE and returns only a tenant-scoped
 		externalId: "ou-user-a",
 	});
 	// 同一响应里的显示名只用于界面，不进入身份作用域。
-	assert.equal(login.displayName, "江朗");
+	assert.equal(login.displayName, "小明");
 	assert.equal(calls[0]?.url, "https://open.feishu.cn/open-apis/authen/v2/oauth/token");
 	const body = JSON.parse(String(calls[0]?.init?.body));
 	assert.equal(body.grant_type, "authorization_code");

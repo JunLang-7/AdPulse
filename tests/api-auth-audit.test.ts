@@ -46,7 +46,7 @@ async function serve(
 		},
 		async verifyAuthorizationCode() {
 			if (options.rejectIdentity) throw new Error("tenant mismatch");
-			return { identity, displayName: "江朗" };
+			return { identity, displayName: "小明" };
 		},
 	};
 	const server = createApi(runtime, {
@@ -189,7 +189,7 @@ test("login carries the platform display name into the current-user payload", as
 		headers: { cookie: `adpulse_session=${sessionCookie}` },
 	});
 	const payload = (await me.json()) as { displayName?: string; identities?: unknown[] };
-	assert.equal(payload.displayName, "江朗");
+	assert.equal(payload.displayName, "小明");
 	// 显示名不进身份作用域：identities 里的字段保持不变。
 	assert.deepEqual(Object.keys((payload.identities as Array<object>)[0] ?? {}).sort(), [
 		"applicationId",
