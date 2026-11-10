@@ -231,6 +231,12 @@ bun run dev
 - 他人任务/他人关注对象一律按 `target_not_found`（404）处理，不确认存在性；视图不返回 `userId`。
 - 本接口**不表示可投递**：是否真的能发仍由 `GET /api/me/notification-status` 的 `canSendProactive` 决定。
 
+「订阅与关注」（`/settings/subscriptions`）是它的页面：关注对象增删、类别与范围就地修改、
+退订/恢复、时段编辑，以及首次开启前的确认清单（关注对象、类别、09:30 汇总、免打扰、
+「确认开启／暂不开启」）。页面把**四个状态分开显示**——订阅配置、单聊地址、授权、推送开关——
+任一缺失都显示「不会收到提醒」，不用单个布尔冒充。开启/关闭与保存都只改配置，页面文案明确写
+「保存配置不会发送任何消息」；真正投递仍受 #35 闸门与 #37 推送实现约束。
+
 Vite 将同源 `/api`、`/auth`、`/webhooks` 请求代理到 127.0.0.1:3000，控制台与 API 不做跨域部署。`PUBLIC_ORIGIN` 必须与浏览器 origin 完全一致；Feishu 后台须登记 `${PUBLIC_ORIGIN}/auth/feishu/callback`。
 
 登录采用 Feishu OAuth authorization code + S256 PKCE；按[授权码接口当前说明](https://open.feishu.cn/document/common-capabilities/sso/api/obtain-oauth-code)，该授权入口的 PKCE 暂时搭配 `https://open.feishu.cn/open-apis/authen/v2/oauth/token`，不混用 v3、不在失败后自动切换端点重试同一码；服务端检查授权用户的 tenant scope，身份键包含 platform、application、tenant、ID 类型和外部 ID。首次验证自动建立个人用户；不保存 access/refresh token，不提供静态 Bearer 或开发绕过。浏览器 session cookie 为 HttpOnly、SameSite=Lax，生产设置 Secure；服务端固定 8 小时绝对过期且不滑动，退出会撤销 session。所有有副作用的 `/api/*` 请求还必须携带与 `PUBLIC_ORIGIN` 一致的 `Origin`。控制台在受保护 API 返回 401 时携带经校验的站内 `returnTo` 跳转登录，退出会撤销会话并清空本地查询缓存。跨标签页登录或退出会通知其他标签页清除旧页面并重新验证；通知只含非凭据身份标识，不充当登录凭证。
