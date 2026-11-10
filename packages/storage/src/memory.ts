@@ -7,6 +7,8 @@ export const tableNames = [
 	"loginTransactions",
 	"notificationDestinations",
 	"notificationConsents",
+	"subscriptionSettings",
+	"subscriptionTargets",
 	"tasks",
 	"taskVersions",
 	"taskOperations",

@@ -10,6 +10,8 @@ import {
 	InvestigationAlertValidationError,
 	NotificationError,
 	NotificationService,
+	SubscriptionError,
+	SubscriptionService,
 	TaskInputValidationError,
 } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
@@ -47,7 +49,10 @@ export interface NotificationAuditEvent {
 	event:
 		| "notification.destination.verified"
 		| "notification.consent.granted"
-		| "notification.consent.revoked";
+		| "notification.consent.revoked"
+		| "subscription.settings.updated"
+		| "subscription.target.added"
+		| "subscription.target.updated";
 	path: string;
 }
 
@@ -118,6 +123,19 @@ function validatePublicOrigin(value: string): URL {
 export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 	const publicOrigin = validatePublicOrigin(auth.publicOrigin);
 	const notifications = new NotificationService(runtime.storage);
+	const subscriptions = new SubscriptionService(runtime.storage);
+	const subscriptionErrorStatus = (reason: SubscriptionError["reason"]): number => {
+		switch (reason) {
+			case "target_not_found":
+				return 404;
+			case "subscription_conflict":
+			case "duplicate_target":
+				return 409;
+			case "invalid_schedule":
+			case "invalid_target":
+				return 422;
+		}
+	};
 	const notificationErrorStatus = (reason: NotificationError["reason"]): number => {
 		switch (reason) {
 			case "user_unavailable":
@@ -310,6 +328,99 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						...(session.displayName ? { displayName: session.displayName } : {}),
 						identities: await auth.service.listIdentities(session.userId),
 					});
+				if (path === "/api/me/subscription" && req.method === "GET") {
+					// 只返回本人配置；是否可投递由 /api/me/notification-status 决定，不在这里冒充。
+					return json(res, 200, await subscriptions.view(session.userId));
+				}
+				if (
+					path === "/api/me/subscription/settings" &&
+					req.method === "PUT"
+				) {
+					const body = (await readJson(req).catch(() => null)) as Record<
+						string,
+						unknown
+					> | null;
+					try {
+						const view = await subscriptions.updateSettings(session.userId, {
+							expectedVersion: body?.expectedVersion as number,
+							...(body?.proactiveEnabled === undefined
+								? {}
+								: { proactiveEnabled: body.proactiveEnabled as boolean }),
+							...(body?.schedule === undefined
+								? {}
+								: { schedule: body.schedule as never }),
+						});
+						audit({ event: "subscription.settings.updated", path });
+						return json(res, 200, view);
+					} catch (error) {
+						if (error instanceof SubscriptionError)
+							throw new HttpError(
+								subscriptionErrorStatus(error.reason),
+								error.reason,
+							);
+						throw error;
+					}
+				}
+				if (path === "/api/me/subscription/targets" && req.method === "POST") {
+					const body = (await readJson(req).catch(() => null)) as Record<
+						string,
+						unknown
+					> | null;
+					try {
+						const view = await subscriptions.addTarget(session.userId, {
+							expectedVersion: body?.expectedVersion as number,
+							kind: body?.kind as never,
+							...(typeof body?.refId === "string" ? { refId: body.refId } : {}),
+							...(typeof body?.label === "string" ? { label: body.label } : {}),
+							...(typeof body?.sourceUrl === "string"
+								? { sourceUrl: body.sourceUrl }
+								: {}),
+							categories: body?.categories,
+							scope: body?.scope,
+						});
+						audit({ event: "subscription.target.added", path });
+						return json(res, 201, view);
+					} catch (error) {
+						if (error instanceof SubscriptionError)
+							throw new HttpError(
+								subscriptionErrorStatus(error.reason),
+								error.reason,
+							);
+						throw error;
+					}
+				}
+				const targetMatch = /^\/api\/me\/subscription\/targets\/([0-9a-f-]{36})$/.exec(
+					path,
+				);
+				if (targetMatch && req.method === "PATCH") {
+					const body = (await readJson(req).catch(() => null)) as Record<
+						string,
+						unknown
+					> | null;
+					try {
+						const view = await subscriptions.updateTarget(
+							session.userId,
+							targetMatch[1] as string,
+							{
+								expectedVersion: body?.expectedVersion as number,
+								...(body?.categories === undefined
+									? {}
+									: { categories: body.categories }),
+								...(body?.scope === undefined ? {} : { scope: body.scope }),
+								...(body?.status === undefined ? {} : { status: body.status }),
+							},
+						);
+						audit({ event: "subscription.target.updated", path });
+						return json(res, 200, view);
+					} catch (error) {
+						if (error instanceof SubscriptionError)
+							throw new HttpError(
+								subscriptionErrorStatus(error.reason),
+								error.reason,
+							);
+						throw error;
+					}
+				}
 				if (path === "/api/me/notification-status" && req.method === "GET") {
 					return json(res, 200, await notifications.status(session.userId));
 				}

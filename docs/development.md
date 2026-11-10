@@ -211,6 +211,23 @@ bun run dev
 `POST /api/me/notification-consent`（授权/撤销都带 `expectedVersion`，版本不符提示刷新）。
 页面明确写出「撤销不影响登录、不删除地址、不发群消息」。当前没有创建会话表单，可先运行 `bun run demo` 生成演示记录；该脚本生成的是已完成会话。创建可操作的会话可参考脚本中的 POST /api/sessions 调用。
 
+「个人关注与订阅配置」（#36，只存配置，不做筛选/调度/发送）：`packages/core/src/subscriptions.ts`，
+接口 `GET /api/me/subscription`、`PUT /api/me/subscription/settings`、
+`POST /api/me/subscription/targets`、`PATCH /api/me/subscription/targets/{targetId}`。
+
+- 三维简单筛选：关注对象（`task` 为本人任务 id，`brand`/`competitor` 为本人录入名称）× 类别
+  （`effect`/`event`/`evidence`）× 关联范围（`task_only`/`include_general`）。品牌与竞品目前没有跨租户实体，
+  `refId` 用名称规范化 key（NFKC + 去首尾空白 + 折叠空格 + 小写），同名同 kind 重复录入返回 409；
+  #38 出现实体后再关联，不改已存配置。
+- **每人一个单调版本**，开关与关注列表的所有写入共用；写请求必须带 `expectedVersion`（未配置为 0），
+  不符返回 409，旧请求重放无法覆盖后来的修改。#37 判断「哪批待发已过期」只看这一个数。
+- `proactiveEnabled` 默认 `false`：登录、保存配置都不等于启用；启用/关闭分别记录 `enabledAt`/`disabledAt`。
+- 时段默认北京时间日汇总 09:30、免打扰 22:00–08:00；时区固定 `Asia/Shanghai`。汇总时刻落在免打扰区间
+  会被拒绝（422），避免存下必然失效的配置；免打扰可跨零点。
+- 退订对象 = `status: muted`（保留配置可恢复），类别退订 = 从该对象移除类别；二者与「关闭全部主动推送」可区分。
+- 他人任务/他人关注对象一律按 `target_not_found`（404）处理，不确认存在性；视图不返回 `userId`。
+- 本接口**不表示可投递**：是否真的能发仍由 `GET /api/me/notification-status` 的 `canSendProactive` 决定。
+
 Vite 将同源 `/api`、`/auth`、`/webhooks` 请求代理到 127.0.0.1:3000，控制台与 API 不做跨域部署。`PUBLIC_ORIGIN` 必须与浏览器 origin 完全一致；Feishu 后台须登记 `${PUBLIC_ORIGIN}/auth/feishu/callback`。
 
 登录采用 Feishu OAuth authorization code + S256 PKCE；按[授权码接口当前说明](https://open.feishu.cn/document/common-capabilities/sso/api/obtain-oauth-code)，该授权入口的 PKCE 暂时搭配 `https://open.feishu.cn/open-apis/authen/v2/oauth/token`，不混用 v3、不在失败后自动切换端点重试同一码；服务端检查授权用户的 tenant scope，身份键包含 platform、application、tenant、ID 类型和外部 ID。首次验证自动建立个人用户；不保存 access/refresh token，不提供静态 Bearer 或开发绕过。浏览器 session cookie 为 HttpOnly、SameSite=Lax，生产设置 Secure；服务端固定 8 小时绝对过期且不滑动，退出会撤销 session。所有有副作用的 `/api/*` 请求还必须携带与 `PUBLIC_ORIGIN` 一致的 `Origin`。控制台在受保护 API 返回 401 时携带经校验的站内 `returnTo` 跳转登录，退出会撤销会话并清空本地查询缓存。跨标签页登录或退出会通知其他标签页清除旧页面并重新验证；通知只含非凭据身份标识，不充当登录凭证。
