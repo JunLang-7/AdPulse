@@ -26,6 +26,7 @@ import {
 	formatSchedule,
 	kindLabel,
 	savedNotice,
+	describeSettingsFeedback,
 	validateScheduleDraft,
 	validateTargetDraft,
 } from "./subscription-view";
@@ -388,6 +389,10 @@ export default function SubscriptionSettingsPage() {
 				});
 			return result.data as unknown as SubscriptionViewLike;
 		},
+		onMutate: () => {
+			// 操作开始先清掉上一次的结果，避免旧成功提示与本次失败并存。
+			setNotice(null);
+		},
 		onSuccess: (data, variables) => {
 			setNotice(
 				variables.proactiveEnabled === true
@@ -487,6 +492,11 @@ export default function SubscriptionSettingsPage() {
 			quietEnd: data.settings.schedule.quietEnd,
 		};
 	const summary = confirmationSummary(data);
+	const settingsFeedback = describeSettingsFeedback({
+		pending: updateSettings.isPending,
+		errorStatus: updateSettings.error ? statusOf(updateSettings.error) : null,
+		notice,
+	});
 	const busy =
 		updateSettings.isPending || addTarget.isPending || patchTarget.isPending;
 
@@ -542,9 +552,14 @@ export default function SubscriptionSettingsPage() {
 						</div>
 					</dl>
 
-					{notice ? (
+					{settingsFeedback.notice ? (
 						<p role="status" className="text-sm text-emerald-700">
-							{notice}
+							{settingsFeedback.notice}
+						</p>
+					) : null}
+					{settingsFeedback.failure ? (
+						<p role="alert" className="text-sm text-red-600">
+							{settingsFeedback.failure}
 						</p>
 					) : null}
 
@@ -598,17 +613,23 @@ export default function SubscriptionSettingsPage() {
 								onClick={() => updateSettings.mutate({ proactiveEnabled: true })}
 								className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
 							>
-								确认开启
+								{settingsFeedback.confirmLabel}
 							</button>
 							<button
 								type="button"
+								disabled={!settingsFeedback.dismissEnabled}
+								title={
+									settingsFeedback.dismissEnabled
+										? undefined
+										: "开启请求正在提交，请等待结果后再操作"
+								}
 								onClick={() => {
 									setConfirmOpen(false);
 									setNotice("已选择暂不开启；不会发送任何主动推送。");
 								}}
-								className="rounded-md border px-3 py-2 text-sm"
+								className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
 							>
-								暂不开启
+								{settingsFeedback.dismissEnabled ? "暂不开启" : "请稍候…"}
 							</button>
 						</div>
 					</CardContent>
@@ -659,6 +680,7 @@ export default function SubscriptionSettingsPage() {
 								return;
 							}
 							setScheduleError(null);
+							setNotice(null);
 							try {
 								await updateSettings.mutateAsync({
 									schedule: {
@@ -669,7 +691,7 @@ export default function SubscriptionSettingsPage() {
 								});
 								setScheduleDraft(null);
 							} catch {
-								/* 错误由 notice/状态区展示 */
+								/* 失败文案由 settingsFeedback.failure 统一展示，这里不再吞掉 */
 							}
 						}}
 						className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"

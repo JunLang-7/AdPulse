@@ -5,6 +5,7 @@ import {
 	activeTargets,
 	confirmationSummary,
 	describeReadiness,
+	describeSettingsFeedback,
 	errorText,
 	formatSchedule,
 	kindLabel,
@@ -302,4 +303,41 @@ test("subscription 视图: 标签与错误文案", () => {
 	assert.match(errorText(404), /找不到这个关注对象/);
 	assert.match(errorText(422), /输入不合法/);
 	assert.match(errorText(500), /操作失败/);
+});
+
+test("subscription 视图: 写入失败必须可见，且不保留上一次成功提示", () => {
+	const ok = describeSettingsFeedback({ pending: false, errorStatus: null, notice: "已开启订阅推送。" });
+	assert.equal(ok.failure, null);
+	assert.equal(ok.notice, "已开启订阅推送。");
+	assert.equal(ok.dismissEnabled, true);
+
+	// 版本冲突（409）与网络/未知错误都要给出可见文案。
+	const conflict = describeSettingsFeedback({
+		pending: false,
+		errorStatus: 409,
+		notice: "已开启订阅推送。",
+	});
+	assert.match(conflict.failure ?? "", /其他标签页修改，请刷新/);
+	assert.equal(
+		conflict.notice,
+		null,
+		"失败时不能继续显示上一次的成功提示",
+	);
+
+	const unknown = describeSettingsFeedback({ pending: false, errorStatus: 0, notice: null });
+	assert.match(unknown.failure ?? "", /操作失败/);
+
+	// 保存时间的服务端失败（422）同样走统一文案。
+	const invalid = describeSettingsFeedback({ pending: false, errorStatus: 422, notice: null });
+	assert.match(invalid.failure ?? "", /输入不合法/);
+});
+
+test("subscription 视图: 开启请求在途时不能『暂不开启』", () => {
+	const pending = describeSettingsFeedback({ pending: true, errorStatus: null, notice: null });
+	assert.equal(pending.dismissEnabled, false, "请求在途必须禁用关闭确认区");
+	assert.equal(pending.confirmLabel, "正在提交…");
+
+	const idle = describeSettingsFeedback({ pending: false, errorStatus: null, notice: null });
+	assert.equal(idle.dismissEnabled, true);
+	assert.equal(idle.confirmLabel, "确认开启");
 });

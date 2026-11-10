@@ -287,3 +287,33 @@ export function errorText(status: number): string {
 			return "操作失败，请稍后重试。";
 	}
 }
+
+/**
+ * 设置写入的反馈状态：失败必须可见，开启请求在途时不能宣称「不会推送」。
+ * 抽成纯函数是因为仓库没有组件测试环境（无 jsdom），交互逻辑至少要能单测。
+ */
+export interface SettingsFeedback {
+	/** 「暂不开启」是否可点：请求在途时不可，避免关掉确认区却让请求落库。 */
+	dismissEnabled: boolean;
+	/** 「确认开启」按钮文案。 */
+	confirmLabel: string;
+	/** 失败文案；有失败时不再展示上一次的成功提示。 */
+	failure: string | null;
+	/** 需要展示的成功/中性提示；失败时清空，避免误导。 */
+	notice: string | null;
+}
+
+export function describeSettingsFeedback(input: {
+	pending: boolean;
+	errorStatus: number | null;
+	notice: string | null;
+}): SettingsFeedback {
+	const failure = input.errorStatus === null ? null : errorText(input.errorStatus);
+	return {
+		dismissEnabled: !input.pending,
+		confirmLabel: input.pending ? "正在提交…" : "确认开启",
+		failure,
+		// 失败优先：不能让上一次的成功提示与本次失败同时出现。
+		notice: failure ? null : input.notice,
+	};
+}
