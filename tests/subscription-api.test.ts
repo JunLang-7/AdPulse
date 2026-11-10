@@ -91,13 +91,18 @@ test("subscription API: 未登录一律 401，登录后配置可读写", async (
 		"content-type": "application/json",
 	};
 
-	// 未配置：默认关闭，版本 0，不声称可投递。
+	// 未配置：默认关闭，版本 0，不声称可投递；且不返回伪造的 updatedAt。
 	const initial = (await (await fetch(`${url}/api/me/subscription`, { headers })).json()) as {
-		settings: { version: number; proactiveEnabled: boolean };
+		settings: { version: number; proactiveEnabled: boolean; updatedAt?: string };
 		targets: unknown[];
 	};
 	assert.equal(initial.settings.version, 0);
 	assert.equal(initial.settings.proactiveEnabled, false);
+	assert.equal(
+		"updatedAt" in initial.settings,
+		false,
+		"未配置时不返回 updatedAt，客户端按 date-time 解析空串会失败",
+	);
 	assert.deepEqual(initial.targets, []);
 
 	// 启用需要版本；缺少 expectedVersion 不能当成 0。
@@ -139,6 +144,24 @@ test("subscription API: 未登录一律 401，登录后配置可读写", async (
 		}),
 	});
 	assert.equal(badSchedule.status, 422);
+
+	// 非 Asia/Shanghai 时区必须拒绝，而不是当成北京时间保存。
+	const badTimezone = await fetch(`${url}/api/me/subscription/settings`, {
+		method: "PUT",
+		headers,
+		body: JSON.stringify({
+			expectedVersion: 1,
+			schedule: { timezone: "UTC", digestAt: "09:30", quietStart: "22:00", quietEnd: "08:00" },
+		}),
+	});
+	assert.equal(badTimezone.status, 422, "不支持时区返回 422");
+	assert.equal(
+		((await (await fetch(`${url}/api/me/subscription`, { headers })).json()) as {
+			settings: { version: number };
+		}).settings.version,
+		1,
+		"被拒的时区写入不得推进版本",
+	);
 	assert.equal(
 		((await (await fetch(`${url}/api/me/subscription`, { headers })).json()) as {
 			settings: { version: number; schedule: { digestAt: string } };

@@ -69,6 +69,11 @@ test("subscription: 未配置时默认关闭且版本为 0，不伪造可投递"
 	assert.equal(view.settings.proactiveEnabled, false, "首次默认关闭");
 	assert.deepEqual(view.settings.schedule, DEFAULT_SCHEDULE);
 	assert.equal(view.settings.enabledAt, undefined);
+	assert.equal(
+		"updatedAt" in view.settings,
+		false,
+		"从未保存过配置就不返回更新时间（契约里是可缺省的 date-time，不能用空串假冒）",
+	);
 	assert.deepEqual(view.targets, []);
 });
 
@@ -146,6 +151,24 @@ test("subscription: 时段校验（格式、免打扰跨零点、汇总不得落
 			`应拒绝 ${JSON.stringify(schedule)}`,
 		);
 	}
+	// 时区必须显式给出且只能是 Asia/Shanghai：不替调用方改写成北京时间。
+	for (const timezone of [undefined, "UTC", "asia/shanghai", "Asia/Shanghai "]) {
+		await assert.rejects(
+			service.updateSettings("user-a", {
+				expectedVersion: 0,
+				schedule: { ...DEFAULT_SCHEDULE, timezone } as never,
+			}),
+			(error: unknown) =>
+				error instanceof SubscriptionError &&
+				error.reason === "invalid_schedule",
+			`应拒绝 timezone=${String(timezone)}`,
+		);
+	}
+	// 被拒的写入不推进版本，也不落库。
+	const untouched = await service.view("user-a");
+	assert.equal(untouched.settings.version, 0);
+	assert.equal("updatedAt" in untouched.settings, false);
+
 	// 免打扰 22:00–08:00 跨零点：09:30 合法，07:30 不合法。
 	const ok = await service.updateSettings("user-a", {
 		expectedVersion: 0,

@@ -536,13 +536,17 @@ export interface components {
             version: number;
             /** @description 默认关闭；保存配置不等于启用 */
             proactiveEnabled: boolean;
+            /** @description 未保存过配置时返回默认值（09:30 汇总、22:00–08:00 免打扰） */
             schedule: components["schemas"]["SubscriptionSchedule"];
             /** Format: date-time */
             enabledAt?: string;
             /** Format: date-time */
             disabledAt?: string;
-            /** Format: date-time */
-            updatedAt: string;
+            /**
+             * Format: date-time
+             * @description 从未保存过配置时缺省（不返回空串）
+             */
+            updatedAt?: string;
         };
         SubscriptionTarget: {
             id: string;

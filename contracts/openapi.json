@@ -1058,12 +1058,12 @@
         "properties": {
           "version": { "type": "integer", "minimum": 0, "description": "每人单调版本：开关与关注列表的所有写入共用" },
           "proactiveEnabled": { "type": "boolean", "description": "默认关闭；保存配置不等于启用" },
-          "schedule": { "$ref": "#/components/schemas/SubscriptionSchedule" },
+          "schedule": { "$ref": "#/components/schemas/SubscriptionSchedule", "description": "未保存过配置时返回默认值（09:30 汇总、22:00–08:00 免打扰）" },
           "enabledAt": { "type": "string", "format": "date-time" },
           "disabledAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" }
+          "updatedAt": { "type": "string", "format": "date-time", "description": "从未保存过配置时缺省（不返回空串）" }
         },
-        "required": ["version", "proactiveEnabled", "schedule", "updatedAt"],
+        "required": ["version", "proactiveEnabled", "schedule"],
         "additionalProperties": false
       },
       "SubscriptionTarget": {

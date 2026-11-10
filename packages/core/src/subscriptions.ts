@@ -56,7 +56,8 @@ export interface SubscriptionView {
 		schedule: SubscriptionSettings["schedule"];
 		enabledAt?: string;
 		disabledAt?: string;
-		updatedAt: string;
+		/** 从未保存过配置时缺省：不伪造一个更新时间。 */
+		updatedAt?: string;
 	};
 	targets: Array<{
 		id: string;
@@ -99,6 +100,12 @@ function validateSchedule(
 ): SubscriptionSettings["schedule"] {
 	if (!schedule || typeof schedule !== "object")
 		throw new SubscriptionError("invalid_schedule", "schedule is required");
+	// 首期只支持北京时间：其他时区不做换算，直接拒绝——静默改写会改变时间语义。
+	if (schedule.timezone !== "Asia/Shanghai")
+		throw new SubscriptionError(
+			"invalid_schedule",
+			"timezone must be Asia/Shanghai",
+		);
 	const { digestAt, quietStart, quietEnd } = schedule;
 	for (const value of [digestAt, quietStart, quietEnd])
 		if (typeof value !== "string" || !TIME.test(value))
@@ -444,7 +451,7 @@ export class SubscriptionService {
 				schedule: settings?.schedule ?? DEFAULT_SCHEDULE,
 				...(settings?.enabledAt ? { enabledAt: settings.enabledAt } : {}),
 				...(settings?.disabledAt ? { disabledAt: settings.disabledAt } : {}),
-				updatedAt: settings?.updatedAt ?? "",
+				...(settings?.updatedAt ? { updatedAt: settings.updatedAt } : {}),
 			},
 			targets: sorted.map((item) => ({
 				id: item.id,
