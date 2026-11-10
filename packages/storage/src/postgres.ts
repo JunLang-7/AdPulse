@@ -174,6 +174,18 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (8)",
 				);
 			}
+			if (!current.has(9)) {
+				for (const name of ["subscriptionSettings", "subscriptionTargets"])
+					await this.createEntityTable(client, name);
+				// 每人一份设置；关注对象在同一 user + kind + refId 下唯一，堵住并发重复录入。
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_subscription_settings_user
+					ON adpulse_subscriptionSettings ((data->>'userId'))`);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_subscription_target_ref
+					ON adpulse_subscriptionTargets ((data->>'userId'), (data->>'kind'), (data->>'refId'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (9)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

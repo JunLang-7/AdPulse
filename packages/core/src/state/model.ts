@@ -64,6 +64,51 @@ export interface NotificationConsent {
 	version: number;
 }
 
+/** 关注对象：本人任务，或本人录入的品牌/竞品名称（#38 出现实体后再关联）。 */
+export type SubscriptionTargetKind = "task" | "brand" | "competitor";
+/** 首期三维筛选里的「类别」：效果排查、明确事件、补证/待处理。 */
+export type SubscriptionCategory = "effect" | "event" | "evidence";
+/** 「关联范围」：只关联该对象所在任务，或也接收该对象的一般动态。 */
+export type SubscriptionScope = "task_only" | "include_general";
+
+export interface SubscriptionTarget {
+	id: string;
+	userId: string;
+	kind: SubscriptionTargetKind;
+	/** task：任务 id；brand/competitor：名称规范化后的 key。 */
+	refId: string;
+	/** 展示名。task 取任务当前版本的 product 快照。 */
+	label: string;
+	sourceUrl?: string;
+	/** 该对象订阅的类别；空数组表示暂不可用于投递。 */
+	categories: SubscriptionCategory[];
+	scope: SubscriptionScope;
+	/** muted 即「退订该对象」，保留以便恢复，不删除历史。 */
+	status: "active" | "muted";
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface SubscriptionSettings {
+	/** 与 userId 相同：每人一份。 */
+	id: string;
+	userId: string;
+	/** 单调版本：开关、关注列表、类别、范围的所有写入共用同一个计数。 */
+	version: number;
+	/** 默认关闭：登录或保存配置都不等于启用。 */
+	proactiveEnabled: boolean;
+	/** 启用时把本人确认过的时段一并持久化，便于将来变更可检测。 */
+	schedule: {
+		timezone: "Asia/Shanghai";
+		digestAt: string;
+		quietStart: string;
+		quietEnd: string;
+	};
+	enabledAt?: string;
+	disabledAt?: string;
+	updatedAt: string;
+}
+
 export interface WebSession {
 	/** SHA-256 digest of the opaque cookie value; never store the cookie itself. */
 	id: string;
@@ -550,6 +595,8 @@ export interface Entities {
 	identityBindings: IdentityBinding;
 	notificationDestinations: NotificationDestination;
 	notificationConsents: NotificationConsent;
+	subscriptionSettings: SubscriptionSettings;
+	subscriptionTargets: SubscriptionTarget;
 	webSessions: WebSession;
 	loginTransactions: LoginTransaction;
 	tasks: Task;

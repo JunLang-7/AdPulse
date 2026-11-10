@@ -100,6 +100,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/subscription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSubscription"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/subscription/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["updateSubscriptionSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/subscription/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["addSubscriptionTarget"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/subscription/targets/{targetId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateSubscriptionTarget"];
+        trace?: never;
+    };
     "/api/logout": {
         parameters: {
             query?: never;
@@ -455,6 +519,87 @@ export interface components {
                 version: number;
             } | null;
             canSendProactive: boolean;
+        };
+        SubscriptionSchedule: {
+            /**
+             * @description 首期固定北京时间，不做跨时区
+             * @enum {string}
+             */
+            timezone: "Asia/Shanghai";
+            /** @description 每日汇总时刻；落在免打扰区间会被拒绝 */
+            digestAt: string;
+            quietStart: string;
+            quietEnd: string;
+        };
+        SubscriptionSettings: {
+            /** @description 每人单调版本：开关与关注列表的所有写入共用 */
+            version: number;
+            /** @description 默认关闭；保存配置不等于启用 */
+            proactiveEnabled: boolean;
+            /** @description 未保存过配置时返回默认值（09:30 汇总、22:00–08:00 免打扰） */
+            schedule: components["schemas"]["SubscriptionSchedule"];
+            /** Format: date-time */
+            enabledAt?: string;
+            /** Format: date-time */
+            disabledAt?: string;
+            /**
+             * Format: date-time
+             * @description 从未保存过配置时缺省（不返回空串）
+             */
+            updatedAt?: string;
+        };
+        SubscriptionTarget: {
+            id: string;
+            /** @enum {string} */
+            kind: "task" | "brand" | "competitor";
+            kindLabel: string;
+            /** @description task 为目标任务 id；brand/competitor 为名称规范化 key */
+            refId: string;
+            label: string;
+            /** Format: uri */
+            sourceUrl?: string;
+            categories: ("effect" | "event" | "evidence")[];
+            /** @enum {string} */
+            scope: "task_only" | "include_general";
+            /**
+             * @description muted 即退订该对象，配置保留
+             * @enum {string}
+             */
+            status: "active" | "muted";
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        SubscriptionView: {
+            settings: components["schemas"]["SubscriptionSettings"];
+            targets: components["schemas"]["SubscriptionTarget"][];
+        };
+        SubscriptionSettingsInput: {
+            /** @description 调用方看到的版本；未配置时为 0。旧请求重放会因版本不符被拒 */
+            expectedVersion: number;
+            proactiveEnabled?: boolean;
+            schedule?: components["schemas"]["SubscriptionSchedule"];
+        };
+        SubscriptionTargetInput: {
+            expectedVersion: number;
+            /** @enum {string} */
+            kind: "task" | "brand" | "competitor";
+            /** @description task 必填；brand/competitor 忽略 */
+            refId?: string;
+            /** @description brand/competitor 必填；task 忽略 */
+            label?: string;
+            /** Format: uri */
+            sourceUrl?: string;
+            categories: ("effect" | "event" | "evidence")[];
+            /** @enum {string} */
+            scope: "task_only" | "include_general";
+        };
+        SubscriptionTargetUpdate: {
+            expectedVersion: number;
+            categories?: ("effect" | "event" | "evidence")[];
+            /** @enum {string} */
+            scope?: "task_only" | "include_general";
+            /** @enum {string} */
+            status?: "active" | "muted";
         };
         Error: {
             error: string;
@@ -1300,6 +1445,184 @@ export interface operations {
             };
             /** @description Consent not granted or version conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own subscription configuration; delivery readiness comes from notification-status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    updateSubscriptionSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description Configuration updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description expectedVersion does not match the current version */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid schedule (format, quiet-hour overlap, unknown timezone) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    addSubscriptionTarget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionTargetInput"];
+            };
+        };
+        responses: {
+            /** @description Target added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Referenced task not found or not owned by the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version conflict or duplicate target */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid target fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    updateSubscriptionTarget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                targetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionTargetUpdate"];
+            };
+        };
+        responses: {
+            /** @description Target updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Target not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid target fields */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
