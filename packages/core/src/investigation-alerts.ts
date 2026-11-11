@@ -339,6 +339,7 @@ export class InvestigationAlertService {
 				? alert.comparisonResultIds
 				: [...alert.comparisonResultIds, result.id];
 			if (!qualifies) {
+				if (alert.comparisonResultIds.includes(result.id)) return alert;
 				if (alert.status === "handled") return alert;
 				const cleared = result.thresholdEvaluation.status === "not_exceeded";
 				alert = {

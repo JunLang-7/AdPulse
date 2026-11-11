@@ -467,6 +467,14 @@ test("updated evidence below threshold clears the same logical alert without ano
 	assert.equal(cleared?.current.evidence.version, 2);
 	assert.ok(cleared?.events.some((event) => event.type === "cleared"));
 	assert.equal((await context.storage.transaction((tx) => tx.rounds.all())).filter((round) => round.sessionId === alert.sessionId).length, 1);
+
+	assert.ok(cleared);
+	const beforeRetry = structuredClone(cleared);
+	context.setTime("2026-01-04T01:00:00.000Z");
+	const retried = await context.alerts.evaluateComparison("owner", updatedResult.id);
+	assert.deepEqual(retried, beforeRetry);
+	const stored = await context.storage.transaction((tx) => tx.investigationAlerts.get(alert.id));
+	assert.deepEqual(stored, beforeRetry);
 });
 
 test("evidence revision invalidates stale candidates, rounds, and sessions transactionally", async () => {
