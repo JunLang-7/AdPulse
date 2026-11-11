@@ -226,22 +226,26 @@ test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse
 	);
 	assert.deepEqual(
 		migrations.rows.map((row) => Number(row.version)),
-		[1, 2, 3, 4, 5, 6, 7, 8, 9],
+		[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
 	);
 	const indexes = await admin.query(
 		`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()
 		AND indexname IN ('adpulse_identity_binding_scope', 'adpulse_web_sessions_user',
 		'adpulse_login_transactions_expiry', 'adpulse_notification_destination_scope',
 		'adpulse_notification_consent_unique', 'adpulse_subscription_settings_user',
-		'adpulse_subscription_target_ref') ORDER BY indexname`,
+		'adpulse_subscription_target_ref', 'adpulse_notification_batch_key',
+		'adpulse_notification_item_key', 'adpulse_notification_item_batch') ORDER BY indexname`,
 	);
 	assert.deepEqual(
 		indexes.rows.map((row) => row.indexname),
 		[
 			"adpulse_identity_binding_scope",
 			"adpulse_login_transactions_expiry",
+			"adpulse_notification_batch_key",
 			"adpulse_notification_consent_unique",
 			"adpulse_notification_destination_scope",
+			"adpulse_notification_item_batch",
+			"adpulse_notification_item_key",
 			"adpulse_subscription_settings_user",
 			"adpulse_subscription_target_ref",
 			"adpulse_web_sessions_user",
@@ -332,7 +336,7 @@ test("PostgreSQL: a failed auth migration rolls back atomically and can be retri
 		);
 		assert.deepEqual(
 			versions.rows.map((row) => Number(row.version)),
-			[1, 2, 3, 4, 5, 6, 7, 8, 9],
+			[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
 		);
 	} finally {
 		await check.end();
@@ -546,4 +550,87 @@ test("PostgreSQL: notification destination scope and consent are unique per user
 	// 版本语义：置 revoked 时手写的数据保留了原 version(1)，显式恢复需传 1。
 	await notifications.grantConsent(userId, destination.id, consent.version);
 	assert.equal(await notifications.canSendProactive(userId), true);
+});
+
+test("PostgreSQL: notification batch and item keys are enforced by unique indexes", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async (t) => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const storage = PostgresStorage.connect(databaseUrl);
+	t.after(() => storage.close());
+	await storage.initialize();
+
+	const { NotificationQueue } = await import("../packages/core/dist/index.js");
+	const queue = new NotificationQueue(storage, () => new Date("2026-11-11T01:00:00.000Z"));
+	const ownerId = crypto.randomUUID();
+
+	// 并发排队同一逻辑事件：数据库唯一索引兜住，最终只有一条。
+	const item = {
+		logicalKey: `effect|task:${crypto.randomUUID()}|alert|r1`,
+		kind: "effect_alert" as const,
+		title: "成本上升",
+		summary: "近 3 天咨询成本上升 35%。",
+		relevance: "与关注任务相关。",
+		sources: [],
+		revision: 1,
+	};
+	const results = await Promise.allSettled(
+		Array.from({ length: 4 }, () =>
+			queue.queue(ownerId, item, { settingsVersion: 1, enabled: true }),
+		),
+	);
+	assert.ok(
+		results.some((result) => result.status === "fulfilled"),
+		"至少一次成功",
+	);
+	assert.equal((await queue.pending(ownerId)).length, 1, "并发后仍只有一条待发");
+
+	// 直接重复插入必须被唯一索引拒绝（不依赖应用层判断）。
+	const now = new Date().toISOString();
+	const duplicate = {
+		id: `dup-${crypto.randomUUID()}`,
+		ownerId,
+		batchId: `digest:${ownerId}:2026-11-11`,
+		logicalKey: item.logicalKey,
+		kind: item.kind,
+		title: item.title,
+		summary: item.summary,
+		relevance: item.relevance,
+		sources: [],
+		revision: 1,
+		status: "queued" as const,
+		createdAt: now,
+		updatedAt: now,
+	};
+	await assert.rejects(
+		storage.transaction((tx) => tx.notificationItems.put(duplicate)),
+		(error: unknown) =>
+			typeof error === "object" &&
+			error !== null &&
+			"code" in error &&
+			error.code === "23505",
+		"同 owner + logicalKey 必须触发唯一冲突",
+	);
+
+	// 批次同样按 ownerId + kind + localDate 唯一。
+	const batch = {
+		id: `other-${crypto.randomUUID()}`,
+		ownerId,
+		kind: "digest" as const,
+		localDate: "2026-11-11",
+		settingsVersion: 1,
+		status: "queued" as const,
+		scheduledAt: "2026-11-11T01:30:00.000Z",
+		createdAt: now,
+		updatedAt: now,
+	};
+	await assert.rejects(
+		storage.transaction((tx) => tx.notificationBatches.put(batch)),
+		(error: unknown) =>
+			typeof error === "object" &&
+			error !== null &&
+			"code" in error &&
+			error.code === "23505",
+		"同人同日同类型只能有一份批次",
+	);
 });

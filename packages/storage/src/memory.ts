@@ -9,6 +9,8 @@ export const tableNames = [
 	"notificationConsents",
 	"subscriptionSettings",
 	"subscriptionTargets",
+	"notificationBatches",
+	"notificationItems",
 	"tasks",
 	"taskVersions",
 	"taskOperations",

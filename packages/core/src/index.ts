@@ -1,6 +1,7 @@
 export * from "./authentication.js";
 export * from "./notifications.js";
 export * from "./subscriptions.js";
+export * from "./notifications-queue.js";
 export * from "./domain/decisionCard.js";
 export * from "./evidence.js";
 export * from "./comparisons.js";
