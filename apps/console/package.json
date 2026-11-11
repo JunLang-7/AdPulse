@@ -9,7 +9,8 @@
 		"preview": "vite preview",
 		"typecheck": "tsc --noEmit",
 		"sdk:generate": "openapi-typescript ../../contracts/openapi.json -o src/generated/api.d.ts",
-		"sdk:check": "node ../../scripts/check-sdk.mjs"
+		"sdk:check": "node ../../scripts/check-sdk.mjs",
+		"test:components": "node --import tsx --import ./test/setup.ts --test --test-force-exit test/*.test.tsx"
 	},
 	"dependencies": {
 		"@base-ui/react": "^1.4.1",
@@ -30,13 +31,18 @@
 	"devDependencies": {
 		"@svgr/rollup": "8.1.0",
 		"@tailwindcss/postcss": "^4.2.4",
+		"@testing-library/dom": "^10.4.2",
+		"@testing-library/react": "^16.3.3",
+		"@types/jsdom": "^30.0.0",
 		"@types/node": "^25.6.0",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
 		"@vitejs/plugin-react": "^6.0.1",
+		"jsdom": "^31.0.0",
 		"openapi-typescript": "^7.13.0",
 		"postcss": "^8.5.13",
 		"tailwindcss": "^4.2.4",
+		"tsx": "^4.23.15",
 		"typescript": "^6.0.3",
 		"vite": "^8.0.10"
 	}

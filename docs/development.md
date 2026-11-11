@@ -258,6 +258,19 @@ Vite 将同源 `/api`、`/auth`、`/webhooks` 请求代理到 127.0.0.1:3000，�
 
 目前每个 Feishu 企业身份对应一个个人 AdPulse 用户；尚无协作、分享、委派、产品级白名单、RBAC 或完整策略差异界面。任务重试目前通过 API。sent 只代表渠道发送回执，不代表用户已读。
 
+控制台组件测试（`apps/console/test/`）用 Node + `tsx` + `jsdom` 跑真实渲染：
+
+```bash
+bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执行
+```
+
+- `test/setup.ts` 装 DOM 全局与相对 URL 的 `Request` 基址解析（openapi-fetch 用 `baseUrl: ""`）；
+- `test/harness.ts` 在被测页面模块求值**之前**安装 `fetch` 桩（`createClient` 会捕获 fetch 引用），
+  因此测试文件必须把它放在第一个 import；
+- 脚本带 `--test-force-exit`：jsdom 会留句柄，不加这个进程不退出。
+- 组件测试只覆盖「按钮是否真的禁用」「提示是否真的渲染」这类交互事实；状态推导仍走纯函数测试
+  （`tests/console-*.test.ts`），两者不互相替代。
+
 ## 6. PostgreSQL 集成测试
 
 TEST_DATABASE_URL 必须指向独立、可丢弃的测试数据库，不能使用生产数据库。
