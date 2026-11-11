@@ -286,20 +286,30 @@ export class NotificationQueue {
 		logicalKey: string,
 		options: { deliveryId: string; revision: number },
 	): Promise<boolean> {
-		return this.storage.transaction(async (tx) => {
-			const id = itemId(ownerId, logicalKey);
-			const item = await tx.notificationItems.get(id);
-			if (!item || item.ownerId !== ownerId || item.status !== "queued")
-				return false;
-			if (item.revision !== options.revision) return false;
-			await tx.notificationItems.put({
-				...item,
-				status: "sent",
-				deliveryId: options.deliveryId,
-				updatedAt: this.now().toISOString(),
-			});
-			return true;
+		return this.storage.transaction((tx) =>
+			this.markSentIn(tx, ownerId, logicalKey, options),
+		);
+	}
+
+	/** 事务内版本：调用方可在同一事务里先做租约校验再回写。 */
+	async markSentIn(
+		tx: Transaction,
+		ownerId: string,
+		logicalKey: string,
+		options: { deliveryId: string; revision: number },
+	): Promise<boolean> {
+		const id = itemId(ownerId, logicalKey);
+		const item = await tx.notificationItems.get(id);
+		if (!item || item.ownerId !== ownerId || item.status !== "queued")
+			return false;
+		if (item.revision !== options.revision) return false;
+		await tx.notificationItems.put({
+			...item,
+			status: "sent",
+			deliveryId: options.deliveryId,
+			updatedAt: this.now().toISOString(),
 		});
+		return true;
 	}
 
 	/** 批次状态流转；revision 不参与，批次只关心排队/终态。 */
@@ -308,20 +318,120 @@ export class NotificationQueue {
 		status: NotificationBatch["status"],
 		options: { reason?: string; catchUp?: boolean } = {},
 	): Promise<NotificationBatch | null> {
-		return this.storage.transaction(async (tx) => {
-			const batch = await tx.notificationBatches.get(id);
-			if (!batch) return null;
-			const at = this.now().toISOString();
-			const next: NotificationBatch = {
-				...batch,
-				status,
+		return this.storage.transaction((tx) =>
+			this.setBatchStatusIn(tx, id, status, options),
+		);
+	}
+
+	/** 事务内版本：与投递回写放在同一事务，避免租约过期后改写别人的结果。 */
+	async setBatchStatusIn(
+		tx: Transaction,
+		id: string,
+		status: NotificationBatch["status"],
+		options: { reason?: string; catchUp?: boolean } = {},
+	): Promise<NotificationBatch | null> {
+		const batch = await tx.notificationBatches.get(id);
+		if (!batch) return null;
+		const at = this.now().toISOString();
+		const next: NotificationBatch = {
+			...batch,
+			status,
+			updatedAt: at,
+			...(status === "sent" ? { sentAt: at } : {}),
+			...(options.reason ? { statusReason: options.reason } : {}),
+			...(options.catchUp ? { catchUp: true } : {}),
+		};
+		await tx.notificationBatches.put(next);
+		return next;
+	}
+
+	/**
+	 * 卡片容量有限：本轮没展示的条目移到下一个可调度批次，而不是留在已发送批次里变孤儿。
+	 */
+	async deferItems(
+		ownerId: string,
+		logicalKeys: string[],
+		settingsVersion: number,
+	): Promise<number> {
+		if (logicalKeys.length === 0) return 0;
+		return this.storage.transaction((tx) =>
+			this.deferItemsIn(tx, ownerId, logicalKeys, settingsVersion),
+		);
+	}
+
+	async deferItemsIn(
+		tx: Transaction,
+		ownerId: string,
+		logicalKeys: string[],
+		settingsVersion: number,
+	): Promise<number> {
+		if (logicalKeys.length === 0) return 0;
+		const batch = await this.resolveBatch(tx, ownerId, settingsVersion);
+		const at = this.now().toISOString();
+		let moved = 0;
+		for (const key of logicalKeys) {
+			const item = await tx.notificationItems.get(itemId(ownerId, key));
+			if (!item || item.ownerId !== ownerId || item.status !== "queued")
+				continue;
+			if (item.batchId === batch.id) continue;
+			await tx.notificationItems.put({
+				...item,
+				batchId: batch.id,
 				updatedAt: at,
-				...(status === "sent" ? { sentAt: at } : {}),
-				...(options.reason ? { statusReason: options.reason } : {}),
-				...(options.catchUp ? { catchUp: true } : {}),
-			};
-			await tx.notificationBatches.put(next);
-			return next;
+			});
+			moved += 1;
+		}
+		return moved;
+	}
+
+	/**
+	 * 跨日恢复：把往日批次里仍待发的条目并入下一次有效汇总，并终结旧批次。
+	 * 不连发多份旧日报（#37 已确认规则）；旧批次保留为「已合并」的证据。
+	 */
+	async mergeStale(
+		ownerId: string,
+		fromBatchId: string,
+		settingsVersion: number,
+	): Promise<number> {
+		return this.storage.transaction(async (tx) => {
+			const at = this.now();
+			const atIso = at.toISOString();
+			const today = localDate(at);
+			const todayBatch = await tx.notificationBatches.get(
+				batchId(ownerId, "digest", today),
+			);
+			// 今天还没有批次或仍是排队中 → 并进今天；今天的批次已终结 → 顺延明天。
+			const date =
+				todayBatch && todayBatch.status !== "queued"
+					? localDate(new Date(at.getTime() + 24 * 60 * 60 * 1000))
+					: today;
+			const id = batchId(ownerId, "digest", date);
+			let target = await tx.notificationBatches.get(id);
+			if (!target) {
+				target = {
+					id,
+					ownerId,
+					kind: "digest",
+					localDate: date,
+					settingsVersion,
+					status: "queued",
+					scheduledAt: digestInstant(date),
+					createdAt: atIso,
+					updatedAt: atIso,
+				};
+				await tx.notificationBatches.put(target);
+			}
+			let moved = 0;
+			for (const item of await tx.notificationItems.all()) {
+				if (item.batchId !== fromBatchId || item.status !== "queued") continue;
+				await tx.notificationItems.put({
+					...item,
+					batchId: target.id,
+					updatedAt: atIso,
+				});
+				moved += 1;
+			}
+			return moved;
 		});
 	}
 

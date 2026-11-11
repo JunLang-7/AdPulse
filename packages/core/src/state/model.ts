@@ -581,9 +581,14 @@ export interface Inbox {
 	receivedAt: string;
 }
 export interface Delivery extends CardDelivery {
-	sessionId: string;
-	roundId: string;
-	purpose: "decision" | "confirmation";
+	/** 决策/回执投递属于某个会话；日汇总投递没有会话，因此可缺省。 */
+	sessionId?: string;
+	roundId?: string;
+	purpose: "decision" | "confirmation" | "digest";
+	/** 主动通知投递的归属人；日汇总用它做发送前重检与取消。 */
+	ownerId?: string;
+	/** 日汇总投递对应的批次（回写批次状态用）。 */
+	batchId?: string;
 	expiresAt: string;
 	status: "pending" | "sent" | "failed" | "cancelled" | "suppressed";
 	externalMessageId?: string;
@@ -596,7 +601,8 @@ export type JobTask =
 	| { kind: "process_inbox"; inboxId: string }
 	| { kind: "prepare_round"; sessionId: string; version: number }
 	| { kind: "prepare_investigation_alert_session"; alertId: string }
-	| { kind: "send_delivery"; deliveryId: string };
+	| { kind: "send_delivery"; deliveryId: string }
+	| { kind: "send_digest"; batchId: string };
 export interface Job {
 	id: string;
 	task: JobTask;

@@ -291,6 +291,37 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
   不依赖应用层判断；条目迁移到新批次时只改 `batchId`，不改 `logicalKey`。
 - 投递仍走既有 `Delivery`（条目的 `deliveryId` 指向它），不新增第二套投递状态机。
 
+### 5.2 日汇总的调度与投递（#37 PR2）
+
+`packages/core/src/notifications-schedule.ts`（调度）+ `worker.ts` 的 `send_digest`（投递）。
+
+**调度只是建议，许可在执行那一刻重新检查。** 发送前逐项复检：订阅开关、配置版本
+（`batch.settingsVersion` 必须等于当前版本）、免打扰、`canSendProactive` 闸门、
+条目是否仍 `queued`、渠道账号是否可用。任何一项不成立都不发，并按原因收尾：
+
+| 情况 | 批次状态 | 条目 |
+| --- | --- | --- |
+| 关闭推送 / 配置版本变化 / 空批次 / 不可达 | `cancelled` 或 `failed` + `statusReason` | 取消（不复活） |
+| 未授权、地址失效、绑定失效、渠道缺失 | `suppressed` + 原因 | 取消 |
+| 免打扰内 | 保持 `queued` | 不动，窗口结束后再发 |
+
+- **跨日恢复**：往日批次不再补发，条目并入下一次有效汇总（今天批次已终结则顺延明天），
+  旧批次置 `cancelled` + `merged_stale` 作为证据；调度侧和 worker 侧各判一次，
+  后者防「任务早已入队、跨日才被领取」。合并会新建当天批次，因此调度允许跑第二轮，
+  只有真的发生过合并才跑，避免重复计数。
+- **租约**：`sendDigest` 接收当前 `Job`，成功与失败分支都在同一事务内先校验
+  `status=running` 且 `leaseToken` 一致，再回写投递/条目/批次与地址失效——过期 worker
+  不得改写别人的结果。
+- 调度入口复用 worker 轮询：没有任务可领且距上次 tick ≥30s 时跑一次
+  `DigestScheduler.tick()`（`runExclusive` 跨进程互斥），不引入第二个调度进程或 Redis。
+- 同一批次最多一个在途 `send_digest` 任务，重复 tick 不会重复发送；晚于计划时刻入队时标
+  `catchUp`。
+- 卡片：`buildDigestCard` 最多 5 条，超出部分在页脚写明「另有 N 条」并**顺延到下一批次**；
+  发送期间被实质更新的条目同样顺延，不留在已发送批次里。
+- 投递复用 `Delivery`（`purpose: "digest"`，带 `ownerId`/`batchId`，无 session/round）；
+  回执按冻结的 `revision` 标记，期间的新版本仍是待发。
+- 免打扰判断与「窗口结束时刻」都用北京时间换算，不读服务器时区。
+
 ## 6. PostgreSQL 集成测试
 
 TEST_DATABASE_URL 必须指向独立、可丢弃的测试数据库，不能使用生产数据库。

@@ -7,9 +7,12 @@ import {
 import {
 	ComparisonService,
 	EvidenceService,
+	DigestScheduler,
 	InvestigationAlertService,
+	NotificationQueue,
 	NotificationService,
 	Orchestrator,
+	SubscriptionService,
 	resolveActiveIdentity,
 	SOURCE_DEFINITIONS,
 	SourceService,
@@ -70,6 +73,14 @@ export function compose(
 	const comparisons = new ComparisonService(storage);
 	const investigationAlerts = new InvestigationAlertService(storage);
 	const notifications = new NotificationService(storage);
+	const subscriptions = new SubscriptionService(storage);
+	const notificationQueue = new NotificationQueue(storage);
+	const digestScheduler = new DigestScheduler(storage, subscriptions, notificationQueue);
+	// 目的地平台 → 渠道账号：只匹配声明了同一身份作用域的连接，避免把飞书消息发到别的账号。
+	const platformAccounts = new Map<string, string>();
+	for (const account of accounts)
+		if (account.identityScope)
+			platformAccounts.set(account.identityScope.platform, account.id);
 	return {
 		storage,
 		channels,
@@ -87,6 +98,13 @@ export function compose(
 			5,
 			investigationAlerts,
 			notifications,
+			{
+				scheduler: digestScheduler,
+				subscriptions,
+				queue: notificationQueue,
+				accountIdForPlatform: (platform) => platformAccounts.get(platform),
+				...(detailBase ? { detailBase } : {}),
+			},
 		),
 	};
 }

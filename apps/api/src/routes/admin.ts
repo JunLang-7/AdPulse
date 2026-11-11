@@ -255,6 +255,8 @@ async function sessionForJob(
 		return (await tx.deliveries.get(job.task.deliveryId))?.sessionId ?? null;
 	if (job.task.kind === "prepare_investigation_alert_session")
 		return (await tx.investigationAlerts.get(job.task.alertId))?.sessionId ?? null;
+	// 日汇总投递与批次绑定，不属于任何会话。
+	if (job.task.kind === "send_digest") return null;
 	const inbox = await tx.inbox.get(job.task.inboxId);
 	const action = inbox && (await tx.actions.get(inbox.command.actionRef));
 	return action
@@ -497,7 +499,9 @@ export async function handleAdmin(
 						? inboxIds.has(j.task.inboxId)
 						: j.task.kind === "send_delivery"
 							? deliveryIds.has(j.task.deliveryId)
-							: j.task.alertId === session.investigationAlertId,
+							: j.task.kind === "send_digest"
+								? false
+								: j.task.alertId === session.investigationAlertId,
 			);
 			return {
 				session,
