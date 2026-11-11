@@ -95,6 +95,10 @@ function AlertItem({
 					<dd>{formatCurrency(current.thresholdMinor, current.currency.code, current.currency.minorUnit)}</dd>
 				</div>
 				<div>
+					<dt className="text-muted-foreground">业务处理时限</dt>
+					<dd>{current.handlingDeadlineHours === undefined ? "待确认" : `${current.handlingDeadlineHours} 小时`}</dd>
+				</div>
+				<div>
 					<dt className="text-muted-foreground">比较背景</dt>
 					<dd>
 						{current.comparisonStatus === "missing_baseline"
@@ -116,7 +120,9 @@ function AlertItem({
 				</p>
 			) : null}
 			{alert.statusReason ? (
-				<p className="text-xs text-muted-foreground">状态说明：{alert.statusReason}</p>
+				<p className="text-xs text-muted-foreground">
+					状态说明：{alert.statusReason === "decision_deadline_elapsed" ? "可操作期限已过" : alert.statusReason}
+				</p>
 			) : null}
 
 			<details className="text-sm">
