@@ -305,6 +305,13 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
 | 未授权、地址失效、绑定失效、渠道缺失 | `suppressed` + 原因 | 取消 |
 | 免打扰内 | 保持 `queued` | 不动，窗口结束后再发 |
 
+- **跨日恢复**：往日批次不再补发，条目并入下一次有效汇总（今天批次已终结则顺延明天），
+  旧批次置 `cancelled` + `merged_stale` 作为证据；调度侧和 worker 侧各判一次，
+  后者防「任务早已入队、跨日才被领取」。合并会新建当天批次，因此调度允许跑第二轮，
+  只有真的发生过合并才跑，避免重复计数。
+- **租约**：`sendDigest` 接收当前 `Job`，成功与失败分支都在同一事务内先校验
+  `status=running` 且 `leaseToken` 一致，再回写投递/条目/批次与地址失效——过期 worker
+  不得改写别人的结果。
 - 调度入口复用 worker 轮询：没有任务可领且距上次 tick ≥30s 时跑一次
   `DigestScheduler.tick()`（`runExclusive` 跨进程互斥），不引入第二个调度进程或 Redis。
 - 同一批次最多一个在途 `send_digest` 任务，重复 tick 不会重复发送；晚于计划时刻入队时标

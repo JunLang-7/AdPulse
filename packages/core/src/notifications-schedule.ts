@@ -4,7 +4,7 @@
 import type { Storage } from "./ports/storage.js";
 import type { NotificationBatch, NotificationItem } from "./state/model.js";
 import type { SubscriptionService } from "./subscriptions.js";
-import { localDate } from "./notifications-queue.js";
+import { localDate, type NotificationQueue } from "./notifications-queue.js";
 
 const minutesOf = (value: string): number =>
 	Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
@@ -63,6 +63,7 @@ export class DigestScheduler {
 	constructor(
 		private readonly storage: Storage,
 		private readonly subscriptions: SubscriptionService,
+		private readonly queue: NotificationQueue,
 		private readonly now: () => Date = () => new Date(),
 	) {}
 
@@ -84,6 +85,13 @@ export class DigestScheduler {
 			cancelled: 0,
 			deferred: 0,
 		};
+		// 两轮：跨日合并可能在第一轮里新建当天批次，第二轮才能把它纳入本轮调度，
+		// 否则要等到下一次 tick，恢复当天可能只发半份内容。
+		// 只有真的发生了合并才跑第二轮，避免把同一批次的 defer/cancel 重复计数。
+		let merged = false;
+		for (let pass = 0; pass < 2; pass += 1) {
+		if (pass === 1 && !merged) break;
+		merged = false;
 		const due = await this.storage.transaction(async (tx) =>
 			(await tx.notificationBatches.all())
 				.filter(
@@ -94,9 +102,27 @@ export class DigestScheduler {
 					left.scheduledAt.localeCompare(right.scheduledAt),
 				),
 		);
+		if (due.length === 0) break;
 
 		for (const batch of due) {
 			const view = await this.subscriptions.view(batch.ownerId);
+			if (batch.localDate < today) {
+				// 跨日恢复：往日批次并入下一次有效汇总，终结旧批次，不补发旧日报。
+				if (!view.settings.proactiveEnabled) {
+					await this.cancel(batch, "push_disabled", atIso);
+				} else {
+					merged = true;
+					await this.queue.mergeStale(
+						batch.ownerId,
+						batch.id,
+						view.settings.version,
+					);
+					// 条目已被并入目标批次；旧批次终结并保留原因作为证据。
+					await this.cancel(batch, "merged_stale", atIso);
+				}
+				result.cancelled += 1;
+				continue;
+			}
 			if (!view.settings.proactiveEnabled) {
 				await this.cancel(batch, "push_disabled", atIso);
 				result.cancelled += 1;
@@ -121,6 +147,7 @@ export class DigestScheduler {
 			const enqueued = await this.enqueue(batch, today, atIso);
 			if (enqueued) result.enqueued += 1;
 			else result.deferred += 1;
+		}
 		}
 		return result;
 	}

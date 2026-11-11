@@ -78,7 +78,7 @@ async function setup(start = AT_DIGEST) {
 	const notifications = new NotificationService(storage, () => new Date(clock).toISOString());
 	const subscriptions = new SubscriptionService(storage, () => new Date(clock).toISOString());
 	const queue = new NotificationQueue(storage, now);
-	const scheduler = new DigestScheduler(storage, subscriptions, now);
+	const scheduler = new DigestScheduler(storage, subscriptions, queue, now);
 	const worker = new Worker(
 		storage,
 		runtime.decisions,
@@ -221,9 +221,20 @@ test("日汇总调度: 免打扰内延后，窗口结束后的 tick 才发送", 
 
 	started.at(QUIET_END);
 	const after = await started.scheduler.tick();
-	assert.equal(after.enqueued, 1, "免打扰结束后恢复");
+	// 跨日后不再补发昨天那份：条目并入今天(11-12)的汇总，昨天批次被合并终结。
+	assert.equal(after.cancelled, 1, "往日批次合并，不补发旧日报");
+	const batches = await started.storage.transaction((tx) =>
+		tx.notificationBatches.all(),
+	);
+	const yesterday = batches.find((batch) => batch.localDate === "2026-11-11");
+	assert.equal(yesterday?.statusReason, "merged_stale");
+	assert.deepEqual(started.sent, [], "08:00 尚未到今天的汇总时刻");
+
+	// 今天 09:30 才发，且只有一张卡。
+	started.at("2026-11-12T01:30:00.000Z");
+	assert.equal((await started.scheduler.tick()).enqueued, 1);
 	await started.drain();
-	assert.equal(started.sent.length, 1);
+	assert.equal(started.sent.length, 1, "只发一份合并后的汇总");
 });
 
 test("日汇总发送: 卡片含短摘要、来源与「为什么相关」，不创建 Session", async () => {
@@ -427,4 +438,106 @@ test("日汇总发送: 入队后配置版本变化，发送前复检必须取消
 	assert.equal(batch?.statusReason, "settings_changed");
 	const items = await started.storage.transaction((tx) => tx.notificationItems.all());
 	assert.equal(items[0]?.status, "cancelled");
+});
+
+test("日汇总调度: 连续多日积压只发一份，旧批次合并终结", async () => {
+	// 三天各留一个排队批次（模拟服务故障），第四天恢复。
+	const started = await setup("2026-11-09T01:00:00.000Z");
+	const queue = started.queue;
+	const subs = await started.subscriptions.view(started.ownerId);
+	for (const date of ["2026-11-09", "2026-11-10", "2026-11-11"]) {
+		started.at(`${date}T01:00:00.000Z`);
+		await queue.ensureDigestBatch(started.ownerId, {
+			settingsVersion: subs.settings.version,
+			enabled: true,
+		});
+		await queue.queue(
+			started.ownerId,
+			{
+				logicalKey: `k-${date}`,
+				kind: "effect_alert",
+				title: `${date} 的信息`,
+				summary: "该日的新信息。",
+				relevance: "与任务相关。",
+				sources: [{ label: "投放后台" }],
+				revision: 1,
+			},
+			{ settingsVersion: subs.settings.version, enabled: true },
+		);
+	}
+
+	// 第四天 09:30 恢复：一次 tick + drain 只应发出一张卡。
+	started.at("2026-11-12T01:30:00.000Z");
+	await started.scheduler.tick();
+	await started.drain();
+	assert.equal(started.sent.length, 1, "跨日恢复不得连发多份旧日报");
+
+	const card = started.sent[0]!.card as { title: string; items: unknown[] };
+	assert.match(card.title, /2026-11-12/, "发出的是当天汇总");
+	const batches = await started.storage.transaction((tx) =>
+		tx.notificationBatches.all(),
+	);
+	const stale = batches.filter((batch) => batch.localDate < "2026-11-12");
+	assert.equal(stale.length, 3);
+	assert.ok(
+		stale.every((batch) => batch.status === "cancelled"),
+		"往日批次全部终结",
+	);
+	assert.ok(
+		stale.every((batch) => batch.statusReason === "merged_stale"),
+	);
+	// 三天三批的条目全部并入当天汇总（一卡最多 5 条，3 条全在）。
+	assert.equal(card.items.length, 3);
+});
+
+test("日汇总发送: 往日批次的任务跨日才被领取时不发送，改成合并", async () => {
+	const started = await setup("2026-11-11T01:30:00.000Z");
+	await started.enqueue("k1");
+	assert.equal((await started.scheduler.tick()).enqueued, 1);
+	// 任务入队后 worker 一直没跑，跨日才被领取。
+	started.at("2026-11-12T02:00:00.000Z");
+	await started.drain();
+	assert.deepEqual(started.sent, [], "跨日才领取的往日任务不得补发");
+	const batches = await started.storage.transaction((tx) =>
+		tx.notificationBatches.all(),
+	);
+	const yesterday = batches.find((batch) => batch.localDate === "2026-11-11");
+	assert.equal(yesterday?.status, "cancelled");
+	assert.equal(yesterday?.statusReason, "merged_stale");
+	const items = await started.storage.transaction((tx) => tx.notificationItems.all());
+	assert.equal(items[0]?.status, "queued", "条目仍待发，只是换了批次");
+	assert.equal(items[0]?.batchId, `digest:${started.ownerId}:2026-11-12`);
+});
+
+test("日汇总发送: 租约被接管时旧 worker 不得回写投递、条目、批次或地址", async () => {
+	const started = await setup();
+	await started.enqueue("k1");
+	assert.equal((await started.scheduler.tick()).enqueued, 1);
+	// 发送期间：任务租约被新 worker 接管（模拟租约过期后重新领取）。
+	started.setOnSend(async () => {
+		await started.storage.transaction(async (tx) => {
+			const jobs = await tx.jobs.all();
+			for (const job of jobs)
+				if (job.task.kind === "send_digest")
+					await tx.jobs.put({
+						...job,
+						status: "running",
+						leaseToken: "another-worker-lease",
+					});
+		});
+	});
+	await started.drain();
+
+	// 投递/条目/批次都不是旧 worker 写的。
+	const deliveries = await started.storage.transaction((tx) => tx.deliveries.all());
+	assert.equal(deliveries[0]?.status, "pending", "旧 worker 不得把投递标为已发送");
+	const items = await started.storage.transaction((tx) => tx.notificationItems.all());
+	assert.equal(items[0]?.status, "queued", "条目仍待发");
+	const batches = await started.storage.transaction((tx) =>
+		tx.notificationBatches.all(),
+	);
+	assert.equal(batches[0]?.status, "queued", "批次不被旧 worker 终结");
+	// 地址状态也不能被旧 worker 改动。
+	const status = await started.notifications.status(started.ownerId);
+	assert.equal(status.destination?.status, "verified");
 });
