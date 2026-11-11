@@ -506,6 +506,72 @@ test("follow-ups deduplicate by gap, validate explicitly linked evidence, reopen
 	assert.equal(history[0]?.baseline, undefined);
 });
 
+test("same-period supplementation preserves the original evidence currency without an anchor", async () => {
+	const context = await setup();
+	const current = await context.importRecord(
+		"missing-spend",
+		currentRecord({ consultations: 10 }),
+	);
+	context.setTime("2026-01-03T00:00:00.000Z");
+	await context.comparisons.evaluate("owner", "missing-spend-eval", {
+		current: { evidenceId: current.evidenceId, version: current.version },
+	});
+	const followUp = (await context.comparisons.listFollowUpsForTask("owner", "task-1"))
+		.find((item) => item.reasonCode === "VALUE_MISSING" && item.metric === "spendMinor");
+	assert.ok(followUp);
+	assert.equal(followUp.expectedRelation, "same_period");
+	assert.equal(followUp.anchorEvidenceRef, undefined);
+	assert.deepEqual(followUp.evidenceRef, {
+		evidenceId: current.evidenceId,
+		version: current.version,
+	});
+
+	context.setTime("2026-01-04T00:00:00.000Z");
+	const changedCurrency = await context.evidence.revise(
+		"owner",
+		current.evidenceId,
+		"changed-currency",
+		{
+			expectedEvidenceVersion: current.version,
+			reason: "补充花费但更换币种",
+			record: {
+				...currentRecord(),
+				currency: { code: "USD", minorUnit: "cent", minorUnitsPerMajor: 100 },
+			},
+		},
+	);
+	await assert.rejects(
+		context.comparisons.resolveFollowUp("owner", followUp.id, "reject-currency", {
+			material: { kind: "evidence", evidenceId: changedCurrency.evidenceId, version: changedCurrency.version },
+		}),
+		(error: unknown) => error instanceof ComparisonValidationError,
+	);
+	assert.equal(
+		(await context.comparisons.listFollowUpsForTask("owner", "task-1"))
+			.find((item) => item.id === followUp.id)?.status,
+		"open",
+	);
+
+	context.setTime("2026-01-05T00:00:00.000Z");
+	const restored = await context.evidence.revise(
+		"owner",
+		current.evidenceId,
+		"restored-currency",
+		{
+			expectedEvidenceVersion: changedCurrency.version,
+			reason: "恢复原币种并补充花费",
+			record: currentRecord(),
+		},
+	);
+	const completed = await context.comparisons.resolveFollowUp(
+		"owner",
+		followUp.id,
+		"resolve-restored-currency",
+		{ material: { kind: "evidence", evidenceId: restored.evidenceId, version: restored.version } },
+	);
+	assert.equal(completed.status, "completed");
+});
+
 test("period-window mismatches require a new matching task-rule version", async () => {
 	const context = await setup({ taskRules: { ...rules, statWindowDays: 2 } });
 	const current = await context.importRecord("current", currentRecord());

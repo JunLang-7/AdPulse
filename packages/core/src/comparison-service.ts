@@ -498,6 +498,20 @@ export class ComparisonService {
 						evidence.values.consultations !== 0)
 				)
 					throw new ComparisonValidationError("evidence sample does not satisfy follow-up");
+				if (followUp.expectedRelation === "same_period" && followUp.evidenceRef) {
+					const original = await tx.evidenceVersions.get(
+						`${followUp.evidenceRef.evidenceId}:${followUp.evidenceRef.version}`,
+					);
+					if (
+						!original ||
+						original.ownerId !== ownerId ||
+						original.taskId !== followUp.taskId ||
+						canonicalJson(original.currency) !== canonicalJson(evidence.currency) ||
+						canonicalJson(original.metricsContract) !== canonicalJson(evidence.metricsContract) ||
+						canonicalJson(original.attribution) !== canonicalJson(evidence.attribution)
+					)
+						throw new ComparisonValidationError("evidence contract does not satisfy follow-up");
+				}
 				const sources = await tx.evidenceSources.all();
 				const evidenceSource = exactSource(sources, evidence);
 				if (!evidenceSource)
