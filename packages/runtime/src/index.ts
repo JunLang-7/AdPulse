@@ -8,7 +8,9 @@ import {
 	ComparisonService,
 	EvidenceService,
 	InvestigationAlertService,
+	NotificationService,
 	Orchestrator,
+	resolveActiveIdentity,
 	SOURCE_DEFINITIONS,
 	SourceService,
 	TaskService,
@@ -43,13 +45,33 @@ export function compose(
 	storage: Storage,
 	accounts: ChannelAccount[],
 	policy: PolicyEngine = reviewPolicy,
+	options: { detailUrlBase?: string } = {},
 ) {
 	const channels = new ChannelRegistry(accounts);
-	const decisions = new Orchestrator(storage, policy);
+	// 站内详情链接只在 HTTPS 控制台 origin 下生成：卡片渲染强制 https，
+	// 本地 http 开发环境保持无链接，避免渲染期抛错导致投递失败。
+	const detailBase =
+		options.detailUrlBase && options.detailUrlBase.startsWith("https://")
+			? options.detailUrlBase.replace(/\/+$/, "")
+			: undefined;
+	const decisions = new Orchestrator(
+		storage,
+		policy,
+		undefined,
+		undefined,
+		async (tx, actor) => {
+			const account = accounts.find((candidate) => candidate.id === actor.accountId);
+			const identity = account?.inbound.identifyActor?.(actor);
+			return Boolean(identity && actor.userId &&
+				(await resolveActiveIdentity(tx, identity)) === actor.userId);
+		},
+		detailBase ? (sessionId) => `${detailBase}/sessions/${sessionId}` : undefined,
+	);
 	const tasks = new TaskService(storage);
 	const evidence = new EvidenceService(storage);
 	const comparisons = new ComparisonService(storage);
 	const investigationAlerts = new InvestigationAlertService(storage);
+	const notifications = new NotificationService(storage);
 	return {
 		storage,
 		channels,
@@ -58,7 +80,16 @@ export function compose(
 		evidence,
 		comparisons,
 		investigationAlerts,
-		worker: new Worker(storage, decisions, channels.outbound(), undefined, 5, investigationAlerts),
+		notifications,
+		worker: new Worker(
+			storage,
+			decisions,
+			channels.outbound(),
+			undefined,
+			5,
+			investigationAlerts,
+			notifications,
+		),
 	};
 }
 export type Runtime = ReturnType<typeof compose> & { extractTaskDraft?: TaskDraftExtractor; taskDraftModels?: ReturnType<typeof createTaskDraftModels> };
@@ -141,7 +172,9 @@ export async function fromEnvironment(
 		});
 	const taskDraftModels = createTaskDraftModels(env);
 	return {
-		...compose(postgres ?? new MemoryStorage(), accounts),
+		...compose(postgres ?? new MemoryStorage(), accounts, reviewPolicy, {
+			...(env.PUBLIC_ORIGIN ? { detailUrlBase: env.PUBLIC_ORIGIN } : {}),
+		}),
 		taskDraftModels,
 		close: async () => {
 			await postgres?.close();

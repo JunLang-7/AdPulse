@@ -36,7 +36,10 @@ export interface Fixture {
 	start(overrides?: Partial<StartSession>): Promise<Session>;
 }
 
-export function fixture(storage: Storage = new MemoryStorage()): Fixture {
+export function fixture(
+	storage: Storage = new MemoryStorage(),
+	options: { detailUrlFor?: (sessionId: string) => string } = {},
+): Fixture {
 	let clock = "2026-01-01T00:00:00.000Z";
 	const now = () => clock;
 	const sent = new Map<string, CardDelivery>();
@@ -44,6 +47,9 @@ export function fixture(storage: Storage = new MemoryStorage()): Fixture {
 		storage,
 		{ propose: async () => structuredClone(proposal) },
 		now,
+		undefined,
+		undefined,
+		options.detailUrlFor,
 	);
 	const worker = new Worker(
 		storage,

@@ -1,15 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 
-const token = process.env.CONSOLE_TOKEN;
-if (!token) throw new Error("CONSOLE_TOKEN is required");
+const sessionCookie = process.env.ADPULSE_SESSION_COOKIE;
+if (!sessionCookie) throw new Error("Log in through Feishu and set ADPULSE_SESSION_COOKIE");
+const origin = process.env.PUBLIC_ORIGIN;
+if (!origin) throw new Error("PUBLIC_ORIGIN is required");
 const baseUrl = process.env.API_BASE_URL ?? "http://127.0.0.1:3000";
 
 async function call(path, init = {}) {
 	const response = await fetch(baseUrl + path, {
 		...init,
 		headers: {
-			authorization: `Bearer ${token}`,
+			cookie: `adpulse_session=${sessionCookie}`,
+			origin,
 			"content-type": "application/json",
 			...(init.headers ?? {}),
 		},

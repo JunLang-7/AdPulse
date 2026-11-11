@@ -1,4 +1,5 @@
 import { createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
+import type { PlatformIdentity } from "@adpluse/core";
 import type {
 	InboundChannel,
 	InboundResult,
@@ -20,6 +21,24 @@ export class FeishuInbound implements InboundChannel {
 	) {
 		if (Object.values(config).some((value) => !value))
 			throw new Error("incomplete Feishu inbound configuration");
+	}
+
+	identifyActor(actor: {
+		accountId: string;
+		externalId: string;
+	}): PlatformIdentity | null {
+		if (
+			actor.accountId !== this.config.accountId ||
+			!/^\S{1,512}$/.test(actor.externalId)
+		)
+			return null;
+		return {
+			platform: "feishu",
+			applicationId: this.config.appId,
+			tenantId: this.config.tenantKey,
+			idType: "open_id",
+			externalId: actor.externalId,
+		};
 	}
 
 	async parse(request: WebhookRequest): Promise<InboundResult> {

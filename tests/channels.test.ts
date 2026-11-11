@@ -5,13 +5,18 @@ import {
 	ChannelRegistry,
 	FeishuInbound,
 	FeishuOutbound,
+	createFeishuAccount,
 	toFeishuCard,
 } from "../packages/channels/dist/index.js";
 import type {
 	FeishuInboundConfig,
 	WebhookRequest,
 } from "../packages/channels/dist/index.js";
-import type { CardDelivery, Orchestrator } from "../packages/core/dist/index.js";
+import type {
+	CardDelivery,
+	ChoiceCommand,
+	Orchestrator,
+} from "../packages/core/dist/index.js";
 import { fixture } from "./helpers.ts";
 
 const config: Omit<FeishuInboundConfig, "appSecret"> = {
@@ -97,6 +102,104 @@ test("Feishu inbound verifies bytes, decrypts and normalizes a card action", asy
 	});
 	assert.equal(JSON.parse(parsed.response.body).toast.type, "info");
 });
+test("Feishu channel accounts expose their app and tenant identity scope", () => {
+	const account = createFeishuAccount({ ...config, appSecret: "secret" });
+	assert.deepEqual(account.identityScope, {
+		platform: "feishu",
+		applicationId: config.appId,
+		tenantId: config.tenantKey,
+	});
+});
+
+test("Feishu actor identity is scoped to the configured application and tenant", () => {
+	assert.deepEqual(
+		inbound.identifyActor({ accountId: "account-a", externalId: "user-a" }),
+		{
+			platform: "feishu",
+			applicationId: config.appId,
+			tenantId: config.tenantKey,
+			idType: "open_id",
+			externalId: "user-a",
+		},
+	);
+	assert.equal(
+		inbound.identifyActor({ accountId: "other", externalId: "user-a" }),
+		null,
+	);
+	assert.equal(
+		inbound.identifyActor({ accountId: "account-a", externalId: "" }),
+		null,
+	);
+});
+
+test("gateway maps a verified platform actor and leaves unverified actors unresolved", async () => {
+	const received: ChoiceCommand[] = [];
+	const registry = new ChannelRegistry([
+		{
+			id: "account-a",
+			inbound: {
+				async parse() {
+					return {
+						kind: "choice" as const,
+						command: {
+							sourceId: "untrusted",
+							eventId: "e1",
+							actionRef: "ref",
+							actor: {
+								kind: "platform" as const,
+								accountId: "account-a",
+								externalId: "open-1",
+							},
+						},
+						response: { status: 200, headers: {}, body: "ok" },
+					};
+				},
+				identifyActor(actor) {
+					return {
+						platform: "feishu",
+						applicationId: "app",
+						tenantId: "tenant",
+						idType: "open_id",
+						externalId: actor.externalId,
+					};
+				},
+			},
+			outbound: {
+				async send() {
+					return { externalMessageId: "x" };
+				},
+			},
+		},
+	]);
+	const decisions = {
+		async receiveChoice(command: ChoiceCommand) {
+			received.push(command);
+		},
+	} as unknown as Orchestrator;
+
+	await registry.handle("account-a", request({}), decisions, async (identity) => {
+		assert.deepEqual(identity, {
+			platform: "feishu",
+			applicationId: "app",
+			tenantId: "tenant",
+			idType: "open_id",
+			externalId: "open-1",
+		});
+		return "user-1";
+	});
+	assert.equal(received[0]?.sourceId, "account-a");
+	assert.equal(
+		received[0]?.actor.kind === "platform" ? received[0].actor.userId : null,
+		"user-1",
+	);
+
+	await registry.handle("account-a", request({}), decisions, async () => null);
+	assert.equal(
+		received[1]?.actor.kind === "platform" ? received[1].actor.userId : null,
+		undefined,
+	);
+});
+
 test("Feishu verifies Go-format timestamps without weakening freshness or signatures", async () => {
 	const make = (timestamp: string) => {
 		const r = request(event(), true);
@@ -321,4 +424,44 @@ test("Feishu outbound uses correct recipient type, caches token and reuses deliv
 	assert.equal(calls[2].body.uuid, delivery.id);
 	assert.match(calls[1].url, /receive_id_type=open_id/);
 	assert.equal(calls[1].body.msg_type, "interactive");
+});
+
+test("decision cards carry a same-origin detail link only when https", () => {
+	const base = {
+		id: "delivery-1",
+		recipient: { accountId: "account-a", kind: "user" as const, externalId: "user-a" },
+		sessionId: "session-1",
+		roundId: "round-1",
+		expiresAt: "2026-01-01T01:00:00.000Z",
+		status: "pending" as const,
+		actions: [{ optionId: "observe", actionRef: "ref-1" }],
+	};
+	const card = {
+		title: "复核出价",
+		summary: "仅调整方案草案",
+		evidence: [],
+		options: [{ id: "observe", label: "继续观察" }],
+	};
+
+	const withLink = JSON.stringify(
+		toFeishuCard({
+			...base,
+			card: { ...card, detailUrl: "https://console.example.com/sessions/session-1" },
+		}),
+	);
+	assert.match(withLink, /查看详情/);
+	assert.match(withLink, /https:\/\/console\.example\.com\/sessions\/session-1/);
+
+	const withoutLink = JSON.stringify(toFeishuCard({ ...base, card }));
+	assert.ok(!withoutLink.includes("查看详情"));
+
+	// 非 HTTPS 的链接必须在渲染期被拒，避免把明文链接发给平台。
+	assert.throws(
+		() =>
+			toFeishuCard({
+				...base,
+				card: { ...card, detailUrl: "http://console.example.com/sessions/session-1" },
+			}),
+		/HTTPS/,
+	);
 });

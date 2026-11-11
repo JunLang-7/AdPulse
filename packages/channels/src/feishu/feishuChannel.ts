@@ -8,6 +8,11 @@ export function createFeishuAccount(
 ): ChannelAccount {
 	return {
 		id: config.accountId,
+		identityScope: {
+			platform: "feishu",
+			applicationId: config.appId,
+			tenantId: config.tenantKey,
+		},
 		inbound: new FeishuInbound(config),
 		outbound: new FeishuOutbound(config),
 	};

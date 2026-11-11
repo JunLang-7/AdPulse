@@ -1,4 +1,8 @@
-import type { ChoiceCommand, OutboundChannel } from "@adpluse/core";
+import type {
+	ChoiceCommand,
+	OutboundChannel,
+	PlatformIdentity,
+} from "@adpluse/core";
 
 export interface WebhookRequest {
 	method: string;
@@ -18,9 +22,20 @@ export type InboundResult =
 export interface InboundChannel {
 	/** Authenticate, decrypt, normalize and construct the provider-specific response. No business writes. */
 	parse(request: WebhookRequest): Promise<InboundResult>;
+	/** Provider-attested identity for a normalized platform actor, scoped to app and tenant. */
+	identifyActor?(actor: {
+		accountId: string;
+		externalId: string;
+	}): PlatformIdentity | null;
 }
 export interface ChannelAccount {
 	id: string;
+	/** Verified identity scope this connection can attest; absent for synthetic/demo accounts. */
+	identityScope?: {
+		platform: string;
+		applicationId: string;
+		tenantId: string;
+	};
 	inbound: InboundChannel;
 	outbound: OutboundChannel;
 }

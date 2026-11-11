@@ -96,7 +96,7 @@ version 是决策版本，每次成功处理选择都会递增，即使 changes 
 
 控制台选择接口返回 202 只表示 inbox 已接收。当前界面提交后仅失效查询一次，尚未持续跟踪异步终态，可能要刷新才能看到最终处理结果；完善此行为见 [#11](https://github.com/JunLang-7/AdPulse/issues/11)。投递的 sent 表示渠道发送成功回执，不证明接收人已阅读。
 
-控制台使用静态 Bearer token 映射到一个用户，尚不是多租户权限系统。Vite 会将开发 token 注入浏览器，打包时也会进入前端产物，不能把此方案作为公开部署的安全认证。
+控制台使用 Feishu OAuth authorization code + PKCE 建立身份绑定和 HttpOnly 会话。服务端以 platform、application、tenant、ID 类型和外部 ID 共同限定身份，不持久化 Feishu access/refresh token；session cookie 在生产环境为 Secure、HttpOnly、SameSite=Lax，最多 8 小时且不滑动。副作用 API 请求校验同源 Origin。当前没有协作、分享、委派或产品级白名单，不是 RBAC 系统。 机器人入站动作同样按该作用域映射到内部用户，并要求操作者就是会话 owner；未建立绑定或非 owner 的动作会被拒绝，通知授权与身份映射分开。
 
 测试覆盖重复/并发选择、事务回滚、越权/过期、方案限制、慢提案版本冲突、租约恢复、平台协议和 SDK→HTTP 链路。PostgreSQL 集成测试需独立测试库；未配置时会跳过。
 
