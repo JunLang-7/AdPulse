@@ -25,11 +25,9 @@ bun run sdk:check      # 校验生成类型是否与契约一致
 ```
 
 先在仓库根目录按开发指南配置 `.env`，执行 `bun run build`、`bun run start` 启动 API，再在本目录启动开发服务器。
-开发时 `/api`、`/webhooks` 由 Vite 代理到 `http://127.0.0.1:3000`，默认不需要处理跨域。
+开发时 `/api`、`/auth`、`/webhooks` 由 Vite 代理到 `http://127.0.0.1:3000`，控制台与 API 保持同源。配置 `PUBLIC_ORIGIN` 为浏览器实际访问的 origin（默认 `http://localhost:5173`），并为 API 配置 Feishu 应用 ID、密钥和租户标识。
 
-- `VITE_API_BASE_URL` 默认空字符串，即同源代理；它**不会**回退到 `API_BASE_URL`。API_BASE_URL 仅供 demo 等脚本使用，改 API 端口时需同步修改 Vite proxy 目标。
-- `VITE_CONSOLE_TOKEN` 默认从仓库根目录 `.env` 读取；未设置时回退到 `CONSOLE_TOKEN`。修改后重启 Vite。
-- token 会进入浏览器及前端构建产物，仅用于受控开发环境；不要公开发布包含真实 token 的静态产物。生产认证/反向代理另行设计。
+控制台不注入静态 token。用户通过飞书企业账号登录，API 以 HttpOnly、SameSite=Lax cookie 维护最长 8 小时的非滑动会话；生产环境必须使用 HTTPS。页面仅通过生成契约的 `consoleClient` 访问同源 API。
 
 ## 当前可用范围
 

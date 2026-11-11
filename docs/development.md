@@ -22,21 +22,29 @@ bun run --cwd apps/console build
 
 ## 2. 不接真实 IM 的本地演示
 
-```bash
-cp .env.example .env
-# 编辑 .env，将 CONSOLE_TOKEN 换成随机长字符串。
+```powershell
+Copy-Item .env.example .env
+# 使用专用 Feishu 测试应用填写 FEISHU_APP_ID、FEISHU_APP_SECRET、FEISHU_TENANT_KEY，
+# 并把 Feishu OAuth 回调登记为 PUBLIC_ORIGIN/auth/feishu/callback。
 bun run build
 bun run start
 ```
 
-另一个终端、在仓库根目录执行：
+POSIX shell 使用 `cp .env.example .env`。
 
-```bash
+启动控制台并在浏览器打开 `PUBLIC_ORIGIN`，完成飞书企业账号登录后，另一个终端可执行：
+
+从浏览器开发者工具（Application/存储 → Cookies）复制当前登录的 `adpulse_session` 值，只在当前终端注入；不要提交到仓库或写入脚本。
+
+```powershell
+$env:ADPULSE_SESSION_COOKIE = "粘贴 adpulse_session 的值"
 bun run demo
 ```
 
+POSIX shell 使用 `export ADPULSE_SESSION_COOKIE="..."`。
+
 start、worker、demo 脚本均显式使用 `node --env-file=.env` 加载仓库根目录的 .env；实际运行时是 Node.js。
-demo 脚本直接调用 HTTP API，固定使用 demo 收件账户；控制台页面则使用生成类型的客户端：
+demo 脚本直接调用同源 HTTP API，固定使用 demo 收件账户；控制台页面则使用生成类型的客户端：
 创建会话 → 第一轮选择继续观察 → 第二轮确认 → 收到结束确认。
 成功时打印 completed、2 个轮次、3 个策略快照和 3 次模拟投递。
 
@@ -70,20 +78,21 @@ TASK_DRAFT_GATEWAY_API_KEY=
 
 ## 3. 持久化与独立 worker
 
-准备专用开发数据库，设置 DATABASE_URL。首次启动自动创建当前七张表和索引。
-这只用于首次建库，未来结构变更需要版本化迁移。
+准备专用、可丢弃的开发数据库，设置 DATABASE_URL。首次启动会建立 schema baseline 并按版本应用迁移；不要把生产库或旧 operator/test 数据库用于 Issue #34 试验。
 
 API 默认内嵌 worker。需要分进程时：
 
-```bash
+```powershell
 # 两个进程必须指向相同 DATABASE_URL、使用相同账户配置。
-EMBED_WORKER=0 bun run start
+$env:EMBED_WORKER = "0"; bun run start
 # 另一个终端
 bun run worker
 ```
 
+POSIX shell 使用 `EMBED_WORKER=0 bun run start`。
+
 DEMO_MODE=1 配合 DATABASE_URL 可以持久化模拟投递；关闭演示则必须配置真实渠道账户。
-独立 worker 不需要 CONSOLE_TOKEN，但需要 DATABASE_URL 与出站账户凭据。
+独立 worker 不处理浏览器登录，但需要 DATABASE_URL 与出站账户凭据。
 
 ## 4. 飞书接入
 
@@ -95,10 +104,10 @@ DEMO_MODE=1 配合 DATABASE_URL 可以持久化模拟投递；关闭演示则必
 | --- | --- |
 | DEMO_MODE=0 | 禁用模拟账户 |
 | DATABASE_URL | 持久化数据库 |
-| CONSOLE_TOKEN / CONSOLE_USER_ID | 控制台鉴权与固定用户 |
-| FEISHU_ACCOUNT_ID | 本地账户名，默认 feishu-internal |
-| FEISHU_APP_ID / FEISHU_APP_SECRET | 应用鉴权 |
-| FEISHU_TENANT_KEY | 限定租户 |
+| PUBLIC_ORIGIN | 浏览器实际访问的 origin；生产必须 HTTPS，OAuth 回调为 `/auth/feishu/callback` |
+| FEISHU_APP_ID / FEISHU_APP_SECRET | 飞书 OAuth 应用凭据；仅服务端使用，短期访问令牌只用于身份核验、不持久化 |
+| FEISHU_TENANT_KEY | 服务端核验授权身份所属企业 |
+| FEISHU_ACCOUNT_ID | 机器人本地账户名，默认 feishu-internal |
 | FEISHU_VERIFICATION_TOKEN | 校验回调来源 |
 | FEISHU_ENCRYPT_KEY | 原始请求签名与 AES 解密 |
 
@@ -113,7 +122,7 @@ https://你的域名/webhooks/feishu-internal
 
 创建 Session 时：
 - accountId 使用配置的账户名。
-- user 收件人使用 open_id，group 收件人使用 chat_id。
+- 首期个人身份账户只允许本人 open_id 单聊；API 拒绝 group 目的地，避免把个人卡片内容发到未经授权的群。
 - allowedActorIds 使用明确允许点击的用户 open_id；群成员不自动获得决策权。
 - 身份与权限还会在内核检查，actionRef 不是免认证令牌。
 
@@ -121,21 +130,77 @@ https://你的域名/webhooks/feishu-internal
 
 ### 真机联调自检
 
-```bash
+```powershell
 bun run build
-bun run feishu:acceptance -- --public-url https://你的域名/webhooks/feishu-internal \
-  --chat-id oc_xxx --open-id ou_xxx
+bun run feishu:acceptance -- --public-url https://你的域名/webhooks/feishu-internal --chat-id oc_xxx --open-id ou_xxx
 ```
+
+POSIX shell 可用反斜杠续行；这里使用单行以便在 Windows PowerShell 中直接执行。
 
 只读、脱敏探测：本地配置项、离线协议自检（真实 encrypt key 构造的验签/解密/身份拒绝/卡片动作）、
 平台连通（`tenant_access_token`、租户匹配、机器人启用状态、时钟偏差）、可选收件人、本机 `/healthz`，
 以及公网回调的未鉴权拒绝（401/403）与自签 challenge 往返。它不发送业务消息、不写业务数据，也**不能替代真机验收**：
-平台触发的 challenge、单聊/群聊点击链路、失败与拒绝场景仍需人工执行。
+平台触发的 challenge 及单聊/转发点击仍需人工动作，其余状态断言由下述场景编排器执行。
 
 `fail` 需先处理，`skip` 不计入验收，退出码非 0 表示存在 `fail`。
 加 `--write` 会在 `docs/acceptance/records/` 生成验收记录骨架（该目录默认不入库）。
 操作步骤与判读标准见[飞书真机联调 runbook](acceptance/feishu-e2e.md)。
 服务端尚无专用的回调 ACK 时延指标，需按 runbook 第 9 节用代理日志等替代取数。
+
+实现在 `scripts/acceptance/`：`scripts/feishu-acceptance.mjs` 只是入口转发，参数、输出与退出码保持不变；
+框架提供脱敏（`redact.mjs`）、HTTP 调用（`http.mjs`）、轮询断言（`poll.mjs`）、场景描述（`scenario.mjs`）
+与记录渲染（`record.mjs`）。后续真机链路场景按 `{ setup, prompt, read, until, assertions }` 注册，不各写一套脚本；
+除只读自检外，可按下文运行场景驱动器；个人身份禁止群投递。
+
+输出的每条结果都带证据来源，记录里同样保留该列：
+
+- `platform-real`：平台真实推送或真实用户交互，可支撑真机验收勾选。
+- `local-real`：真实凭据或真实平台 API 由本地发起，可证明配置与连通，不可勾选真机项。
+- `synthetic`：假凭据或 mock，只能证明代码路径。
+
+等待人工动作超时或读取状态失败记 `blocked`：它表示没有等到操作，不等于被测系统失败，与 `skip` 一样不计入验收。
+
+### 验收场景编排
+
+```bash
+bun run feishu:acceptance -- --list-scenarios
+bun run feishu:acceptance -- --scenario dm --open-id ou_xxx
+bun run feishu:acceptance -- --scenario group --chat-id oc_xxx --open-id ou_xxx
+bun run feishu:acceptance -- --scenario rounds --open-id ou_xxx
+bun run feishu:acceptance -- --scenario reject \
+  --open-id ou_授权成员 --other-open-id ou_未授权成员
+```
+
+场景需要访问控制台 API，按部署形态提供两种凭据（二选一，**不要写进仓库**）：
+
+- #34 之后：先在浏览器完成飞书登录，把 `adpulse_session` 的值放进 `ADPULSE_SESSION_COOKIE`，
+  并把 `PUBLIC_ORIGIN` 设为浏览器实际 origin（副作用请求会带同源 `Origin`）。
+- 未升级的部署：仍可用 `CONSOLE_TOKEN`。
+
+场景先跑一遍只读自检作为前置：存在 `fail` 即中止，避免在错配置上让人白点。`--skip-preflight` 只供本地调试，不能用于真机留证。
+
+- `dm`：建会话 → 等第 1 轮卡片送达 → 提示点击「继续观察」→ 提示点击「确认已阅」；断言投递、`rounds`、`inbox`、`version`、`snapshots`、结束确认卡，并记录点击后的观测区间。
+- `group`：验证个人身份的群收件人在建会话时被拒绝（HTTP400），不发群卡；证据为 `local-real`。
+- `reject`：本人单聊卡片转发给 `--other-open-id` 那位测试成员，点击被拒后，
+  本人在原单聊卡片点击正常生效。转发无交互或缺人则保持 `blocked`。
+- `failure`：使用本人收件人与 `scripts/acceptance/failure-server.mjs` 的出站故障夹具，
+  不发送真实 IM，证据为 `synthetic`。断言业务与投递终态分离；重试活跃第2轮的任务，
+  等新的 worker 执行令牌、非零尝试数及再次失败终态，不能只凭 attempts 归零通过。
+  夹具只监听回环3301、只连接固定验收库；正常 OAuth 登录，无会话注入。配置与命令见
+  [runbook §8](acceptance/feishu-e2e.md#8-投递失败与业务成功分离)。
+- `db-down`：停库注入，需同时满足 `--managed-db` 与 `DATABASE_URL` 指向本脚本自建的
+  一次性库（`127.0.0.1:5433/adpulse_acceptance`）；否则整步记 `skip`，**不会**停任何其它库。
+  API 必须连接上述故障夹具，按本人身份建立会话。断言停库时无成功 ACK；恢复后同一事件只处理一次。
+  一次性容器只由本脚本创建（名称前缀 `adpulse-acceptance-`、label `adpulse.acceptance=1`、
+  固定端口 5433），默认运行结束即清理，`--keep` 保留；不接受任意容器名或端口，不使用 `sudo`。
+- `rounds`：只需点一次卡片建立已答轮次，其余由脚本提交并断言旧卡、同轮重复被拒（`already_handled`），以及过期会话提交被拒（`expired`）；过期分支要求短有效期会话能及时送出第 1 轮卡片，否则记 `skip`。
+
+场景仅新建验收会话，不删除或改写既有数据；各行分别标注真实点击、本地请求或合成故障的证据来源。
+
+没人点击时步骤记 `blocked` 并且退出码非 0：本次结果不计入验收，完成动作后重跑即可。
+真机上人往往不会立刻在客户端前，可用 `--step-timeout <秒>` 放宽单步人工窗口（例如 1800），
+它只调整等待人工动作的时间，与 runbook 的 3 秒 ACK 预算无关。
+加 `--write` 写入 `docs/acceptance/records/<UTC>-scenario-<id>.md`，同样默认不覆盖。
 
 ## 5. Web 控制台与接口
 
@@ -147,17 +212,64 @@ bun run dev
 # 默认 http://localhost:5173/sessions
 ```
 
-已有会话列表与详情，可查看轮次、选项、投递和快照摘要，并提交选择。当前没有创建会话表单，可先运行 `bun run demo` 生成演示记录；该脚本生成的是已完成会话。创建可操作的会话可参考脚本中的 POST /api/sessions 调用。
+已有会话列表与详情，可查看轮次、选项、投递和快照摘要，并提交选择。
+顶栏右侧的顺序是：搜索、待处理提醒（仅 `awaiting_input` 的会话）、外观、账号菜单。账号菜单只显示平台返回的
+用户名和可操作项（Wiki、退出登录）；外部标识、租户、应用与会话到期属于运维/验收信息，不呈现给使用者。
+用户名下方另显示一个平台标签，取自 `identities[].platform`（`feishu→飞书`、`dingtalk→钉钉`、
+`wecom→企业微信`，未知平台原样显示），不在界面里硬编码平台名。用户名来自登录时 `/authen/v1/user_info` 的 `name` 字段（与 `open_id` 同一次响应，不需要额外权限），
+只存在用户记录的 `displayName`，不参与身份唯一性判断；取不到时界面显示「已登录」。内容区不再放账号动作。
+左侧导航是完整会话列表，与顶栏「待处理」是两种视角，不要互相复制。
 
-Vite 将同源 `/api`、`/webhooks` 请求代理到 127.0.0.1:3000，默认不需要 CORS 配置。改 API 端口时需同时调整 Vite proxy 目标与 demo 的 API_BASE_URL；API_BASE_URL 不会自动修改 proxy。`VITE_API_BASE_URL` 可单独覆盖浏览器请求地址，跨域部署需另行配置。
+投递闸门（`packages/core/src/worker.ts`）：只有 `initiatedBy: "system"` 的决策卡才要求
+`canSendProactive`，不通过则把投递记为 `suppressed` 并写明原因，**不调用渠道**；
+用户自己创建/处理的会话不受影响（本人操作回执）。告警会话目前是 web-only，该闸门的
+真实触发要等 #37 的订阅推送；平台明确返回"收件人不可达"时投递终态失败并计数，
+平台报告不可达即把目的地置为 `invalidated`（这些错误码是确定性事实，不是抖动），
+要求本人重新确认。
 
-控制台从根目录 .env 读取配置，`VITE_CONSOLE_TOKEN` 未设置时使用 CONSOLE_TOKEN。**该 token 会进入浏览器与构建产物，只适用于受控开发环境，禁止把带真实 token 的静态产物公开发布。** API 的静态 token 不是正式登录系统。
+「通知设置」（`/settings/notifications`）用于确认单聊地址与开启/撤销主动提醒：状态来自
+`GET /api/me/notification-status`，动作走 `PUT /api/me/notification-destination` 与
+`POST /api/me/notification-consent`（授权/撤销都带 `expectedVersion`，版本不符提示刷新）。
+页面明确写出「撤销不影响登录、不删除地址、不发群消息」。当前没有创建会话表单，可先运行 `bun run demo` 生成演示记录；该脚本生成的是已完成会话。创建可操作的会话可参考脚本中的 POST /api/sessions 调用。
+
+「个人关注与订阅配置」（#36，只存配置，不做筛选/调度/发送）：`packages/core/src/subscriptions.ts`，
+接口 `GET /api/me/subscription`、`PUT /api/me/subscription/settings`、
+`POST /api/me/subscription/targets`、`PATCH /api/me/subscription/targets/{targetId}`。
+
+- 三维简单筛选：关注对象（`task` 为本人任务 id，`brand`/`competitor` 为本人录入名称）× 类别
+  （`effect`/`event`/`evidence`）× 关联范围（`task_only`/`include_general`）。品牌与竞品目前没有跨租户实体，
+  `refId` 用名称规范化 key（NFKC + 去首尾空白 + 折叠空格 + 小写），同名同 kind 重复录入返回 409；
+  #38 出现实体后再关联，不改已存配置。
+- **每人一个单调版本**，开关与关注列表的所有写入共用；写请求必须带 `expectedVersion`（未配置为 0），
+  不符返回 409，旧请求重放无法覆盖后来的修改。#37 判断「哪批待发已过期」只看这一个数。
+- `proactiveEnabled` 默认 `false`：登录、保存配置都不等于启用；启用/关闭分别记录 `enabledAt`/`disabledAt`。
+- 时段默认北京时间日汇总 09:30、免打扰 22:00–08:00。`timezone` 必须**显式**为 `Asia/Shanghai`，
+  其他或缺省一律 422：首期不做时区换算，静默改写会改变时间语义。汇总时刻落在免打扰区间同样 422，
+  避免存下必然失效的配置；免打扰可跨零点。
+- 从未保存过配置时，视图不返回 `updatedAt`（契约里可缺省），不用空串假冒 date-time；
+  `version` 为 0、`schedule` 返回上述默认值。
+- 退订对象 = `status: muted`（保留配置可恢复），类别退订 = 从该对象移除类别；二者与「关闭全部主动推送」可区分。
+- 他人任务/他人关注对象一律按 `target_not_found`（404）处理，不确认存在性；视图不返回 `userId`。
+- 本接口**不表示可投递**：是否真的能发仍由 `GET /api/me/notification-status` 的 `canSendProactive` 决定。
+
+「订阅与关注」（`/settings/subscriptions`）是它的页面：关注对象增删、类别与范围就地修改、
+退订/恢复、时段编辑，以及首次开启前的确认清单（关注对象、类别、09:30 汇总、免打扰、
+「确认开启／暂不开启」）。页面把**四个状态分开显示**——订阅配置、单聊地址、授权、推送开关——
+任一缺失都显示「不会收到提醒」，不用单个布尔冒充。开启/关闭与保存都只改配置，页面文案明确写
+「保存配置不会发送任何消息」；真正投递仍受 #35 闸门与 #37 推送实现约束。
+
+Vite 将同源 `/api`、`/auth`、`/webhooks` 请求代理到 127.0.0.1:3000，控制台与 API 不做跨域部署。`PUBLIC_ORIGIN` 必须与浏览器 origin 完全一致；Feishu 后台须登记 `${PUBLIC_ORIGIN}/auth/feishu/callback`。
+
+登录采用 Feishu OAuth authorization code + S256 PKCE；按[授权码接口当前说明](https://open.feishu.cn/document/common-capabilities/sso/api/obtain-oauth-code)，该授权入口的 PKCE 暂时搭配 `https://open.feishu.cn/open-apis/authen/v2/oauth/token`，不混用 v3、不在失败后自动切换端点重试同一码；服务端检查授权用户的 tenant scope，身份键包含 platform、application、tenant、ID 类型和外部 ID。首次验证自动建立个人用户；不保存 access/refresh token，不提供静态 Bearer 或开发绕过。浏览器 session cookie 为 HttpOnly、SameSite=Lax，生产设置 Secure；服务端固定 8 小时绝对过期且不滑动，退出会撤销 session。所有有副作用的 `/api/*` 请求还必须携带与 `PUBLIC_ORIGIN` 一致的 `Origin`。控制台在受保护 API 返回 401 时携带经校验的站内 `returnTo` 跳转登录，退出会撤销会话并清空本地查询缓存。跨标签页登录或退出会通知其他标签页清除旧页面并重新验证；通知只含非凭据身份标识，不充当登录凭证。
+
+机器人卡片动作按飞书 open_id 的应用/租户作用域映射到内部用户；仅当映射用户是会话 owner 且 open_id 在 `allowedActorIds` 中时才允许。尚未在控制台登录建立绑定的用户会被拒绝，需先登录一次；`GET /api/me` 返回本人的 `identities`，可用于创建会话时填写收件人与允许操作者。worker 执行平台动作时还在同一数据库事务内复核有效用户与完整作用域的绑定，入库后撤销的动作会被拒绝；控制台正常8小时到期不撤销机器人绑定。通知授权由 #35 单独处理，本映射不改变发送授权。
 
 接口清单见 contracts/openapi.json；HTTP 调用示例见 scripts/demo.mjs。页面通过 apps/console/src/adpulse-client.ts 的 consoleClient 使用生成类型，不手写另一套 HTTP 契约。
 
-- /api/* 要求 Authorization: Bearer <CONSOLE_TOKEN>。
+- `/api/*` 要求有效的 `adpulse_session` cookie；`POST`、`PATCH`、`PUT`、`DELETE` 还要求同源 `Origin`。浏览器不得自行持久化或注入认证 token。
 - 创建与选择要求 UUID 格式 Idempotency-Key。
 - 创建会话：同 owner 的已有 requestId 返回原会话，目前不比较新旧创建请求体。
+- 真实飞书账户创建会话时，用户收件人与 `allowedActorIds` 必须是当前用户自己的已验证身份（`/api/me` 的 `identities`）；服务端拒绝他人 open_id，避免通过操作者列表扩权。
 - 提交选择：同一 sourceId + eventId、同规范化内容返回原 inbox；同键不同内容返回 409。一次操作的网络重试应复用键，新操作用新键。
 - POST /api/choices 返回 202 仅表示已接收；查询 GET /api/choices/{inboxId} 或会话详情获知 processed/rejected/failed。路径中的 inboxId 需 URL 编码。
 - 当前 Web 提交后只触发一次查询失效，尚未跟踪异步终态，必要时刷新详情核对。此限制由 [#11](https://github.com/JunLang-7/AdPulse/issues/11) 跟进；不能把按钮请求成功视为策略已变更。
@@ -165,28 +277,42 @@ Vite 将同源 `/api`、`/webhooks` 请求代理到 127.0.0.1:3000，默认不�
 - POST /api/jobs/{jobId}/retry 仅允许所属用户重试 failed 任务。
 - /healthz 只证明 HTTP 进程可响应，不是数据库/worker 就绪检查。
 
-这是单一固定控制台用户的开发认证方案。已有最小会话页面，尚无登录/SSO、RBAC、多租户、完整策略差异或任务恢复界面；任务重试目前通过 API。sent 只代表渠道发送回执，不代表用户已读。
+目前每个 Feishu 企业身份对应一个个人 AdPulse 用户；尚无协作、分享、委派、产品级白名单、RBAC 或完整策略差异界面。任务重试目前通过 API。sent 只代表渠道发送回执，不代表用户已读。
+
+控制台组件测试（`apps/console/test/`）用 Node + `tsx` + `jsdom` 跑真实渲染：
+
+```bash
+bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执行
+```
+
+- `test/setup.ts` 装 DOM 全局与相对 URL 的 `Request` 基址解析（openapi-fetch 用 `baseUrl: ""`）；
+- `test/harness.ts` 在被测页面模块求值**之前**安装 `fetch` 桩（`createClient` 会捕获 fetch 引用），
+  因此测试文件必须把它放在第一个 import；
+- 脚本带 `--test-force-exit`：jsdom 会留句柄，不加这个进程不退出。
+- 组件测试只覆盖「按钮是否真的禁用」「提示是否真的渲染」这类交互事实；状态推导仍走纯函数测试
+  （`tests/console-*.test.ts`），两者不互相替代。
 
 ## 6. PostgreSQL 集成测试
 
 TEST_DATABASE_URL 必须指向独立、可丢弃的测试数据库，不能使用生产数据库。
 测试会建表并写入会话、事件和任务；重复执行会保留测试数据。
 
-例如启动一次性容器：
+例如启动一次性容器（PowerShell）：
 
-```bash
-docker run --rm -d --name adpulse-test-db \
-  -e POSTGRES_PASSWORD=local-test-password \
-  -e POSTGRES_DB=adpulse_test \
-  -p 127.0.0.1:5433:5432 postgres:16-alpine
+```powershell
+docker run --rm -d --name adpulse-test-db -e POSTGRES_PASSWORD=local-test-password -e POSTGRES_DB=adpulse_test -p 127.0.0.1:5433:5432 postgres:16-alpine
 
 # 等 pg_isready 返回成功后运行；容器刚启动时可能需要重试。
 docker exec adpulse-test-db pg_isready -U postgres -d adpulse_test
 
-TEST_DATABASE_URL=postgres://postgres:local-test-password@127.0.0.1:5433/adpulse_test bun run test
+$env:TEST_DATABASE_URL = "postgres://postgres:local-test-password@127.0.0.1:5433/adpulse_test"
+bun run test
 
 docker stop adpulse-test-db
 ```
+
+POSIX shell 将设置变量与执行合并为 `TEST_DATABASE_URL=... bun run test`。
+集成测试覆盖迁移基线/版本幂等、并发首次登录复用同一用户、身份唯一索引与重连后的会话，以及原有的 serializable 决策、回滚和任务租约。
 
 未设置 TEST_DATABASE_URL 时，该集成测试明确显示 SKIP，其余测试仍执行。
 CI 会启动 PostgreSQL service 并设置此变量，避免把跳过误判为完整验收。
@@ -219,6 +345,6 @@ bun run sources resume haier_news <operator>   # 解除 stopped，记录操作�
 更换策略：实现 PolicyEngine 并通过 compose 注入。候选必须带冻结的 changes 和 complete 标志；内核不信任模型的边界判断，会重复校验变更和操作者。
 
 生产前仍需：
-真实平台验收、正式认证、数据保留策略、旧库结构迁移的执行与演练（版本化迁移已就位）、分页、限流/监控、失效原因提示和长任务租约续期。发送前已有过期/失效投递抑制，但不撤回已送达卡片，也不能完全消除检查与发送间的竞态。消息端到端不承诺 exactly-once。
+真实平台验收、正式认证尚未经真实应用/HTTPS 环境验收、数据保留策略、旧库结构迁移的执行与演练（版本化迁移已就位）、分页、限流/监控、失效原因提示和长任务租约续期。发送前已有过期/失效投递抑制，但不撤回已送达卡片，也不能完全消除检查与发送间的竞态。消息端到端不承诺 exactly-once。
 
 设计过程遵循 XEngineer 规范：工程提案与设计澄清由 Issue 承载，进入开发即定稿只读，变更新开增量说明；本文仅随实现维护使用方式。当前已合并交互内核与最小控制台，下一阶段待评审提案见 [#6](https://github.com/JunLang-7/AdPulse/issues/6)。

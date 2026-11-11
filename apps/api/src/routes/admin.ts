@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
+	AuthenticationService,
 	EvidenceComparisonRequest,
 	EvidenceImportInput,
 	EvidenceRevisionInput,
@@ -273,6 +274,7 @@ export async function handleAdmin(
 	runtime: Runtime,
 	userId: string,
 	path: string,
+	auth: AuthenticationService,
 ): Promise<void> {
 	if (path === "/api/task-drafts/models") {
 		res.setHeader("Cache-Control", "no-store");
@@ -462,6 +464,24 @@ export async function handleAdmin(
 		const input = sessionInput.parse(await readJson(req));
 		if (!runtime.channels.has(input.recipient.accountId))
 			throw new HttpError(400, "unknown recipient account");
+		const scope = runtime.channels.identityScopeOf(input.recipient.accountId);
+		if (scope) {
+			if (input.recipient.kind !== "user")
+				throw new HttpError(400, "personal sessions require a user recipient");
+			const identities = (await auth.listIdentities(userId)).filter(
+				(identity) =>
+					identity.platform === scope.platform &&
+					identity.applicationId === scope.applicationId &&
+					identity.tenantId === scope.tenantId,
+			);
+			const own = new Set(identities.map((identity) => identity.externalId));
+			if (own.size === 0)
+				throw new HttpError(400, "verified identity required for this account");
+			if (!input.allowedActorIds.every((id) => own.has(id)))
+				throw new HttpError(400, "allowed actors must be the current user");
+			if (input.recipient.kind === "user" && !own.has(input.recipient.externalId))
+				throw new HttpError(400, "recipient must be the current user");
+		}
 		if (Date.parse(input.expiresAt) <= Date.now())
 			throw new HttpError(400, "expiry must be in the future");
 		const { taskRef, ...sessionFields } = input;

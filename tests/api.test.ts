@@ -1,28 +1,52 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
+import { createHash, randomBytes } from "node:crypto";
 import { createApi } from "../apps/api/dist/server.js";
+import {
+  AuthenticationService,
+  type PlatformIdentity,
+} from "../packages/core/dist/index.js";
 import { compose } from "../packages/runtime/dist/index.js";
 import { MemoryStorage } from "../packages/storage/dist/index.js";
 import { proposal } from "./helpers.ts";
 
-const token = "xxxxxxxxxxxxxxxxxxxxxxxx";
+const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+const ownerIdentity = { platform: "feishu", applicationId: "cli_test", tenantId: "tenant-a", idType: "open_id", externalId: "ou-owner" };
 async function serve(
   t: TestContext,
-  options: { failReceive?: boolean } = {},
+  options: {
+    failReceive?: boolean;
+    publicOrigin?: string;
+    now?: () => Date;
+    sessionIssuedAt?: string;
+  } = {},
 ) {
+  let webhookChoice = { actorExternalId: "user-a", actionRef: "ref" };
   const runtime = compose(new MemoryStorage(), [
     {
       id: "account-a",
+      identityScope: {
+        platform: "feishu",
+        applicationId: "cli_test",
+        tenantId: "tenant-a",
+      },
       inbound: {
+        identifyActor(actor) {
+          return { ...ownerIdentity, externalId: actor.externalId };
+        },
         async parse() {
           return {
             kind: "choice",
             command: {
               sourceId: "account-a",
-              eventId: "event1",
-              actionRef: "ref",
-              actor: { kind: "platform", accountId: "account-a", externalId: "user-a" },
+              eventId: crypto.randomUUID(),
+              actionRef: webhookChoice.actionRef,
+              actor: {
+                kind: "platform",
+                accountId: "account-a",
+                externalId: webhookChoice.actorExternalId,
+              },
             },
             response: { status: 200, headers: { "content-type": "text/plain" }, body: "success" },
           };
@@ -32,20 +56,65 @@ async function serve(
     },
   ], { propose: async () => structuredClone(proposal) });
   if (options.failReceive) runtime.decisions.receiveChoice = async () => { throw new Error("database offline"); };
-  const server = createApi(runtime, { token, userId: "owner" });
-  await new Promise<void>((resolve) =>
-    server.listen(0, "127.0.0.1", () => resolve()),
+  const storage = runtime.storage;
+  const service = new AuthenticationService(storage);
+  const issuedAt = options.sessionIssuedAt ?? new Date().toISOString();
+  const ownerToken = randomBytes(32).toString("base64url");
+  const strangerToken = randomBytes(32).toString("base64url");
+  const ownerSession = await service.createWebSession(
+    ownerIdentity,
+    hash(ownerToken),
+    issuedAt,
   );
+  await service.createWebSession({ ...ownerIdentity, externalId: "ou-stranger" }, hash(strangerToken), issuedAt);
+  const publicOrigin = options.publicOrigin ?? "http://localhost";
+  const provider = {
+    authorizationUrl(parameters: { state: string; codeChallenge: string; redirectUri: string }) {
+      const target = new URL("https://accounts.feishu.cn/open-apis/authen/v1/authorize");
+      target.searchParams.set("state", parameters.state);
+      target.searchParams.set("code_challenge", parameters.codeChallenge);
+      target.searchParams.set("code_challenge_method", "S256");
+      target.searchParams.set("redirect_uri", parameters.redirectUri);
+      return target.toString();
+    },
+    async verifyAuthorizationCode() { return { identity: ownerIdentity }; },
+  };
+  const server = createApi(runtime, {
+    service,
+    provider,
+    publicOrigin,
+    ...(options.now ? { now: options.now } : {}),
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
   t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
   const address = server.address();
   assert.ok(address && typeof address === "object");
   const url = `http://127.0.0.1:${address.port}`;
-  const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
-  return { runtime, url, headers };
+  const headers = {
+    cookie: `adpulse_session=${ownerToken}`,
+    origin: publicOrigin,
+    "content-type": "application/json",
+  };
+  const strangerHeaders = {
+    ...headers,
+    cookie: `adpulse_session=${strangerToken}`,
+  };
+  return {
+    runtime,
+    url,
+    headers,
+    strangerHeaders,
+    publicOrigin,
+    service,
+    ownerUserId: ownerSession.userId,
+    setWebhook: (choice: { actorExternalId: string; actionRef: string }) => {
+      webhookChoice = choice;
+    },
+  };
 }
 const startInput = () => ({
-  recipient: { accountId: "account-a", kind: "user", externalId: "user-a" },
-  allowedActorIds: ["user-a"],
+  recipient: { accountId: "account-a", kind: "user", externalId: "ou-owner" },
+  allowedActorIds: ["ou-owner"],
   strategy: { objective: "leads", audience: [], channels: { ads: { bidCpc: 2 } }, sellingPoints: [] },
   limits: { maxBidChangeRatio: 0.2, maxBudgetChangeRatio: 0.2 },
   signal: { id: "sig", title: "成本变化", summary: "需要复核", evidence: proposal.card.evidence },
@@ -96,7 +165,7 @@ test("HTTP flow drives create -> card -> console choice -> strategy snapshot", a
 });
 
 test("task API preserves unknown versus zero, enforces idempotency/versioning, and scopes access", async (t) => {
-  const { url, headers } = await serve(t);
+  const { url, headers, strangerHeaders } = await serve(t);
   const body = {
     product: "产品 A",
     strategy: {
@@ -141,9 +210,9 @@ test("task API preserves unknown versus zero, enforces idempotency/versioning, a
   assert.equal(detail.task.version, 2);
   assert.deepEqual(detail.versions.map((version: { version: number }) => version.version), [1, 2]);
   const stranger = await fetch(`${url}/api/tasks/${first.taskId}`, {
-    headers: { ...headers, authorization: "Bearer yyyyyyyyyyyyyyyyyyyyyyyy" },
+    headers: strangerHeaders,
   });
-  assert.equal(stranger.status, 401);
+  assert.equal(stranger.status, 404);
   const invalid = await create({ ...body, rules: { maxPushRounds: 0 } }, crypto.randomUUID());
   assert.equal(invalid.status, 400);
   assert.match((await invalid.json()).error, /rules.maxPushRounds/);
@@ -489,23 +558,275 @@ test("sessions freeze the referenced task version and incomplete rules disable m
   assert.equal(rounds.length, 0, "unconfirmed task rules must block monetary proposals");
 });
 
-test("HTTP validates authentication, unknown accounts and payloads", async (t) => {
-  const { url } = await serve(t);
+test("HTTP validates cookie authentication, same-origin mutations, unknown accounts and payloads", async (t) => {
+  const { url, headers, publicOrigin } = await serve(t);
   assert.equal((await fetch(`${url}/api/sessions`)).status, 401);
+  const duplicateCookie = await fetch(`${url}/api/me`, {
+    headers: { cookie: `${headers.cookie}; ${headers.cookie}` },
+  });
+  assert.equal(duplicateCookie.status, 401);
+  const missingOrigin = await fetch(`${url}/api/sessions`, {
+    method: "POST",
+    headers: { cookie: headers.cookie, "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify(startInput()),
+  });
+  assert.equal(missingOrigin.status, 403);
+  const crossOrigin = await fetch(`${url}/api/sessions`, {
+    method: "POST",
+    headers: { ...headers, origin: "https://attacker.example", "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify(startInput()),
+  });
+  assert.equal(crossOrigin.status, 403);
   const invalidRes = await fetch(`${url}/api/sessions`, {
     method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+    headers: { ...headers, origin: publicOrigin, "idempotency-key": crypto.randomUUID() },
     body: JSON.stringify({ ...startInput(), ownerId: "spoof" }),
   });
   assert.equal(invalidRes.status, 400);
   const unknownRes = await fetch(`${url}/api/sessions`, {
     method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
     body: JSON.stringify({ ...startInput(), recipient: { accountId: "unknown", kind: "user", externalId: "u" } }),
   });
   assert.equal(unknownRes.status, 400);
-  const missingRes = await fetch(`${url}/api/sessions/nonexistent`, { headers: { authorization: `Bearer ${token}` } });
+  const missingRes = await fetch(`${url}/api/sessions/nonexistent`, { headers });
   assert.equal(missingRes.status, 404);
+});
+
+test("HTTP enforces the eight-hour absolute session expiry without sliding", async (t) => {
+  const issuedAt = "2026-03-01T00:00:00.000Z";
+  let clock = Date.parse(issuedAt);
+  const { url, headers } = await serve(t, {
+    sessionIssuedAt: issuedAt,
+    now: () => new Date(clock),
+  });
+  const status = async () => (await fetch(`${url}/api/me`, { headers })).status;
+  clock = Date.parse("2026-03-01T07:59:59.999Z");
+  assert.equal(await status(), 200);
+  clock = Date.parse("2026-03-01T08:00:00.000Z");
+  assert.equal(await status(), 401, "expiry is inclusive at the eight-hour boundary");
+  clock = Date.parse("2026-03-01T08:00:00.001Z");
+  assert.equal(await status(), 401);
+  assert.equal(
+    await status(),
+    401,
+    "requests before expiry did not slide the absolute eight-hour deadline",
+  );
+});
+
+test("Feishu login binds one-time state to the browser and issues a revocable HttpOnly session", async (t) => {
+  const { runtime, url, headers, publicOrigin } = await serve(t);
+  const invalidTarget = await fetch(
+    `${url}/auth/feishu/login?returnTo=${encodeURIComponent("https://attacker.example/")}`,
+    { redirect: "manual" },
+  );
+  assert.equal(invalidTarget.status, 400);
+  const oversizedTarget = await fetch(
+    `${url}/auth/feishu/login?returnTo=${encodeURIComponent(`/${"a".repeat(2048)}`)}`,
+    { redirect: "manual" },
+  );
+  assert.equal(oversizedTarget.status, 400);
+  const normalizedExternalTarget = await fetch(
+    `${url}/auth/feishu/login?returnTo=${encodeURIComponent("/%2e%2e//attacker.example")}`,
+    { redirect: "manual" },
+  );
+  assert.equal(normalizedExternalTarget.status, 400);
+
+  const begin = await fetch(
+    `${url}/auth/feishu/login?returnTo=${encodeURIComponent("/sessions?sort=recent")}`,
+    { headers: { cookie: headers.cookie }, redirect: "manual" },
+  );
+  assert.equal(begin.status, 302);
+  const authorizationUrl = new URL(begin.headers.get("location")!);
+  const state = authorizationUrl.searchParams.get("state");
+  assert.ok(state);
+  assert.equal(authorizationUrl.searchParams.get("code_challenge_method"), "S256");
+  assert.equal(
+    authorizationUrl.searchParams.get("redirect_uri"),
+    `${publicOrigin}/auth/feishu/callback`,
+  );
+  const nonceHeader = begin.headers.get("set-cookie") ?? "";
+  const nonce = /adpulse_oauth_nonce=([A-Za-z0-9_-]{43})/.exec(nonceHeader)?.[1];
+  assert.ok(nonce);
+  assert.match(nonceHeader, /HttpOnly/);
+  assert.match(nonceHeader, /SameSite=Lax/);
+
+  const rejectedBrowser = await fetch(
+    `${url}/auth/feishu/callback?state=${encodeURIComponent(state)}&code=one-time-code`,
+    { headers: { cookie: `adpulse_oauth_nonce=${"A".repeat(43)}` }, redirect: "manual" },
+  );
+  assert.equal(rejectedBrowser.status, 303);
+  assert.equal(rejectedBrowser.headers.get("location"), "/login?error=authorization");
+
+  const callback = await fetch(
+    `${url}/auth/feishu/callback?state=${encodeURIComponent(state)}&code=one-time-code`,
+    {
+      headers: { cookie: `${headers.cookie}; adpulse_oauth_nonce=${nonce}` },
+      redirect: "manual",
+    },
+  );
+  assert.equal(callback.status, 303);
+  assert.equal(callback.headers.get("location"), "/sessions?sort=recent");
+  const cookies = callback.headers.get("set-cookie") ?? "";
+  assert.match(cookies, /adpulse_session=[A-Za-z0-9_-]{43}/);
+  assert.match(cookies, /adpulse_session=.*HttpOnly/);
+  assert.match(cookies, /adpulse_session=.*SameSite=Lax/);
+  const sessionToken = /adpulse_session=([A-Za-z0-9_-]{43})/.exec(cookies)?.[1];
+  assert.ok(sessionToken);
+  const loginTransactions = await runtime.storage.transaction((tx) => tx.loginTransactions.all());
+  assert.equal(loginTransactions[0]?.status, "consumed");
+  assert.equal(loginTransactions[0]?.codeVerifier, "");
+
+  const me = await fetch(`${url}/api/me`, {
+    headers: { cookie: `adpulse_session=${sessionToken}` },
+  });
+  assert.equal(me.status, 200);
+  const meBody = await me.json();
+  assert.ok(meBody.userId);
+  assert.deepEqual(meBody.identities, [ownerIdentity]);
+  assert.equal(
+    (await fetch(`${url}/api/me`, { headers: { cookie: headers.cookie } })).status,
+    401,
+    "logging in revokes the previous browser session",
+  );
+  const blockedLogout = await fetch(`${url}/api/logout`, {
+    method: "POST",
+    headers: { cookie: `adpulse_session=${sessionToken}`, origin: "https://attacker.example" },
+  });
+  assert.equal(blockedLogout.status, 403);
+  const logout = await fetch(`${url}/api/logout`, {
+    method: "POST",
+    headers: { cookie: `adpulse_session=${sessionToken}`, origin: publicOrigin },
+  });
+  assert.equal(logout.status, 200);
+  assert.match(logout.headers.get("set-cookie") ?? "", /adpulse_session=;.*Max-Age=0/);
+  assert.equal(
+    (await fetch(`${url}/api/me`, { headers: { cookie: `adpulse_session=${sessionToken}` } })).status,
+    401,
+  );
+});
+
+test("production OAuth cookies are Secure and callback URI uses the shared HTTPS origin", async (t) => {
+  const publicOrigin = "https://console.example.com";
+  const { url } = await serve(t, { publicOrigin });
+  const begin = await fetch(`${url}/auth/feishu/login`, { redirect: "manual" });
+  assert.equal(begin.status, 302);
+  assert.match(begin.headers.get("set-cookie") ?? "", /; Secure/);
+  const location = new URL(begin.headers.get("location")!);
+  assert.equal(
+    location.searchParams.get("redirect_uri"),
+    `${publicOrigin}/auth/feishu/callback`,
+  );
+});
+
+test("webhook receives a verified actor resolver wired to internal users", async (t) => {
+  const { runtime, url, ownerUserId } = await serve(t);
+  const original = runtime.channels.handle.bind(runtime.channels);
+  let resolveActor:
+    | ((identity: PlatformIdentity) => Promise<string | null>)
+    | undefined;
+  runtime.channels.handle = async (accountId, request, decisions, resolver) => {
+    resolveActor = resolver;
+    return original(accountId, request, decisions, resolver);
+  };
+  await fetch(`${url}/webhooks/account-a`, { method: "POST", body: "{}" });
+  assert.ok(resolveActor);
+  assert.equal(await resolveActor(ownerIdentity), ownerUserId);
+  assert.equal(
+    await resolveActor({ ...ownerIdentity, externalId: "ou-unknown" }),
+    null,
+  );
+});
+
+test("webhook choices are processed only when the actor maps to the session owner", async (t) => {
+  const { runtime, url, headers, setWebhook } = await serve(t);
+  const create = async (externalId: string) => {
+    const response = await fetch(`${url}/api/sessions`, {
+      method: "POST",
+      headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify({
+        ...startInput(),
+        recipient: { accountId: "account-a", kind: "user", externalId },
+        allowedActorIds: [externalId],
+      }),
+    });
+    assert.equal(response.status, 201);
+    return (await response.json()).id as string;
+  };
+  const openAction = async (sessionId: string) => {
+    await runtime.worker.runOnce();
+    await runtime.worker.runOnce();
+    const detail = await (
+      await fetch(`${url}/api/sessions/${sessionId}`, { headers })
+    ).json();
+    return detail.actions[0] as { id: string };
+  };
+  const inboxFor = async (actionRef: string) =>
+    runtime.storage.transaction(async (tx) =>
+      (await tx.inbox.all()).find(
+        (inbox) => inbox.command.actionRef === actionRef,
+      ),
+    );
+  const process = async (actionRef: string) => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const inbox = await inboxFor(actionRef);
+      if (inbox && inbox.status !== "pending") return inbox;
+      await runtime.worker.runOnce();
+    }
+    return inboxFor(actionRef);
+  };
+
+  const ownerSession = await create("ou-owner");
+  const ownerAction = await openAction(ownerSession);
+  setWebhook({ actorExternalId: "ou-owner", actionRef: ownerAction.id });
+  assert.equal(
+    (await fetch(`${url}/webhooks/account-a`, { method: "POST", body: "{}" })).status,
+    200,
+  );
+  assert.equal((await process(ownerAction.id))?.status, "processed");
+
+  const strangerSession = await create("ou-owner");
+  const strangerAction = await openAction(strangerSession);
+  setWebhook({ actorExternalId: "ou-stranger", actionRef: strangerAction.id });
+  assert.equal(
+    (await fetch(`${url}/webhooks/account-a`, { method: "POST", body: "{}" })).status,
+    200,
+  );
+  const rejected = await process(strangerAction.id);
+  assert.equal(rejected?.status, "rejected");
+  assert.equal(rejected?.reason, "forbidden");
+});
+
+test("Feishu sessions accept only the current user's verified identity", async (t) => {
+  const { url, headers } = await serve(t);
+  const create = (overrides: Record<string, unknown>) =>
+    fetch(`${url}/api/sessions`, {
+      method: "POST",
+      headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify({ ...startInput(), ...overrides }),
+    });
+  assert.equal(
+    (await create({ allowedActorIds: ["ou-someone-else"] })).status,
+    400,
+    "actor lists cannot include another user",
+  );
+  assert.equal(
+    (
+      await create({
+        recipient: {
+          accountId: "account-a",
+          kind: "user",
+          externalId: "ou-someone-else",
+        },
+      })
+    ).status,
+    400,
+    "a user recipient must be the current user",
+  );
+  const group = await create({ recipient: { accountId: "account-a", kind: "group", externalId: "oc-unapproved" } });
+  assert.equal(group.status, 400);
+  assert.equal((await group.json()).error, "personal sessions require a user recipient");
+  assert.equal((await create({})).status, 201);
 });
 
 test("webhook returns failure instead of ACK if persistence fails", async (t) => {
@@ -522,3 +843,38 @@ test("webhook is ACKed only after an inbox record exists and keeps provider resp
   assert.equal((await runtime.storage.transaction((tx) => tx.inbox.all())).length, 1);
   assert.equal((await fetch(`${url}/webhooks/missing`, { method: "POST", body: "{}" })).status, 404);
 });
+
+for (const invalidation of ["binding", "user"] as const) {
+  test(`queued platform choices recheck ${invalidation} before execution`, async (t) => {
+    const { runtime, service, url, headers, ownerUserId, setWebhook } = await serve(t);
+    const created = await fetch(`${url}/api/sessions`, {
+      method: "POST", headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify(startInput()),
+    });
+    assert.equal(created.status, 201);
+    const session = await created.json();
+    await runtime.worker.runOnce();
+    await runtime.worker.runOnce();
+    const action = await runtime.storage.transaction(async (tx) => (await tx.actions.all())[0]);
+    setWebhook({ actorExternalId: "ou-owner", actionRef: action.id });
+    assert.equal((await fetch(`${url}/webhooks/account-a`, { method: "POST", body: "{}" })).status, 200);
+    if (invalidation === "binding") {
+      const bindings = await runtime.storage.transaction((tx) => tx.identityBindings.all());
+      const binding = bindings.find((binding) => binding.userId === ownerUserId)!;
+      await service.revokeIdentity(binding.id, new Date().toISOString());
+    } else {
+      await runtime.storage.transaction(async (tx) => {
+        const user = await tx.users.get(ownerUserId);
+        assert.ok(user);
+        await tx.users.put({ ...user, status: "disabled" });
+      });
+    }
+    await runtime.worker.runOnce();
+    const result = await runtime.storage.transaction(async (tx) => ({
+      session: await tx.sessions.get(session.id), inbox: (await tx.inbox.all())[0],
+    }));
+    assert.equal(result.inbox.status, "rejected");
+    assert.equal(result.inbox.reason, "forbidden");
+    assert.equal(result.session?.version, 0);
+  });
+}

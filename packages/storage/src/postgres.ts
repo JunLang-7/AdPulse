@@ -139,6 +139,53 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (6)",
 				);
 			}
+			// Versions 3-6 are reserved for the evidence/comparison/alert/source chain.
+			if (!current.has(7)) {
+				for (const name of [
+					"users",
+					"identityBindings",
+					"webSessions",
+					"loginTransactions",
+				]) await this.createEntityTable(client, name);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_identity_binding_scope
+					ON adpulse_identityBindings ((data->>'platform'), (data->>'applicationId'),
+					(data->>'tenantId'), (data->>'idType'), (data->>'externalId'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_web_sessions_user
+					ON adpulse_webSessions ((data->>'userId'), (data->>'expiresAt'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_login_transactions_expiry
+					ON adpulse_loginTransactions ((data->>'status'), (data->>'expiresAt'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (7)",
+				);
+			}
+			if (!current.has(8)) {
+				for (const name of [
+					"notificationDestinations",
+					"notificationConsents",
+				]) await this.createEntityTable(client, name);
+			// 每人每个平台作用域只有一个目的地：唯一约束兜住并发与串号。
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_notification_destination_scope
+					ON adpulse_notificationDestinations ((data->>'userId'), (data->>'platform'),
+					(data->>'applicationId'), (data->>'tenantId'), (data->>'idType'),
+					(data->>'externalId'))`);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_notification_consent_unique
+					ON adpulse_notificationConsents ((data->>'userId'), (data->>'destinationId'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (8)",
+				);
+			}
+			if (!current.has(9)) {
+				for (const name of ["subscriptionSettings", "subscriptionTargets"])
+					await this.createEntityTable(client, name);
+				// 每人一份设置；关注对象在同一 user + kind + refId 下唯一，堵住并发重复录入。
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_subscription_settings_user
+					ON adpulse_subscriptionSettings ((data->>'userId'))`);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_subscription_target_ref
+					ON adpulse_subscriptionTargets ((data->>'userId'), (data->>'kind'), (data->>'refId'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (9)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

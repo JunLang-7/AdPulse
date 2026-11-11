@@ -28,8 +28,7 @@ export default function SessionsPage() {
 				<p className="text-red-600">读取会话列表失败</p>
 				<pre className="text-xs whitespace-pre-wrap">{String(error)}</pre>
 				<p className="text-sm">
-					请确认 API 已启动（<code>bun run start</code>），并且 .env 中的
-					CONSOLE_TOKEN 非空。
+					请确认 API 已启动（<code>bun run start</code>），并完成飞书企业账号登录。
 				</p>
 			</div>
 		);
