@@ -34,7 +34,13 @@ export interface MenuItem {
 	isPro?: boolean;
 }
 
-import { ClipboardList, House, type LucideIcon } from "lucide-react";
+import {
+	BellRing,
+	SlidersHorizontal,
+	ClipboardList,
+	House,
+	type LucideIcon,
+} from "lucide-react";
 
 const SidebarContent: MenuItem[] = [
 	{
@@ -50,6 +56,18 @@ const SidebarContent: MenuItem[] = [
 				name: "推广任务",
 				icon: ClipboardList,
 				url: "/tasks",
+			},
+			{
+				id: "notification-settings",
+				name: "通知设置",
+				icon: BellRing,
+				url: "/settings/notifications",
+			},
+			{
+				id: "subscription-settings",
+				name: "订阅与关注",
+				icon: SlidersHorizontal,
+				url: "/settings/subscriptions",
 			},
 		],
 	},

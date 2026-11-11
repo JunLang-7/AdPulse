@@ -1,6 +1,6 @@
 import type { Limits, Signal, Strategy } from "./domain/strategy.js";
 import { applyChanges, validateStrategy } from "./domain/strategy.js";
-import type { ChoiceCommand, Recipient } from "./ports/channel.js";
+import type { Actor, ChoiceCommand, Recipient } from "./ports/channel.js";
 import type { PolicyEngine, Proposal } from "./ports/policyEngine.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
@@ -45,6 +45,16 @@ export class Orchestrator {
 		private policy: PolicyEngine,
 		private now: () => string = () => new Date().toISOString(),
 		private id: () => string = () => crypto.randomUUID(),
+		/** Local storage checks only; runs within the same retryable transaction. */
+		private authorizePlatformActor?: (
+			tx: Transaction,
+			actor: Extract<Actor, { kind: "platform" }>,
+		) => Promise<boolean>,
+		/**
+		 * 卡片上的站内详情链接。由装配层按控制台公开 origin 提供，核心不感知域名；
+		 * 返回 undefined 时卡片不带链接（与未配置控制台入口时的行为一致）。
+		 */
+		private detailUrlFor?: (sessionId: string) => string | undefined,
 	) {}
 
 	async startSession(input: StartSession): Promise<Session> {
@@ -181,8 +191,16 @@ export class Orchestrator {
 					? actor.userId === session.ownerId
 					: session.deliveryMode !== "web" &&
 						session.recipient?.accountId === actor.accountId &&
+						typeof actor.userId === "string" &&
+						actor.userId === session.ownerId &&
 						session.allowedActorIds.includes(actor.externalId);
 			if (!authorized) return reject("forbidden");
+			if (
+				actor.kind === "platform" &&
+				this.authorizePlatformActor &&
+				!(await this.authorizePlatformActor(tx, actor))
+			)
+				return reject("forbidden");
 			if (
 				(session.expiresAt && session.expiresAt <= this.now()) ||
 				(round.expiresAt && round.expiresAt <= this.now())
@@ -443,6 +461,9 @@ export class Orchestrator {
 	): Promise<void> {
 		if (!session.recipient || !round.expiresAt)
 			throw new Error("channel delivery requires a recipient and expiry");
+		// 直达链接只指站内对象详情，不含 token 或他人可见内容。
+		const detailUrl = this.detailUrlFor?.(session.id);
+		const cardWithDetail = detailUrl ? { ...card, detailUrl } : card;
 		const delivery: Delivery = {
 			id: this.id(),
 			recipient: session.recipient,
@@ -451,7 +472,7 @@ export class Orchestrator {
 			purpose,
 			expiresAt: round.expiresAt,
 			status: "pending",
-			card,
+			card: cardWithDetail,
 			actions,
 		};
 		await tx.deliveries.put(delivery);

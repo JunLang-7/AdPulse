@@ -116,8 +116,8 @@ bun run sdk:check
 - 修改 OpenAPI 后执行 `bun run sdk:generate`。
 - 构建后用 `bun run start` 启动 API，或用 `bun run worker` 启动独立 worker；两者脚本均显式调用 Node.js。
 - PostgreSQL 集成测试需设置指向专用测试库的 `TEST_DATABASE_URL`；未设置时跳过该项测试。
-- Web 控制台：保持 API 运行，另一个终端执行 `cd apps/console && bun run dev`，默认访问 `http://localhost:5173/sessions`。当前无创建表单，可先用 demo 生成记录。
-- 控制台静态 token 会进入浏览器及前端构建产物，仅供受控开发环境；不是公开部署的正式认证。
+- Web 控制台：保持 API 运行，另一个终端执行 `cd apps/console && bun run dev`，默认访问 `http://localhost:5173/sessions`。当前无创建表单；完成飞书登录后可先运行 demo 生成记录（需按开发指南注入当前会话 cookie）。
+- 控制台使用 Feishu OAuth + PKCE 和服务端 HttpOnly session cookie；运行前需配置 `PUBLIC_ORIGIN` 与 Feishu 应用凭据，生产环境必须使用 HTTPS。详见[开发指南](docs/development.md)。
 - [开发指南](docs/development.md)：环境变量、两轮演示、飞书配置、独立 worker 与数据库测试。
 - [架构导览](docs/architecture.md)：当前模块边界、出入站契约、一致性和已知限制。
 

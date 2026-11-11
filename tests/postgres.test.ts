@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
+	NotificationService,
 	SourceService,
 	type ChoiceCommand,
 } from "../packages/core/dist/index.js";
@@ -58,7 +61,12 @@ test("PostgreSQL: serializable decisions, rollback, reconnect and SKIP LOCKED cl
 		sourceId: "account-a",
 		eventId: crypto.randomUUID(),
 		actionRef: actions[0].id,
-		actor: { kind: "platform", accountId: "account-a", externalId: "user-a" },
+		actor: {
+			kind: "platform",
+			accountId: "account-a",
+			externalId: "user-a",
+			userId: "owner",
+		},
 	};
 	const duplicate = await Promise.all(
 		Array.from({ length: 20 }, () => f.decisions.receiveChoice(command)),
@@ -190,4 +198,352 @@ test("PostgreSQL: source tables, advisory lock and purge deletion", {
 	}));
 	assert.equal(remaining.snapshots, 0);
 	assert.ok(remaining.items >= 1);
+});
+
+test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse one user", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async (t) => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const storage = PostgresStorage.connect(databaseUrl);
+	const reconnected = PostgresStorage.connect(databaseUrl);
+	t.after(async () => {
+		await storage.close();
+		await reconnected.close();
+	});
+	await storage.initialize();
+	await storage.initialize();
+
+	const { Pool } = createRequire(
+		new URL("../packages/storage/package.json", import.meta.url),
+	)("pg") as { Pool: new (options: { connectionString: string }) => {
+		query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
+		end(): Promise<void>;
+	} };
+	const admin = new Pool({ connectionString: databaseUrl });
+	t.after(() => admin.end());
+	const migrations = await admin.query(
+		"SELECT version FROM adpulse_schema_migrations ORDER BY version",
+	);
+	assert.deepEqual(
+		migrations.rows.map((row) => Number(row.version)),
+		[1, 2, 3, 4, 5, 6, 7, 8, 9],
+	);
+	const indexes = await admin.query(
+		`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()
+		AND indexname IN ('adpulse_identity_binding_scope', 'adpulse_web_sessions_user',
+		'adpulse_login_transactions_expiry', 'adpulse_notification_destination_scope',
+		'adpulse_notification_consent_unique', 'adpulse_subscription_settings_user',
+		'adpulse_subscription_target_ref') ORDER BY indexname`,
+	);
+	assert.deepEqual(
+		indexes.rows.map((row) => row.indexname),
+		[
+			"adpulse_identity_binding_scope",
+			"adpulse_login_transactions_expiry",
+			"adpulse_notification_consent_unique",
+			"adpulse_notification_destination_scope",
+			"adpulse_subscription_settings_user",
+			"adpulse_subscription_target_ref",
+			"adpulse_web_sessions_user",
+		],
+	);
+
+	const { AuthenticationService } = await import("../packages/core/dist/index.js");
+	const auth = new AuthenticationService(storage);
+	const scope = crypto.randomUUID();
+	const identity = {
+		platform: "feishu",
+		applicationId: `cli_${scope}`,
+		tenantId: `tenant-${scope}`,
+		idType: "open_id",
+		externalId: `ou_${scope}`,
+	};
+	const now = new Date().toISOString();
+	const sessions = await Promise.all(
+		Array.from({ length: 12 }, (_, index) =>
+			auth.createWebSession(
+				identity,
+				createHash("sha256").update(`${scope}:${index}`).digest("hex"),
+				now,
+			),
+		),
+	);
+	assert.equal(new Set(sessions.map((session) => session.userId)).size, 1);
+	const bindings = await storage.transaction((tx) => tx.identityBindings.all());
+	assert.equal(
+		bindings.filter((binding) => binding.externalId === identity.externalId).length,
+		1,
+	);
+	assert.equal(
+		(
+			await reconnected.transaction((tx) => tx.users.all())
+		).filter((user) => user.id === sessions[0].userId).length,
+		1,
+		"the session user survives a new pool",
+	);
+	assert.equal(
+		(
+			await reconnected.transaction((tx) =>
+				tx.webSessions.get(sessions[0].sessionId),
+			)
+		)?.userId,
+		sessions[0].userId,
+	);
+});
+
+test("PostgreSQL: a failed auth migration rolls back atomically and can be retried", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async () => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const { Pool } = createRequire(
+		new URL("../packages/storage/package.json", import.meta.url),
+	)("pg") as { Pool: new (options: { connectionString: string }) => {
+		query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
+		end(): Promise<void>;
+	} };
+	const schema = `auth_migration_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+	const admin = new Pool({ connectionString: databaseUrl });
+	await admin.query(`CREATE SCHEMA ${schema}`);
+	const scopedUrl = new URL(databaseUrl);
+	scopedUrl.searchParams.set("options", `-c search_path=${schema}`);
+	const storage = PostgresStorage.connect(scopedUrl.toString());
+	const check = new Pool({ connectionString: scopedUrl.toString() });
+	try {
+		// Simulate a partially conflicting deployment: the entity table exists but
+		// lacks the columns used by the migration's indexes.
+		await admin.query(
+			`CREATE TABLE ${schema}.adpulse_identityBindings (id text primary key)`,
+		);
+		await assert.rejects(storage.initialize());
+		const tables = await check.query(`SELECT
+			to_regclass('adpulse_users') AS users,
+			to_regclass('adpulse_webSessions') AS web_sessions,
+			to_regclass('adpulse_schema_migrations') AS migrations`);
+		assert.deepEqual(tables.rows[0], {
+			users: null,
+			web_sessions: null,
+			migrations: null,
+		});
+
+		await admin.query(`DROP TABLE ${schema}.adpulse_identityBindings`);
+		await storage.initialize();
+		const versions = await check.query(
+			"SELECT version FROM adpulse_schema_migrations ORDER BY version",
+		);
+		assert.deepEqual(
+			versions.rows.map((row) => Number(row.version)),
+			[1, 2, 3, 4, 5, 6, 7, 8, 9],
+		);
+	} finally {
+		await check.end();
+		await storage.close();
+		await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+		await admin.end();
+	}
+});
+
+test("PostgreSQL: authentication survives a process restart and repeated initialization", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async () => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const { Pool } = createRequire(
+		new URL("../packages/storage/package.json", import.meta.url),
+	)("pg") as { Pool: new (options: { connectionString: string }) => {
+		query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
+		end(): Promise<void>;
+	} };
+	const schema = `auth_restart_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+	const admin = new Pool({ connectionString: databaseUrl });
+	await admin.query(`CREATE SCHEMA ${schema}`);
+	const scopedUrl = new URL(databaseUrl);
+	scopedUrl.searchParams.set("options", `-c search_path=${schema}`);
+	const storage = PostgresStorage.connect(scopedUrl.toString());
+	try {
+		await storage.initialize();
+		const { AuthenticationService } = await import("../packages/core/dist/index.js");
+		const auth = new AuthenticationService(storage);
+		const identity = {
+			platform: "feishu",
+			applicationId: `cli_${schema}`,
+			tenantId: `tenant_${schema}`,
+			idType: "open_id",
+			externalId: `ou_${schema}`,
+		};
+		const now = new Date().toISOString();
+		const sessionId = createHash("sha256").update(`${schema}:session`).digest("hex");
+		const created = await auth.createWebSession(identity, sessionId, now);
+
+		const script = `
+			import { AuthenticationService } from "./packages/core/dist/index.js";
+			import { PostgresStorage } from "./packages/storage/dist/index.js";
+			const storage = PostgresStorage.connect(process.env.TEST_SCHEMA_URL);
+			await storage.initialize();
+			const session = await new AuthenticationService(storage).authenticateSession(
+				process.env.SESSION_ID,
+				process.env.NOW,
+			);
+			console.log(JSON.stringify({
+				userId: session?.userId ?? null,
+				expiresAt: session?.expiresAt ?? null,
+			}));
+			await storage.close();
+		`;
+		const { stdout } = await promisify(execFile)(
+			process.execPath,
+			["--input-type=module", "-e", script],
+			{
+				cwd: process.cwd(),
+				env: {
+					...process.env,
+					TEST_SCHEMA_URL: scopedUrl.toString(),
+					SESSION_ID: sessionId,
+					NOW: now,
+				},
+				timeout: 15_000,
+			},
+		);
+		const output = stdout.trim().split(/\r?\n/).filter(Boolean).pop();
+		assert.ok(output);
+		assert.deepEqual(JSON.parse(output), {
+			userId: created.userId,
+			expiresAt: created.expiresAt,
+		});
+		const bindings = await storage.transaction((tx) => tx.identityBindings.all());
+		assert.equal(
+			bindings.filter((binding) => binding.externalId === identity.externalId).length,
+			1,
+			"restart must not duplicate the identity binding",
+		);
+	} finally {
+		await storage.close();
+		await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+		await admin.end();
+	}
+});
+
+test("PostgreSQL: queued platform action is refused after its binding is revoked", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async (t) => {
+	const { AuthenticationService } = await import("../packages/core/dist/index.js");
+	const { compose } = await import("../packages/runtime/dist/index.js");
+	const storage = PostgresStorage.connect(process.env.TEST_DATABASE_URL!);
+	t.after(() => storage.close());
+	await storage.initialize();
+	const suffix = crypto.randomUUID();
+	const identity = { platform: "test", applicationId: suffix, tenantId: suffix, idType: "open_id", externalId: suffix };
+	const auth = new AuthenticationService(storage);
+	const owner = await auth.createWebSession(identity, createHash("sha256").update(suffix).digest("hex"), new Date().toISOString());
+	let actionRef = "";
+	const eventId = crypto.randomUUID();
+	const runtime = compose(storage, [{
+		id: suffix,
+		inbound: {
+			identifyActor: () => identity,
+			async parse() {
+				return { kind: "choice", command: { sourceId: suffix, eventId, actionRef, actor: {
+					kind: "platform", accountId: suffix, externalId: suffix,
+				} }, response: { status: 200, headers: {}, body: "{}" } };
+			},
+		},
+		outbound: { async send() { throw new Error("this regression must not send"); } },
+	}]);
+	const session = await runtime.decisions.startSession({
+		requestId: crypto.randomUUID(), ownerId: owner.userId,
+		recipient: { accountId: suffix, kind: "user", externalId: suffix }, allowedActorIds: [suffix],
+		strategy: { objective: "test", audience: [], channels: {}, sellingPoints: [] },
+		limits: { maxBudgetChangeRatio: 0.2, maxBidChangeRatio: 0.2 },
+		signal: { id: suffix, title: "synthetic", summary: "test", evidence: [] },
+		expiresAt: new Date(Date.now() + 3600000).toISOString(),
+	});
+	await runtime.decisions.prepareRound(session.id, 0);
+	actionRef = await storage.transaction(async (tx) => {
+		const round = (await tx.rounds.all()).find((round) => round.sessionId === session.id)!;
+		return (await tx.actions.all()).find((action) => action.roundId === round.id)!.id;
+	});
+	await runtime.channels.handle(suffix, { method: "POST", url: "/webhooks/test", headers: {}, rawBody: Buffer.from("{}") }, runtime.decisions, (identity) => auth.resolveIdentity(identity));
+	const binding = await storage.transaction(async (tx) => (await tx.identityBindings.all()).find((binding) => binding.userId === owner.userId)!);
+	await auth.revokeIdentity(binding.id, new Date().toISOString());
+	const inboxId = JSON.stringify([suffix, eventId]);
+	await runtime.decisions.processInbox(inboxId);
+	const result = await storage.transaction(async (tx) => ({ inbox: await tx.inbox.get(inboxId), session: await tx.sessions.get(session.id) }));
+	assert.equal(result.inbox?.status, "rejected");
+	assert.equal(result.inbox?.reason, "forbidden");
+	assert.equal(result.session?.version, 0);
+});
+
+test("PostgreSQL: notification destination scope and consent are unique per user", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async (t) => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const storage = PostgresStorage.connect(databaseUrl);
+	t.after(() => storage.close());
+	await storage.initialize();
+
+	const identity = {
+		platform: "feishu",
+		applicationId: "cli_test",
+		tenantId: "tenant-a",
+		idType: "open_id",
+		externalId: `ou-${crypto.randomUUID()}`,
+	};
+	const now = new Date().toISOString();
+	const userId = crypto.randomUUID();
+	await storage.transaction(async (tx) => {
+		await tx.users.put({ id: userId, status: "active", createdAt: now });
+		await tx.identityBindings.put({
+			id: crypto.randomUUID(),
+			...identity,
+			userId,
+			status: "active",
+			verifiedAt: now,
+		});
+	});
+	const notifications = new NotificationService(storage);
+	const destination = await notifications.verifyDestination(userId, identity);
+
+	// 同一用户同一作用域只能有一条目的地（唯一索引兜并发）。
+	await assert.rejects(
+		() =>
+			storage.transaction((tx) =>
+				tx.notificationDestinations.put({ ...destination, id: crypto.randomUUID() }),
+			),
+		/duplicate key|unique/i,
+	);
+
+	// 同一用户的同一目的地只能有一条授权记录。
+	const consent = await notifications.grantConsent(userId, destination.id, 0);
+	await assert.rejects(
+		() =>
+			storage.transaction((tx) =>
+				tx.notificationConsents.put({ ...consent, id: `${userId}:${destination.id}x` }),
+			),
+		/duplicate key|unique/i,
+	);
+
+	// 迁移是可重复执行的：再次 initialize 不应报错。
+	await storage.initialize();
+	const status = await notifications.status(userId);
+	assert.equal(status.destination?.id, destination.id);
+	assert.equal(status.consent?.status, "active");
+	assert.equal(status.canSendProactive, true);
+
+	// 审阅复现：本人绑定保持 active，目的地置 invalidated 后重新验证必须恢复，
+	// 否则授权会以 destination_not_found 卡死，且授权状态不应被顺带恢复。
+	await storage.transaction(async (tx) => {
+		const current = await tx.notificationDestinations.get(destination.id);
+		if (current)
+			await tx.notificationDestinations.put({ ...current, status: "invalidated" });
+		await tx.notificationConsents.put({ ...consent, status: "revoked", revokedAt: now });
+	});
+	const reverified = await notifications.verifyDestination(userId, identity);
+	assert.equal(reverified.id, destination.id);
+	assert.equal(reverified.status, "verified");
+	const afterReverify = await notifications.status(userId);
+	assert.equal(afterReverify.consent?.status, "revoked", "重验不得恢复已撤销的授权");
+	assert.equal(afterReverify.canSendProactive, false);
+
+	// 重新授权后恢复可用：证明恢复路径不再被 destination_not_found 卡住。
+	// 版本语义：置 revoked 时手写的数据保留了原 version(1)，显式恢复需传 1。
+	await notifications.grantConsent(userId, destination.id, consent.version);
+	assert.equal(await notifications.canSendProactive(userId), true);
 });

@@ -12,6 +12,123 @@ import type {
 } from "../ports/channel.js";
 import type { Candidate } from "../ports/policyEngine.js";
 
+export interface User {
+	id: string;
+	status: "active" | "disabled";
+	createdAt: string;
+	/** 平台返回的显示名；仅用于界面展示，不参与身份唯一性判断。 */
+	displayName?: string;
+}
+export interface IdentityBinding {
+	id: string;
+	platform: string;
+	applicationId: string;
+	tenantId: string;
+	idType: string;
+	externalId: string;
+	userId: string;
+	status: "active" | "revoked";
+	verifiedAt: string;
+}
+/**
+ * 机器人单聊目的地：只记录「本人的已验证身份对应哪个单聊」，不含授权状态。
+ * 作用域与身份绑定一致，避免用裸 open_id 串号。
+ */
+export interface NotificationDestination {
+	id: string;
+	userId: string;
+	platform: string;
+	applicationId: string;
+	tenantId: string;
+	idType: string;
+	externalId: string;
+	status: "verified" | "invalidated";
+	verifiedAt: string;
+	/** 平台报告「收件人不可达」的连续次数；达阈值即置 invalidated。 */
+	unreachableCount?: number;
+	invalidatedAt?: string;
+}
+
+/**
+ * 通知授权：与目的地、登录绑定分开建模。撤销不等于注销账号，
+ * 目的地仍保留，只是不再允许主动发送。
+ */
+export interface NotificationConsent {
+	id: string;
+	userId: string;
+	destinationId: string;
+	status: "active" | "revoked";
+	grantedAt: string;
+	revokedAt?: string;
+	/** 乐观并发：每次授权/撤销自增；旧请求重放会因版本不符被拒。 */
+	version: number;
+}
+
+/** 关注对象：本人任务，或本人录入的品牌/竞品名称（#38 出现实体后再关联）。 */
+export type SubscriptionTargetKind = "task" | "brand" | "competitor";
+/** 首期三维筛选里的「类别」：效果排查、明确事件、补证/待处理。 */
+export type SubscriptionCategory = "effect" | "event" | "evidence";
+/** 「关联范围」：只关联该对象所在任务，或也接收该对象的一般动态。 */
+export type SubscriptionScope = "task_only" | "include_general";
+
+export interface SubscriptionTarget {
+	id: string;
+	userId: string;
+	kind: SubscriptionTargetKind;
+	/** task：任务 id；brand/competitor：名称规范化后的 key。 */
+	refId: string;
+	/** 展示名。task 取任务当前版本的 product 快照。 */
+	label: string;
+	sourceUrl?: string;
+	/** 该对象订阅的类别；空数组表示暂不可用于投递。 */
+	categories: SubscriptionCategory[];
+	scope: SubscriptionScope;
+	/** muted 即「退订该对象」，保留以便恢复，不删除历史。 */
+	status: "active" | "muted";
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface SubscriptionSettings {
+	/** 与 userId 相同：每人一份。 */
+	id: string;
+	userId: string;
+	/** 单调版本：开关、关注列表、类别、范围的所有写入共用同一个计数。 */
+	version: number;
+	/** 默认关闭：登录或保存配置都不等于启用。 */
+	proactiveEnabled: boolean;
+	/** 启用时把本人确认过的时段一并持久化，便于将来变更可检测。 */
+	schedule: {
+		timezone: "Asia/Shanghai";
+		digestAt: string;
+		quietStart: string;
+		quietEnd: string;
+	};
+	enabledAt?: string;
+	disabledAt?: string;
+	updatedAt: string;
+}
+
+export interface WebSession {
+	/** SHA-256 digest of the opaque cookie value; never store the cookie itself. */
+	id: string;
+	userId: string;
+	identityBindingId: string;
+	createdAt: string;
+	expiresAt: string;
+	revokedAt?: string;
+}
+export interface LoginTransaction {
+	/** SHA-256 digest of the one-time OAuth state. */
+	id: string;
+	browserBindingHash: string;
+	codeVerifier: string;
+	returnTo: string;
+	status: "pending" | "consumed" | "expired";
+	createdAt: string;
+	expiresAt: string;
+	consumedAt?: string;
+}
 export interface Task {
 	id: string;
 	ownerId: string;
@@ -349,6 +466,11 @@ export interface Session {
 	taskRef?: { taskId: string; taskVersion: number };
 	monetarySuggestionsAllowed?: boolean;
 	deliveryMode?: "channel" | "web";
+	/**
+	 * 谁发起这次会话：`self` 是用户本人的操作，`system` 是系统主动提醒。
+	 * 只有 `system` 的投递受通知授权闸门约束（见 #35）；缺省视为 self。
+	 */
+	initiatedBy?: "self" | "system";
 	investigationAlertId?: string;
 	alertEvidenceRef?: EvidenceRef;
 	recipient?: Recipient;
@@ -401,10 +523,12 @@ export interface Delivery extends CardDelivery {
 	roundId: string;
 	purpose: "decision" | "confirmation";
 	expiresAt: string;
-	status: "pending" | "sent" | "failed" | "cancelled";
+	status: "pending" | "sent" | "failed" | "cancelled" | "suppressed";
 	externalMessageId?: string;
 	sentAt?: string;
 	lastError?: string;
+	/** suppressed 的原因：未授权 / 目的地失效 / 身份绑定失效。 */
+	suppressionReason?: string;
 }
 export type JobTask =
 	| { kind: "process_inbox"; inboxId: string }
@@ -467,10 +591,14 @@ export interface SourceState {
 	lastPrunedAt: string | null;
 }
 export interface Entities {
-	sourceStates: SourceState;
-	sourceRuns: SourceRun;
-	sourceSnapshots: SourceSnapshot;
-	sourceItems: SourceItem;
+	users: User;
+	identityBindings: IdentityBinding;
+	notificationDestinations: NotificationDestination;
+	notificationConsents: NotificationConsent;
+	subscriptionSettings: SubscriptionSettings;
+	subscriptionTargets: SubscriptionTarget;
+	webSessions: WebSession;
+	loginTransactions: LoginTransaction;
 	tasks: Task;
 	taskVersions: TaskVersion;
 	taskOperations: TaskOperation;
@@ -482,6 +610,10 @@ export interface Entities {
 	comparisonOperations: ComparisonOperation;
 	comparisonFollowUps: ComparisonFollowUp;
 	investigationAlerts: InvestigationAlert;
+	sourceStates: SourceState;
+	sourceRuns: SourceRun;
+	sourceSnapshots: SourceSnapshot;
+	sourceItems: SourceItem;
 	sessions: Session;
 	rounds: Round;
 	actions: ActionRef;

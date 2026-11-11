@@ -1,14 +1,27 @@
+import { AuthenticationService } from "@adpluse/core";
 import { fromEnvironment, runWorker } from "@adpluse/runtime";
+import { FeishuIdentityProvider } from "./feishu-auth.js";
 import { createApi } from "./server.js";
 
-const token = process.env.CONSOLE_TOKEN ?? "";
-if (token.length < 24)
-	throw new Error("CONSOLE_TOKEN must be at least 24 characters");
+const required = (name: string): string => {
+	const value = process.env[name]?.trim();
+	if (!value) throw new Error(`${name} is required`);
+	return value;
+};
+const publicOrigin = required("PUBLIC_ORIGIN");
+const applicationId = required("FEISHU_APP_ID");
+const applicationSecret = required("FEISHU_APP_SECRET");
+const tenantId = required("FEISHU_TENANT_KEY");
 const runtime = await fromEnvironment();
 const controller = new AbortController();
 const server = createApi(runtime, {
-	token,
-	userId: process.env.CONSOLE_USER_ID ?? "operator",
+	service: new AuthenticationService(runtime.storage),
+	provider: new FeishuIdentityProvider({
+		applicationId,
+		applicationSecret,
+		tenantId,
+	}),
+	publicOrigin,
 });
 server.listen(Number(process.env.PORT ?? 3000), "127.0.0.1", () => {
 	console.log(
