@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash, randomBytes } from "node:crypto";
 import test, { type TestContext } from "node:test";
 import { createApi } from "../apps/api/dist/server.js";
+import { AuthenticationService } from "../packages/core/dist/index.js";
 import { compose, type Runtime } from "../packages/runtime/dist/index.js";
 import { createTaskDraftExtractor, type TaskDraftStage } from "../packages/runtime/dist/task-draft-extractor.js";
 import { createTaskDraftModels } from "../packages/runtime/dist/task-draft-models.js";
@@ -128,20 +130,44 @@ test("task draft bounds simultaneous calls and releases slots on provider comple
 	assert.deepEqual(await third, {});
 });
 
-const token = "synthetic-console-token-000";
 async function serve(t: TestContext, runtime: Runtime) {
-	const server = createApi(runtime, { token, userId: "task-draft-test-owner" });
+	const service = new AuthenticationService(runtime.storage);
+	const publicOrigin = "http://localhost";
+	const token = randomBytes(32).toString("base64url");
+	const session = await service.createWebSession({
+		platform: "feishu",
+		applicationId: "cli_draft_test",
+		tenantId: "tenant-draft-test",
+		idType: "open_id",
+		externalId: "ou-draft-test-owner",
+	}, createHash("sha256").update(token).digest("hex"), new Date().toISOString());
+	const server = createApi(runtime, {
+		service,
+		publicOrigin,
+		provider: {
+			authorizationUrl() { throw new Error("unexpected OAuth request"); },
+			async verifyAuthorizationCode() { throw new Error("unexpected OAuth callback"); },
+		},
+	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
 	const address = server.address();
 	assert.ok(address && typeof address === "object");
-	return `http://127.0.0.1:${address.port}`;
+	return {
+		url: `http://127.0.0.1:${address.port}`,
+		userId: session.userId,
+		headers: {
+			cookie: `adpulse_session=${token}`,
+			origin: publicOrigin,
+			"content-type": "application/json",
+		},
+	};
 }
 
-function request(url: string, input: unknown, authorization = `Bearer ${token}`) {
-	return fetch(url + "/api/task-drafts/extract", {
+function request(server: Awaited<ReturnType<typeof serve>>, input: unknown, headers: HeadersInit = server.headers) {
+	return fetch(server.url + "/api/task-drafts/extract", {
 		method: "POST",
-		headers: { authorization, "content-type": "application/json" },
+		headers,
 		body: JSON.stringify(input),
 	});
 }
@@ -149,32 +175,33 @@ function request(url: string, input: unknown, authorization = `Bearer ${token}`)
 test("task draft endpoint authenticates, validates and creates no task or jobs", async (t) => {
 	const runtime = compose(new MemoryStorage(), []);
 	let received: { brief: string; stage: TaskDraftStage | undefined } | undefined;
-	const url = await serve(t, {
+	const server = await serve(t, {
 		...runtime,
 		extractTaskDraft: async (brief, stage) => {
 			received = { brief, stage };
 			return { product: brief };
 		},
 	});
-	assert.equal((await request(url, { brief: "试用装" }, "invalid")).status, 401);
+	assert.equal((await request(server, { brief: "试用装" }, { "content-type": "application/json" })).status, 401);
+	assert.equal((await request(server, { brief: "试用装" }, { ...server.headers, origin: "https://other.example" })).status, 403);
 	for (const invalid of [{ brief: "   " }, { brief: "x".repeat(2501) }, { brief: "试用装", userId: "spoofed" }, { brief: "试用装", stage: "unknown" }])
-		assert.equal((await request(url, invalid)).status, 400);
+		assert.equal((await request(server, invalid)).status, 400);
 	assert.equal(received, undefined);
-	const extracted = await request(url, { brief: "  试用装  " });
+	const extracted = await request(server, { brief: "  试用装  " });
 	assert.equal(extracted.status, 200);
 	assert.equal(extracted.headers.get("cache-control"), "no-store");
 	assert.deepEqual(await extracted.json(), { product: "试用装" });
 	assert.deepEqual(received, { brief: "试用装", stage: undefined });
-	assert.equal((await request(url, { brief: "试用装", stage: "overview" })).status, 200);
+	assert.equal((await request(server, { brief: "试用装", stage: "overview" })).status, 200);
 	assert.deepEqual(received, { brief: "试用装", stage: "overview" });
-	assert.deepEqual(await runtime.tasks.list("task-draft-test-owner"), []);
+	assert.deepEqual(await runtime.tasks.list(server.userId), []);
 	assert.equal(await runtime.worker.runOnce(), false);
 });
 
 test("task draft endpoint returns a generic unavailable error without a configured key", async (t) => {
 	assert.equal(createTaskDraftExtractor({ DEEPSEEK_API_KEY: "  " }), undefined);
-	const url = await serve(t, compose(new MemoryStorage(), []));
-	const response = await request(url, { brief: "试用装" });
+	const server = await serve(t, compose(new MemoryStorage(), []));
+	const response = await request(server, { brief: "试用装" });
 	assert.equal(response.status, 503);
 	assert.deepEqual(await response.json(), { error: "task draft extraction unavailable" });
 });
@@ -183,8 +210,8 @@ test("task draft endpoint returns a generic unavailable error for upstream failu
 	const extract = createTaskDraftExtractor(deepseekEnv, async () =>
 		Response.json({ error: "synthetic private provider error" }, { status: 401 }));
 	assert.ok(extract);
-	const url = await serve(t, { ...compose(new MemoryStorage(), []), extractTaskDraft: extract });
-	const response = await request(url, { brief: "试用装" });
+	const server = await serve(t, { ...compose(new MemoryStorage(), []), extractTaskDraft: extract });
+	const response = await request(server, { brief: "试用装" });
 	assert.equal(response.status, 503);
 	assert.deepEqual(await response.json(), { error: "task draft extraction unavailable" });
 });
@@ -279,9 +306,9 @@ test("temporary model credentials are verified, isolated, redacted, removable an
 		return providerReply("{}");
 	}, () => now);
 	const base = await serve(t, { ...compose(new MemoryStorage(), []), taskDraftModels: models });
-	const url = base + "/api/task-drafts/models";
+	const url = base.url + "/api/task-drafts/models";
 	assert.equal((await fetch(url)).status, 401);
-	const headers = { authorization: "Bearer " + token, "content-type": "application/json" };
+	const headers = base.headers;
 	const connect = () => fetch(url, { method: "PUT", headers, body: JSON.stringify({ provider: "deepseek", apiKey: "synthetic-personal-key" }) });
 	const connected = await connect();
 	assert.equal(connected.status, 200);
@@ -297,15 +324,15 @@ test("temporary model credentials are verified, isolated, redacted, removable an
 	assert.equal((await request(base, { provider: "deepseek", brief: "不能再调用" })).status, 503);
 	assert.equal((await connect()).status, 200);
 	now = 8 * 60 * 60 * 1000;
-	assert.equal(models.list("task-draft-test-owner").models[0]?.status, "unconfigured");
+	assert.equal(models.list(base.userId).models[0]?.status, "unconfigured");
 });
 
 test("connection changes are disabled unless enabled by deployment", async (t) => {
 	const models = createTaskDraftModels({}, async () => { throw new Error("unexpected network"); });
 	const base = await serve(t, { ...compose(new MemoryStorage(), []), taskDraftModels: models });
-	const response = await fetch(base + "/api/task-drafts/models", {
+	const response = await fetch(base.url + "/api/task-drafts/models", {
 		method: "PUT",
-		headers: { authorization: "Bearer " + token, "content-type": "application/json" },
+		headers: base.headers,
 		body: JSON.stringify({ provider: "deepseek", apiKey: "synthetic-personal-key" }),
 	});
 	assert.equal(response.status, 403);
