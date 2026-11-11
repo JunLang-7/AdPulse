@@ -122,7 +122,13 @@ function parseAmount(value: string, label: string): number | undefined {
 
 function parseCount(value: string, label: string, min = 0): number | undefined {
 	const count = parseAmount(value, label);
-	if (count !== undefined && (!Number.isSafeInteger(count) || count < min))
+	if (count === undefined) return undefined;
+	const [mantissa, exponent = "0"] = value.trim().toLowerCase().split("e");
+	const decimalPlaces = mantissa.split(".")[1]?.length ?? 0;
+	const digits = mantissa.replace(".", "");
+	const trailingZeros = digits.length - digits.replace(/0+$/, "").length;
+	const exactInteger = trailingZeros === digits.length || Number(exponent) + trailingZeros >= decimalPlaces;
+	if (!exactInteger || !Number.isSafeInteger(count) || count < min)
 		throw new Error(`${label}请填写大于或等于 ${min} 的整数。`);
 	return count;
 }

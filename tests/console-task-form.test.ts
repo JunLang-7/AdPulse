@@ -71,6 +71,38 @@ test("editing a legacy task preserves channel keys, time precision and report un
 	assert.equal(toInput(yuan).rules.minimumSpendMinor, 12300);
 });
 
+test("integer fields validate decimal text before numeric conversion", () => {
+	const form = { ...emptyForm, product: "测试任务" };
+	for (const field of ["statWindowDays", "minimumConsultations", "handlingDeadlineHours", "maxPushRounds", "alertThreshold", "minimumSpend"] as const) {
+		for (const value of ["1.0000000000000001", "1e-400", "9007199254740992"]) {
+			assert.throws(() => toInput({ ...form, [field]: value }), /整数/);
+		}
+		assert.deepEqual(toInput({ ...form, [field]: " " }).rules, {});
+	}
+	assert.deepEqual(toInput({
+		...form,
+		statWindowDays: " 12.00 ",
+		minimumConsultations: "0e-400",
+		handlingDeadlineHours: "0.00",
+		maxPushRounds: ".1e1",
+		moneyMode: "report",
+		alertThreshold: "120e-1",
+		minimumSpend: "0",
+	}).rules, {
+		statWindowDays: 12,
+		minimumConsultations: 0,
+		handlingDeadlineHours: 0,
+		maxPushRounds: 1,
+		alertThresholdMinor: 12,
+		minimumSpendMinor: 0,
+	});
+	assert.throws(() => toInput({ ...form, maxPushRounds: "0" }), /大于或等于 1 的整数/);
+	assert.deepEqual(toInput({
+		...form,
+		channels: [{ ...emptyChannel, name: "测试渠道", budget: "12.5", bidCpc: "1e-7" }],
+	}).strategy.channels, { 测试渠道: { budget: 12.5, bidCpc: 1e-7 } });
+});
+
 test("invalid dates, amounts and duplicate channels get plain-language errors", () => {
 	const form = { ...emptyForm, product: "测试任务" };
 	assert.throws(() => toInput({ ...form, startsAt: "2026-02-30T00:00" }), /有效的北京时间/);
