@@ -109,6 +109,68 @@ export interface SubscriptionSettings {
 	updatedAt: string;
 }
 
+/** 主动通知批次：一人一天一类一份，用于幂等与「当日补一次」。 */
+export type NotificationBatchKind = "digest";
+export type NotificationBatchStatus =
+	| "queued"
+	| "sent"
+	| "cancelled"
+	| "expired"
+	| "suppressed"
+	| "failed";
+
+export interface NotificationBatch {
+	/** 幂等标识：ownerId + localDate + kind。 */
+	id: string;
+	ownerId: string;
+	kind: NotificationBatchKind;
+	/** 北京时间的本地日期（YYYY-MM-DD），不跟随服务器时区。 */
+	localDate: string;
+	/** 生成时的订阅配置版本；投递前比对，不等即视为过期。 */
+	settingsVersion: number;
+	status: NotificationBatchStatus;
+	/** 计划发送时刻（UTC 表示，对应北京时间 09:30）。 */
+	scheduledAt: string;
+	/** 是否为「错过 09:30 后当日补发」。 */
+	catchUp?: boolean;
+	sentAt?: string;
+	statusReason?: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+/** 单条待发信息；logicalKey 保证同一逻辑事件不因重试/换标题/转载重复通知。 */
+export type NotificationItemKind = "effect_alert";
+export type NotificationItemStatus = "queued" | "sent" | "cancelled" | "expired";
+
+export interface NotificationItem {
+	/** ownerId + logicalKey：同一逻辑事件只有一行，重发靠 revision 推进。 */
+	id: string;
+	ownerId: string;
+	batchId: string;
+	logicalKey: string;
+	kind: NotificationItemKind;
+	taskId?: string;
+	title: string;
+	summary: string;
+	/** 为什么与关注对象/任务相关；未知保留未知，不补成结论。 */
+	relevance: string;
+	/** 来源引用：只存引用与时间，不存原文。 */
+	sources: Array<{
+		label: string;
+		url?: string;
+		publishedAt?: string | null;
+		observedAt?: string;
+	}>;
+	/** 实质更新序号：新增证据或纠正才 +1，并据此再次通知。 */
+	revision: number;
+	status: NotificationItemStatus;
+	/** 复用 Delivery：不另建投递状态机。 */
+	deliveryId?: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
 export interface WebSession {
 	/** SHA-256 digest of the opaque cookie value; never store the cookie itself. */
 	id: string;
@@ -596,6 +658,8 @@ export interface Entities {
 	notificationDestinations: NotificationDestination;
 	notificationConsents: NotificationConsent;
 	subscriptionSettings: SubscriptionSettings;
+	notificationBatches: NotificationBatch;
+	notificationItems: NotificationItem;
 	subscriptionTargets: SubscriptionTarget;
 	webSessions: WebSession;
 	loginTransactions: LoginTransaction;

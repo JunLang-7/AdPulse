@@ -271,6 +271,21 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
 - 组件测试只覆盖「按钮是否真的禁用」「提示是否真的渲染」这类交互事实；状态推导仍走纯函数测试
   （`tests/console-*.test.ts`），两者不互相替代。
 
+## 5.1 主动通知的批次与去重（#37）
+
+`packages/core/src/notifications-queue.ts`（PR1：只建模队列，不做调度与发送）：
+
+- **批次**：`ownerId + 本地日期(北京时间) + 类型` 唯一，一天一份；`scheduledAt` 是 09:30 北京时间对应的 UTC
+  时刻；`settingsVersion` 记录生成时的订阅配置版本，投递前比对。关闭推送时**不生成**批次。
+- **条目**：`ownerId + logicalKey` 唯一。同一逻辑事件的重试、换标题、多源转载只更新同一行，
+  不新增通知；只有 `revision` 提升（实质新增证据/纠正）才再次排队并保留变化说明。
+- **取消是终态**：`cancelPending(ownerId, reason, filter?)` 只动 `queued`；`sent` 不回滚、不改业务结果。
+  已 `cancelled`/`expired` 的条目**不会**因为重新开启或重复提交而复活。
+- 时间换算固定 UTC+8（中国无夏令时），不读服务器时区；`localDate` 在 UTC 16:00 翻日。
+- 唯一性由数据库索引兜住（`adpulse_notification_batch_key` / `adpulse_notification_item_key`），
+  不依赖应用层判断；条目迁移到新批次时只改 `batchId`，不改 `logicalKey`。
+- 投递仍走既有 `Delivery`（条目的 `deliveryId` 指向它），不新增第二套投递状态机。
+
 ## 6. PostgreSQL 集成测试
 
 TEST_DATABASE_URL 必须指向独立、可丢弃的测试数据库，不能使用生产数据库。

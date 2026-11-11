@@ -1,0 +1,319 @@
+// 主动通知的批次与去重（#37 PR1）：只建模「哪些信息该发、什么时候该发、什么时候取消」。
+// 不做筛选规则、不做渲染、不发消息——调度与投递在 PR2，决策卡在 PR3。
+//
+// 三条不变量：
+// 1) 幂等：ownerId + 本地日期 + 类型 只有一份批次；并发调度不会生成两份。
+// 2) 去重：ownerId + logicalKey 只有一行条目；重试/换标题/多源转载不新增通知，
+//    只有实质更新（revision 提升）才再次通知。
+// 3) 取消是终态：关闭推送/退订后条目置 cancelled，重新开启不得复活旧队列。
+
+import crypto from "node:crypto";
+import type { Storage, Transaction } from "./ports/storage.js";
+import type {
+	NotificationBatch,
+	NotificationItem,
+	NotificationItemKind,
+	NotificationItemStatus,
+} from "./state/model.js";
+
+/** 北京时间固定 UTC+8（中国自 1991 年起无夏令时），不依赖服务器时区。 */
+const SHANGHAI_OFFSET_MINUTES = 8 * 60;
+const DIGEST_HOUR = 9;
+const DIGEST_MINUTE = 30;
+
+export class NotificationQueueError extends Error {
+	constructor(
+		readonly reason: "invalid_item" | "batch_unavailable",
+		message: string,
+	) {
+		super(message);
+		this.name = "NotificationQueueError";
+	}
+}
+
+/** 某时刻对应的北京时间本地日期（YYYY-MM-DD）。 */
+export function localDate(at: Date): string {
+	const shifted = new Date(at.getTime() + SHANGHAI_OFFSET_MINUTES * 60_000);
+	return shifted.toISOString().slice(0, 10);
+}
+
+/** 指定北京日期 09:30 对应的 UTC 时刻。 */
+export function digestInstant(date: string): string {
+	const [year, month, day] = date.split("-").map(Number);
+	const utcMs =
+		Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1, DIGEST_HOUR, DIGEST_MINUTE) -
+		SHANGHAI_OFFSET_MINUTES * 60_000;
+	return new Date(utcMs).toISOString();
+}
+
+export const batchId = (
+	ownerId: string,
+	kind: NotificationBatch["kind"],
+	date: string,
+): string => `${kind}:${ownerId}:${date}`;
+
+/** 条目幂等标识：同一逻辑事件在本人范围内唯一。 */
+export const itemId = (ownerId: string, logicalKey: string): string =>
+	`${ownerId}:${logicalKey}`;
+
+const validText = (value: unknown, max: number): value is string =>
+	typeof value === "string" &&
+	value.trim().length > 0 &&
+	value.trim().length <= max &&
+	!/[\u0000-\u001f]/.test(value);
+
+export interface QueueItemInput {
+	logicalKey: string;
+	kind: NotificationItemKind;
+	taskId?: string;
+	title: string;
+	summary: string;
+	relevance: string;
+	sources: NotificationItem["sources"];
+	/** 实质更新序号；同键同 revision 视为重复投递请求。 */
+	revision: number;
+}
+
+export interface QueueResult {
+	/** queued：本次新增或提升版本后重新排队；duplicate：同一版本已排队/已发；cancelled：已取消过，不复活。 */
+	outcome: "queued" | "duplicate" | "cancelled";
+	item?: NotificationItem;
+}
+
+export class NotificationQueue {
+	constructor(
+		private readonly storage: Storage,
+		private readonly now: () => Date = () => new Date(),
+	) {}
+
+	/**
+	 * 生成（或取回）当天批次。同一 owner + 本地日期 + 类型只可能有一份；
+	 * 关闭推送期间不生成新批次（返回 null），避免为已关闭用户排队。
+	 */
+	async ensureDigestBatch(
+		ownerId: string,
+		options: { settingsVersion: number; enabled: boolean },
+	): Promise<NotificationBatch | null> {
+		if (!options.enabled) return null;
+		const at = this.now();
+		const date = localDate(at);
+		const id = batchId(ownerId, "digest", date);
+		return this.storage.transaction(async (tx) => {
+			const existing = await tx.notificationBatches.get(id);
+			if (existing) return existing;
+			const batch: NotificationBatch = {
+				id,
+				ownerId,
+				kind: "digest",
+				localDate: date,
+				settingsVersion: options.settingsVersion,
+				status: "queued",
+				scheduledAt: digestInstant(date),
+				createdAt: at.toISOString(),
+				updatedAt: at.toISOString(),
+			};
+			await tx.notificationBatches.put(batch);
+			return batch;
+		});
+	}
+
+	/**
+	 * 把一条信息排进当天批次。
+	 * - 同 logicalKey 已存在且 revision 不高于现存：duplicate（不重复通知）
+	 * - 已取消过：cancelled（重新开启不补旧队列）
+	 * - revision 提升：更新内容并重新排队，作为「实质更新」再次通知
+	 */
+	async queue(
+		ownerId: string,
+		input: QueueItemInput,
+		options: { settingsVersion: number; enabled: boolean },
+	): Promise<QueueResult> {
+		if (!validText(input.logicalKey, 200))
+			throw new NotificationQueueError("invalid_item", "logicalKey required");
+		if (!validText(input.title, 200) || !validText(input.summary, 1000))
+			throw new NotificationQueueError("invalid_item", "title and summary required");
+		if (!Number.isInteger(input.revision) || input.revision < 1)
+			throw new NotificationQueueError("invalid_item", "revision must be >= 1");
+
+		const batch = await this.ensureDigestBatch(ownerId, options);
+		if (!batch)
+			throw new NotificationQueueError(
+				"batch_unavailable",
+				"proactive notifications are disabled",
+			);
+
+		return this.storage.transaction(async (tx) => {
+			const id = itemId(ownerId, input.logicalKey);
+			const existing = await tx.notificationItems.get(id);
+			const at = this.now().toISOString();
+			if (existing) {
+				// 已取消/已过期是终态：不因重新开启或重复投递请求复活。
+				if (existing.status === "cancelled" || existing.status === "expired")
+					return { outcome: "cancelled", item: existing };
+				if (input.revision <= existing.revision)
+					return { outcome: "duplicate", item: existing };
+				const taskId = input.taskId ?? existing.taskId;
+				const next: NotificationItem = {
+					...existing,
+					batchId: batch.id,
+					...(taskId ? { taskId } : {}),
+					title: input.title.trim(),
+					summary: input.summary.trim(),
+					relevance: input.relevance,
+					sources: input.sources,
+					revision: input.revision,
+					status: "queued",
+					updatedAt: at,
+					...(existing.deliveryId ? { deliveryId: existing.deliveryId } : {}),
+				};
+				await tx.notificationItems.put(next);
+				return { outcome: "queued", item: next };
+			}
+			const item: NotificationItem = {
+				id,
+				ownerId,
+				batchId: batch.id,
+				logicalKey: input.logicalKey,
+				kind: input.kind,
+				...(input.taskId ? { taskId: input.taskId } : {}),
+				title: input.title.trim(),
+				summary: input.summary.trim(),
+				relevance: input.relevance,
+				sources: input.sources,
+				revision: input.revision,
+				status: "queued",
+				createdAt: at,
+				updatedAt: at,
+			};
+			await tx.notificationItems.put(item);
+			return { outcome: "queued", item };
+		});
+	}
+
+	/** 本人待发条目（queued），按 key 稳定排序，便于批次内容冻结。 */
+	async pending(ownerId: string): Promise<NotificationItem[]> {
+		return this.storage.transaction(async (tx) =>
+			(await tx.notificationItems.all())
+				.filter((item) => item.ownerId === ownerId && item.status === "queued")
+				.sort((left, right) => left.id.localeCompare(right.id)),
+		);
+	}
+
+	/**
+	 * 取消尚未发送的通知（关闭全部推送、退订对象、身份/授权失效、删除资料）。
+	 * 只动 queued；sent 不回滚，也不改业务结果。
+	 */
+	async cancelPending(
+		ownerId: string,
+		reason: string,
+		filter?: (item: NotificationItem) => boolean,
+	): Promise<{ items: number; batches: number }> {
+		const at = this.now().toISOString();
+		return this.storage.transaction(async (tx) => {
+			let items = 0;
+			for (const item of await tx.notificationItems.all()) {
+				if (item.ownerId !== ownerId || item.status !== "queued") continue;
+				if (filter && !filter(item)) continue;
+				await tx.notificationItems.put({
+					...item,
+					status: "cancelled" satisfies NotificationItemStatus,
+					updatedAt: at,
+				});
+				items += 1;
+			}
+			let batches = 0;
+			for (const batch of await tx.notificationBatches.all()) {
+				if (batch.ownerId !== ownerId || batch.status !== "queued") continue;
+				// 只取消已经没有待发条目的批次；还有条目的批次留给投递。
+				const remaining = (
+					await tx.notificationItems.all()
+				).some(
+					(item) =>
+						item.batchId === batch.id && item.status === "queued",
+				);
+				if (remaining) continue;
+				await tx.notificationBatches.put({
+					...batch,
+					status: "cancelled",
+					statusReason: reason,
+					updatedAt: at,
+				});
+				batches += 1;
+			}
+			return { items, batches };
+		});
+	}
+
+	/** 标记条目已投递（投递本身走 Delivery；这里只同步业务状态）。 */
+	async markSent(
+		ownerId: string,
+		itemKey: string,
+		deliveryId: string,
+	): Promise<void> {
+		await this.storage.transaction(async (tx) => {
+			const id = itemId(ownerId, itemKey);
+			const item = await tx.notificationItems.get(id);
+			if (!item || item.ownerId !== ownerId || item.status !== "queued") return;
+			await tx.notificationItems.put({
+				...item,
+				status: "sent",
+				deliveryId,
+				updatedAt: this.now().toISOString(),
+			});
+		});
+	}
+
+	/** 批次状态流转；revision 不参与，批次只关心排队/终态。 */
+	async setBatchStatus(
+		id: string,
+		status: NotificationBatch["status"],
+		options: { reason?: string; catchUp?: boolean } = {},
+	): Promise<NotificationBatch | null> {
+		return this.storage.transaction(async (tx) => {
+			const batch = await tx.notificationBatches.get(id);
+			if (!batch) return null;
+			const at = this.now().toISOString();
+			const next: NotificationBatch = {
+				...batch,
+				status,
+				updatedAt: at,
+				...(status === "sent" ? { sentAt: at } : {}),
+				...(options.reason ? { statusReason: options.reason } : {}),
+				...(options.catchUp ? { catchUp: true } : {}),
+			};
+			await tx.notificationBatches.put(next);
+			return next;
+		});
+	}
+
+	/** 供 PR2 的调度使用：所有排队中的批次。 */
+	async queuedBatches(): Promise<NotificationBatch[]> {
+		return this.storage.transaction(async (tx) =>
+			(await tx.notificationBatches.all())
+				.filter((batch) => batch.status === "queued")
+				.sort((left, right) => left.scheduledAt.localeCompare(right.scheduledAt)),
+		);
+	}
+}
+
+/** 生成稳定的逻辑事件键：同一来源的同一事件在本人范围内恒定。 */
+export function logicalKeyFor(input: {
+	kind: NotificationItemKind;
+	taskId?: string;
+	sourceRef: string;
+	eventRef: string;
+}): string {
+	const scope = input.taskId ? `task:${input.taskId}` : "account";
+	return [input.kind, scope, input.sourceRef, input.eventRef]
+		.map((part) => part.replace(/[|\s]+/g, "_"))
+		.join("|");
+}
+
+/** 条目在批次渲染时需要的指纹，用于判断「内容是否真的变了」。 */
+export function itemFingerprint(item: Pick<NotificationItem, "title" | "summary" | "revision">): string {
+	return crypto
+		.createHash("sha256")
+		.update(`${item.revision}\n${item.title}\n${item.summary}`)
+		.digest("hex")
+		.slice(0, 16);
+}

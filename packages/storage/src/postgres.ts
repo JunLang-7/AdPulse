@@ -186,6 +186,20 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (9)",
 				);
 			}
+			if (!current.has(10)) {
+				for (const name of ["notificationBatches", "notificationItems"])
+					await this.createEntityTable(client, name);
+				// 一人一天一类一份批次：并发调度不会生成两份；条目按逻辑事件唯一。
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_notification_batch_key
+					ON adpulse_notificationBatches ((data->>'ownerId'), (data->>'kind'), (data->>'localDate'))`);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_notification_item_key
+					ON adpulse_notificationItems ((data->>'ownerId'), (data->>'logicalKey'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_notification_item_batch
+					ON adpulse_notificationItems ((data->>'batchId'), (data->>'status'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (10)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");
