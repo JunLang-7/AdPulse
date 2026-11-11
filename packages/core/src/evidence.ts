@@ -67,7 +67,7 @@ const operationId = (
 
 const validBoundary = (value: string): boolean => {
 	const match = value.match(
-		/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i,
+		/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3}0*)?(?:Z|[+-]\d{2}:\d{2})$/i,
 	);
 	if (!match) return false;
 	const [, year, month, day, hour, minute, second] = match;
