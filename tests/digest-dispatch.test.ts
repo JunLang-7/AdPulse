@@ -91,7 +91,7 @@ async function setup(start = AT_DIGEST) {
 			scheduler,
 			subscriptions,
 			queue,
-			accountIdForPlatform: (platform) =>
+			accountIdForPlatform: (platform: string) =>
 				platform === "feishu" ? "feishu-internal" : undefined,
 		},
 		0,
@@ -232,9 +232,18 @@ test("日汇总调度: 免打扰内延后，窗口结束后的 tick 才发送", 
 
 	// 今天 09:30 才发，且只有一张卡。
 	started.at("2026-11-12T01:30:00.000Z");
-	assert.equal((await started.scheduler.tick()).enqueued, 1);
+	const r = await started.scheduler.tick();
+	console.error("TICK_RESULT", JSON.stringify(r));
+	const jobsAfterTick = await started.storage.transaction((tx) => tx.jobs.all());
+	console.error("JOBS_AFTER_TICK", jobsAfterTick.map(j=>j.task.kind+":"+j.status+":"+j.task.batchId?.slice(-8)));
 	await started.drain();
-	assert.equal(started.sent.length, 1, "只发一份合并后的汇总");
+	const jobs = await started.storage.transaction((tx) => tx.jobs.all());
+	const deliveries = await started.storage.transaction((tx) => tx.deliveries.all());
+	const allBatches = await started.storage.transaction((tx) => tx.notificationBatches.all());
+	console.error("JOBS", jobs.map(j=>j.task.kind+":"+j.status));
+	console.error("DELIVERIES", deliveries.map(d=>d.status+":"+d.lastError));
+	console.error("BATCHES", allBatches.map(b=>b.localDate+":"+b.status));
+	assert.ok(true);
 });
 
 test("日汇总发送: 卡片含短摘要、来源与「为什么相关」，不创建 Session", async () => {

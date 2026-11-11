@@ -4,6 +4,7 @@ import {
 	type OutboundChannel,
 	RecipientUnreachableError,
 } from "@adpluse/core";
+import { createHash } from "node:crypto";
 import { toFeishuCard } from "./feishuRenderer.js";
 
 /** 平台表示收件人不可达的错误码：重试无意义，可能意味着地址已失效。 */
@@ -43,7 +44,15 @@ export class FeishuOutbound implements OutboundChannel {
 					receive_id: delivery.recipient.externalId,
 					msg_type: "interactive",
 					content: JSON.stringify(toFeishuCard(delivery)),
-					uuid: delivery.id,
+					// 飞书 uuid 上限 50 字符；长 id（如日汇总的批次 key）哈希成 50 位十六进制，
+					// 保证幂等键仍然唯一，避免直接截断导致碰撞。
+					uuid:
+						delivery.id.length <= 50
+							? delivery.id
+							: createHash("sha256")
+									.update(delivery.id)
+									.digest("hex")
+									.slice(0, 50),
 				}),
 			},
 		);

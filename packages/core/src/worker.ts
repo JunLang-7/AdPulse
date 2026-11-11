@@ -15,6 +15,7 @@ import {
 	type NotificationQueue,
 } from "./notifications-queue.js";
 import type { SubscriptionService } from "./subscriptions.js";
+import type { DecisionDeliveryService } from "./decision-delivery.js";
 import { RecipientUnreachableError, type OutboundChannel } from "./ports/channel.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type { Job } from "./state/model.js";
@@ -39,11 +40,16 @@ export class Worker {
 			accountIdForPlatform: (platform: string) => string | undefined;
 			detailBase?: string;
 		},
+		/** 决策卡及时推送：把 open 告警接进单聊。 */
+		private decisionDelivery?: DecisionDeliveryService,
 		private readonly scheduleIntervalMs = 30_000,
+		private readonly scanIntervalMs = 30_000,
 	) {}
 
 	/** 上一次日汇总调度的时间戳，用于在没有任务可领时按间隔触发。 */
 	private lastScheduleTick = 0;
+	/** 上一次扫描 open 告警的时间戳。 */
+	private lastDecisionScan = 0;
 
 	/**
 	 * 本次领取的租约在**当前事务**里是否仍然有效。
@@ -62,6 +68,16 @@ export class Worker {
 		const job = await this.storage.claimJob(this.now(), 60_000);
 		if (!job) {
 			// 没有任务可领时按间隔触发一次日汇总调度；不引第二个调度进程。
+			// 决策卡及时推送：没有任务可领时按间隔扫一次 open 告警。
+			if (
+				this.decisionDelivery &&
+				typeof (this.decisionDelivery as any).openAlerts === "function" &&
+				Date.parse(this.now()) - this.lastDecisionScan >= this.scanIntervalMs
+			) {
+				this.lastDecisionScan = Date.parse(this.now());
+				for (const alert of await (this.decisionDelivery as any).openAlerts(undefined))
+					await this.decisionDelivery.dispatch(alert.id).catch(() => undefined);
+			}
 			if (
 				this.digest &&
 				Date.parse(this.now()) - this.lastScheduleTick >= this.scheduleIntervalMs

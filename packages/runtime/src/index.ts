@@ -12,6 +12,7 @@ import {
 	NotificationQueue,
 	NotificationService,
 	Orchestrator,
+	DecisionDeliveryService,
 	SubscriptionService,
 	resolveActiveIdentity,
 	SOURCE_DEFINITIONS,
@@ -81,6 +82,12 @@ export function compose(
 	for (const account of accounts)
 		if (account.identityScope)
 			platformAccounts.set(account.identityScope.platform, account.id);
+	const decisionDelivery = new DecisionDeliveryService(
+		storage,
+		decisions,
+		notifications,
+		(platform: string) => platformAccounts.get(platform),
+	);
 	return {
 		storage,
 		channels,
@@ -102,9 +109,10 @@ export function compose(
 				scheduler: digestScheduler,
 				subscriptions,
 				queue: notificationQueue,
-				accountIdForPlatform: (platform) => platformAccounts.get(platform),
+				accountIdForPlatform: (platform: string) => platformAccounts.get(platform),
 				...(detailBase ? { detailBase } : {}),
 			},
+			decisionDelivery,
 		),
 	};
 }

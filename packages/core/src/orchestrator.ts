@@ -12,6 +12,18 @@ import type {
 	TaskVersion,
 } from "./state/model.js";
 
+/** 系统主动发起的会话输入（#37）：只接受 owner 本人的已验证身份作为操作者。 */
+export interface StartSystemSessionInput {
+	requestId: string;
+	ownerId: string;
+	recipient: Recipient;
+	taskRef?: { taskId: string; taskVersion: number };
+	strategy: Strategy;
+	limits: Limits;
+	signal: Signal;
+	expiresAt?: string;
+}
+
 export interface StartSession {
 	requestId: string;
 	ownerId: string;
@@ -57,7 +69,32 @@ export class Orchestrator {
 		private detailUrlFor?: (sessionId: string) => string | undefined,
 	) {}
 
+	/**
+	 * 系统主动发起（#37 PR3）：决策卡及时推送，但仍复用既有轮次/候选/权限校验。
+	 * 有效期不取客户端传入，由服务层按固定 24 小时上限与更早的任务期限取小。
+	 */
+	async startSystemSession(
+		input: StartSystemSessionInput,
+		options: { now: string; validityHours?: number },
+	): Promise<Session> {
+		if (!options.now || !Number.isFinite(Date.parse(options.now)))
+			throw new Error("now is required");
+		const validity = options.validityHours ?? 24;
+		const requested = input.expiresAt
+			? Date.parse(input.expiresAt)
+			: Number.POSITIVE_INFINITY;
+		const capMs = Date.parse(options.now) + validity * 60 * 60 * 1000;
+		// 系统发起的会话只接受 owner 本人的已验证身份作为操作者，
+		// 不接受客户端传入协作者列表。
+		return this.startSession({
+			...input,
+			expiresAt: new Date(Math.min(requested, capMs)).toISOString(),
+			allowedActorIds: [input.recipient.externalId],
+		});
+	}
+
 	async startSession(input: StartSession): Promise<Session> {
+
 		validateStrategy(input.strategy, input.limits);
 		if (
 			!input.requestId ||
