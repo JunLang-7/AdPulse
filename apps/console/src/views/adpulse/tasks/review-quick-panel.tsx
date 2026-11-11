@@ -8,6 +8,7 @@ import {
 	cellText,
 	estimateReview,
 	findReviewHeader,
+	isYuanColumn,
 	type QuickReviewInput,
 	reviewInputFromRow,
 	suggestReviewColumns,
@@ -206,6 +207,7 @@ function ReviewMapping({ data, headerIndex, onConfirm }: {
 	const rows = data.flatMap((row, index) => index > headerIndex && row.some((cell) => cellText(cell) !== "") ? [index] : []);
 	const [rowNumber, setRowNumber] = useState(rows.length === 1 ? String(rows[0] + 1) : "");
 	const [columns, setColumns] = useState(() => suggestReviewColumns(header));
+	const [confirmedSpendCell, setConfirmedSpendCell] = useState("");
 	const rowIndex = Number(rowNumber) - 1;
 	const selectedRow = rows.includes(rowIndex) ? data[rowIndex] : undefined;
 	let preview: QuickReviewInput | undefined;
@@ -220,6 +222,8 @@ function ReviewMapping({ data, headerIndex, onConfirm }: {
 	if (!rows.length) return <p>列名下方没有数据。请调整列名所在行，或手动填写。</p>;
 	const options = header.flatMap((cell, index) => cellText(cell) ? [{ index, label: cellText(cell) }] : []);
 	if (options.length > 200) return <p>列太多，请把需要的列复制到新的工作表后重试。</p>;
+	const spendCell = `${rowIndex}:${columns.spend}`;
+	const requiresYuanConfirmation = Boolean(preview?.spend) && !isYuanColumn(cellText(header[Number(columns.spend)]));
 
 	return (
 		<div className="space-y-3 rounded-md border p-3">
@@ -264,8 +268,16 @@ function ReviewMapping({ data, headerIndex, onConfirm }: {
 						))}
 					</div>
 					{error ? <p role="alert" className="text-destructive">{error}</p> : null}
+					{requiresYuanConfirmation ? (
+						<label className="flex items-start gap-2">
+							<input type="checkbox" className="mt-1" checked={confirmedSpendCell === spendCell}
+								onChange={(event) => setConfirmedSpendCell(event.target.checked ? spendCell : "")} />
+							<span>我已核对，这个花费数字的单位是人民币元。</span>
+						</label>
+					) : null}
 					<p className="text-xs text-muted-foreground">确认后，试算将使用这一行的数字。</p>
-					<Button type="button" disabled={!preview || (!preview.spend && !preview.consultations)}
+					<Button type="button" disabled={!preview || (!preview.spend && !preview.consultations) ||
+						(requiresYuanConfirmation && confirmedSpendCell !== spendCell)}
 						onClick={() => { if (preview) onConfirm(preview); }}>
 						确认并试算
 					</Button>

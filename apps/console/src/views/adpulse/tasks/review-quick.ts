@@ -1,13 +1,22 @@
 import type { Row, SheetData } from "read-excel-file/browser";
 import type { components } from "../../../generated/api.js";
-import { parseCount, parseYuan } from "./task-form.ts";
+import { parseYuan } from "./task-form.ts";
 
 type TaskRules = components["schemas"]["TaskRules"];
 export type QuickReviewInput = { spend: string; consultations: string };
 
+function parseConsultations(value: string, label: string): number | undefined {
+	const text = value.trim();
+	if (!text) return undefined;
+	const count = Number(text);
+	if (!/^\d+(?:\.0+)?$/.test(text) || !Number.isSafeInteger(count))
+		throw new Error(`${label}请填写大于或等于 0 的整数。`);
+	return count;
+}
+
 export function estimateReview(input: QuickReviewInput, rules: TaskRules) {
 	const spendMinor = parseYuan(input.spend, "投放花费");
-	const consultations = parseCount(input.consultations, "咨询次数");
+	const consultations = parseConsultations(input.consultations, "咨询次数");
 	const totals = { spendMinor, consultations };
 	if (spendMinor === undefined || !consultations) return totals;
 
@@ -32,6 +41,9 @@ export function estimateReview(input: QuickReviewInput, rules: TaskRules) {
 
 const spendHeaders = new Set(["花费", "投放花费", "广告花费", "消耗", "广告消耗", "消费", "spend", "cost"]);
 const consultationHeaders = new Set(["咨询", "咨询次数", "咨询量", "咨询数", "consultations"]);
+const foreignCurrency = /\b(?:USD|HKD|EUR|GBP|JPY|KRW|TWD|CAD|AUD|SGD|INR)\b|美元|港[元币]|欧元|英镑|日[元圆]|円|韩[元圆]|台币|卢比|[$€£₩₹]/i;
+const nonYuanUnit = /\((?:单位:)?(?:人民币)?分\)$|(?:人民币分|单位:分)$|[百千万亿]元|\b(?:FEN|CENTS?)\b/i;
+const nonConsultationMetric = /线索|咨询人数|\(人\)|\bleads?\b/i;
 
 export function cellText(cell: Row<string>[number] | undefined): string {
 	return cell instanceof Date ? cell.toISOString().replace(/T00:00:00\.000Z$/, "") : String(cell ?? "").trim();
@@ -64,6 +76,11 @@ export function findReviewHeader(data: SheetData<string>): number {
 		Math.max(0, data.findIndex((row) => row.some((cell) => cellText(cell) !== "")));
 }
 
+export function isYuanColumn(title: string): boolean {
+	const normalized = title.normalize("NFKC").replace(/\s+/g, "");
+	return /\((?:单位:)?(?:人民币元|元|CNY)\)$|人民币元$/i.test(normalized);
+}
+
 export function reviewInputFromRow(
 	row: Row<string>,
 	header: Row<string>,
@@ -71,11 +88,11 @@ export function reviewInputFromRow(
 ): QuickReviewInput {
 	if (columns.spend && columns.spend === columns.consultations)
 		throw new Error("请为花费和咨询次数选择不同的列。");
-	const spendColumn = cellText(header[Number(columns.spend)]).normalize("NFKC");
-	if (columns.spend && /(?:\(分\)|美元|港元|欧元|英镑|\b(?:USD|HKD|EUR|GBP)\b|[$€£])/i.test(spendColumn))
+	const spendColumn = cellText(header[Number(columns.spend)]).normalize("NFKC").replace(/_/g, " ");
+	if (columns.spend && (foreignCurrency.test(spendColumn) || nonYuanUnit.test(spendColumn.replace(/\s*([():])\s*/g, "$1"))))
 		throw new Error("花费列的单位不是人民币元。请换一列，或换算后手动填写。");
-	const consultationColumn = cellText(header[Number(columns.consultations)]).normalize("NFKC");
-	if (columns.consultations && /线索|咨询人数|\(人\)/.test(consultationColumn))
+	const consultationColumn = cellText(header[Number(columns.consultations)]).normalize("NFKC").replace(/_/g, " ");
+	if (columns.consultations && nonConsultationMetric.test(consultationColumn))
 		throw new Error("这一列的口径和咨询次数不同，请选择咨询次数列或暂不带入。");
 
 	const numericText = (value: string, money = false) => {
@@ -86,6 +103,6 @@ export function reviewInputFromRow(
 	const spend = columns.spend ? numericText(cellText(row[Number(columns.spend)]), true) : "";
 	const consultations = columns.consultations ? numericText(cellText(row[Number(columns.consultations)])) : "";
 	parseYuan(spend, "这一行的花费");
-	parseCount(consultations, "这一行的咨询次数");
+	parseConsultations(consultations, "这一行的咨询次数");
 	return { spend, consultations };
 }
