@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import {
@@ -17,6 +21,9 @@ import {
 	redactDatabaseUrl,
 } from "../scripts/acceptance/redact.mjs";
 import { USAGE, parseArgs } from "../scripts/acceptance/cli.mjs";
+import { ConsoleApiError, authHeaders, createConsoleClient } from "../scripts/acceptance/console-api.mjs";
+import { OUTBOUND_FAILURE_MESSAGE } from "../scripts/acceptance/fault-injection.mjs";
+import { main } from "../scripts/acceptance/cli.mjs";
 import {
 	recordFileName,
 	renderRecord,
@@ -340,6 +347,23 @@ test("record: 渲染来源列与证据分级说明，表格内容转义", () => 
 	assert.match(content, /结论行/);
 });
 
+test("console-api: 会话 Cookie 优先，副作用请求补同源 Origin", () => {
+	assert.deepEqual(authHeaders({ sessionCookie: "abc" }), {
+		cookie: "adpulse_session=abc",
+	});
+	assert.deepEqual(authHeaders({ sessionCookie: "abc", origin: "https://x" }, "POST"), {
+		cookie: "adpulse_session=abc",
+		origin: "https://x",
+	});
+	// cookie 存在时不回退 Bearer，避免误用已废弃的静态凭据。
+	assert.deepEqual(authHeaders({ sessionCookie: "abc", token: "t" }), {
+		cookie: "adpulse_session=abc",
+	});
+	assert.deepEqual(authHeaders({ token: "t" }), { authorization: "Bearer t" });
+	assert.throws(() => authHeaders({}), /缺少控制台凭据/);
+	assert.throws(() => authHeaders({ sessionCookie: "", token: "" }), /缺少控制台凭据/);
+});
+
 test("cli: 场景用到的开关都能解析（防止只加帮助文本漏加解析）", () => {
 	const options = parseArgs([
 		"--managed-db",
@@ -451,6 +475,7 @@ type FakeSession = {
 		id: string;
 		status: string;
 		attempts: number;
+		leaseToken?: string;
 		lastError?: string;
 		task: { kind: string; deliveryId?: string };
 	}>;
@@ -470,6 +495,8 @@ function fakeServer(clock: { value: number }) {
 		lastCreatedId: "",
 		/** 置 true 可模拟「服务端缺少已答轮次校验」的回归。 */
 		acceptStale: false,
+		failOutbound: false,
+		async assertFaultInjection() { server.failOutbound = true; },
 		/** 模拟某个真人在飞书客户端点一次卡片。 */
 		humanClick(sessionId: string, optionId: string, actorId = "ou_test") {
 			const session = sessions.get(sessionId);
@@ -485,6 +512,7 @@ function fakeServer(clock: { value: number }) {
 			sequence += 1;
 			const id = `sess-${sequence}`;
 			const recipient = input.recipient as FakeSession["recipient"];
+			if (recipient.kind === "group") throw new ConsoleApiError("personal sessions require a user recipient", 400, { error: "personal sessions require a user recipient" });
 			const session: FakeSession = {
 				id,
 				recipient,
@@ -520,23 +548,24 @@ function fakeServer(clock: { value: number }) {
 					roundId,
 					optionId: candidate.id,
 				});
-			const unreachable = session.recipient.externalId.startsWith("ou_0000");
+			const unreachable = server.failOutbound;
 			session.deliveries.push({
 				id: `del-${roundId}`,
 				roundId,
 				purpose: "decision",
 				status: unreachable ? "failed" : "sent",
 				...(unreachable
-					? { lastError: "Feishu send failed (HTTP 400, code 230002)" }
+					? { lastError: OUTBOUND_FAILURE_MESSAGE }
 					: { externalMessageId: `om_${roundId}` }),
 			});
 			session.jobs.push({
 				id: `job-${roundId}`,
 				status: unreachable ? "failed" : "done",
 				attempts: unreachable ? 5 : 1,
+					leaseToken: `lease-${roundId}`,
 				task: { kind: "send_delivery", deliveryId: `del-${roundId}` },
 				...(unreachable
-					? { lastError: "Feishu send failed (HTTP 400, code 230002)" }
+					? { lastError: OUTBOUND_FAILURE_MESSAGE }
 					: {}),
 			});
 		},
@@ -622,8 +651,9 @@ function fakeServer(clock: { value: number }) {
 			for (const session of sessions.values()) {
 				const job = session.jobs.find((item) => item.id === jobId);
 				if (job) {
-					job.status = "pending";
-					job.attempts = 0;
+					job.status = "failed";
+					job.attempts = 5;
+					job.leaseToken = `retry-${job.leaseToken}`;
 				}
 			}
 			return { ok: true };
@@ -778,33 +808,16 @@ test("rounds 场景：服务端把重复提交当成功时会判失败", async (
 	assert.equal(checks.exitCode(), 1);
 });
 
-test("group 场景：群聊收件人下走完整往返，断言前缀为 group", async () => {
+test("group 场景：个人身份拒绝群收件人，不发送卡片", async () => {
 	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
 	const server = fakeServer(clock);
-	const { checks, ctx } = scenarioContext(server, clock, {
-		clicks: ["observe", "acknowledge"],
-		chatId: "oc_test_chat",
-	});
+	const { checks, ctx } = scenarioContext(server, clock);
 	const outcome = await runScenario(groupScenario, ctx);
 	assert.equal(outcome.matched, true);
-	assert.equal(outcome.aborted, false);
-	assert.deepEqual(
-		checks.results.map((item) => [item.id, item.status]),
-		[
-			["group.card.delivered", "ok"],
-			["group.card.round", "ok"],
-			["group.card.options", "ok"],
-			["group.round1.selected", "ok"],
-			["group.round1.persisted", "ok"],
-			["group.round1.inbox", "ok"],
-			["group.round1.observed-interval", "skip"],
-			["group.round2-card.delivered", "ok"],
-			["group.completed", "ok"],
-			["group.round2.selected", "ok"],
-			["group.round2.persisted", "ok"],
-		],
-	);
-	assert.equal(checks.exitCode(), 0);
+	assert.equal(checks.results[0].id, "group.recipient-rejected");
+	assert.equal(checks.results[0].status, "ok");
+	assert.equal(checks.results[0].evidence, EVIDENCE.localReal);
+	assert.equal(server.lastCreatedId, "");
 });
 
 test("reject 场景：未授权成员被拒且策略不变，授权成员随后生效", async () => {
@@ -837,7 +850,7 @@ test("reject 场景：未授权成员被拒且策略不变，授权成员随后�
 	assert.equal(checks.exitCode(), 0);
 });
 
-test("reject 场景：服务端把群成员当有权限时会判失败", async () => {
+test("reject 场景：服务端把转发接收人当有权限时会判失败", async () => {
 	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
 	const server = fakeServer(clock);
 	const { checks, ctx } = scenarioContext(server, clock, {
@@ -877,45 +890,37 @@ test("failure 场景：业务成功与投递失败分离，重试复用同一 de
 			["failure.retry-restarted", "ok"],
 		],
 	);
-	assert.match(checks.results[0].detail, /code 230002/);
-	assert.ok(checks.results.every((item) => item.evidence === "local-real"));
+	assert.ok(checks.results[0].detail?.includes(OUTBOUND_FAILURE_MESSAGE));
+	assert.ok(checks.results.every((item) => item.evidence === "synthetic"));
 	assert.equal(checks.exitCode(), 0);
 });
 
-test("failure 场景：重试换新 delivery 或未真正重跑都会判失败", async () => {
+test("failure 场景：worker 已重跑但换新 delivery 时判失败", async () => {
 	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
 	const server = fakeServer(clock);
 	const { checks, ctx } = scenarioContext(server, clock, { clicks: [] });
-	const originalRetry = server.retryJob.bind(server);
-	// 模拟回归：重试时新建 delivery，且任务 attempts 未重置。
+	// 模拟回归：新的 worker 执行已经终结，但重试错误地换了 delivery。
 	server.retryJob = (jobId: string) => {
 		const detail = server.getSession(server.lastCreatedId);
 		const job = detail.jobs.find((item) => item.id === jobId);
 		const oldId = (job?.task.deliveryId ?? "") as string;
 		if (job && oldId) {
 			job.attempts = 5;
+			job.leaseToken = "retry-new-lease";
 			job.task.deliveryId = `${oldId}-new`;
 			detail.deliveries.push({
 				id: `${oldId}-new`,
 				roundId: oldId.replace("del-", ""),
 				purpose: "decision",
 				status: "failed",
-				lastError: "Feishu send failed (HTTP 400, code 230002)",
+				lastError: OUTBOUND_FAILURE_MESSAGE,
 			});
 		}
 		return { ok: true };
 	};
 	const outcome = await runScenario(failureScenario, ctx);
-	// 重试后 attempts 未回退，等待会超时 → blocked；断言不通过。
-	const aborted = checks.results.at(-1);
-	assert.ok(
-		aborted?.status === "blocked" || aborted?.status === "fail",
-		`实际状态 ${aborted?.status}`,
-	);
-	const same = checks.results.find(
-		(item) => item.id === "failure.retry-same-delivery",
-	);
-	if (same) assert.equal(same.status, "fail");
+	assert.equal(outcome.matched, true);
+	assert.equal(checks.results.find((item) => item.id === "failure.retry-same-delivery")?.status, "fail");
 });
 
 test("docker: 只操作带前缀与自有 label 的容器", () => {
@@ -1008,6 +1013,39 @@ test("docker: 只有指向受管端口与库时允许停库", () => {
 	assert.equal(pointsAtManagedDb(""), false);
 });
 
+test("docker: 固定验收库拒绝驱动覆盖参数、非 PostgreSQL 协议与片段", () => {
+	const base = "postgres://postgres:pw@127.0.0.1:5433/adpulse_acceptance";
+	for (const suffix of [
+		"?host=192.0.2.10&port=5432",
+		"?port=5432",
+		"?database=other",
+		"?dbname=other",
+		"?host=/tmp/pg-socket",
+		"?%68ost=192.0.2.10",
+		"?host=127.0.0.1&host=192.0.2.10",
+		"?sslmode=require", // 固定验收夹具不接受任何驱动选项。
+		"#fragment",
+	]) assert.equal(pointsAtManagedDb(base + suffix), false, suffix);
+	assert.equal(pointsAtManagedDb(base.replace("postgres:", "http:")), false);
+	assert.equal(pointsAtManagedDb(base.replace("postgres:", "postgresql:")), true);
+});
+
+test("fault server: 覆盖连接地址的 URL 在读取应用配置、连接或建容器前被拒绝", () => {
+	const script = fileURLToPath(new URL("../scripts/acceptance/failure-server.mjs", import.meta.url));
+	for (const query of ["host=192.0.2.10&port=5432", "database=other", "%68ost=192.0.2.10"]) {
+		// 不传飞书配置；守卫若被绕过，启动会到达配置校验，从而令本测试失败。
+		const result = spawnSync(process.execPath, [script], {
+			env: { DATABASE_URL: `postgres://test:test@127.0.0.1:5433/adpulse_acceptance?${query}` },
+			encoding: "utf8",
+			timeout: 5000,
+		});
+		assert.equal(result.error, undefined);
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /fault fixture requires 127\.0\.0\.1:5433\/adpulse_acceptance/);
+		assert.doesNotMatch(result.stderr, /FEISHU_APP_ID is required/);
+	}
+});
+
 test("db-down 场景：未授权停库时全部 skip，且不触碰 docker 与会话", async () => {
 	const clock = { value: Date.parse("2026-11-08T00:00:00.000Z") };
 	const server = fakeServer(clock);
@@ -1033,4 +1071,100 @@ test("db-down 场景：未授权停库时全部 skip，且不触碰 docker 与�
 	);
 	assert.match(checks.results[0].detail, /未提供 --managed-db/);
 	assert.equal(checks.exitCode(), 0);
+});
+
+test("console-api: 会话凭据随请求发出，GET 不带 Origin，401 不回显凭据", async () => {
+	const seen: Array<Record<string, unknown>> = [];
+	let replyStatus = 200;
+	const server = createServer((req, res) => {
+		seen.push({ ...req.headers, method: req.method });
+		res.writeHead(replyStatus, { "content-type": "application/json" });
+		res.end(
+			replyStatus === 200
+				? JSON.stringify({ id: "session-1" })
+				: JSON.stringify({ error: "unauthenticated" }),
+		);
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const { port } = server.address() as AddressInfo;
+	const client = createConsoleClient({
+		baseUrl: `http://127.0.0.1:${port}`,
+		auth: { sessionCookie: "cookie-value", origin: "https://console.example.com" },
+	});
+	try {
+		await client.createSession({ recipient: {} });
+		// 副作用请求：带 Cookie + 同源 Origin，不带 Bearer。
+		assert.equal(seen[0]?.cookie, "adpulse_session=cookie-value");
+		assert.equal(seen[0]?.origin, "https://console.example.com");
+		assert.equal(seen[0]?.authorization, undefined);
+
+		await client.getSession("session-1");
+		// 读取类请求不强制 Origin，但仍带 Cookie。
+		assert.equal(seen[1]?.cookie, "adpulse_session=cookie-value");
+		assert.equal(seen[1]?.origin, undefined);
+
+		replyStatus = 401;
+		await assert.rejects(
+			() => client.getSession("session-1"),
+			(error: Error) => {
+				assert.match(error.message, /HTTP 401/);
+				assert.ok(
+					!error.message.includes("cookie-value"),
+					"错误信息不得回显会话凭据",
+				);
+				return true;
+			},
+		);
+	} finally {
+		server.close();
+	}
+});
+
+test("selfcheck: #34 之后 config.console 校验 PUBLIC_ORIGIN 形态", async () => {
+	const run = async (env: Record<string, string>) => {
+		const lines: string[] = [];
+		const code = await main(
+			["--api", "http://127.0.0.1:1"],
+			env,
+			{ log: (line: string) => lines.push(line), error: (line: string) => lines.push(line) },
+		);
+		return { code, lines };
+	};
+
+	const good = await run({ PUBLIC_ORIGIN: "https://console.example.com" });
+	assert.ok(
+		good.lines.some(
+			(line) =>
+				line.startsWith("[ok  ] config.console") &&
+				line.includes("https://console.example.com/auth/feishu/callback"),
+		),
+		good.lines.join("\n"),
+	);
+
+	// 非 HTTPS 与带路径的 origin 都必须判 fail：它们会让 Cookie/CORS 行为偏离预期。
+	for (const bad of ["http://console.example.com", "https://console.example.com/app"]) {
+		const result = await run({ PUBLIC_ORIGIN: bad });
+		assert.ok(
+			result.lines.some((line) => line.startsWith("[fail] config.console")),
+			`${bad} 应判 fail：${result.lines.join("\n")}`,
+		);
+	}
+
+	const missing = await run({});
+	assert.ok(
+		missing.lines.some((line) => line.startsWith("[fail] config.console")),
+	);
+	assert.equal(missing.code, 1, "存在 fail 时退出码非 0");
+});
+
+test("cli: 场景缺少控制台凭据时退出 2 并指出两种来源", async () => {
+	const errors: string[] = [];
+	const code = await main(
+		["--scenario", "dm", "--open-id", "ou_x"],
+		{},
+		{ log: () => {}, error: (line: string) => errors.push(line) },
+	);
+	assert.equal(code, 2);
+	assert.match(errors[0] ?? "", /ADPULSE_SESSION_COOKIE/);
+	assert.match(errors[0] ?? "", /CONSOLE_TOKEN/);
 });

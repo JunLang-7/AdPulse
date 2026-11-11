@@ -4,7 +4,7 @@
 import { resolve } from "node:path";
 
 import { EVIDENCE, createChecks, printChecks } from "./checks.mjs";
-import { createConsoleClient } from "./console-api.mjs";
+import { authHeaders, createConsoleClient } from "./console-api.mjs";
 import { mask } from "./redact.mjs";
 import { recordFileName, renderRecord, writeRecord } from "./record.mjs";
 import { runScenario } from "./scenario.mjs";
@@ -22,11 +22,11 @@ export const USAGE = `用法：bun run feishu:acceptance [-- 选项]
 
   --api <url>         本机 API 地址，默认 http://127.0.0.1:3000
   --public-url <url>  公网回调地址，如 https://example.com/webhooks/feishu-internal
-  --chat-id <oc_...>  群聊收件人；group / reject 场景必填
+  --chat-id <oc_...>  群收件人；group 拒绝场景必填
   --open-id <ou_...>  授权成员（单聊收件人）；--scenario 时多数必填
   --other-open-id <ou_...>
                       未授权成员，仅 reject 场景需要
-  --scenario <id>     运行验收场景（dm / rounds）；先跑只读自检作为前置
+  --scenario <id>     运行验收场景；先跑只读自检作为前置
   --list-scenarios    列出可用场景
   --step-timeout <s>  场景单步等待人工动作的秒数，默认用场景内置值
   --managed-db        允许 db-down 场景停启本脚本自建的一次性数据库
@@ -171,9 +171,17 @@ export async function main(argv, env, io = {}) {
 				return 2;
 			}
 		}
-		const token = env.CONSOLE_TOKEN ?? "";
-		if (token.length < 24) {
-			error("CONSOLE_TOKEN 缺失或短于 24 字符：场景需要访问控制台 API");
+		// #34 之后控制台改用 OAuth 会话：用 ADPULSE_SESSION_COOKIE + PUBLIC_ORIGIN；
+		// 未升级的部署仍可用 CONSOLE_TOKEN。凭据缺失时直接拒绝并说明来源。
+		const auth = {
+			token: env.CONSOLE_TOKEN && env.CONSOLE_TOKEN.length >= 24 ? env.CONSOLE_TOKEN : undefined,
+			sessionCookie: env.ADPULSE_SESSION_COOKIE || undefined,
+			origin: env.PUBLIC_ORIGIN || undefined,
+		};
+		try {
+			authHeaders(auth);
+		} catch (cause) {
+			error(cause instanceof Error ? cause.message : String(cause));
 			return 2;
 		}
 		if (!options.skipPreflight) {
@@ -193,7 +201,7 @@ export async function main(argv, env, io = {}) {
 			log,
 			env,
 			options,
-			client: createConsoleClient({ baseUrl: options.api, token }),
+			client: createConsoleClient({ baseUrl: options.api, auth }),
 			vars,
 			now: () => now().getTime(),
 		});

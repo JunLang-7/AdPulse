@@ -117,21 +117,30 @@ export async function runFeishuSelfCheck({ env, options, checks }) {
 				`account=${config.accountId} app=${mask(config.appId)} tenant=${mask(config.tenantKey, 4, 2)}`,
 			);
 
-		const token = env.CONSOLE_TOKEN ?? "";
-		if (token.length < 24)
+		// #34 之后控制台改为 Feishu OAuth 会话，不再有静态 token；
+		// 这里校验控制台/API 共用的公开 origin 是否可用。
+		const publicOrigin = env.PUBLIC_ORIGIN ?? "";
+		let validPublicOrigin = false;
+		try {
+			const parsedOrigin = new URL(publicOrigin);
+			validPublicOrigin =
+				parsedOrigin.origin === publicOrigin &&
+				parsedOrigin.protocol === "https:";
+		} catch {}
+		if (!validPublicOrigin)
 			record(
 				"config.console",
-				"控制台鉴权",
+				"控制台 OAuth origin",
 				"fail",
-				"CONSOLE_TOKEN 缺失或短于 24 字符",
-				"生成随机长字符串写入本地 .env",
+				"PUBLIC_ORIGIN 必须是生产 HTTPS origin",
+				"设置为控制台/API 共用的公开 HTTPS origin，并登记 /auth/feishu/callback",
 			);
 		else
 			record(
 				"config.console",
-				"控制台鉴权",
+				"控制台 OAuth origin",
 				"ok",
-				`CONSOLE_TOKEN 长度 ${token.length}，user=${env.CONSOLE_USER_ID ?? "operator"}`,
+				`HTTPS origin 已配置；回调为 ${publicOrigin}/auth/feishu/callback`,
 			);
 
 		const databaseUrl = env.DATABASE_URL ?? "";

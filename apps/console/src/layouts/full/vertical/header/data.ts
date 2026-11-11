@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { HelpCircle, Home } from "lucide-react";
+import { HelpCircle } from "lucide-react";
 
 interface profileType {
 	avatar: LucideIcon;
@@ -9,12 +9,6 @@ interface profileType {
 }
 
 const profileDD: profileType[] = [
-	{
-		avatar: Home,
-		title: "会话列表",
-		href: "/sessions",
-		badge: false,
-	},
 	{
 		avatar: HelpCircle,
 		title: "项目 Wiki",
