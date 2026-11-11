@@ -211,6 +211,64 @@ test("evidence batches are atomic on both validation and content conflicts", asy
 	);
 });
 
+test("evidence rejects nonzero submillisecond digits atomically and accepts trailing zeros", async () => {
+	const { task, evidence } = await setup();
+	const taskRef = { taskId: task.taskId, taskVersion: 1 };
+	for (const boundary of ["startsAt", "endsAt"] as const) {
+		for (const fraction of ["1231", "1230001"]) {
+			await assert.rejects(
+				evidence.import("owner", `invalid-${boundary}-${fraction}`, {
+					schemaVersion: 1,
+					taskRef,
+					records: [
+						record(),
+						record({
+							period: {
+								startsAt: "2026-01-02T00:00:00+08:00",
+								endsAt: "2026-01-03T00:00:00+08:00",
+								timeZone: "Asia/Shanghai",
+								completeness: "complete",
+								[boundary]: `2026-01-${boundary === "startsAt" ? "02" : "03"}T00:00:00.${fraction}+08:00`,
+							},
+						}),
+					],
+				}),
+				(error: unknown) =>
+					error instanceof EvidenceValidationError && /period/.test(error.message),
+			);
+			assert.deepEqual(await evidence.listForTask("owner", task.taskId), []);
+		}
+	}
+	const [created] = await evidence.import("owner", "trailing-zeros", {
+		schemaVersion: 1,
+		taskRef,
+		records: [record({
+			period: {
+				startsAt: "2026-01-01T00:00:00.123000+08:00",
+				endsAt: "2026-01-02T00:00:00.000000+08:00",
+				timeZone: "Asia/Shanghai",
+				completeness: "complete",
+			},
+		})],
+	});
+	assert.ok(created);
+	assert.equal(created.status, "created");
+	const [reused] = await evidence.import("owner", "milliseconds", {
+		schemaVersion: 1,
+		taskRef,
+		records: [record({
+			period: {
+				startsAt: "2026-01-01T00:00:00.123+08:00",
+				endsAt: "2026-01-02T00:00:00.000+08:00",
+				timeZone: "Asia/Shanghai",
+				completeness: "complete",
+			},
+		})],
+	});
+	assert.equal(reused?.status, "reused");
+	assert.equal(reused?.evidenceId, created.evidenceId);
+});
+
 test("evidence revisions require an expected version and retain immutable history", async () => {
 	const { task, evidence } = await setup();
 	const [first] = await evidence.import("owner", "import-key", {
