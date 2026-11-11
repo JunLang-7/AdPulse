@@ -134,7 +134,13 @@ test("通知队列: 取消是终态，重新开启不复活旧队列", async () 
 test("通知队列: 已发送的条目取消不回滚，业务结果不受影响", async () => {
 	const { queue } = setup();
 	await queue.queue("user-a", item(), { settingsVersion: 1, enabled: true });
-	await queue.markSent("user-a", item().logicalKey, "delivery-1");
+	assert.equal(
+		await queue.markSent("user-a", item().logicalKey, {
+			deliveryId: "delivery-1",
+			revision: 1,
+		}),
+		true,
+	);
 	const result = await queue.cancelPending("user-a", "push_disabled");
 	assert.equal(result.items, 0, "已发送不在取消范围");
 	assert.equal((await queue.pending("user-a")).length, 0);
@@ -211,11 +217,18 @@ test("通知队列: 批次状态流转记录原因与补发标记", async () => 
 	assert.ok(sent?.sentAt);
 	assert.equal(sent?.catchUp, true);
 
+	// 当天批次已发送后，新批次指向下一计划日：同一天不再生成第二份可调度批次。
 	const second = await queue.ensureDigestBatch("user-a", {
 		settingsVersion: 1,
 		enabled: true,
 	});
-	assert.equal(second?.id, batch!.id);
+	assert.equal(second?.id, batchId("user-a", "digest", "2026-11-12"));
+	assert.equal(
+		(await queue.queuedBatches()).filter((entry) => entry.localDate === "2026-11-11")
+			.length,
+		0,
+		"已发送的当日批次不再是可调度批次",
+	);
 	const suppressed = await queue.setBatchStatus(batch!.id, "suppressed", {
 		reason: "destination_invalidated",
 	});
@@ -237,4 +250,101 @@ test("通知队列: pending 只返回 queued，按 key 稳定排序", async () =
 		"排序稳定，批次内容可冻结",
 	);
 	assert.equal(pending[0]?.status, "queued");
+});
+
+
+test("通知队列: 今天批次已取消时，新内容进入下一计划批次而不是挂在旧批次下", async () => {
+	const { queue } = setup();
+	await queue.queue("user-a", item({ logicalKey: "old" }), {
+		settingsVersion: 1,
+		enabled: true,
+	});
+	await queue.cancelPending("user-a", "push_disabled");
+
+	// 当天重新开启后提交一条**全新**信息。
+	const fresh = await queue.queue("user-a", item({ logicalKey: "fresh" }), {
+		settingsVersion: 2,
+		enabled: true,
+	});
+	assert.equal(fresh.outcome, "queued");
+	assert.equal(
+		fresh.item?.batchId,
+		batchId("user-a", "digest", "2026-11-12"),
+		"新内容必须进入可调度的下一批次",
+	);
+
+	// 调度侧能看到它：不是挂在已取消批次下的孤儿条目。
+	const queued = await queue.queuedBatches();
+	assert.equal(queued.length, 1);
+	assert.equal(queued[0]?.localDate, "2026-11-12");
+	assert.equal(queued[0]?.status, "queued");
+	assert.equal(
+		queued[0]?.scheduledAt,
+		digestInstant("2026-11-12"),
+		"计划时刻是下一日的 09:30 北京时间",
+	);
+
+	// 旧条目仍是终态，不被顺带复活。
+	assert.equal((await queue.pending("user-a")).length, 1);
+	assert.equal((await queue.pending("user-a"))[0]?.logicalKey, "fresh");
+});
+
+test("通知队列: 今天批次已发送时，新内容不会在同一天再发一次", async () => {
+	const { queue } = setup();
+	const batch = await queue.ensureDigestBatch("user-a", {
+		settingsVersion: 1,
+		enabled: true,
+	});
+	await queue.queue("user-a", item({ logicalKey: "morning" }), {
+		settingsVersion: 1,
+		enabled: true,
+	});
+	await queue.markSent("user-a", "morning", { deliveryId: "d1", revision: 1 });
+	await queue.setBatchStatus(batch!.id, "sent");
+
+	const later = await queue.queue("user-a", item({ logicalKey: "afternoon" }), {
+		settingsVersion: 1,
+		enabled: true,
+	});
+	assert.equal(later.outcome, "queued");
+	assert.equal(
+		later.item?.batchId,
+		batchId("user-a", "digest", "2026-11-12"),
+		"当天汇总已发过，新内容排到下一天",
+	);
+	const queued = await queue.queuedBatches();
+	assert.deepEqual(
+		queued.map((entry) => entry.localDate),
+		["2026-11-12"],
+		"不会出现一天两份可调度批次",
+	);
+});
+
+test("通知队列: 旧版本回执不能把已更新的条目标成已发送", async () => {
+	const { queue } = setup();
+	await queue.queue("user-a", item({ logicalKey: "k" }), {
+		settingsVersion: 1,
+		enabled: true,
+	});
+	// 发送 rev1 期间来了实质更新。
+	await queue.queue("user-a", item({ logicalKey: "k", revision: 2 }), {
+		settingsVersion: 1,
+		enabled: true,
+	});
+
+	const consumed = await queue.markSent("user-a", "k", {
+		deliveryId: "d-rev1",
+		revision: 1,
+	});
+	assert.equal(consumed, false, "旧 revision 的回执必须被拒绝");
+	const pending = await queue.pending("user-a");
+	assert.equal(pending.length, 1, "rev2 仍在待发");
+	assert.equal(pending[0]?.revision, 2);
+
+	// 正确 revision 的回执才生效。
+	assert.equal(
+		await queue.markSent("user-a", "k", { deliveryId: "d-rev2", revision: 2 }),
+		true,
+	);
+	assert.equal((await queue.pending("user-a")).length, 0);
 });

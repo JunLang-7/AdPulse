@@ -95,26 +95,51 @@ export class NotificationQueue {
 		options: { settingsVersion: number; enabled: boolean },
 	): Promise<NotificationBatch | null> {
 		if (!options.enabled) return null;
+		return this.storage.transaction((tx) =>
+			this.resolveBatch(tx, ownerId, options.settingsVersion),
+		);
+	}
+
+	/**
+	 * 在事务内解析「新内容应当进入哪一批」：
+	 * - 今天已有 queued 批次 → 用它；
+	 * - 今天批次已是终态（sent/cancelled/expired/suppressed/failed）→ 用下一计划日的批次，
+	 *   绝不复用终态批次：否则条目会挂在无法被调度发现的批次下，且等于变相恢复旧队列。
+	 * 同一天的终态批次行保持不变，作为「当天已取消/已发送」的证据。
+	 */
+	private async resolveBatch(
+		tx: Transaction,
+		ownerId: string,
+		settingsVersion: number,
+	): Promise<NotificationBatch> {
 		const at = this.now();
-		const date = localDate(at);
+		const today = localDate(at);
+		const existingToday = await tx.notificationBatches.get(
+			batchId(ownerId, "digest", today),
+		);
+		if (existingToday?.status === "queued") return existingToday;
+
+		// 今天没有批次时用今天；今天已终态则用下一次计划日（此时是「下一批」而非补发）。
+		const date =
+			existingToday === null
+				? today
+				: localDate(new Date(at.getTime() + 24 * 60 * 60 * 1000));
 		const id = batchId(ownerId, "digest", date);
-		return this.storage.transaction(async (tx) => {
-			const existing = await tx.notificationBatches.get(id);
-			if (existing) return existing;
-			const batch: NotificationBatch = {
-				id,
-				ownerId,
-				kind: "digest",
-				localDate: date,
-				settingsVersion: options.settingsVersion,
-				status: "queued",
-				scheduledAt: digestInstant(date),
-				createdAt: at.toISOString(),
-				updatedAt: at.toISOString(),
-			};
-			await tx.notificationBatches.put(batch);
-			return batch;
-		});
+		const existing = await tx.notificationBatches.get(id);
+		if (existing) return existing;
+		const batch: NotificationBatch = {
+			id,
+			ownerId,
+			kind: "digest",
+			localDate: date,
+			settingsVersion,
+			status: "queued",
+			scheduledAt: digestInstant(date),
+			createdAt: at.toISOString(),
+			updatedAt: at.toISOString(),
+		};
+		await tx.notificationBatches.put(batch);
+		return batch;
 	}
 
 	/**
@@ -134,14 +159,14 @@ export class NotificationQueue {
 			throw new NotificationQueueError("invalid_item", "title and summary required");
 		if (!Number.isInteger(input.revision) || input.revision < 1)
 			throw new NotificationQueueError("invalid_item", "revision must be >= 1");
-
-		const batch = await this.ensureDigestBatch(ownerId, options);
-		if (!batch)
+		if (!options.enabled)
 			throw new NotificationQueueError(
 				"batch_unavailable",
 				"proactive notifications are disabled",
 			);
 
+		// 批次解析与条目写入在同一个事务里：取消操作不能插在两者之间，
+		// 否则条目会挂在刚被取消的批次下，调度永远发现不了。
 		return this.storage.transaction(async (tx) => {
 			const id = itemId(ownerId, input.logicalKey);
 			const existing = await tx.notificationItems.get(id);
@@ -152,6 +177,13 @@ export class NotificationQueue {
 					return { outcome: "cancelled", item: existing };
 				if (input.revision <= existing.revision)
 					return { outcome: "duplicate", item: existing };
+			}
+			const batch = await this.resolveBatch(
+				tx,
+				ownerId,
+				options.settingsVersion,
+			);
+			if (existing) {
 				const taskId = input.taskId ?? existing.taskId;
 				const next: NotificationItem = {
 					...existing,
@@ -244,22 +276,29 @@ export class NotificationQueue {
 		});
 	}
 
-	/** 标记条目已投递（投递本身走 Delivery；这里只同步业务状态）。 */
+	/**
+	 * 标记条目已投递。必须带上**发送时冻结的 revision**：
+	 * 发送期间若条目被实质更新（revision 提升），旧回执不得把新版本标成已发送，
+	 * 否则尚未发出的更新会从待发里消失。
+	 */
 	async markSent(
 		ownerId: string,
-		itemKey: string,
-		deliveryId: string,
-	): Promise<void> {
-		await this.storage.transaction(async (tx) => {
-			const id = itemId(ownerId, itemKey);
+		logicalKey: string,
+		options: { deliveryId: string; revision: number },
+	): Promise<boolean> {
+		return this.storage.transaction(async (tx) => {
+			const id = itemId(ownerId, logicalKey);
 			const item = await tx.notificationItems.get(id);
-			if (!item || item.ownerId !== ownerId || item.status !== "queued") return;
+			if (!item || item.ownerId !== ownerId || item.status !== "queued")
+				return false;
+			if (item.revision !== options.revision) return false;
 			await tx.notificationItems.put({
 				...item,
 				status: "sent",
-				deliveryId,
+				deliveryId: options.deliveryId,
 				updatedAt: this.now().toISOString(),
 			});
+			return true;
 		});
 	}
 
