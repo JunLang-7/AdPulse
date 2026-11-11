@@ -1,4 +1,5 @@
 import type { DecisionCard } from "../domain/decisionCard.js";
+import type { InfoCard } from "../domain/infoCard.js";
 
 /** accountId is an opaque configured connection; core knows no provider names or HTTP. */
 export interface Recipient {
@@ -9,7 +10,8 @@ export interface Recipient {
 export interface CardDelivery {
 	id: string;
 	recipient: Recipient;
-	card: DecisionCard;
+	/** 决策卡（有候选）或信息卡（日汇总，无候选、无 Session）。 */
+	card: DecisionCard | InfoCard;
 	actions: Array<{ optionId: string; actionRef: string }>;
 }
 export interface DeliveryReceipt {

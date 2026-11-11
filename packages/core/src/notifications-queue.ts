@@ -325,6 +325,35 @@ export class NotificationQueue {
 		});
 	}
 
+	/**
+	 * 卡片容量有限：本轮没展示的条目移到下一个可调度批次，而不是留在已发送批次里变孤儿。
+	 */
+	async deferItems(
+		ownerId: string,
+		logicalKeys: string[],
+		settingsVersion: number,
+	): Promise<number> {
+		if (logicalKeys.length === 0) return 0;
+		return this.storage.transaction(async (tx) => {
+			const batch = await this.resolveBatch(tx, ownerId, settingsVersion);
+			const at = this.now().toISOString();
+			let moved = 0;
+			for (const key of logicalKeys) {
+				const item = await tx.notificationItems.get(itemId(ownerId, key));
+				if (!item || item.ownerId !== ownerId || item.status !== "queued")
+					continue;
+				if (item.batchId === batch.id) continue;
+				await tx.notificationItems.put({
+					...item,
+					batchId: batch.id,
+					updatedAt: at,
+				});
+				moved += 1;
+			}
+			return moved;
+		});
+	}
+
 	/** 供 PR2 的调度使用：所有排队中的批次。 */
 	async queuedBatches(): Promise<NotificationBatch[]> {
 		return this.storage.transaction(async (tx) =>
