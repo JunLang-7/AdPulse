@@ -184,8 +184,15 @@ export interface WebSession {
 	userId: string;
 	identityBindingId: string;
 	createdAt: string;
+	/** Minimum expiry for legacy sessions created before sliding activity (#87). */
 	expiresAt: string;
 	revokedAt?: string;
+	/** Present on sessions created by #87; absent records retain legacy absolute expiry. */
+	sessionMode?: "default" | "remembered";
+	authenticatedAt?: string;
+	lastActivityAt?: string;
+	idleExpiresAt?: string;
+	absoluteExpiresAt?: string;
 }
 export interface LoginTransaction {
 	/** SHA-256 digest of the one-time OAuth state. */
@@ -197,6 +204,8 @@ export interface LoginTransaction {
 	createdAt: string;
 	expiresAt: string;
 	consumedAt?: string;
+	/** Retained for the follow-up activity/reauth API; not trusted from clients. */
+	rememberMe?: boolean;
 }
 export interface Task {
 	id: string;

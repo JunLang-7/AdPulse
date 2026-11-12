@@ -216,6 +216,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					throw new HttpError(400, "invalid return target");
 				}
 
+				const rememberMe = requestUrl.searchParams.get("rememberMe") === "1";
 				const state = randomBytes(32).toString("base64url");
 				const browserNonce = randomBytes(32).toString("base64url");
 				const codeVerifier = randomBytes(32).toString("base64url");
@@ -230,6 +231,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					returnTo: `${returnTo.pathname}${returnTo.search}${returnTo.hash}`,
 					createdAt: createdAt.toISOString(),
 					expiresAt: new Date(createdAt.getTime() + OAUTH_TTL_MS).toISOString(),
+					rememberMe,
 				});
 				appendCookie(res, OAUTH_COOKIE, browserNonce, OAUTH_TTL_MS / 1000);
 				const location = auth.provider.authorizationUrl({
@@ -289,13 +291,20 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				if (previousToken && COOKIE_TOKEN_PATTERN.test(previousToken))
 					await auth.service.revokeSession(digest(previousToken), currentTime.toISOString());
 				const sessionToken = randomBytes(32).toString("base64url");
-				await auth.service.createWebSession(
+				const sessionMode = transaction.rememberMe ? "remembered" : "default";
+				const session = await auth.service.createWebSession(
 					login.identity,
 					digest(sessionToken),
 					currentTime.toISOString(),
 					login.displayName,
+					sessionMode,
 				);
-				appendCookie(res, SESSION_COOKIE, sessionToken, SESSION_TTL_SECONDS);
+				appendCookie(
+					res,
+					SESSION_COOKIE,
+					sessionToken,
+					Math.max(1, Math.ceil((Date.parse(session.expiresAt) - currentTime.getTime()) / 1000)),
+				);
 				clearCookie(res, OAUTH_COOKIE);
 				return redirect(res, transaction.returnTo);
 			}
@@ -328,6 +337,23 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						...(session.displayName ? { displayName: session.displayName } : {}),
 						identities: await auth.service.listIdentities(session.userId),
 					});
+				if (path === "/api/session/activity" && req.method === "POST") {
+					const touched = await auth.service.touchWebSession(
+						digest(token),
+						now().toISOString(),
+					);
+					if (!touched) {
+						reject("session_invalid", req, path);
+						throw new HttpError(401, "unauthorized");
+					}
+					appendCookie(
+						res,
+						SESSION_COOKIE,
+						token,
+						Math.max(1, Math.ceil((Date.parse(touched.expiresAt) - now().getTime()) / 1000)),
+					);
+					return json(res, 200, { sessionExpiresAt: touched.expiresAt });
+				}
 				if (path === "/api/me/subscription" && req.method === "GET") {
 					// 只返回本人配置；是否可投递由 /api/me/notification-status 决定，不在这里冒充。
 					return json(res, 200, await subscriptions.view(session.userId));
@@ -515,6 +541,21 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					await auth.service.revokeSession(session.sessionId, now().toISOString());
 					clearCookie(res, SESSION_COOKIE);
 					return json(res, 200, { ok: true });
+				}
+				if (
+					path === "/api/task-drafts/models" &&
+					(req.method === "PUT" || req.method === "DELETE")
+				) {
+					const verifiedAt = Date.parse(
+						session.authenticatedAt ?? session.createdAt,
+					);
+					if (
+						!Number.isFinite(verifiedAt) ||
+						now().getTime() - verifiedAt > 15 * 60 * 1000
+					) {
+						reject("session_invalid", req, path);
+						throw new HttpError(401, "reauth_required");
+					}
 				}
 				return await handleAdmin(req, res, runtime, session.userId, path, auth.service);
 			}

@@ -232,6 +232,17 @@
         }
       }
     },
+    "/api/session/activity": {
+      "post": {
+        "operationId": "touchSession",
+        "responses": {
+          "200": { "description": "Updated session expiry", "content": { "application/json": { "schema": { "type": "object", "required": ["sessionExpiresAt"], "properties": { "sessionExpiresAt": { "type": "string", "format": "date-time" } } } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Same-origin request required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }]
+      }
+    },
     "/api/me/notification-status": {
       "get": {
         "operationId": "getNotificationStatus",
