@@ -678,11 +678,78 @@ export interface SourceState {
 	resumedBy: string | null;
 	lastPrunedAt: string | null;
 }
+/**
+ * 个人模型连接（#86）：只存非敏感投影。密钥单独放在 UserModelCredential 的密文记录里，
+ * 不进入连接、任务、队列或证据载荷。
+ */
+export type ModelConnectionProtocol =
+	| "openai-completions"
+	| "openai-responses"
+	| "anthropic-messages"
+	| "google-generative-ai";
+
+export interface ModelConnectionModel {
+	id: string;
+	label?: string;
+}
+
+export interface UserModelConnection {
+	id: string;
+	ownerId: string;
+	/** 用户域内稳定的 Provider ID，创建后不可改；同一 ID 可在不同用户下存在。 */
+	providerId: string;
+	kind: "catalog" | "custom";
+	/** 预置供应商目录里的 id；自定义连接不带这个字段。 */
+	catalogId?: string;
+	displayName: string;
+	/** 规范化后的 HTTPS 基础地址，不含 userinfo/query/hash 与结尾斜杠。 */
+	baseUrl: string;
+	protocol: ModelConnectionProtocol;
+	models: ModelConnectionModel[];
+	/** 删除密钥后置 disabled：元数据保留，但立即不可调用。 */
+	status: "active" | "disabled";
+	version: number;
+	createdAt: string;
+	updatedAt: string;
+	/** 验证结果绑定到版本：配置变更后旧绿灯失效。 */
+	verifiedAt?: string;
+	verifiedVersion?: number;
+}
+
+/** 每条连接一份凭据；id 与 connectionId 相同，避免出现第二份可用密钥。 */
+export interface UserModelCredential {
+	id: string;
+	ownerId: string;
+	connectionId: string;
+	credentialVersion: number;
+	keyId: string;
+	algorithm: "aes-256-gcm";
+	/** base64：随机 nonce、密文与认证 tag 分开存放，便于审计与轮换。 */
+	nonce: string;
+	ciphertext: string;
+	authTag: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+/** 每人一份默认选择；即使清空也保留版本计数，便于检测并发。 */
+export interface UserModelPreference {
+	id: string;
+	ownerId: string;
+	connectionId: string | null;
+	modelId: string | null;
+	version: number;
+	updatedAt: string;
+}
+
 export interface Entities {
 	users: User;
 	identityBindings: IdentityBinding;
 	notificationDestinations: NotificationDestination;
 	notificationConsents: NotificationConsent;
+	userModelConnections: UserModelConnection;
+	userModelCredentials: UserModelCredential;
+	userModelPreferences: UserModelPreference;
 	subscriptionSettings: SubscriptionSettings;
 	notificationBatches: NotificationBatch;
 	notificationItems: NotificationItem;

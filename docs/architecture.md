@@ -63,7 +63,9 @@ PostgreSQL 使用 SERIALIZABLE、行锁、唯一索引与冲突重试。
 version 是决策版本，每次成功处理选择都会递增，即使 changes 为空；快照版本增加不等于预算或其他策略字段发生变化。
 
 模型见 [model.ts](../packages/core/src/state/model.ts)，实际 DDL 与索引见 [postgres.ts](../packages/storage/src/postgres.ts)。
-当前为 22 张 id + jsonb 表，采用应用层引用关系；结构变更走 `initialize()` 内的版本化迁移（版本 1–6，顺序、加法式，在 advisory lock 下执行）。尚无分页，面向小规模验证。
+当前为 25 张 id + jsonb 表，采用应用层引用关系；结构变更走 `initialize()` 内的版本化迁移（版本 1–11，顺序、加法式，在 advisory lock 下执行）。尚无分页，面向小规模验证。
+
+个人模型连接（#86 PR1）另有三张表：`userModelConnections`（非敏感投影、版本、验证结果）、`userModelCredentials`（每条连接一份 AES-256-GCM 密文，密文与 nonce/tag 分列）、`userModelPreferences`（本人默认 `(connectionId, modelId)`）。唯一索引分别约束 `(ownerId, providerId)`、`(ownerId, connectionId)` 与 `ownerId`。加密端口在 core，实现在 runtime；AAD 绑定 owner/连接/凭据版本/目标地址/协议，主密钥不在数据库里。服务只在主密钥配置有效时装配，否则整个能力失败关闭。
 
 ## 任务与发送语义
 
