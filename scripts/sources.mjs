@@ -9,13 +9,24 @@
  *   node --env-file=.env scripts/sources.mjs resume haier_news ops@example
  *   node --env-file=.env scripts/sources.mjs prune haier_news
  *
- * sync is the only command that may reach the network, and only when
- * SOURCES_ENABLED=1. purge/resume stay available while collection is off.
+ * discover searches the public index independently of the database.
+ * sync reaches source sites only when SOURCES_ENABLED=1.
  */
 import { SOURCE_DEFINITIONS, SourceService } from "../packages/core/dist/index.js";
-import { HttpSourceFetcher } from "../packages/runtime/dist/index.js";
+import { discoverSource, HttpSourceFetcher } from "../packages/runtime/dist/index.js";
 
 const [command, sourceKey, operator] = process.argv.slice(2);
+
+if (command === "discover") {
+	try {
+		const result = await discoverSource(sourceKey, operator, process.env.AGENT_REACH_BIN);
+		await new Promise((resolve) => process.stdout.write(`${JSON.stringify(result, null, 2)}\n`, resolve));
+	} catch (error) {
+		await new Promise((resolve) => process.stderr.write(`${error.message}\n`, resolve));
+		process.exitCode = 1;
+	}
+	process.exit();
+}
 
 if (!process.env.DATABASE_URL) {
 	console.error("DATABASE_URL required; memory storage is not usable here");
@@ -91,7 +102,7 @@ try {
 		console.log(JSON.stringify(await service.resume(requireKey(), now, operator), null, 2));
 	} else {
 		console.error(
-			"usage: sources.mjs <status|list|sync|purge|prune|resume> [source] [operator]",
+			"usage: sources.mjs <status|list|sync|purge|prune|resume|discover> [source] [operator|topic]",
 		);
 		process.exit(2);
 	}
