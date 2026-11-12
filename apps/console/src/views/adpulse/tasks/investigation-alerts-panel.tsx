@@ -167,9 +167,9 @@ export function InvestigationAlertsPanel({ taskId }: { taskId: string }) {
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle>Web 异常排查提醒</CardTitle>
+				<CardTitle>提醒和处理进度</CardTitle>
 				<p className="text-sm text-muted-foreground">
-					只对已保存比较结果中严格超过当前已确认阈值的当期数据生成提醒；历史基线不是前置条件。此功能仅在 Web 内留痕，不发送外部通知，也不执行投放操作。
+					检查结果超过任务中已确认的成本警戒线时，会在这里生成提醒。
 				</p>
 			</CardHeader>
 			<CardContent className="space-y-3">
@@ -184,8 +184,8 @@ export function InvestigationAlertsPanel({ taskId }: { taskId: string }) {
 					alerts.data.map((alert) => (
 						<AlertItem key={alert.id} alert={alert} session={sessionById.get(alert.sessionId)} />
 					))
-				) : !alerts.isLoading ? (
-					<p className="text-sm text-muted-foreground">当前任务尚无阈值越线提醒。请先显式比较证据；符合条件的保存结果会自动建立提醒。</p>
+				) : alerts.isSuccess ? (
+					<p className="text-sm text-muted-foreground">目前没有成本提醒。可在「对比表现或检查成本」里检查本期报表。</p>
 				) : null}
 			</CardContent>
 		</Card>

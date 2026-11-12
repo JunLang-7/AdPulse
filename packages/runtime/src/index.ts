@@ -24,6 +24,8 @@ import {
 } from "@adpluse/core";
 import { MemoryStorage, PostgresStorage } from "@adpluse/storage";
 import { HttpSourceFetcher } from "./source-fetch.js";
+import type { TaskDraftExtractor } from "./task-draft-extractor.js";
+import { createTaskDraftModels } from "./task-draft-models.js";
 
 export const reviewPolicy: PolicyEngine = {
 	async propose({ signal, roundNo }) {
@@ -134,7 +136,10 @@ export function compose(
 		),
 	};
 }
-export type Runtime = ReturnType<typeof compose>;
+export type Runtime = ReturnType<typeof compose> & { extractTaskDraft?: TaskDraftExtractor; taskDraftModels?: ReturnType<typeof createTaskDraftModels> };
+
+export { taskDraftProviderIds } from "./task-draft-models.js";
+export { taskDraftBriefMaxLength, taskDraftStages } from "./task-draft-extractor.js";
 
 export {
 	HttpSourceFetcher,
@@ -210,11 +215,13 @@ export async function fromEnvironment(
 				},
 			},
 		});
+	const taskDraftModels = createTaskDraftModels(env);
 	return {
 		...compose(postgres ?? new MemoryStorage(), accounts, reviewPolicy, {
 			decisionCardsEnabled: env.DECISION_CARDS_ENABLED === "1",
 			...(env.PUBLIC_ORIGIN ? { detailUrlBase: env.PUBLIC_ORIGIN } : {}),
 		}),
+		taskDraftModels,
 		close: async () => {
 			await postgres?.close();
 		},

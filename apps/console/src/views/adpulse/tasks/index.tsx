@@ -59,7 +59,7 @@ export default function TasksPage() {
 								</div>
 							</CardHeader>
 							<CardContent className="space-y-2">
-								<p className="text-sm">{task.strategy.objective || "目标待补充"}</p>
+								<p className="whitespace-pre-line text-sm">{task.strategy.objective || "目标待补充"}</p>
 								<p className="text-sm text-muted-foreground line-clamp-2">
 									{task.strategy.audience.length
 									? task.strategy.audience.join("、")

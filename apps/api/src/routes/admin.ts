@@ -9,7 +9,7 @@ import type {
 	TaskInput,
 	Transaction,
 } from "@adpluse/core";
-import type { Runtime } from "@adpluse/runtime";
+import { taskDraftBriefMaxLength, taskDraftProviderIds, taskDraftStages, type Runtime } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
 
@@ -84,6 +84,12 @@ const sessionInput = z
 			})
 			.strict(),
 		expiresAt: z.iso.datetime(),
+	})
+	.strict();
+const taskDraftExtractionInput = z
+	.object({
+		brief: z.string().max(taskDraftBriefMaxLength).trim().min(1),
+		stage: z.enum(taskDraftStages).optional(), provider: z.enum(taskDraftProviderIds).optional(),
 	})
 	.strict();
 const taskInput = z
@@ -275,6 +281,31 @@ export async function handleAdmin(
 	path: string,
 	auth: AuthenticationService,
 ): Promise<void> {
+	if (path === "/api/task-drafts/models") {
+		res.setHeader("Cache-Control", "no-store");
+		const models = runtime.taskDraftModels;
+		if (req.method === "GET") return json(res, 200, models?.list(userId) ?? { defaultProvider: null, canConnect: false, models: [] });
+		if (req.method === "PUT" || req.method === "DELETE") {
+			if (!models?.list(userId).canConnect) throw new HttpError(403, "model connections disabled");
+			const provider = z.enum(taskDraftProviderIds);
+			if (req.method === "DELETE") {
+				const choice = provider.parse(new URL(req.url ?? "", "http://localhost").searchParams.get("provider"));
+				if (!models.disconnect(userId, choice)) throw new HttpError(409, "model connection busy");
+			} else {
+				const input = z.object({ provider, apiKey: z.string().trim().min(8).max(512) }).strict().parse(await readJson(req));
+				if (!await models.connect(userId, input.provider, input.apiKey)) throw new HttpError(503, "model connection unavailable");
+			}
+			return json(res, 200, models.list(userId));
+		}
+	}
+	if (path === "/api/task-drafts/extract" && req.method === "POST") {
+		const { brief, stage, provider } = taskDraftExtractionInput.parse(await readJson(req));
+		const suggestions = runtime.taskDraftModels
+			? await runtime.taskDraftModels.extract(userId, provider, brief, stage)
+			: await runtime.extractTaskDraft?.(brief, stage);
+		if (!suggestions) throw new HttpError(503, "task draft extraction unavailable");
+		return json(res, 200, suggestions);
+	}
 	if (path === "/api/tasks" && req.method === "GET") {
 		return json(res, 200, { items: await runtime.tasks.list(userId) });
 	}

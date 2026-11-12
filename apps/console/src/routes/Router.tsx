@@ -9,6 +9,7 @@ import { announceSessionIdentity, watchSessionIdentity } from "../views/auth/ses
 import SessionDetailPage from "../views/adpulse/session-detail";
 import SessionsPage from "../views/adpulse/sessions";
 import TaskEditorPage from "../views/adpulse/tasks/editor";
+import TaskReviewPage from "../views/adpulse/tasks/review";
 import NotificationSettingsPage from "../views/adpulse/settings/notifications";
 import SubscriptionSettingsPage from "../views/adpulse/settings/subscriptions";
 import TasksPage from "../views/adpulse/tasks";
@@ -110,6 +111,7 @@ const Router = [
 					{ path: "/sessions/:sessionId", element: <SessionDetailPage /> },
 					{ path: "/tasks", element: <TasksPage /> },
 					{ path: "/tasks/:taskId", element: <TaskEditorPage /> },
+					{ path: "/tasks/:taskId/review", element: <TaskReviewPage /> },
 					{ path: "/settings/notifications", element: <NotificationSettingsPage /> },
 					{ path: "/settings/subscriptions", element: <SubscriptionSettingsPage /> },
 				],
