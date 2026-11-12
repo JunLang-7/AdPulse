@@ -338,10 +338,39 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						identities: await auth.service.listIdentities(session.userId),
 					});
 				if (path === "/api/session/activity" && req.method === "POST") {
-					const touched = await auth.service.touchWebSession(
-						digest(token),
-						now().toISOString(),
-					);
+					const currentTime = now().toISOString();
+					const current = await auth.service.authenticateSession(digest(token), currentTime);
+					if (!current) {
+						reject("session_invalid", req, path);
+						throw new HttpError(401, "unauthorized");
+					}
+					const tokenAgeMs = Date.parse(currentTime) - Date.parse(current.createdAt);
+					const shouldRotate = tokenAgeMs >= 24 * 60 * 60 * 1000;
+					if (shouldRotate) {
+						const newToken = randomBytes(32).toString("base64url");
+						const rotated = await auth.service.rotateWebSession(
+							digest(token),
+							digest(newToken),
+							currentTime,
+						);
+						if (rotated) {
+							appendCookie(
+								res,
+								SESSION_COOKIE,
+								newToken,
+								Math.max(1, Math.ceil((Date.parse(rotated.expiresAt) - Date.parse(currentTime)) / 1000)),
+							);
+							return json(res, 200, { sessionExpiresAt: rotated.expiresAt });
+						}
+						// Rotation lost the race: do not reissue the old cookie.
+						const touched = await auth.service.touchWebSession(digest(token), currentTime);
+						if (!touched) {
+							reject("session_invalid", req, path);
+							throw new HttpError(401, "unauthorized");
+						}
+						return json(res, 200, { sessionExpiresAt: touched.expiresAt });
+					}
+					const touched = await auth.service.touchWebSession(digest(token), currentTime);
 					if (!touched) {
 						reject("session_invalid", req, path);
 						throw new HttpError(401, "unauthorized");
@@ -350,7 +379,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						res,
 						SESSION_COOKIE,
 						token,
-						Math.max(1, Math.ceil((Date.parse(touched.expiresAt) - now().getTime()) / 1000)),
+						Math.max(1, Math.ceil((Date.parse(touched.expiresAt) - Date.parse(currentTime)) / 1000)),
 					);
 					return json(res, 200, { sessionExpiresAt: touched.expiresAt });
 				}

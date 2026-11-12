@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { cancelDecisionDeliveriesIn } from "./decision-cancellation.js";
-import type { IdentityBinding, LoginTransaction } from "./state/model.js";
+import type { IdentityBinding, LoginTransaction, WebSession } from "./state/model.js";
 import type { PlatformIdentity } from "./ports/channel.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 
@@ -246,10 +246,12 @@ export class AuthenticationService {
 					};
 					await tx.webSessions.put({
 						id: sessionTokenHash,
+						familyId: crypto.randomUUID(),
 						userId,
 						identityBindingId: binding.id,
 						createdAt: session.createdAt,
 						expiresAt: session.expiresAt,
+						tokenStatus: "current",
 						sessionMode: mode,
 						authenticatedAt: now,
 						lastActivityAt: now,
@@ -301,6 +303,7 @@ export class AuthenticationService {
 		return this.storage.transaction(async (tx) => {
 			const session = await tx.webSessions.get(sessionTokenHash);
 			if (!session || session.revokedAt || session.expiresAt <= now) return null;
+			if (session.tokenStatus === "grace" && session.graceExpiresAt && session.graceExpiresAt <= now) return null;
 			if (session.sessionMode && !validSessionMode(session.sessionMode)) return null;
 			if (session.sessionMode) {
 				const expected = webSessionExpiry(
@@ -372,7 +375,7 @@ export class AuthenticationService {
 				return null;
 
 			let updated = session;
-			if (session.sessionMode && validSessionMode(session.sessionMode)) {
+			if (session.tokenStatus !== "grace" && session.sessionMode && validSessionMode(session.sessionMode)) {
 				const authenticatedAt = session.authenticatedAt ?? session.createdAt;
 				const absoluteExpiresAt = session.absoluteExpiresAt ?? session.expiresAt;
 				if (Date.parse(absoluteExpiresAt) <= Date.parse(now)) return null;
@@ -416,8 +419,70 @@ export class AuthenticationService {
 		if (!digestPattern.test(sessionTokenHash)) return;
 		await this.storage.transaction(async (tx) => {
 			const session = await tx.webSessions.get(sessionTokenHash);
-			if (session && !session.revokedAt)
-				await tx.webSessions.put({ ...session, revokedAt: now });
+			if (!session) return;
+			const familyId = session.familyId ?? session.id;
+			for (const candidate of await tx.webSessions.all()) {
+				if ((candidate.familyId ?? candidate.id) === familyId && !candidate.revokedAt)
+					await tx.webSessions.put({ ...candidate, revokedAt: now });
+			}
+		});
+	}
+
+	/** Rotates the current token of a family, preserving absolute expiry and granting a short grace window to the old token. */
+	async rotateWebSession(
+		currentTokenHash: string,
+		newTokenHash: string,
+		now: string,
+	): Promise<AuthenticatedSession | null> {
+		if (!digestPattern.test(currentTokenHash) || !digestPattern.test(newTokenHash)) return null;
+		if (!Number.isFinite(Date.parse(now))) return null;
+		return this.storage.transaction(async (tx) => {
+			const current = await tx.webSessions.get(currentTokenHash);
+			if (!current || current.revokedAt || current.tokenStatus !== "current" || current.expiresAt <= now) return null;
+			const [user, binding] = await Promise.all([
+				tx.users.get(current.userId),
+				tx.identityBindings.get(current.identityBindingId),
+			]);
+			if (!user || user.status !== "active" || !binding || binding.status !== "active" || binding.userId !== user.id) return null;
+			const familyId = current.familyId ?? current.id;
+			const graceExpiresAt = new Date(Date.parse(now) + 30_000).toISOString();
+			await tx.webSessions.put({ ...current, tokenStatus: "grace", graceExpiresAt, rotatedAt: now });
+			const expiry = webSessionExpiry(
+				current.sessionMode ?? "default",
+				current.authenticatedAt ?? current.createdAt,
+				now,
+			);
+			const rotated = {
+				...current,
+				id: newTokenHash,
+				familyId,
+				createdAt: now,
+				tokenStatus: "current" as const,
+				lastActivityAt: now,
+				expiresAt: new Date(Math.min(Date.parse(expiry.idleExpiresAt), Date.parse(current.absoluteExpiresAt ?? current.expiresAt))).toISOString(),
+				idleExpiresAt: expiry.idleExpiresAt,
+				absoluteExpiresAt: current.absoluteExpiresAt ?? current.expiresAt,
+			} as WebSession;
+			await tx.webSessions.put(rotated);
+			return {
+				userId: user.id,
+				sessionId: rotated.id,
+				createdAt: rotated.createdAt,
+				expiresAt: rotated.expiresAt,
+				...(rotated.sessionMode ? { sessionMode: rotated.sessionMode } : {}),
+				...(rotated.authenticatedAt ? { authenticatedAt: rotated.authenticatedAt } : {}),
+				...(rotated.lastActivityAt ? { lastActivityAt: rotated.lastActivityAt } : {}),
+				...(rotated.idleExpiresAt ? { idleExpiresAt: rotated.idleExpiresAt } : {}),
+				...(rotated.absoluteExpiresAt ? { absoluteExpiresAt: rotated.absoluteExpiresAt } : {}),
+				...(user.displayName ? { displayName: user.displayName } : {}),
+				identity: {
+					platform: binding.platform,
+					applicationId: binding.applicationId,
+					tenantId: binding.tenantId,
+					idType: binding.idType,
+					externalId: binding.externalId,
+				},
+			};
 		});
 	}
 

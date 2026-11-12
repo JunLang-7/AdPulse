@@ -181,9 +181,15 @@ export interface NotificationItem {
 export interface WebSession {
 	/** SHA-256 digest of the opaque cookie value; never store the cookie itself. */
 	id: string;
+	/** Stable identifier shared by all token generations of one login. */
+	familyId?: string;
 	userId: string;
 	identityBindingId: string;
 	createdAt: string;
+	/** current or short-lived grace token after rotation. */
+	tokenStatus?: "current" | "grace";
+	graceExpiresAt?: string;
+	rotatedAt?: string;
 	/** Minimum expiry for legacy sessions created before sliding activity (#87). */
 	expiresAt: string;
 	revokedAt?: string;
