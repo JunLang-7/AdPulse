@@ -375,7 +375,7 @@ export class AuthenticationService {
 				return null;
 
 			let updated = session;
-			if (session.sessionMode && validSessionMode(session.sessionMode)) {
+			if (session.tokenStatus !== "grace" && session.sessionMode && validSessionMode(session.sessionMode)) {
 				const authenticatedAt = session.authenticatedAt ?? session.createdAt;
 				const absoluteExpiresAt = session.absoluteExpiresAt ?? session.expiresAt;
 				if (Date.parse(absoluteExpiresAt) <= Date.parse(now)) return null;
@@ -447,6 +447,11 @@ export class AuthenticationService {
 			const familyId = current.familyId ?? current.id;
 			const graceExpiresAt = new Date(Date.parse(now) + 30_000).toISOString();
 			await tx.webSessions.put({ ...current, tokenStatus: "grace", graceExpiresAt, rotatedAt: now });
+			const expiry = webSessionExpiry(
+				current.sessionMode ?? "default",
+				current.authenticatedAt ?? current.createdAt,
+				now,
+			);
 			const rotated = {
 				...current,
 				id: newTokenHash,
@@ -454,9 +459,9 @@ export class AuthenticationService {
 				createdAt: now,
 				tokenStatus: "current" as const,
 				lastActivityAt: now,
-				expiresAt: current.expiresAt,
-				...(current.idleExpiresAt ? { idleExpiresAt: current.idleExpiresAt } : {}),
-				...(current.absoluteExpiresAt ? { absoluteExpiresAt: current.absoluteExpiresAt } : {}),
+				expiresAt: new Date(Math.min(Date.parse(expiry.idleExpiresAt), Date.parse(current.absoluteExpiresAt ?? current.expiresAt))).toISOString(),
+				idleExpiresAt: expiry.idleExpiresAt,
+				absoluteExpiresAt: current.absoluteExpiresAt ?? current.expiresAt,
 			} as WebSession;
 			await tx.webSessions.put(rotated);
 			return {
