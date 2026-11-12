@@ -46,10 +46,27 @@ test("discovery propagates a rate limit without retrying or leaking the upstream
 	let calls = 0;
 	await assert.rejects(discoverSource("weichai_news", "campaigns", process.execPath, async (_bin, args) => {
 		calls++;
-		assert.match(args[2], /^site:www\.weichai\.com .*品牌活动/);
+		assert.equal(args[2], "site:www.weichai.com/group/weichai/cn/media-hub/news2/ 潍柴 参展 展会 活动");
 		return reply({ ok: false, error: { code: "RATE_LIMITED", message: "private query" } }, 1);
 	}), { message: "Agent-Reach discovery failed (RATE_LIMITED)" });
 	assert.equal(calls, 1);
+});
+
+test("discovery accepts categorized and direct Weichai news on the same approved host", async () => {
+	const hub = "https://www.weichai.com/group/weichai/cn/media-hub/news2/";
+	const direct = `${hub}2026010312345678901/index.html`;
+	const categorized = `${hub}important-news/2026010412345678901/index.html`;
+	const { candidates } = await discoverSource("weichai_news", "products", process.execPath, async (_bin, args) => {
+		assert.equal(args[2], "site:www.weichai.com/group/weichai/cn/media-hub/news2/ 潍柴 新品 发布");
+		return reply({ items: [
+			{ title: "新版栏目直链", url: `${direct}?tracking=1` },
+			{ title: "分类栏目文章", url: categorized },
+			{ title: "其他子域名", url: direct.replace("www.weichai.com", "m.weichai.com") },
+			{ title: "栏目列表", url: `${hub}index.html` },
+			{ title: "其他站内页面", url: direct.replace("/news2/", "/products/") },
+		] });
+	});
+	assert.deepEqual(candidates.map(({ url }) => url), [direct, categorized]);
 });
 
 test("discovery rejects an unsupported response or unsuccessful process", async () => {

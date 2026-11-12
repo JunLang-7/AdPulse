@@ -8,6 +8,12 @@ const TOPICS = new Map([
 	["products", "新品发布 新产品上市"],
 	["campaigns", "品牌活动 市场营销"],
 ]);
+const WEICHAI_TOPICS = new Map([
+	["products", "新品 发布"],
+	["campaigns", "参展 展会 活动"],
+]);
+// The current news hub also publishes articles directly below news2, without a category.
+const WEICHAI_NEWS_ARTICLE = /^\/group\/weichai\/cn\/media-hub\/news2\/\d{14,}\/index\.html$/;
 const LIMIT = 5;
 const REACH_ERRORS = new Set([
 	"RATE_LIMITED", "PLATFORM_BLOCKED", "NEED_LOGIN", "NEED_SETUP", "TIMEOUT",
@@ -70,11 +76,14 @@ export async function discoverSource(
 	const source = SOURCE_DEFINITIONS[sourceKey];
 	if (!source || (sourceKey !== "haier_news" && sourceKey !== "weichai_news"))
 		throw new Error("discovery requires haier_news or weichai_news");
-	const keywords = TOPICS.get(topic);
+	const isWeichai = sourceKey === "weichai_news";
+	const keywords = (isWeichai ? WEICHAI_TOPICS : TOPICS).get(topic);
 	if (!keywords) throw new Error("discovery requires products or campaigns");
 	if (!executable || !isAbsolute(executable))
 		throw new Error("set AGENT_REACH_BIN to the absolute path of the pinned Agent-Reach executable");
-	const query = `site:${source.allowedHosts[0]} ${source.label} ${keywords}`;
+	const site = isWeichai ? `${source.allowedHosts[0]}${new URL(".", source.listUrl).pathname}` : source.allowedHosts[0];
+	const brand = isWeichai ? "潍柴" : source.label;
+	const query = `site:${site} ${brand} ${keywords}`;
 	const { stdout, exitCode } = await run(executable, [
 		"web", "search", query, "--backend", "exa", "--limit", String(LIMIT), "--timeout", "12",
 	]);
@@ -102,8 +111,10 @@ export async function discoverSource(
 		const title = item.title.trim();
 		if (!title || title.length > 200 || /[\u0000-\u001f\u007f]/u.test(title)) continue;
 		const target = new URL(item.url);
+		const isArticle = source.pathPattern.test(target.pathname) ||
+			(isWeichai && WEICHAI_NEWS_ARTICLE.test(target.pathname));
 		if (target.protocol !== "https:" || target.username || target.password || target.port ||
-			!source.pathPattern.test(target.pathname)) continue;
+			!isArticle) continue;
 		const url = normalizeItemUrl(item.url, source.listUrl, source.allowedHosts);
 		if (!url || candidates.has(url)) continue;
 		candidates.set(url, { title, url, indexedPublishedAt: indexDate(item.published_at) });
