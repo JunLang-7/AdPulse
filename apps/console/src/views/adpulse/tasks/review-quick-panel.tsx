@@ -126,6 +126,7 @@ function WorkbookReview({ onConfirm }: { onConfirm: (values: QuickReviewInput) =
 	const [sheet, setSheet] = useState(0);
 	const [reading, setReading] = useState(false);
 	const [error, setError] = useState("");
+	const fileInput = useRef<HTMLInputElement>(null);
 
 	async function readFile(file: File) {
 		setReading(true);
@@ -148,17 +149,16 @@ function WorkbookReview({ onConfirm }: { onConfirm: (values: QuickReviewInput) =
 	return (
 		<div className="space-y-3 border-t p-3 text-sm">
 			<p className="text-muted-foreground">选择 Excel 报表（.xlsx，最多 8 MB）。核对两个数字后即可试算。</p>
-			<label className="block space-y-1">
-				<span className="font-medium">选择 Excel 报表</span>
-				<Input type="file" accept=".xlsx"
-					className="h-auto py-2 file:mr-3 file:rounded-md file:bg-primary file:px-3 file:text-primary-foreground"
-					disabled={reading}
-					onChange={(event) => {
-						const file = event.currentTarget.files?.[0];
-						event.currentTarget.value = "";
-						if (file) void readFile(file);
-					}} />
-			</label>
+			<input ref={fileInput} type="file" hidden aria-label="选择 Excel 报表" accept=".xlsx"
+				disabled={reading} onChange={(event) => {
+					const file = event.currentTarget.files?.[0];
+					event.currentTarget.value = "";
+					if (file) void readFile(file);
+				}} />
+			<Button type="button" variant="outline" disabled={reading} onClick={() => fileInput.current?.click()}>
+				<FileSpreadsheet aria-hidden="true" />
+				{name ? "换一份 Excel" : "选择 Excel 报表"}
+			</Button>
 			{reading ? <p role="status">正在读取表格…</p> : null}
 			{error ? <p role="alert" className="text-destructive">{error}</p> : null}
 			{workbook[sheet] ? (
