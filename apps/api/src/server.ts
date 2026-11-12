@@ -326,18 +326,12 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						digest(previousToken),
 						digest(newToken),
 						currentTime.toISOString(),
+						currentTime.toISOString(),
 					);
 					if (!rotated) {
 						reject("session_invalid", req, path);
 						clearCookie(res, OAUTH_COOKIE);
 						return redirect(res, "/login?error=authorization");
-					}
-					// Update recent verification timestamp without extending absolute expiry.
-					const sessionRow = await runtime.storage.transaction((tx) => tx.webSessions.get(digest(newToken)));
-					if (sessionRow) {
-						await runtime.storage.transaction((tx) =>
-							tx.webSessions.put({ ...sessionRow, recentlyVerifiedAt: currentTime.toISOString() }),
-						);
 					}
 					appendCookie(
 						res,

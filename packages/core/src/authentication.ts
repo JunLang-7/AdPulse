@@ -438,6 +438,7 @@ export class AuthenticationService {
 		currentTokenHash: string,
 		newTokenHash: string,
 		now: string,
+		recentlyVerifiedAt?: string,
 	): Promise<AuthenticatedSession | null> {
 		if (!digestPattern.test(currentTokenHash) || !digestPattern.test(newTokenHash)) return null;
 		if (!Number.isFinite(Date.parse(now))) return null;
@@ -467,6 +468,7 @@ export class AuthenticationService {
 				expiresAt: new Date(Math.min(Date.parse(expiry.idleExpiresAt), Date.parse(current.absoluteExpiresAt ?? current.expiresAt))).toISOString(),
 				idleExpiresAt: expiry.idleExpiresAt,
 				absoluteExpiresAt: current.absoluteExpiresAt ?? current.expiresAt,
+				recentlyVerifiedAt: recentlyVerifiedAt ?? current.recentlyVerifiedAt,
 			} as WebSession;
 			await tx.webSessions.put(rotated);
 			return {
