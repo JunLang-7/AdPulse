@@ -592,6 +592,18 @@ export interface Delivery extends CardDelivery {
 	sessionId?: string;
 	roundId?: string;
 	purpose: "decision" | "confirmation" | "digest";
+	/** New alert decision only: frozen permission snapshot, rechecked before every attempt. */
+	proactiveDecision?: {
+		frozenAt: string;
+		settingsVersion: number;
+		confirmedVersion: number;
+		enabledAt: string;
+		destinationId: string;
+		destinationVerifiedAt: string;
+		consentVersion: number;
+	};
+	/** Last successful preflight, committed before network I/O; not a send receipt. */
+	proactiveCheckedAt?: string;
 	/** 主动通知投递的归属人；日汇总用它做发送前重检与取消。 */
 	ownerId?: string;
 	/** 日汇总投递对应的批次（回写批次状态用）。 */
@@ -609,6 +621,7 @@ export type JobTask =
 	| { kind: "prepare_round"; sessionId: string; version: number }
 	| { kind: "prepare_investigation_alert_session"; alertId: string }
 	| { kind: "send_delivery"; deliveryId: string }
+	| { kind: "send_investigation_decision"; deliveryId: string }
 	| { kind: "send_digest"; batchId: string };
 export interface Job {
 	id: string;

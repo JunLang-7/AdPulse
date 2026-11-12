@@ -1,3 +1,7 @@
+import {
+	admitDecisionIn,
+	type DecisionAccountResolver,
+} from "./decision-delivery.js";
 import type { Limits, Signal, Strategy } from "./domain/strategy.js";
 import { applyChanges, validateStrategy } from "./domain/strategy.js";
 import { invalidateAlertCandidate } from "./investigation-alerts.js";
@@ -77,6 +81,7 @@ export class Orchestrator {
 		 * 返回 undefined 时卡片不带链接（与未配置控制台入口时的行为一致）。
 		 */
 		private detailUrlFor?: (sessionId: string) => string | undefined,
+		private decisionAccountFor?: DecisionAccountResolver,
 	) {}
 
 	async startSession(input: StartSession): Promise<Session> {
@@ -381,7 +386,7 @@ export class Orchestrator {
 				});
 		this.validateProposal(proposal, snapshot);
 		await this.storage.transaction(async (tx) => {
-			const session = await tx.sessions.get(sessionId);
+			let session = await tx.sessions.get(sessionId);
 			const frozenAt = this.now();
 			if (
 				session?.status !== "planning" ||
@@ -437,7 +442,43 @@ export class Orchestrator {
 				});
 				actions.push({ optionId: candidate.id, actionRef });
 			}
-			if (session.deliveryMode !== "web")
+			if (alert) {
+				const admission = await admitDecisionIn(
+					tx,
+					session,
+					frozenAt,
+					this.decisionAccountFor,
+				);
+				if (admission && round.expiresAt) {
+					session = {
+						...session,
+						deliveryMode: "channel",
+						initiatedBy: "system",
+						recipient: admission.recipient,
+						allowedActorIds: [admission.recipient.externalId],
+					};
+					const expiry = new Date(Date.parse(round.expiresAt) + 8 * 60 * 60_000)
+						.toISOString()
+						.slice(0, 19)
+						.replace("T", " ");
+					await this.queueDelivery(
+						tx,
+						session,
+						round,
+						{
+							...card,
+							summary: `${card.summary} 按钮截止（北京时间）：${expiry}；此为系统操作期限，不代表业务已解决。`,
+						},
+						actions,
+						"decision",
+						admission.snapshot,
+					);
+				} else {
+					// No historical conversion, even when this session used a channel in an older round.
+					const { recipient: _recipient, ...webSession } = session;
+					session = { ...webSession, deliveryMode: "web", allowedActorIds: [] };
+				}
+			} else if (session.deliveryMode !== "web")
 				await this.queueDelivery(tx, session, round, card, actions);
 			await tx.sessions.put({ ...session, roundNo, status: "awaiting_input" });
 			if (alert) {
@@ -498,6 +539,7 @@ export class Orchestrator {
 		card: Delivery["card"],
 		actions: Delivery["actions"],
 		purpose: Delivery["purpose"] = "decision",
+		proactiveDecision?: Delivery["proactiveDecision"],
 	): Promise<void> {
 		if (!session.recipient || !round.expiresAt)
 			throw new Error("channel delivery requires a recipient and expiry");
@@ -510,13 +552,17 @@ export class Orchestrator {
 			sessionId: session.id,
 			roundId: round.id,
 			purpose,
+			...(proactiveDecision ? { proactiveDecision } : {}),
 			expiresAt: round.expiresAt,
 			status: "pending",
 			card: cardWithDetail,
 			actions,
 		};
 		await tx.deliveries.put(delivery);
-		await this.enqueue(tx, { kind: "send_delivery", deliveryId: delivery.id });
+		await this.enqueue(tx, {
+			kind: proactiveDecision ? "send_investigation_decision" : "send_delivery",
+			deliveryId: delivery.id,
+		});
 	}
 
 	private async enqueue(tx: Transaction, task: JobTask): Promise<void> {

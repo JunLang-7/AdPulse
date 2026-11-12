@@ -1,4 +1,8 @@
 import type { Orchestrator } from "./orchestrator.js";
+import {
+	checkDecisionIn,
+	type DecisionAccountResolver,
+} from "./decision-delivery.js";
 import type { InvestigationAlertService } from "./investigation-alerts.js";
 import {
 	canSendProactiveIn,
@@ -40,6 +44,7 @@ export class Worker {
 			detailBase?: string;
 		},
 		private readonly scheduleIntervalMs = 30_000,
+		private decisionAccountFor?: DecisionAccountResolver,
 	) {}
 
 	/** 上一次日汇总调度的时间戳，用于在没有任务可领时按间隔触发。 */
@@ -90,6 +95,7 @@ export class Worker {
 						throw new Error("investigation alert service is not configured");
 					await this.investigationAlerts.prepareSession(job.task.alertId);
 					break;
+				case "send_investigation_decision":
 				case "send_delivery":
 					await this.send(job);
 					break;
@@ -130,9 +136,12 @@ export class Worker {
 							Math.min(300_000, 1000 * 2 ** current.attempts),
 					).toISOString(),
 				});
-				if (exhausted && current.task.kind === "send_delivery") {
+				if (
+					exhausted &&
+					(current.task.kind === "send_delivery" || current.task.kind === "send_investigation_decision")
+				) {
 					const delivery = await tx.deliveries.get(current.task.deliveryId);
-					if (delivery && delivery.status !== "sent") {
+					if (delivery && (delivery.status === "pending" || delivery.status === "failed")) {
 						await tx.deliveries.put({
 							...delivery,
 							status: "failed",
@@ -375,7 +384,8 @@ export class Worker {
 	}
 
 	private async send(job: Job): Promise<void> {
-		if (job.task.kind !== "send_delivery") return;
+		if (job.task.kind !== "send_delivery" && job.task.kind !== "send_investigation_decision")
+			return;
 		const deliveryId = job.task.deliveryId;
 		const delivery = await this.storage.transaction((tx) =>
 			tx.deliveries.get(deliveryId),
@@ -410,6 +420,7 @@ export class Worker {
 			delivery.purpose === "confirmation" && session?.status === "cancelled";
 		if (staleDecision || staleConfirmation || expired) {
 			await this.storage.transaction(async (tx) => {
+				if (!(await this.holdsLease(tx, job))) return;
 				const current = await tx.deliveries.get(deliveryId);
 				if (current && current.status === "pending")
 					await tx.deliveries.put({ ...current, status: "cancelled" });
@@ -439,6 +450,7 @@ export class Worker {
 								? "consent_revoked"
 								: "identity_inactive";
 				await this.storage.transaction(async (tx) => {
+					if (!(await this.holdsLease(tx, job))) return;
 					const current = await tx.deliveries.get(deliveryId);
 					if (current && current.status === "pending")
 						await tx.deliveries.put({
@@ -449,6 +461,48 @@ export class Worker {
 				});
 				return;
 			}
+		}
+
+		if (
+			delivery.proactiveDecision ||
+			job.task.kind === "send_investigation_decision" ||
+			(delivery.purpose === "decision" && session?.investigationAlertId)
+		) {
+			const allowed = await this.storage.transaction(async (tx) => {
+				if (!(await this.holdsLease(tx, job))) return false;
+				const current = await tx.deliveries.get(deliveryId);
+				if (!current || !["pending", "failed"].includes(current.status))
+					return false;
+				const checkedAt = this.now();
+				const result = await checkDecisionIn(
+					tx,
+					current,
+					checkedAt,
+					this.decisionAccountFor,
+				);
+				if (result.kind === "suppress") {
+					await tx.deliveries.put({
+						...current,
+						status: "suppressed",
+						suppressionReason: result.reason,
+					});
+					return false;
+				}
+				if (result.kind === "defer") {
+					const currentJob = await tx.jobs.get(job.id);
+					if (currentJob)
+						await tx.jobs.put({
+							...currentJob,
+							status: "pending",
+							runAt: result.runAt,
+							attempts: Math.max(0, currentJob.attempts - 1),
+						});
+					return false;
+				}
+				await tx.deliveries.put({ ...current, proactiveCheckedAt: checkedAt });
+				return true;
+			});
+			if (!allowed) return;
 		}
 
 		const channel = this.channels.get(delivery.recipient.accountId);
@@ -478,7 +532,7 @@ export class Worker {
 					lastError: "recipient unreachable",
 				});
 				if (this.notifications && session)
-					await noteUnreachableIn(tx, session.ownerId, now, delivery.recipient);
+					await noteUnreachableIn(tx, session.ownerId, now, delivery.recipient, deliveryId);
 			});
 			return;
 		}

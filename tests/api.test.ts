@@ -121,6 +121,66 @@ const startInput = () => ({
   expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
 });
 
+test("HTTP: proactive decision jobs remain owner-scoped and terminal deliveries cannot be revived", async (t) => {
+  const { runtime, url, headers, strangerHeaders, ownerUserId } =
+    await serve(t);
+  const input = startInput();
+  const session = await runtime.decisions.startSession({
+    ...input,
+    recipient: { ...input.recipient, kind: "user" },
+    requestId: crypto.randomUUID(),
+    ownerId: ownerUserId,
+  });
+  await runtime.decisions.prepareRound(session.id, 0);
+  const delivery = (
+    await runtime.storage.transaction((tx) => tx.deliveries.all())
+  )[0];
+  assert.ok(delivery);
+  const job = (await runtime.storage.transaction((tx) => tx.jobs.all())).find(
+    (item) => item.task.kind === "send_delivery",
+  );
+  assert.ok(job);
+  await runtime.storage.transaction(async (tx) => {
+    await tx.jobs.put({
+      ...job,
+      task: { kind: "send_investigation_decision", deliveryId: delivery.id },
+      status: "failed",
+    });
+    await tx.deliveries.put({
+      ...delivery,
+      status: "suppressed",
+      suppressionReason: "settings_changed",
+    });
+  });
+  const route = `${url}/api/jobs/${encodeURIComponent(job.id)}/retry`;
+  assert.equal(
+    (await fetch(route, { method: "POST", headers: strangerHeaders })).status,
+    404,
+  );
+  assert.equal((await fetch(route, { method: "POST", headers })).status, 409);
+  assert.equal(
+    (
+      await runtime.storage.transaction((tx) =>
+        tx.deliveries.get(delivery.id),
+      )
+    )?.status,
+    "suppressed",
+  );
+  const detail: { jobs: Array<{ id: string; task: { kind: string } }> } =
+    await (
+      await fetch(`${url}/api/sessions/${encodeURIComponent(session.id)}`, {
+        headers,
+      })
+    ).json();
+  assert.ok(
+    detail.jobs.some(
+      (item) =>
+        item.id === job.id &&
+        item.task.kind === "send_investigation_decision",
+    ),
+  );
+});
+
 test("HTTP flow drives create -> card -> console choice -> strategy snapshot", async (t) => {
   const { runtime, url, headers } = await serve(t);
   const key = crypto.randomUUID();

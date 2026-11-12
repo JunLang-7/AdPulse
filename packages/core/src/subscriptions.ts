@@ -3,6 +3,7 @@
 // 版本语义：每人一个单调计数，开关与关注列表的所有写入共用，便于 #37 判断「哪批待发已过期」。
 
 import crypto from "node:crypto";
+import { cancelDecisionDeliveriesIn } from "./decision-cancellation.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
 	SubscriptionCategory,
@@ -245,6 +246,7 @@ export class SubscriptionService {
 			if (!proactiveEnabled && current?.proactiveEnabled)
 				next.disabledAt = at;
 			await tx.subscriptionSettings.put(next);
+			await cancelDecisionDeliveriesIn(tx, userId, "settings_changed");
 			return this.project(
 				next,
 				(await tx.subscriptionTargets.all()).filter(
@@ -410,6 +412,7 @@ export class SubscriptionService {
 					updatedAt: at,
 				};
 		await tx.subscriptionSettings.put(next);
+		await cancelDecisionDeliveriesIn(tx, userId, "settings_changed");
 		return next;
 	}
 

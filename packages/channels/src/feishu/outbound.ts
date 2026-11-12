@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	type CardDelivery,
 	type DeliveryReceipt,
@@ -43,7 +44,14 @@ export class FeishuOutbound implements OutboundChannel {
 					receive_id: delivery.recipient.externalId,
 					msg_type: "interactive",
 					content: JSON.stringify(toFeishuCard(delivery)),
-					uuid: delivery.id,
+					// Preserve retry identity within Feishu's 50-character limit; hashing is not collision-free.
+					uuid:
+						delivery.id.length <= 50
+							? delivery.id
+							: createHash("sha256")
+									.update(delivery.id)
+									.digest("hex")
+									.slice(0, 50),
 				}),
 			},
 		);

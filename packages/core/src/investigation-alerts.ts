@@ -417,9 +417,11 @@ export class InvestigationAlertService {
 				if (
 					existing.ownerId !== alert.ownerId ||
 					(existing.investigationAlertId && existing.investigationAlertId !== alert.id) ||
-					(existing.deliveryMode && existing.deliveryMode !== "web")
+					(existing.deliveryMode && existing.deliveryMode !== "web" && existing.investigationAlertId !== alert.id)
 				)
 					throw new InvestigationAlertValidationError("alert session identity conflict");
+				// A retry must not downgrade an already linked channel round or replace its recipient.
+				if (existing.deliveryMode === "channel") return;
 				const linked: Session = {
 					...existing,
 					deliveryMode: "web",
