@@ -197,6 +197,7 @@ export interface WebSession {
 	sessionMode?: "default" | "remembered";
 	authenticatedAt?: string;
 	lastActivityAt?: string;
+	recentlyVerifiedAt?: string;
 	idleExpiresAt?: string;
 	absoluteExpiresAt?: string;
 }
@@ -212,6 +213,8 @@ export interface LoginTransaction {
 	consumedAt?: string;
 	/** Retained for the follow-up activity/reauth API; not trusted from clients. */
 	rememberMe?: boolean;
+	purpose?: "login" | "reauth";
+	reauthSessionId?: string;
 }
 export interface Task {
 	id: string;

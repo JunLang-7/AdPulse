@@ -58,6 +58,7 @@ export interface AuthenticatedSession {
 	sessionId: string;
 	createdAt: string;
 	expiresAt: string;
+	recentlyVerifiedAt?: string;
 	sessionMode?: WebSessionMode;
 	authenticatedAt?: string;
 	lastActivityAt?: string;
@@ -242,6 +243,7 @@ export class AuthenticationService {
 						sessionId: sessionTokenHash,
 						createdAt: now,
 						expiresAt: expiry.expiresAt,
+						recentlyVerifiedAt: now,
 						...(displayName ? { displayName } : {}),
 					};
 					await tx.webSessions.put({
@@ -254,6 +256,7 @@ export class AuthenticationService {
 						tokenStatus: "current",
 						sessionMode: mode,
 						authenticatedAt: now,
+						recentlyVerifiedAt: now,
 						lastActivityAt: now,
 						idleExpiresAt: expiry.idleExpiresAt,
 						absoluteExpiresAt: expiry.absoluteExpiresAt,
@@ -335,6 +338,7 @@ export class AuthenticationService {
 				sessionId: session.id,
 				createdAt: session.createdAt,
 				expiresAt: session.expiresAt,
+				...(session.recentlyVerifiedAt ? { recentlyVerifiedAt: session.recentlyVerifiedAt } : {}),
 				...(session.sessionMode ? { sessionMode: session.sessionMode } : {}),
 				...(session.authenticatedAt ? { authenticatedAt: session.authenticatedAt } : {}),
 				...(session.lastActivityAt ? { lastActivityAt: session.lastActivityAt } : {}),
@@ -398,6 +402,7 @@ export class AuthenticationService {
 				sessionId: updated.id,
 				createdAt: updated.createdAt,
 				expiresAt: updated.expiresAt,
+				...(updated.recentlyVerifiedAt ? { recentlyVerifiedAt: updated.recentlyVerifiedAt } : {}),
 				...(updated.sessionMode ? { sessionMode: updated.sessionMode } : {}),
 				...(updated.authenticatedAt ? { authenticatedAt: updated.authenticatedAt } : {}),
 				...(updated.lastActivityAt ? { lastActivityAt: updated.lastActivityAt } : {}),
@@ -433,6 +438,7 @@ export class AuthenticationService {
 		currentTokenHash: string,
 		newTokenHash: string,
 		now: string,
+		recentlyVerifiedAt?: string,
 	): Promise<AuthenticatedSession | null> {
 		if (!digestPattern.test(currentTokenHash) || !digestPattern.test(newTokenHash)) return null;
 		if (!Number.isFinite(Date.parse(now))) return null;
@@ -462,6 +468,7 @@ export class AuthenticationService {
 				expiresAt: new Date(Math.min(Date.parse(expiry.idleExpiresAt), Date.parse(current.absoluteExpiresAt ?? current.expiresAt))).toISOString(),
 				idleExpiresAt: expiry.idleExpiresAt,
 				absoluteExpiresAt: current.absoluteExpiresAt ?? current.expiresAt,
+				recentlyVerifiedAt: recentlyVerifiedAt ?? current.recentlyVerifiedAt,
 			} as WebSession;
 			await tx.webSessions.put(rotated);
 			return {
@@ -469,6 +476,7 @@ export class AuthenticationService {
 				sessionId: rotated.id,
 				createdAt: rotated.createdAt,
 				expiresAt: rotated.expiresAt,
+				...(rotated.recentlyVerifiedAt ? { recentlyVerifiedAt: rotated.recentlyVerifiedAt } : {}),
 				...(rotated.sessionMode ? { sessionMode: rotated.sessionMode } : {}),
 				...(rotated.authenticatedAt ? { authenticatedAt: rotated.authenticatedAt } : {}),
 				...(rotated.lastActivityAt ? { lastActivityAt: rotated.lastActivityAt } : {}),

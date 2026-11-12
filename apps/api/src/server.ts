@@ -217,6 +217,24 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				}
 
 				const rememberMe = requestUrl.searchParams.get("rememberMe") === "1";
+				const reauth = requestUrl.searchParams.get("reauth") === "1";
+				let reauthSessionId: string | undefined;
+				if (reauth) {
+					const token = cookieValue(req.headers.cookie, SESSION_COOKIE);
+					if (!token || !COOKIE_TOKEN_PATTERN.test(token)) {
+						reject("session_missing", req, path);
+						throw new HttpError(401, "unauthorized");
+					}
+					const session = await auth.service.authenticateSession(
+						digest(token),
+						now().toISOString(),
+					);
+					if (!session) {
+						reject("session_invalid", req, path);
+						throw new HttpError(401, "unauthorized");
+					}
+					reauthSessionId = session.sessionId;
+				}
 				const state = randomBytes(32).toString("base64url");
 				const browserNonce = randomBytes(32).toString("base64url");
 				const codeVerifier = randomBytes(32).toString("base64url");
@@ -232,6 +250,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					createdAt: createdAt.toISOString(),
 					expiresAt: new Date(createdAt.getTime() + OAUTH_TTL_MS).toISOString(),
 					rememberMe,
+					...(reauth ? { purpose: "reauth" as const, reauthSessionId } : {}),
 				});
 				appendCookie(res, OAUTH_COOKIE, browserNonce, OAUTH_TTL_MS / 1000);
 				const location = auth.provider.authorizationUrl({
@@ -286,8 +305,45 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					return redirect(res, "/login?error=identity");
 				}
 
-				// A successful account switch must not leave the previous browser session live.
 				const previousToken = cookieValue(req.headers.cookie, SESSION_COOKIE);
+				if (transaction.purpose === "reauth") {
+					if (!previousToken || !COOKIE_TOKEN_PATTERN.test(previousToken) || digest(previousToken) !== transaction.reauthSessionId) {
+						reject("session_invalid", req, path);
+						clearCookie(res, OAUTH_COOKIE);
+						return redirect(res, "/login?error=authorization");
+					}
+					const currentSession = await auth.service.authenticateSession(
+						digest(previousToken),
+						currentTime.toISOString(),
+					);
+					if (!currentSession || currentSession.userId !== (await auth.service.resolveIdentity(login.identity) ?? "")) {
+						reject("identity_rejected", req, path);
+						clearCookie(res, OAUTH_COOKIE);
+						return redirect(res, "/login?error=identity");
+					}
+					const newToken = randomBytes(32).toString("base64url");
+					const rotated = await auth.service.rotateWebSession(
+						digest(previousToken),
+						digest(newToken),
+						currentTime.toISOString(),
+						currentTime.toISOString(),
+					);
+					if (!rotated) {
+						reject("session_invalid", req, path);
+						clearCookie(res, OAUTH_COOKIE);
+						return redirect(res, "/login?error=authorization");
+					}
+					appendCookie(
+						res,
+						SESSION_COOKIE,
+						newToken,
+						Math.max(1, Math.ceil((Date.parse(rotated.expiresAt) - currentTime.getTime()) / 1000)),
+					);
+					clearCookie(res, OAUTH_COOKIE);
+					return redirect(res, transaction.returnTo);
+				}
+
+				// A successful account switch must not leave the previous browser session live.
 				if (previousToken && COOKIE_TOKEN_PATTERN.test(previousToken))
 					await auth.service.revokeSession(digest(previousToken), currentTime.toISOString());
 				const sessionToken = randomBytes(32).toString("base64url");
@@ -576,7 +632,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					(req.method === "PUT" || req.method === "DELETE")
 				) {
 					const verifiedAt = Date.parse(
-						session.authenticatedAt ?? session.createdAt,
+						session.recentlyVerifiedAt ?? session.authenticatedAt ?? session.createdAt,
 					);
 					if (
 						!Number.isFinite(verifiedAt) ||
