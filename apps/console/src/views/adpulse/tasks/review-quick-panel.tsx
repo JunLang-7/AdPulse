@@ -147,7 +147,7 @@ function WorkbookReview({ onConfirm }: { onConfirm: (values: QuickReviewInput) =
 
 	return (
 		<div className="space-y-3 border-t p-3 text-sm">
-			<p className="text-muted-foreground">选择一个 Excel（.xlsx，最多 8 MB）。在本机预览，确认后用于试算。</p>
+			<p className="text-muted-foreground">选择 Excel 报表（.xlsx，最多 8 MB）。核对两个数字后即可试算。</p>
 			<label className="block space-y-1">
 				<span className="font-medium">选择 Excel 报表</span>
 				<Input type="file" accept=".xlsx"
@@ -193,7 +193,7 @@ function WorkbookRows({ data, onConfirm }: { data: SheetData<string>; onConfirm:
 				</label>
 			</details>
 			{header ? <ReviewMapping key={headerNumber} data={data} headerIndex={Number(headerNumber) - 1} onConfirm={onConfirm} /> :
-				<p>请填写有效的列名行号。</p>}
+				<p>请输入表中标题所在的行号。</p>}
 		</div>
 	);
 }
@@ -219,9 +219,11 @@ function ReviewMapping({ data, headerIndex, onConfirm }: {
 			error = cause instanceof Error ? cause.message : "请检查选中的行和列。";
 		}
 	}
-	if (!rows.length) return <p>列名下方没有数据。请调整列名所在行，或手动填写。</p>;
+	if (!rows.length) return <p>标题下面没有数字。可以调整标题所在行，或回到上方手动填写。</p>;
 	const options = header.flatMap((cell, index) => cellText(cell) ? [{ index, label: cellText(cell) }] : []);
 	if (options.length > 200) return <p>列太多，请把需要的列复制到新的工作表后重试。</p>;
+	const fieldLabels = { spend: "投放花费（元）", consultations: "咨询次数" };
+	const needsColumnChoice = !columns.spend || !columns.consultations;
 	const spendCell = `${rowIndex}:${columns.spend}`;
 	const requiresYuanConfirmation = Boolean(preview?.spend) && !isYuanColumn(cellText(header[Number(columns.spend)]));
 
@@ -229,7 +231,7 @@ function ReviewMapping({ data, headerIndex, onConfirm }: {
 		<div className="space-y-3 rounded-md border p-3">
 			{rows.length > 1 ? (
 				<>
-					<p>选一行同一时段、同一投放范围的汇总数据。表中有 {rows.length} 行可选。</p>
+					<p>表里有 {rows.length} 条记录。请选择本次想看的那一条。</p>
 					<div className="flex flex-wrap gap-2">
 						{[...new Set([...rows.slice(0, 3), rows[rows.length - 1]])].map((index) => (
 							<Button key={index} size="sm" type="button" variant={rowIndex === index ? "secondary" : "outline"}
@@ -238,35 +240,55 @@ function ReviewMapping({ data, headerIndex, onConfirm }: {
 							</Button>
 						))}
 					</div>
-					<label className="block max-w-40 space-y-1">
-						<span>所选数据行号</span>
-						<Input type="number" min={headerIndex + 2} max={data.length} value={rowNumber}
-							onChange={(event) => setRowNumber(event.target.value)} />
-					</label>
+					{rows.length > 4 ? (
+						<label className="block max-w-40 space-y-1">
+							<span>按行号选择（选填）</span>
+							<Input type="number" min={headerIndex + 2} max={data.length} value={rowNumber}
+								onChange={(event) => setRowNumber(event.target.value)} />
+						</label>
+					) : null}
 					{rowNumber && !selectedRow ? <p>请选择包含数据的行。</p> : null}
 				</>
 			) : null}
 			{selectedRow ? (
 				<>
 					<p className="font-medium">核对第 {rowNumber} 行</p>
-					<p className="text-xs text-muted-foreground">请确认花费列用人民币元、咨询列统计的是次数。线索数和咨询人数需按各自口径查看。</p>
-					<div className="grid gap-3 sm:grid-cols-2">
-						{(["spend", "consultations"] as const).map((field) => (
-							<label key={field} className="block min-w-0 space-y-1">
-								<span>{field === "spend" ? "投放花费对应列" : "咨询次数对应列"}</span>
-								<select className={selectClass} value={columns[field]}
-									onChange={(event) => setColumns({ ...columns, [field]: event.target.value })}>
-									<option value="">暂不带入</option>
-									{options.map(({ index, label }) => (
-										<option key={index} value={index}>第 {index + 1} 列 · {label.slice(0, 45)} · {cellText(selectedRow[index]).slice(0, 24) || "留空"}</option>
-									))}
-								</select>
-								<span className="block break-words text-xs text-muted-foreground">
-									{columns[field] ? `表中原值 ${cellText(selectedRow[Number(columns[field])]).slice(0, 100) || "留空"}` : "留空后可以手动补充"}
-								</span>
-							</label>
-						))}
-					</div>
+					{preview ? (
+						<table className="w-full text-left text-sm">
+							<caption className="sr-only">本次试算的数据</caption>
+							<thead className="text-xs text-muted-foreground">
+								<tr>
+									<th scope="col" className="px-2 py-1 font-medium">项目</th>
+									<th scope="col" className="px-2 py-1 font-medium">读取结果</th>
+								</tr>
+							</thead>
+							<tbody>
+								{(["spend", "consultations"] as const).map((field) => (
+									<tr key={field} className="border-t">
+										<th scope="row" className="px-2 py-2 font-medium">{fieldLabels[field]}</th>
+										<td className="px-2 py-2 tabular-nums">{preview[field] || "留空"}</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					) : null}
+					<details open={needsColumnChoice || Boolean(error) || undefined} className="rounded border px-3 py-2">
+						<summary className="cursor-pointer text-sm">{needsColumnChoice ? "选填：补充未识别的数据" : "调整读取结果"}</summary>
+						<div className="mt-2 grid gap-3 sm:grid-cols-2">
+							{(["spend", "consultations"] as const).map((field) => (
+								<label key={field} className="block min-w-0 space-y-1">
+									<span>{fieldLabels[field]}来自哪一列</span>
+									<select className={selectClass} value={columns[field]}
+										onChange={(event) => setColumns({ ...columns, [field]: event.target.value })}>
+										<option value="">留空，稍后可手填</option>
+										{options.map(({ index, label }) => (
+											<option key={index} value={index}>{label.slice(0, 45)} · {cellText(selectedRow[index]).slice(0, 24) || "留空"}（第 {index + 1} 列）</option>
+										))}
+									</select>
+								</label>
+							))}
+						</div>
+					</details>
 					{error ? <p role="alert" className="text-destructive">{error}</p> : null}
 					{requiresYuanConfirmation ? (
 						<label className="flex items-start gap-2">
@@ -275,7 +297,6 @@ function ReviewMapping({ data, headerIndex, onConfirm }: {
 							<span>我已核对，这个花费数字的单位是人民币元。</span>
 						</label>
 					) : null}
-					<p className="text-xs text-muted-foreground">确认后，试算将使用这一行的数字。</p>
 					<Button type="button" disabled={!preview || (!preview.spend && !preview.consultations) ||
 						(requiresYuanConfirmation && confirmedSpendCell !== spendCell)}
 						onClick={() => { if (preview) onConfirm(preview); }}>
