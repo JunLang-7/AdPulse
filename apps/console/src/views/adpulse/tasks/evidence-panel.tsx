@@ -201,6 +201,7 @@ function ReportUpload<T>({
 	const [preview, setPreview] = useState<{ fileName: string; report: T }>();
 	const [reading, setReading] = useState(false);
 	const [readError, setReadError] = useState("");
+	const fileInput = useRef<HTMLInputElement>(null);
 
 	async function select(file: File) {
 		setReading(true);
@@ -221,16 +222,17 @@ function ReportUpload<T>({
 			event.preventDefault();
 			if (preview && !pending && !saved && canConfirm) onConfirm(preview.report);
 		}}>
-			<label className="block space-y-1">
-				<span className="font-medium">{fileLabel}</span>
-				<Input type="file" accept=".json,application/json" disabled={pending || retrying || reading}
-					className="h-auto py-2"
-					onChange={(event) => {
-						const file = event.currentTarget.files?.[0];
-						event.currentTarget.value = "";
-						if (file) void select(file);
-					}} />
-			</label>
+			<input ref={fileInput} type="file" hidden aria-label={fileLabel} accept=".json,application/json"
+				disabled={pending || retrying || reading} onChange={(event) => {
+					const file = event.currentTarget.files?.[0];
+					event.currentTarget.value = "";
+					if (file) void select(file);
+				}} />
+			<Button type="button" variant="outline" disabled={pending || retrying || reading}
+				onClick={() => fileInput.current?.click()}>
+				<FileUp aria-hidden="true" />
+				{preview ? "换一份报表" : fileLabel}
+			</Button>
 			{reading ? <p role="status">正在读取报表…</p> : null}
 			{readError ? <p role="alert" className="text-destructive">{readError}</p> : null}
 			{preview ? (
