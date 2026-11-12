@@ -66,3 +66,14 @@ test("report file parsing rejects wrong shapes, invalid JSON and oversized files
 		/256 KB/,
 	);
 });
+
+test("report preview rejects unusable times and metrics before confirmation", async () => {
+	for (const invalid of [
+		{ ...record, period: { ...record.period, endsAt: "invalid" } },
+		{ ...record, values: { consultations: "5" } },
+		{ ...record, currency: { ...record.currency, minorUnitsPerMajor: 0 } },
+	]) {
+		await assert.rejects(readEvidenceImport(jsonFile({ ...report, records: [invalid] }), taskRef), /无法读取/);
+		await assert.rejects(readEvidenceCorrection(jsonFile(invalid)), /无法读取/);
+	}
+});

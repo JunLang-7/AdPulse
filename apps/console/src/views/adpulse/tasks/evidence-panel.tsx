@@ -11,10 +11,10 @@ import {
 } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { ComparisonPanel } from "./comparison-panel";
-import { readEvidenceCorrection, readEvidenceImport } from "./evidence-file";
+import { readEvidenceCorrection, readEvidenceImport, type ReportSummary } from "./evidence-file";
 import { InvestigationAlertsPanel } from "./investigation-alerts-panel";
 import { QuickReviewPanel } from "./review-quick-panel";
-import { formatBeijingPeriod } from "./task-form";
+import { formatBeijingPeriod, formatBeijingTime } from "./task-form";
 
 type EvidenceImportInput = components["schemas"]["EvidenceImportInput"];
 type EvidenceRevision = components["schemas"]["EvidenceRevision"];
@@ -27,7 +27,7 @@ function reportError(status: number, conflict: string): Error {
 		return new Error("当前账号没有操作权限，请确认登录后重试。");
 	if (status === 413) return new Error("报表文件过大，请分批导入。");
 	if (status === 409) return new Error(conflict);
-	return new Error("报表内容未通过校验，请核对任务、时间范围和报表口径。");
+	return new Error("这份报表无法保存，请检查是不是当前任务的报表，以及统计时间是否正确。");
 }
 
 export function EvidencePanel({
@@ -40,10 +40,8 @@ export function EvidencePanel({
 	rules: components["schemas"]["TaskRules"];
 }) {
 	const queryClient = useQueryClient();
-	const [reportFile, setReportFile] = useState<File | null>(null);
 	const [error, setError] = useState("");
 	const [confirmation, setConfirmation] = useState("");
-	const fileInput = useRef<HTMLInputElement>(null);
 	const importOperation = useRef<ReportOperation<EvidenceImportInput> | null>(null);
 	const evidence = useQuery({
 		queryKey: ["task-evidence", taskId],
@@ -56,10 +54,10 @@ export function EvidencePanel({
 		},
 	});
 	const importMutation = useMutation({
-		mutationFn: async (file: File) => {
+		mutationFn: async (body: EvidenceImportInput) => {
 			const operation = importOperation.current ?? {
 				key: crypto.randomUUID(),
-				body: await readEvidenceImport(file, { taskId, taskVersion }),
+				body,
 			};
 			importOperation.current = operation;
 			const result = await consoleClient.POST("/api/evidence/imports", {
@@ -79,8 +77,6 @@ export function EvidencePanel({
 		onSuccess: async ({ items }) => {
 			importOperation.current = null;
 			setError("");
-			setReportFile(null);
-			if (fileInput.current) fileInput.current.value = "";
 			const added = items.filter((item) => item.status === "created").length;
 			const existing = items.length - added;
 			const addedMessage = added ? `已导入 ${added} 个区间。` : "";
@@ -136,41 +132,18 @@ export function EvidencePanel({
 							<FileUp aria-hidden="true" className="mr-2 inline size-4" />
 							导入正式报表
 						</summary>
-						<form
-							className="space-y-3 border-t p-4"
-							onSubmit={(event) => {
-								event.preventDefault();
-								if (!reportFile || importMutation.isPending) return;
-								setError("");
-								setConfirmation("");
-								importMutation.mutate(reportFile);
-							}}
-						>
-							<p className="text-sm text-muted-foreground">
-								已有 AdPulse 报表？选择为当前任务准备的文件，每份可包含一到两个时段。
-							</p>
-							<label className="block space-y-1 text-sm">
-								<span className="font-medium">选择 AdPulse 报表文件（.json）</span>
-								<Input
-									ref={fileInput}
-									type="file"
-									accept=".json,application/json"
-									className="h-auto py-2"
-									disabled={importMutation.isPending || importOperation.current !== null}
-									onChange={(event) => {
-										setReportFile(event.target.files?.[0] ?? null);
-										setError("");
-										setConfirmation("");
-									}}
-								/>
-							</label>
-							<p className="text-xs text-muted-foreground">平台 Excel 可以先用于「快速看看」。正式复盘使用 AdPulse 报表。</p>
-							<Button type="submit" disabled={importMutation.isPending || !reportFile}>
-								{importMutation.isPending
-									? "导入中…"
-									: importOperation.current ? "重试导入" : "导入报表"}
-							</Button>
-						</form>
+						<ReportUpload
+							key={taskVersion}
+							fileLabel="选择任务报表"
+							parse={(file) => readEvidenceImport(file, { taskId, taskVersion })}
+							rows={(report) => report.records}
+							pending={importMutation.isPending}
+							retrying={importOperation.current !== null}
+							saved={Boolean(confirmation)}
+							confirmLabel="确认并保存报表"
+							onReset={() => { setError(""); setConfirmation(""); }}
+							onConfirm={(report) => importMutation.mutate(report)}
+						/>
 					</details>
 					{error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
 					{confirmation ? <p role="status" className="text-sm">{confirmation}</p> : null}
@@ -209,14 +182,109 @@ function ReviewSection({ title, description, children }: {
 	);
 }
 
+function ReportUpload<T>({
+	fileLabel, parse, rows, pending, retrying, saved, confirmLabel, canConfirm = true,
+	onReset, onConfirm, children,
+}: {
+	fileLabel: string;
+	parse: (file: File) => Promise<T>;
+	rows: (report: T) => ReportSummary[];
+	pending: boolean;
+	retrying: boolean;
+	saved: boolean;
+	confirmLabel: string;
+	canConfirm?: boolean;
+	onReset: () => void;
+	onConfirm: (report: T) => void;
+	children?: ReactNode;
+}) {
+	const [preview, setPreview] = useState<{ fileName: string; report: T }>();
+	const [reading, setReading] = useState(false);
+	const [readError, setReadError] = useState("");
+
+	async function select(file: File) {
+		setReading(true);
+		setPreview(undefined);
+		setReadError("");
+		onReset();
+		try {
+			setPreview({ fileName: file.name, report: await parse(file) });
+		} catch (cause) {
+			setReadError(cause instanceof Error ? cause.message : "无法读取这份报表。");
+		} finally {
+			setReading(false);
+		}
+	}
+
+	return (
+		<form className="space-y-3 border-t p-4 text-sm" onSubmit={(event) => {
+			event.preventDefault();
+			if (preview && !pending && !saved && canConfirm) onConfirm(preview.report);
+		}}>
+			<label className="block space-y-1">
+				<span className="font-medium">{fileLabel}</span>
+				<Input type="file" accept=".json,application/json" disabled={pending || retrying || reading}
+					className="h-auto py-2"
+					onChange={(event) => {
+						const file = event.currentTarget.files?.[0];
+						event.currentTarget.value = "";
+						if (file) void select(file);
+					}} />
+			</label>
+			{reading ? <p role="status">正在读取报表…</p> : null}
+			{readError ? <p role="alert" className="text-destructive">{readError}</p> : null}
+			{preview ? (
+				<>
+					<div className="rounded-md border bg-muted/25 p-3">
+						<p className="font-medium">{saved ? "已核对的报表" : "核对报表数据"}</p>
+						<p className="break-all text-xs text-muted-foreground">{preview.fileName}</p>
+						<ReportTable rows={rows(preview.report)} />
+					</div>
+					{saved ? null : (
+						<>
+							{children}
+							<Button type="submit" disabled={pending || !canConfirm}>
+								{pending ? "正在保存…" : retrying ? "重试保存" : confirmLabel}
+							</Button>
+						</>
+					)}
+				</>
+			) : null}
+		</form>
+	);
+}
+
+function ReportTable({ rows }: { rows: ReportSummary[] }) {
+	return (
+		<div className="mt-2 overflow-x-auto">
+			<table className="w-full text-left text-sm">
+				<thead className="text-xs text-muted-foreground">
+					<tr>
+						<th scope="col" className="p-2 font-medium">统计时间（北京）</th>
+						<th scope="col" className="p-2 font-medium">投放花费</th>
+						<th scope="col" className="p-2 font-medium">咨询次数</th>
+					</tr>
+				</thead>
+				<tbody>
+					{rows.map((row, index) => (
+						<tr key={index} className="border-t">
+							<td className="p-2">{formatBeijingPeriod(row.period)}</td>
+							<td className="p-2 tabular-nums">{formatSpend(row)}</td>
+							<td className="p-2 tabular-nums">{formatValue(row.values.consultations, "次")}</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</div>
+	);
+}
+
 function EvidenceItem({ item }: { item: EvidenceVersion }) {
 	const [expanded, setExpanded] = useState(false);
-	const [correctionFile, setCorrectionFile] = useState<File | null>(null);
 	const [reason, setReason] = useState("");
 	const [revisionError, setRevisionError] = useState("");
 	const [revisionConfirmation, setRevisionConfirmation] = useState("");
 	const queryClient = useQueryClient();
-	const correctionInput = useRef<HTMLInputElement>(null);
 	const revisionOperation = useRef<ReportOperation<EvidenceRevision> | null>(null);
 	const detail = useQuery({
 		queryKey: ["evidence", item.evidenceId],
@@ -229,14 +297,14 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 			return result.data;
 		},
 	});
+	const currentVersion = detail.data?.current.version ?? item.version;
 	const revise = useMutation({
-		mutationFn: async (file: File) => {
+		mutationFn: async (correction: Pick<EvidenceRevision, "record" | "expectedEvidenceVersion">) => {
 			const operation = revisionOperation.current ?? {
 				key: crypto.randomUUID(),
 				body: {
-					expectedEvidenceVersion: detail.data?.current.version ?? item.version,
+					...correction,
 					reason: reason.trim(),
-					record: await readEvidenceCorrection(file),
 				},
 			};
 			revisionOperation.current = operation;
@@ -261,8 +329,6 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 			revisionOperation.current = null;
 			setRevisionError("");
 			setRevisionConfirmation(`已保存更正，当前为 v${version}。`);
-			setCorrectionFile(null);
-			if (correctionInput.current) correctionInput.current.value = "";
 			setReason("");
 			await queryClient.invalidateQueries({
 				queryKey: ["evidence", item.evidenceId],
@@ -320,134 +386,45 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 					) : null}
 					{detail.data ? (
 						<>
-							<div>
-								<h3 className="font-medium">来源与原始值</h3>
-								{detail.data.sources.map((source) => (
-									<div key={source.id} className="mt-2 rounded bg-muted/40 p-2">
-										<p>
-											证据 v{source.evidenceVersion} · {source.source.platform}{" "}
-											· 账户 {source.source.accountRef} · 报表{" "}
-											{source.source.reportRef}
-										</p>
-										{source.source.sourceUri ? (
-											<a
-												className="text-primary underline"
-												href={source.source.sourceUri}
-												target="_blank"
-												rel="noreferrer"
-											>
-												打开来源引用
-											</a>
-										) : null}
-										<details className="mt-1">
-											<summary className="cursor-pointer text-xs">查看报表原始值</summary>
-											<pre className="whitespace-pre-wrap text-xs">
-												{JSON.stringify(source.rawValues, null, 2)}
-											</pre>
-										</details>
-									</div>
-								))}
-							</div>
-							<div className="rounded bg-muted/40 p-2">
-								<h3 className="font-medium">口径与归因</h3>
-								<p>任务第 {item.taskVersion} 版 · 报表第 {item.version} 版 · 来源时区 {item.period.timeZone}</p>
-								<p>
-									范围：{detail.data.current.scope.planRef} ·{" "}
-									{detail.data.current.scope.campaignRefs.join(", ") ||
-										"计划整体"}
-								</p>
-								<p>
-									币种/最小单位：{detail.data.current.currency.code} /{" "}
-									{detail.data.current.currency.minorUnit}（每主单位{" "}
-									{detail.data.current.currency.minorUnitsPerMajor}）
-								</p>
-								<p>
-									归因：{detail.data.current.attribution.model} · 窗口{" "}
-									{detail.data.current.attribution.windowDays === undefined
-										? "未知"
-										: `${detail.data.current.attribution.windowDays} 天`}
-								</p>
-								<p>回传状态：{detail.data.current.callbackStatus}</p>
-								<p>
-									消耗定义/公式：
-									{detail.data.current.metricsContract.spendMinor.definition} /{" "}
-									{detail.data.current.metricsContract.spendMinor.formula}
-								</p>
-								<p>
-									咨询定义/公式：
-									{detail.data.current.metricsContract.consultations.definition}{" "}
-									/ {detail.data.current.metricsContract.consultations.formula}
-								</p>
-							</div>
-							<div>
-								<h3 className="font-medium">报表更正记录</h3>
+							<details className="rounded border p-2">
+								<summary className="cursor-pointer font-medium">报表更正记录</summary>
 								<ol className="mt-1 list-decimal pl-5">
 									{detail.data.versions.map((version) => (
 										<li key={version.id}>
-											v{version.version} · {version.createdAt}
+											第 {version.version} 版 · {formatBeijingTime(version.createdAt)}
 											{version.reason ? ` · ${version.reason}` : " · 初次导入"}
 										</li>
 									))}
 								</ol>
-							</div>
+							</details>
 							<details className="rounded border p-2">
 								<summary className="cursor-pointer font-medium">
 									更正报表
 								</summary>
-								<form
-									className="mt-2 space-y-2"
-									onSubmit={(event) => {
-										event.preventDefault();
-										if (!correctionFile || !reason.trim() || revise.isPending) return;
-										setRevisionError("");
-										setRevisionConfirmation("");
-										revise.mutate(correctionFile);
-									}}
+								<ReportUpload
+									fileLabel="选择更正后的报表"
+									parse={async (file) => ({
+										expectedEvidenceVersion: currentVersion,
+										record: await readEvidenceCorrection(file),
+									})}
+									rows={({ record }) => [record]}
+									pending={revise.isPending}
+									retrying={revisionOperation.current !== null}
+									saved={Boolean(revisionConfirmation)}
+									confirmLabel="确认并保存更正"
+									canConfirm={Boolean(reason.trim())}
+									onReset={() => { setRevisionError(""); setRevisionConfirmation(""); }}
+									onConfirm={(correction) => revise.mutate(correction)}
 								>
-									<p className="text-muted-foreground">
-										上传同一区间的更正文件，并说明更正原因。历史版本仍可查看。
-									</p>
-									<Input
-										aria-label="修订原因"
-										placeholder="更正原因（必填）"
-										value={reason}
-										required
-										maxLength={1000}
-										disabled={revise.isPending || revisionOperation.current !== null}
-										onChange={(event) => setReason(event.target.value)}
-									/>
 									<label className="block space-y-1">
-										<span>选择单区间更正文件（.json）</span>
-										<Input
-											ref={correctionInput}
-											type="file"
-											accept=".json,application/json"
-											className="h-auto py-2"
-											disabled={revise.isPending || revisionOperation.current !== null}
-											onChange={(event) => {
-												setCorrectionFile(event.target.files?.[0] ?? null);
-												setRevisionError("");
-												setRevisionConfirmation("");
-											}}
-										/>
+										<span>更正原因</span>
+										<Input value={reason} placeholder="例如：漏计了一次咨询"
+											maxLength={1000} disabled={revise.isPending || revisionOperation.current !== null}
+											onChange={(event) => setReason(event.target.value)} />
 									</label>
-									{revisionError ? (
-										<p role="alert" className="text-red-600">
-											{revisionError}
-										</p>
-									) : null}
-									{revisionConfirmation ? <p role="status">{revisionConfirmation}</p> : null}
-									<Button
-										type="submit"
-										disabled={
-											revise.isPending || !reason.trim() || !correctionFile
-										}
-									>
-										{revise.isPending
-											? "保存中…"
-											: revisionOperation.current ? "重试更正" : "保存更正"}
-									</Button>
-								</form>
+								</ReportUpload>
+								{revisionError ? <p role="alert" className="text-destructive">{revisionError}</p> : null}
+								{revisionConfirmation ? <p role="status">{revisionConfirmation}</p> : null}
 							</details>
 						</>
 					) : null}
@@ -463,7 +440,7 @@ function formatValue(value: number | null | undefined, unit: string): string {
 	return `${value.toLocaleString("zh-CN")} ${unit}`;
 }
 
-function formatSpend({ values, currency }: EvidenceVersion): string {
+function formatSpend({ values, currency }: ReportSummary): string {
 	const { spendMinor } = values;
 	const { code, minorUnit, minorUnitsPerMajor } = currency;
 	if (spendMinor == null || minorUnitsPerMajor !== 100) {
