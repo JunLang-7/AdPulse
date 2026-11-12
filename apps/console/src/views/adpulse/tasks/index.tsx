@@ -9,6 +9,8 @@ import {
 	CardTitle,
 } from "../../../components/ui/card";
 
+import { formatBeijingTime } from "./task-form.js";
+
 export default function TasksPage() {
 	const { data, isLoading, error } = useQuery({
 		queryKey: ["tasks"],
@@ -64,7 +66,7 @@ export default function TasksPage() {
 									: "受众待补充"}
 								</p>
 								<p className="text-xs text-muted-foreground">
-									更新于 {new Date(task.createdAt).toLocaleString()}
+									更新于 {formatBeijingTime(task.createdAt)}
 								</p>
 							</CardContent>
 						</Card>

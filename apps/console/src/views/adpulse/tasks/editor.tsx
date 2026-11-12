@@ -1,14 +1,10 @@
+import { ChevronRight } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useReducer, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { consoleClient, type components } from "../../../adpulse-client";
+import { consoleClient } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
-import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-} from "../../../components/ui/card";
+import { Card, CardContent } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { EvidencePanel } from "./evidence-panel";
 import {
@@ -17,66 +13,16 @@ import {
 	reuseOperation,
 	SaveResponseError,
 } from "./editor-state.js";
-
-type TaskInput = components["schemas"]["TaskInput"];
-type TaskRules = components["schemas"]["TaskRules"];
-type TaskVersion = components["schemas"]["TaskVersion"];
-type FormState = {
-	product: string;
-	objective: string;
-	audience: string;
-	channels: string;
-	sellingPoints: string;
-	scope: string;
-	startsAt: string;
-	endsAt: string;
-	metricDefinition: string;
-	metricKey: string;
-	currency: string;
-	unit: string;
-	statWindowDays: string;
-	alertThresholdMinor: string;
-	minimumSpendMinor: string;
-	minimumConsultations: string;
-	handlingDeadlineHours: string;
-	maxPushRounds: string;
-};
-
-const emptyForm: FormState = {
-	product: "",
-	objective: "",
-	audience: "",
-	channels: "{}",
-	sellingPoints: "",
-	scope: "",
-	startsAt: "",
-	endsAt: "",
-	metricDefinition: "",
-	metricKey: "",
-	currency: "",
-	unit: "",
-	statWindowDays: "",
-	alertThresholdMinor: "",
-	minimumSpendMinor: "",
-	minimumConsultations: "",
-	handlingDeadlineHours: "",
-	maxPushRounds: "",
-};
-
-const localDateTime = (value?: string): string =>
-	value ? new Date(value).toISOString().slice(0, 16) : "";
-const optionalInteger = (value: string): number | undefined =>
-	value.trim() === "" ? undefined : Number(value);
-const optionalString = (value: string): string | undefined =>
-	value.trim() === "" ? undefined : value.trim();
-const optionalRuleNumbers = [
-	"statWindowDays",
-	"alertThresholdMinor",
-	"minimumSpendMinor",
-	"minimumConsultations",
-	"handlingDeadlineHours",
-	"maxPushRounds",
-] as const;
+import {
+	emptyChannel,
+	emptyForm,
+	formatBeijingTime,
+	fromVersion,
+	toInput,
+	type ChannelForm,
+	type FormState,
+	type TaskInput,
+} from "./task-form.js";
 
 type SaveOperation =
 	| {
@@ -92,75 +38,6 @@ type SaveOperation =
 			body: { expectedTaskVersion: number; task: TaskInput };
 			formSnapshot: FormState;
 	  };
-
-function fromVersion(task: TaskVersion): FormState {
-	const rules = task.rules;
-	return {
-		product: task.product,
-		objective: task.strategy.objective,
-		audience: task.strategy.audience.join("\n"),
-		channels: JSON.stringify(task.strategy.channels, null, 2),
-		sellingPoints: task.strategy.sellingPoints.join("\n"),
-		scope: task.observation.scope ?? "",
-		startsAt: localDateTime(task.observation.startsAt),
-		endsAt: localDateTime(task.observation.endsAt),
-		metricDefinition: rules.metricDefinition ?? "",
-		metricKey: rules.metricKey ?? "",
-		currency: rules.currency ?? "",
-		unit: rules.unit ?? "",
-		statWindowDays: rules.statWindowDays?.toString() ?? "",
-		alertThresholdMinor: rules.alertThresholdMinor?.toString() ?? "",
-		minimumSpendMinor: rules.minimumSpendMinor?.toString() ?? "",
-		minimumConsultations: rules.minimumConsultations?.toString() ?? "",
-		handlingDeadlineHours: rules.handlingDeadlineHours?.toString() ?? "",
-		maxPushRounds: rules.maxPushRounds?.toString() ?? "",
-	};
-}
-
-function toInput(form: FormState): TaskInput {
-	const channels: unknown = JSON.parse(form.channels);
-	if (!channels || typeof channels !== "object" || Array.isArray(channels))
-		throw new Error("渠道配置必须是 JSON 对象");
-	const rules: TaskRules = {
-		...(optionalString(form.metricDefinition)
-			? { metricDefinition: optionalString(form.metricDefinition) }
-			: {}),
-		...(form.metricKey === "cost_per_consultation"
-			? { metricKey: "cost_per_consultation" as const }
-			: {}),
-		...(optionalString(form.currency)
-			? { currency: optionalString(form.currency) }
-			: {}),
-		...(optionalString(form.unit) ? { unit: optionalString(form.unit) } : {}),
-	};
-	for (const key of optionalRuleNumbers) {
-		const value = optionalInteger(form[key]);
-		if (value !== undefined) rules[key] = value;
-	}
-	const date = (value: string): string | undefined =>
-		value ? new Date(`${value}:00.000Z`).toISOString() : undefined;
-	return {
-		product: form.product.trim(),
-		strategy: {
-			objective: form.objective,
-			audience: form.audience
-				.split("\n")
-				.map((value) => value.trim())
-				.filter(Boolean),
-			channels: channels as TaskInput["strategy"]["channels"],
-			sellingPoints: form.sellingPoints
-				.split("\n")
-				.map((value) => value.trim())
-				.filter(Boolean),
-		},
-		observation: {
-			...(optionalString(form.scope) ? { scope: optionalString(form.scope) } : {}),
-			...(form.startsAt ? { startsAt: date(form.startsAt) } : {}),
-			...(form.endsAt ? { endsAt: date(form.endsAt) } : {}),
-		},
-		rules,
-	};
-}
 
 export default function TaskEditorPage() {
 	const { taskId } = useParams();
@@ -278,123 +155,222 @@ export default function TaskEditorPage() {
 		dispatch({ type: "edit", form: { ...form, [key]: value } });
 	}
 
+	function editChannel(index: number, edit: Partial<ChannelForm>) {
+		set("channels", form.channels.map((channel, position) =>
+			position === index ? { ...channel, ...edit } : channel));
+	}
+
+	function changeMoneyMode(value: string) {
+		const moneyMode = value === "cny" || value === "report" ? value : "";
+		if (moneyMode === form.moneyMode) return;
+		if ((form.alertThreshold || form.minimumSpend || (form.moneyMode === "report" && (form.currency || form.unit))) &&
+			!window.confirm("切换金额填写方式会清空当前金额和币种设置。继续切换？")) return;
+		dispatch({
+			type: "edit",
+			form: { ...form, moneyMode, currency: "", unit: "", alertThreshold: "", minimumSpend: "" },
+		});
+	}
+
+	const rulesEntered = Boolean(form.metricKey || form.metricDefinition || form.moneyMode ||
+		form.statWindowDays || form.minimumConsultations || form.handlingDeadlineHours || form.maxPushRounds);
+
 	if (!creating && (detail.isLoading || !detail.data) && !detail.error)
 		return <div className="p-6">正在加载任务…</div>;
 	if (!creating && detail.error)
 		return <div className="p-6 text-red-600">读取任务失败：{String(detail.error)}</div>;
 
 	return (
-		<div className="p-6 space-y-4">
-			<Link to="/tasks" className="text-sm text-muted-foreground hover:text-foreground">
-				← 返回任务列表
-			</Link>
-			<h1 className="text-2xl font-bold">{creating ? "新建推广任务" : "推广任务基线"}</h1>
-			<p className="text-sm text-muted-foreground">
-				留空表示未知或未确认；不要把未知预算、出价或阈值填成 0。确认的真实 0 可以明确填写。
-			</p>
+		<div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
+			<header className="space-y-2">
+				<Link to="/tasks" className="text-sm text-muted-foreground hover:text-foreground">
+					← 返回任务列表
+				</Link>
+				<h1 className="text-2xl font-bold tracking-tight">{creating ? "新建推广任务" : form.product || "推广任务"}</h1>
+				<p className="text-sm text-muted-foreground">
+					{creating ? "填一个产品或服务名称就能创建任务。投放细节可以随时补充。" : "在这里记录当前推广计划，下方可以查看效果数据。"}
+				</p>
+			</header>
 
-			{detail.data && !creating ? (
-				<>
-					<Card>
-						<CardHeader><CardTitle>历史版本</CardTitle></CardHeader>
-						<CardContent className="flex flex-wrap gap-2">
-							{detail.data.versions.map((version) => (
-								<span key={version.id} className="rounded border px-2 py-1 text-xs">
-									v{version.version} · {new Date(version.createdAt).toLocaleString()}
-								</span>
-							))}
-						</CardContent>
-					</Card>
-					<EvidencePanel taskId={detail.data.task.taskId} taskVersion={detail.data.task.version} />
-				</>
-			) : null}
-
-			<form onSubmit={submit} className="space-y-4">
+			<form onSubmit={submit} noValidate className="space-y-4">
 				<Card>
-					<CardHeader><CardTitle>任务与当前策略</CardTitle></CardHeader>
-					<CardContent className="grid gap-4 md:grid-cols-2">
-						<Field label="产品 / 服务 *">
-							<Input required maxLength={200} value={form.product} onChange={(e) => set("product", e.target.value)} />
+					<CardContent className="grid gap-4 sm:grid-cols-2">
+						<Field label="推广什么？" hint="必填">
+							<Input required maxLength={200} placeholder="例如：新品试用装" value={form.product} onChange={(e) => set("product", e.target.value)} />
 						</Field>
-						<Field label="推广目标">
-							<Input value={form.objective} onChange={(e) => set("objective", e.target.value)} />
+						<Field label="想达成什么？" hint="选填">
+							<Input maxLength={2000} placeholder="例如：让更多客户来咨询" value={form.objective} onChange={(e) => set("objective", e.target.value)} />
 						</Field>
-						<Field label="目标受众（每行一项）">
-							<textarea className="min-h-20 w-full rounded-md border bg-background p-2 text-sm" value={form.audience} onChange={(e) => set("audience", e.target.value)} />
-						</Field>
-						<Field label="卖点（每行一项）">
-							<textarea className="min-h-20 w-full rounded-md border bg-background p-2 text-sm" value={form.sellingPoints} onChange={(e) => set("sellingPoints", e.target.value)} />
-						</Field>
-						<div className="md:col-span-2">
-							<Field label="渠道策略 JSON">
-								<textarea className="min-h-32 w-full rounded-md border bg-background p-2 font-mono text-xs" value={form.channels} onChange={(e) => set("channels", e.target.value)} />
+					</CardContent>
+				</Card>
+
+				<div className="divide-y rounded-xl border bg-card">
+					<OptionalSection title="目标人群和卖点" summary={form.audience || form.sellingPoints ? "已填写" : "选填"}>
+						<div className="grid gap-4 sm:grid-cols-2">
+							<Field label="想触达谁？" hint="每行一项">
+								<textarea className={textAreaClass} placeholder="例如：准备装修的新房业主" value={form.audience} onChange={(e) => set("audience", e.target.value)} />
 							</Field>
-							<p className="mt-1 text-xs text-muted-foreground">未提供的 budget、bidCpc、enabled 字段请省略；例如真实预算为 0 时填写 "budget": 0。</p>
+							<Field label="客户为什么会感兴趣？" hint="每行一项">
+								<textarea className={textAreaClass} placeholder="例如：可以先领取免费样品" value={form.sellingPoints} onChange={(e) => set("sellingPoints", e.target.value)} />
+							</Field>
 						</div>
-					</CardContent>
-				</Card>
+					</OptionalSection>
 
-				<Card>
-					<CardHeader><CardTitle>观察范围与期限</CardTitle></CardHeader>
-					<CardContent className="grid gap-4 md:grid-cols-2">
-						<Field label="范围 / 说明"><Input value={form.scope} onChange={(e) => set("scope", e.target.value)} /></Field>
-						<Field label="开始时间（按 UTC 录入）"><Input type="datetime-local" value={form.startsAt} onChange={(e) => set("startsAt", e.target.value)} /></Field>
-						<Field label="结束时间（按 UTC 录入）"><Input type="datetime-local" value={form.endsAt} onChange={(e) => set("endsAt", e.target.value)} /></Field>
-					</CardContent>
-				</Card>
+					<OptionalSection title="投放渠道" summary={form.channels.length ? `${form.channels.length} 个渠道` : "选填"}>
+						<div className="space-y-3">
+							<p className="text-sm text-muted-foreground">知道在哪投放，就先填渠道名称。预算和出价可以晚点补。</p>
+							{form.channels.map((channel, index) => (
+								<div key={index} className="space-y-3 rounded-lg border p-3">
+									<div className="flex items-center justify-between gap-2">
+										<p className="text-sm font-medium">渠道 {index + 1}</p>
+										<Button type="button" variant="ghost" size="sm" aria-label={`移除渠道 ${index + 1}`} onClick={() => set("channels", form.channels.filter((_, position) => position !== index))}>移除</Button>
+									</div>
+									<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+										<Field label="渠道名称">
+											<Input maxLength={128} placeholder="例如：小红书" value={channel.name} onChange={(e) => editChannel(index, { name: e.target.value })} />
+										</Field>
+										<OptionalField label="预算金额" inputMode="decimal" value={channel.budget} onChange={(value) => editChannel(index, { budget: value })} />
+										<OptionalField label="每次点击出价" inputMode="decimal" value={channel.bidCpc} onChange={(value) => editChannel(index, { bidCpc: value })} />
+										<Field label="投放状态">
+											<select className={selectClass} value={channel.enabled} onChange={(e) => editChannel(index, {
+												enabled: e.target.value === "active" ? "active" : e.target.value === "paused" ? "paused" : "unknown",
+											})}>
+												<option value="unknown">暂不记录</option>
+												<option value="active">投放中</option>
+												<option value="paused">已暂停</option>
+											</select>
+										</Field>
+									</div>
+								</div>
+							))}
+							<Button type="button" variant="outline" onClick={() => set("channels", [...form.channels, emptyChannel])}>添加渠道</Button>
+						</div>
+					</OptionalSection>
 
-				<Card>
-					<CardHeader><CardTitle>已确认的核查规则（可暂不填写）</CardTitle></CardHeader>
-					<CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-						<OptionalField label="指标定义" value={form.metricDefinition} onChange={(v) => set("metricDefinition", v)} />
-						<Field label="阈值指标"><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={form.metricKey} onChange={(e) => set("metricKey", e.target.value)}><option value="">未确认</option><option value="cost_per_consultation">单次咨询成本</option></select></Field>
-						<OptionalField label="币种" value={form.currency} onChange={(v) => set("currency", v)} />
-						<OptionalField label="金额单位" value={form.unit} onChange={(v) => set("unit", v)} />
-						<OptionalField label="统计窗口（天）" type="number" min="0" value={form.statWindowDays} onChange={(v) => set("statWindowDays", v)} />
-						<OptionalField label="警戒线（最小货币单位）" type="number" min="0" value={form.alertThresholdMinor} onChange={(v) => set("alertThresholdMinor", v)} />
-						<OptionalField label="最小消耗（最小货币单位）" type="number" min="0" value={form.minimumSpendMinor} onChange={(v) => set("minimumSpendMinor", v)} />
-						<OptionalField label="最小咨询数" type="number" min="0" value={form.minimumConsultations} onChange={(v) => set("minimumConsultations", v)} />
-						<OptionalField label="处理期限（小时）" type="number" min="0" value={form.handlingDeadlineHours} onChange={(v) => set("handlingDeadlineHours", v)} />
-						<OptionalField label="最多提醒轮数" type="number" min="1" value={form.maxPushRounds} onChange={(v) => set("maxPushRounds", v)} />
-					</CardContent>
-				</Card>
+					<OptionalSection title="观察范围与时间" summary={form.startsAt || form.endsAt || form.scope ? "已填写 · 北京时间" : "选填 · 北京时间"}>
+						<div className="grid gap-4 sm:grid-cols-2">
+							<div className="sm:col-span-2">
+								<Field label="想观察哪些投放？">
+									<Input maxLength={1000} placeholder="例如：只看本次新品活动" value={form.scope} onChange={(e) => set("scope", e.target.value)} />
+								</Field>
+							</div>
+							<Field label="开始时间（北京时间）"><Input type="datetime-local" step="any" value={form.startsAt} onChange={(e) => set("startsAt", e.target.value)} /></Field>
+							<Field label="结束时间（北京时间）"><Input type="datetime-local" step="any" value={form.endsAt} onChange={(e) => set("endsAt", e.target.value)} /></Field>
+						</div>
+					</OptionalSection>
 
-					{dirty ? <p className="text-sm text-muted-foreground">有未保存的更改。</p> : null}
+					<OptionalSection title="成本提醒条件" summary={rulesEntered ? "已填写部分或全部条件" : "选填 · 有明确标准再设"}>
+						<div className="space-y-4">
+							<p className="text-sm text-muted-foreground">已有成本目标时，可以在这里记下提醒条件。核查时会与报表的统计口径对照。</p>
+							<div className="grid gap-4 sm:grid-cols-2">
+								<Field label="想关注什么成本？">
+									<select className={selectClass} value={form.metricKey} onChange={(e) => set("metricKey", e.target.value === "cost_per_consultation" ? "cost_per_consultation" : "")}>
+										<option value="">暂不设置</option>
+										<option value="cost_per_consultation">单次咨询成本</option>
+									</select>
+								</Field>
+								<Field label="金额填写方式">
+									<select className={selectClass} value={form.moneyMode} onChange={(e) => changeMoneyMode(e.target.value)}>
+										<option value="">暂不填写金额</option>
+										<option value="cny">人民币（元）</option>
+										<option value="report">其他金额口径（按报表）</option>
+									</select>
+								</Field>
+								{form.moneyMode === "report" ? (
+									<>
+										<Field label="报表上的币种代码"><Input maxLength={16} value={form.currency} onChange={(e) => set("currency", e.target.value)} /></Field>
+										<Field label="报表最小单位"><Input maxLength={32} value={form.unit} onChange={(e) => set("unit", e.target.value)} /></Field>
+									</>
+								) : null}
+								{form.moneyMode ? (
+									<>
+										<OptionalField label={form.moneyMode === "cny" ? "超过多少元提醒？" : "提醒线（按报表最小单位）"} inputMode={form.moneyMode === "cny" ? "decimal" : "numeric"} value={form.alertThreshold} onChange={(value) => set("alertThreshold", value)} />
+										<OptionalField label={form.moneyMode === "cny" ? "至少花到多少元才判断？" : "最低花费（按报表最小单位）"} inputMode={form.moneyMode === "cny" ? "decimal" : "numeric"} value={form.minimumSpend} onChange={(value) => set("minimumSpend", value)} />
+									</>
+								) : null}
+								<Field label="按报表怎样统计咨询？"><Input maxLength={500} placeholder="例如：同一个客户只计一次" value={form.metricDefinition} onChange={(e) => set("metricDefinition", e.target.value)} /></Field>
+								<OptionalField label="查看最近几天" inputMode="numeric" value={form.statWindowDays} onChange={(value) => set("statWindowDays", value)} />
+								<OptionalField label="至少收到几次咨询" inputMode="numeric" value={form.minimumConsultations} onChange={(value) => set("minimumConsultations", value)} />
+								<OptionalField label="提醒后几小时内处理" inputMode="numeric" value={form.handlingDeadlineHours} onChange={(value) => set("handlingDeadlineHours", value)} />
+								<OptionalField label="同一问题最多提醒几轮" inputMode="numeric" value={form.maxPushRounds} onChange={(value) => set("maxPushRounds", value)} />
+							</div>
+						</div>
+					</OptionalSection>
+				</div>
+
 				{remoteVersion !== null ? (
 					<p role="status" className="text-sm text-amber-700">
-						服务端已更新到 v{remoteVersion}。本地未保存内容已保留，仍基于 v{version} 编辑；保存可能因版本冲突被拒绝。
+						任务在别处更新到了 v{remoteVersion}。当前编辑仍基于 v{version}，请保留修改内容并重新打开任务核对。
 					</p>
 				) : null}
 				{operation.current && !save.isPending ? (
 					<p role="status" className="text-sm text-muted-foreground">
-						上次保存结果尚未确认。重试会复用原幂等键和完整请求；之后的编辑会保留为下一次保存。
+						上次保存结果待确认。重试会先确认上次提交，之后的编辑留到下次保存。
 					</p>
 				) : null}
 				{formError ? <p role="alert" className="text-sm text-red-600">保存失败：{formError}</p> : null}
-				<div className="flex gap-2">
-					<Button type="submit" disabled={save.isPending}>{save.isPending ? "保存中…" : creating ? "保存任务" : "保存新版本"}</Button>
+				<div className="flex flex-wrap items-center gap-3">
+					<Button type="submit" disabled={save.isPending}>
+						{save.isPending ? "保存中…" : creating ? "创建任务" : "保存新版本"}
+					</Button>
 					<Link to="/tasks" className="rounded-md border px-3 py-2 text-sm">取消</Link>
+					{dirty && !creating ? <span className="text-sm text-muted-foreground">有未保存的更改</span> : null}
 				</div>
 			</form>
+
+			{detail.data && !creating ? (
+				<>
+					<EvidencePanel taskId={detail.data.task.taskId} taskVersion={detail.data.task.version} />
+					<OptionalSection title="历史版本" summary={`${detail.data.versions.length} 个版本`}>
+						<ul className="flex flex-wrap gap-2">
+							{detail.data.versions.map((version) => (
+								<li key={version.id} className="rounded border px-2 py-1 text-xs">
+									v{version.version} · {formatBeijingTime(version.createdAt)}
+								</li>
+							))}
+						</ul>
+					</OptionalSection>
+				</>
+			) : null}
 		</div>
 	);
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-	return <label className="block space-y-1 text-sm"><span>{label}</span>{children}</label>;
+const selectClass = "h-9 w-full rounded-md border bg-background px-2 text-sm";
+const textAreaClass = "min-h-20 w-full rounded-md border bg-background p-2 text-sm";
+
+function OptionalSection({ title, summary, children }: { title: string; summary: string; children: React.ReactNode }) {
+	return (
+		<details className="group">
+			<summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm marker:hidden">
+				<ChevronRight aria-hidden="true" className="size-4 shrink-0 group-open:rotate-90" />
+				<span className="font-medium">{title}</span>
+				<span className="ml-auto text-right text-xs text-muted-foreground">{summary}</span>
+			</summary>
+			<div className="px-4 pb-4">{children}</div>
+		</details>
+	);
 }
-function OptionalField({
-	label,
-	value,
-	onChange,
-	type = "text",
-	min,
-}: {
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+	return (
+		<label className="block space-y-1 text-sm">
+			<span className="flex items-baseline gap-2 font-medium">
+				{label}{hint ? <span className="text-xs font-normal text-muted-foreground">{hint}</span> : null}
+			</span>
+			{children}
+		</label>
+	);
+}
+
+function OptionalField({ label, value, onChange, inputMode }: {
 	label: string;
 	value: string;
 	onChange: (value: string) => void;
-	type?: string;
-	min?: string;
+	inputMode: "numeric" | "decimal";
 }) {
-	return <Field label={label}><Input type={type} min={min} step={type === "number" ? 1 : undefined} value={value} onChange={(event) => onChange(event.target.value)} /></Field>;
+	return (
+		<Field label={label}>
+			<Input inputMode={inputMode} value={value} onChange={(event) => onChange(event.target.value)} />
+		</Field>
+	);
 }
