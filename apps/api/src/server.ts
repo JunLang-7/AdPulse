@@ -424,6 +424,13 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 							);
 							return json(res, 200, { sessionExpiresAt: rotated.expiresAt });
 						}
+						// Rotation lost the race: do not reissue the old cookie.
+						const touched = await auth.service.touchWebSession(digest(token), currentTime);
+						if (!touched) {
+							reject("session_invalid", req, path);
+							throw new HttpError(401, "unauthorized");
+						}
+						return json(res, 200, { sessionExpiresAt: touched.expiresAt });
 					}
 					const touched = await auth.service.touchWebSession(digest(token), currentTime);
 					if (!touched) {
