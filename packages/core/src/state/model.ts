@@ -106,6 +106,13 @@ export interface SubscriptionSettings {
 	};
 	enabledAt?: string;
 	disabledAt?: string;
+	/** 独立确认决策卡；历史记录缺省为关闭，不继承日汇总授权。 */
+	decisionCards?: {
+		enabled: boolean;
+		enabledAt?: string;
+		disabledAt?: string;
+		confirmedVersion?: number;
+	};
 	updatedAt: string;
 }
 

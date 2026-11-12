@@ -531,11 +531,25 @@ export interface components {
             quietStart: string;
             quietEnd: string;
         };
+        /** @description 决策卡独立确认记录；本期仅保存偏好，不启用投递，不补发历史 Web 候选。缺少历史记录时 enabled=false。 */
+        DecisionCardPreference: {
+            enabled: boolean;
+            /**
+             * Format: date-time
+             * @description 最近一次明确开启的服务端时间；关闭后重开更新，不因重复开启或保存其他配置而延长
+             */
+            enabledAt?: string;
+            /** Format: date-time */
+            disabledAt?: string;
+            /** @description 最近一次明确开启时的订阅配置版本 */
+            confirmedVersion?: number;
+        };
         SubscriptionSettings: {
             /** @description 每人单调版本：开关与关注列表的所有写入共用 */
             version: number;
             /** @description 默认关闭；保存配置不等于启用 */
             proactiveEnabled: boolean;
+            decisionCards: components["schemas"]["DecisionCardPreference"];
             /** @description 未保存过配置时返回默认值（09:30 汇总、22:00–08:00 免打扰） */
             schedule: components["schemas"]["SubscriptionSchedule"];
             /** Format: date-time */
@@ -577,6 +591,8 @@ export interface components {
             /** @description 调用方看到的版本；未配置时为 0。旧请求重放会因版本不符被拒 */
             expectedVersion: number;
             proactiveEnabled?: boolean;
+            /** @description 本人单独明确确认；不改变全部主动推送开关、地址或通知授权。本期仅记录，不排队或发送。 */
+            decisionCardsEnabled?: boolean;
             schedule?: components["schemas"]["SubscriptionSchedule"];
         };
         SubscriptionTargetInput: {

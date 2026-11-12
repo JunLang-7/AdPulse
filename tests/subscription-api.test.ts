@@ -7,6 +7,7 @@ import { createApi } from "../apps/api/dist/server.js";
 import type { AuditEvent } from "../apps/api/dist/server.js";
 import {
 	AuthenticationService,
+	type SubscriptionView,
 	type PlatformIdentity,
 } from "../packages/core/dist/index.js";
 import { compose } from "../packages/runtime/dist/index.js";
@@ -169,6 +170,94 @@ test("subscription API: 未登录一律 401，登录后配置可读写", async (
 		"09:30",
 		"被拒的写入不得留下部分修改",
 	);
+});
+
+test("subscription API: 决策卡单独确认、非法类型、跨源与个人隔离", async (t) => {
+	const { url, login, service, runtime } = await serve(t);
+	const { cookie } = await login();
+	const headers = {
+		cookie: `adpulse_session=${cookie}`,
+		origin: publicOrigin,
+		"content-type": "application/json",
+	};
+	const request = (body: unknown, origin = publicOrigin) =>
+		fetch(`${url}/api/me/subscription/settings`, {
+			method: "PUT",
+			headers: { ...headers, origin },
+			body: JSON.stringify(body),
+		});
+	const read = async (
+		cookieHeader = headers.cookie,
+	): Promise<SubscriptionView> =>
+		(
+			await fetch(`${url}/api/me/subscription`, {
+				headers: { cookie: cookieHeader },
+			})
+		).json();
+	assert.deepEqual((await read()).settings.decisionCards, { enabled: false });
+	assert.equal(
+		(
+			await request(
+				{ expectedVersion: 0, decisionCardsEnabled: true },
+				"https://foreign.example",
+			)
+		).status,
+		403,
+	);
+	for (const decisionCardsEnabled of ["true", 1, null, {}])
+		assert.equal(
+			(
+				await request({
+					expectedVersion: 0,
+					proactiveEnabled: true,
+					decisionCardsEnabled,
+				})
+			).status,
+			422,
+		);
+	assert.equal((await read()).settings.version, 0);
+	const enabled = await request({
+		expectedVersion: 0,
+		decisionCardsEnabled: true,
+		enabledAt: "1999-01-01T00:00:00.000Z",
+	});
+	assert.equal(enabled.status, 200);
+	const view: SubscriptionView = await enabled.json();
+	assert.equal(view.settings.proactiveEnabled, false);
+	assert.equal(view.settings.decisionCards.enabled, true);
+	assert.equal(view.settings.decisionCards.confirmedVersion, 1);
+	assert.ok(view.settings.decisionCards.enabledAt);
+	assert.notEqual(
+		view.settings.decisionCards.enabledAt,
+		"1999-01-01T00:00:00.000Z",
+	);
+	assert.equal(
+		(await request({ expectedVersion: 0, decisionCardsEnabled: false })).status,
+		409,
+	);
+	assert.deepEqual(await read(), view);
+	const token = randomBytes(32).toString("base64url");
+	await service.createWebSession(
+		{ ...identity, externalId: "ou-second" },
+		createHash("sha256").update(token).digest("hex"),
+		new Date().toISOString(),
+	);
+	const other = await read(`adpulse_session=${token}`);
+	assert.equal(other.settings.version, 0);
+	assert.deepEqual(other.settings.decisionCards, { enabled: false });
+	const disabled = await request({
+		expectedVersion: 1,
+		decisionCardsEnabled: false,
+	});
+	assert.equal(disabled.status, 200);
+	const off: SubscriptionView = await disabled.json();
+	assert.equal(off.settings.decisionCards.enabled, false);
+	assert.ok(off.settings.decisionCards.disabledAt);
+	assert.equal(off.settings.proactiveEnabled, false);
+	await runtime.storage.transaction(async (tx) => {
+		assert.deepEqual(await tx.jobs.all(), []);
+		assert.deepEqual(await tx.deliveries.all(), []);
+	});
 });
 
 test("subscription API: 关注对象增改、他人对象与未知 kind 的错误码", async (t) => {

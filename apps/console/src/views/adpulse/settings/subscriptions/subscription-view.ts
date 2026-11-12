@@ -1,5 +1,6 @@
 // 订阅设置的展示推导：把「配置」「地址」「授权」「推送开关」四种状态分开，互不冒充。
 // 纯函数，便于单测；不发起请求、不读 window。
+import type { components } from "../../../../generated/api";
 
 export type SubscriptionKind = "task" | "brand" | "competitor";
 export type SubscriptionCategory = "effect" | "event" | "evidence";
@@ -8,6 +9,8 @@ export type SubscriptionScope = "task_only" | "include_general";
 export interface SubscriptionSettingsLike {
 	version: number;
 	proactiveEnabled: boolean;
+	/** 缺省兼容旧 API，但绝不视为已确认。 */
+	decisionCards?: components["schemas"]["DecisionCardPreference"];
 	schedule: {
 		timezone: string;
 		digestAt: string;

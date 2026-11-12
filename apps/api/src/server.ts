@@ -340,9 +340,17 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						string,
 						unknown
 					> | null;
+					if (
+						body?.decisionCardsEnabled !== undefined &&
+						typeof body.decisionCardsEnabled !== "boolean"
+					)
+						throw new HttpError(422, "invalid_target");
 					try {
 						const view = await subscriptions.updateSettings(session.userId, {
 							expectedVersion: body?.expectedVersion as number,
+							...(typeof body?.decisionCardsEnabled === "boolean"
+								? { decisionCardsEnabled: body.decisionCardsEnabled }
+								: {}),
 							...(body?.proactiveEnabled === undefined
 								? {}
 								: { proactiveEnabled: body.proactiveEnabled as boolean }),

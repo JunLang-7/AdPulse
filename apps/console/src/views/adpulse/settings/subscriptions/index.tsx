@@ -330,6 +330,7 @@ export default function SubscriptionSettingsPage() {
 	const queryClient = useQueryClient();
 	const [notice, setNotice] = useState<string | null>(null);
 	const [confirmOpen, setConfirmOpen] = useState(false);
+	const [decisionConfirmOpen, setDecisionConfirmOpen] = useState(false);
 	const [scheduleDraft, setScheduleDraft] = useState<{
 		digestAt: string;
 		quietStart: string;
@@ -373,6 +374,7 @@ export default function SubscriptionSettingsPage() {
 	const updateSettings = useMutation({
 		mutationFn: async (body: {
 			proactiveEnabled?: boolean;
+			decisionCardsEnabled?: boolean;
 			schedule?: {
 				timezone: "Asia/Shanghai";
 				digestAt: string;
@@ -395,13 +397,18 @@ export default function SubscriptionSettingsPage() {
 		},
 		onSuccess: (data, variables) => {
 			setNotice(
-				variables.proactiveEnabled === true
-					? "已开启订阅推送。"
-					: variables.proactiveEnabled === false
-						? "已关闭订阅推送；不会生成新的通知。"
-						: savedNotice(data),
+				variables.decisionCardsEnabled !== undefined
+					? variables.decisionCardsEnabled
+						? "已记录决策卡确认；本版本尚未接通投递，不会补发历史候选。"
+						: "已关闭决策卡偏好；日汇总设置不变。"
+					: variables.proactiveEnabled === true
+						? "已开启订阅推送。"
+						: variables.proactiveEnabled === false
+							? "已关闭订阅推送；不会生成新的通知。"
+							: savedNotice(data),
 			);
 			setConfirmOpen(false);
+			setDecisionConfirmOpen(false);
 			return invalidate();
 		},
 	});
@@ -584,6 +591,67 @@ export default function SubscriptionSettingsPage() {
 							</button>
 						)}
 					</div>
+				</CardContent>
+			</Card>
+
+			<Card className="max-w-3xl">
+				<CardHeader>
+					<CardTitle>决策卡单独确认</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-3">
+					<p className="text-sm">
+						{data.settings.decisionCards?.enabled ? "已记录单独确认" : "尚未单独确认"}
+					</p>
+					<p className="text-sm text-muted-foreground">
+						本版本仅保存偏好，尚未接通决策卡投递。日汇总授权不自动开启决策卡。
+						后续投递仍须满足全部推送开关、本人授权、关注范围、免打扰与候选有效期。
+						不会补发历史 Web 候选；关闭后重新确认只考虑重新确认之后的新候选。
+					</p>
+					{data.settings.decisionCards?.enabled ? (
+						<button
+							type="button"
+							disabled={busy}
+							onClick={() => updateSettings.mutate({ decisionCardsEnabled: false })}
+							className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+						>
+							关闭决策卡偏好
+						</button>
+					) : decisionConfirmOpen ? (
+						<div className="space-y-2">
+							<p className="text-sm">
+								确认只记录本人决策卡偏好，不改变日汇总或通知授权，也不会立即发送消息。
+							</p>
+							<div className="flex flex-wrap gap-2">
+								<button
+									type="button"
+									disabled={busy}
+									onClick={() =>
+										updateSettings.mutate({ decisionCardsEnabled: true })
+									}
+									className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+								>
+									{updateSettings.isPending ? "正在记录…" : "确认记录决策卡偏好"}
+								</button>
+								<button
+									type="button"
+									disabled={busy}
+									onClick={() => setDecisionConfirmOpen(false)}
+									className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+								>
+									暂不确认决策卡
+								</button>
+							</div>
+						</div>
+					) : (
+						<button
+							type="button"
+							disabled={busy}
+							onClick={() => setDecisionConfirmOpen(true)}
+							className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+						>
+							了解并单独确认决策卡
+						</button>
+					)}
 				</CardContent>
 			</Card>
 
