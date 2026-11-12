@@ -653,7 +653,7 @@ test("HTTP validates cookie authentication, same-origin mutations, unknown accou
   assert.equal(missingRes.status, 404);
 });
 
-test("HTTP enforces the eight-hour absolute session expiry without sliding", async (t) => {
+test("HTTP enforces the twenty-four-hour idle session expiry without sliding on reads", async (t) => {
   const issuedAt = "2026-03-01T00:00:00.000Z";
   let clock = Date.parse(issuedAt);
   const { url, headers } = await serve(t, {
@@ -661,16 +661,16 @@ test("HTTP enforces the eight-hour absolute session expiry without sliding", asy
     now: () => new Date(clock),
   });
   const status = async () => (await fetch(`${url}/api/me`, { headers })).status;
-  clock = Date.parse("2026-03-01T07:59:59.999Z");
+  clock = Date.parse("2026-03-01T23:59:59.999Z");
   assert.equal(await status(), 200);
-  clock = Date.parse("2026-03-01T08:00:00.000Z");
-  assert.equal(await status(), 401, "expiry is inclusive at the eight-hour boundary");
-  clock = Date.parse("2026-03-01T08:00:00.001Z");
+  clock = Date.parse("2026-03-02T00:00:00.000Z");
+  assert.equal(await status(), 401, "expiry is inclusive at the twenty-four-hour boundary");
+  clock = Date.parse("2026-03-02T00:00:00.001Z");
   assert.equal(await status(), 401);
   assert.equal(
     await status(),
     401,
-    "requests before expiry did not slide the absolute eight-hour deadline",
+    "requests before expiry did not slide the idle deadline",
   );
 });
 

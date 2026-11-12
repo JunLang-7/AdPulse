@@ -4,7 +4,41 @@ import type { IdentityBinding, LoginTransaction } from "./state/model.js";
 import type { PlatformIdentity } from "./ports/channel.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 
-export const MAX_WEB_SESSION_MS = 8 * 60 * 60 * 1000;
+export const LEGACY_WEB_SESSION_MS = 8 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
+export type WebSessionMode = "default" | "remembered";
+
+export const WEB_SESSION_POLICIES = {
+	default: { idleMs: 24 * HOUR_MS, absoluteMs: 7 * DAY_MS },
+	remembered: { idleMs: 7 * DAY_MS, absoluteMs: 30 * DAY_MS },
+} as const satisfies Record<WebSessionMode, { idleMs: number; absoluteMs: number }>;
+
+const validSessionMode = (mode: string): mode is WebSessionMode =>
+	mode === "default" || mode === "remembered";
+const parseIsoDate = (value: string): number => {
+	const timestamp = Date.parse(value);
+	if (!Number.isFinite(timestamp)) throw new Error("invalid session timestamp");
+	return timestamp;
+};
+export const webSessionExpiry = (
+	mode: WebSessionMode,
+	authenticatedAt: string,
+	lastActivityAt: string = authenticatedAt,
+): { idleExpiresAt: string; absoluteExpiresAt: string; expiresAt: string } => {
+	const authenticated = parseIsoDate(authenticatedAt);
+	const activity = parseIsoDate(lastActivityAt);
+	if (activity < authenticated) throw new Error("session activity precedes authentication");
+	const policy = WEB_SESSION_POLICIES[mode];
+	const idleExpiresAt = activity + policy.idleMs;
+	const absoluteExpiresAt = authenticated + policy.absoluteMs;
+	return {
+		idleExpiresAt: new Date(idleExpiresAt).toISOString(),
+		absoluteExpiresAt: new Date(absoluteExpiresAt).toISOString(),
+		expiresAt: new Date(Math.min(idleExpiresAt, absoluteExpiresAt)).toISOString(),
+	};
+};
 
 /** Platform-neutral identity contract shared by login and inbound channels. */
 export type VerifiedIdentity = PlatformIdentity;
@@ -16,6 +50,7 @@ export interface NewLoginTransaction {
 	returnTo: string;
 	createdAt: string;
 	expiresAt: string;
+	rememberMe?: boolean;
 }
 
 export interface AuthenticatedSession {
@@ -23,6 +58,11 @@ export interface AuthenticatedSession {
 	sessionId: string;
 	createdAt: string;
 	expiresAt: string;
+	sessionMode?: WebSessionMode;
+	authenticatedAt?: string;
+	lastActivityAt?: string;
+	idleExpiresAt?: string;
+	absoluteExpiresAt?: string;
 	/** 展示用名称，来自平台返回；缺省时界面自行降级。 */
 	displayName?: string;
 	/** 该会话所属绑定的身份作用域：边界层据此决定「为谁确认目的地」，不接受客户端传入。 */
@@ -90,7 +130,8 @@ export class AuthenticationService {
 			input.returnTo.includes("\\") ||
 			!Number.isFinite(createdAt) ||
 			!Number.isFinite(expiresAt) ||
-			expiresAt <= createdAt
+			expiresAt <= createdAt ||
+			(input.rememberMe !== undefined && typeof input.rememberMe !== "boolean")
 		)
 			throw new Error("invalid login transaction");
 		await this.storage.transaction(async (tx) => {
@@ -109,6 +150,7 @@ export class AuthenticationService {
 			const transaction: LoginTransaction = {
 				...input,
 				status: "pending",
+				...(input.rememberMe === true ? { rememberMe: true } : {}),
 			};
 			await tx.loginTransactions.put(transaction);
 		});
@@ -151,6 +193,7 @@ export class AuthenticationService {
 		sessionTokenHash: string,
 		now: string,
 		displayName?: string,
+		mode: WebSessionMode = "default",
 	): Promise<AuthenticatedSession> {
 		if (!digestPattern.test(sessionTokenHash) || !Number.isFinite(Date.parse(now)))
 			throw new Error("invalid session token or timestamp");
@@ -193,11 +236,12 @@ export class AuthenticationService {
 						});
 						await tx.identityBindings.put(binding);
 					}
+					const expiry = webSessionExpiry(mode, now);
 					const session: AuthenticatedSession = {
 						userId,
 						sessionId: sessionTokenHash,
 						createdAt: now,
-						expiresAt: new Date(Date.parse(now) + MAX_WEB_SESSION_MS).toISOString(),
+						expiresAt: expiry.expiresAt,
 						...(displayName ? { displayName } : {}),
 					};
 					await tx.webSessions.put({
@@ -206,6 +250,11 @@ export class AuthenticationService {
 						identityBindingId: binding.id,
 						createdAt: session.createdAt,
 						expiresAt: session.expiresAt,
+						sessionMode: mode,
+						authenticatedAt: now,
+						lastActivityAt: now,
+						idleExpiresAt: expiry.idleExpiresAt,
+						absoluteExpiresAt: expiry.absoluteExpiresAt,
 					});
 					return session;
 				});
@@ -252,6 +301,20 @@ export class AuthenticationService {
 		return this.storage.transaction(async (tx) => {
 			const session = await tx.webSessions.get(sessionTokenHash);
 			if (!session || session.revokedAt || session.expiresAt <= now) return null;
+			if (session.sessionMode && !validSessionMode(session.sessionMode)) return null;
+			if (session.sessionMode) {
+				const expected = webSessionExpiry(
+						session.sessionMode,
+						session.authenticatedAt ?? session.createdAt,
+						session.lastActivityAt ?? session.authenticatedAt ?? session.createdAt,
+				);
+				if (
+					session.idleExpiresAt !== expected.idleExpiresAt ||
+					session.absoluteExpiresAt !== expected.absoluteExpiresAt ||
+					session.expiresAt !== expected.expiresAt
+				)
+					return null;
+			}
 			const [user, binding] = await Promise.all([
 				tx.users.get(session.userId),
 				tx.identityBindings.get(session.identityBindingId),
@@ -269,6 +332,74 @@ export class AuthenticationService {
 				sessionId: session.id,
 				createdAt: session.createdAt,
 				expiresAt: session.expiresAt,
+				...(session.sessionMode ? { sessionMode: session.sessionMode } : {}),
+				...(session.authenticatedAt ? { authenticatedAt: session.authenticatedAt } : {}),
+				...(session.lastActivityAt ? { lastActivityAt: session.lastActivityAt } : {}),
+				...(session.idleExpiresAt ? { idleExpiresAt: session.idleExpiresAt } : {}),
+				...(session.absoluteExpiresAt ? { absoluteExpiresAt: session.absoluteExpiresAt } : {}),
+				...(user.displayName ? { displayName: user.displayName } : {}),
+				identity: {
+					platform: binding.platform,
+					applicationId: binding.applicationId,
+					tenantId: binding.tenantId,
+					idType: binding.idType,
+					externalId: binding.externalId,
+				},
+			};
+		});
+	}
+
+	/** Slides the idle expiry for a valid, non-revoked session. Legacy sessions keep their fixed expiry. */
+	async touchWebSession(
+		sessionTokenHash: string,
+		now: string,
+	): Promise<AuthenticatedSession | null> {
+		if (!digestPattern.test(sessionTokenHash) || !Number.isFinite(Date.parse(now))) return null;
+		return this.storage.transaction(async (tx) => {
+			const session = await tx.webSessions.get(sessionTokenHash);
+			if (!session || session.revokedAt || session.expiresAt <= now) return null;
+			const [user, binding] = await Promise.all([
+				tx.users.get(session.userId),
+				tx.identityBindings.get(session.identityBindingId),
+			]);
+			if (
+				!user ||
+				user.status !== "active" ||
+				!binding ||
+				binding.status !== "active" ||
+				binding.userId !== user.id
+			)
+				return null;
+
+			let updated = session;
+			if (session.sessionMode && validSessionMode(session.sessionMode)) {
+				const authenticatedAt = session.authenticatedAt ?? session.createdAt;
+				const absoluteExpiresAt = session.absoluteExpiresAt ?? session.expiresAt;
+				if (Date.parse(absoluteExpiresAt) <= Date.parse(now)) return null;
+				const lastActivityAt = session.lastActivityAt ?? authenticatedAt;
+				// Throttle writes: at most one idle-extension per minute per session.
+				if (Date.parse(now) - Date.parse(lastActivityAt) >= 60_000) {
+					const expiry = webSessionExpiry(session.sessionMode, authenticatedAt, now);
+					updated = {
+						...session,
+						lastActivityAt: now,
+						idleExpiresAt: expiry.idleExpiresAt,
+						absoluteExpiresAt: expiry.absoluteExpiresAt,
+						expiresAt: expiry.expiresAt,
+					};
+					await tx.webSessions.put(updated);
+				}
+			}
+			return {
+				userId: user.id,
+				sessionId: updated.id,
+				createdAt: updated.createdAt,
+				expiresAt: updated.expiresAt,
+				...(updated.sessionMode ? { sessionMode: updated.sessionMode } : {}),
+				...(updated.authenticatedAt ? { authenticatedAt: updated.authenticatedAt } : {}),
+				...(updated.lastActivityAt ? { lastActivityAt: updated.lastActivityAt } : {}),
+				...(updated.idleExpiresAt ? { idleExpiresAt: updated.idleExpiresAt } : {}),
+				...(updated.absoluteExpiresAt ? { absoluteExpiresAt: updated.absoluteExpiresAt } : {}),
 				...(user.displayName ? { displayName: user.displayName } : {}),
 				identity: {
 					platform: binding.platform,
