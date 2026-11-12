@@ -118,6 +118,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listNotifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/notification-destination": {
         parameters: {
             query?: never;
@@ -636,6 +652,76 @@ export interface components {
         SubscriptionView: {
             settings: components["schemas"]["SubscriptionSettings"];
             targets: components["schemas"]["SubscriptionTarget"][];
+        };
+        NotificationRecordPage: {
+            records: components["schemas"]["NotificationRecord"][];
+            /** @description 下一页游标（上一页最末记录的北京时间日期）；没有更早记录时为 null */
+            nextBefore: string | null;
+        };
+        NotificationRecord: {
+            id: string;
+            /** @enum {string} */
+            kind: "digest";
+            /** @description 北京时间的本地日期 YYYY-MM-DD */
+            localDate: string;
+            /** @enum {string} */
+            status: "queued" | "sent" | "cancelled" | "expired" | "suppressed" | "failed";
+            /** @description 原因代码（如 push_disabled/settings_changed/empty/merged_stale/destination_invalidated/consent_revoked/recipient_unreachable），文案由展示层翻译 */
+            statusReason?: string;
+            /** Format: date-time */
+            scheduledAt: string;
+            /** Format: date-time */
+            sentAt?: string;
+            /** @description 错过 09:30 后当日补发 */
+            catchUp?: boolean;
+            settingsVersion: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            items: components["schemas"]["NotificationRecordItem"][];
+            /** @description 从未发起投递时为 null */
+            delivery: components["schemas"]["NotificationRecordDelivery"] | null;
+        };
+        NotificationRecordItem: {
+            id: string;
+            /** @enum {string} */
+            kind: "effect_alert";
+            taskId?: string;
+            title: string;
+            summary: string;
+            relevance: string;
+            sources: components["schemas"]["NotificationRecordSource"][];
+            revision: number;
+            /** @enum {string} */
+            status: "queued" | "sent" | "cancelled" | "expired";
+            deliveryId?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        NotificationRecordSource: {
+            label: string;
+            /** Format: uri */
+            url?: string;
+            /** @description 未知保留 null，不补成采集时间 */
+            publishedAt?: string | null;
+            observedAt?: string;
+        };
+        NotificationRecordDelivery: {
+            /** @enum {string} */
+            status: "pending" | "sent" | "failed" | "cancelled" | "suppressed";
+            /** Format: date-time */
+            sentAt?: string;
+            externalMessageId?: string;
+            lastError?: string;
+            suppressionReason?: string;
+            /**
+             * Format: date-time
+             * @description 发送前最后一次复检通过时刻，不是发送回执
+             */
+            checkedAt?: string;
         };
         SubscriptionSettingsInput: {
             /** @description 调用方看到的版本；未配置时为 0。旧请求重放会因版本不符被拒 */
@@ -1732,6 +1818,43 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["NotificationStatus"];
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listNotifications: {
+        parameters: {
+            query?: {
+                limit?: number;
+                before?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own digest records with items and delivery receipt; sent only means the channel accepted the message */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationRecordPage"];
+                };
+            };
+            /** @description Invalid limit or before */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {

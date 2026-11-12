@@ -252,6 +252,20 @@
         }
       }
     },
+    "/api/me/notifications": {
+      "get": {
+        "operationId": "listNotifications",
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 } },
+          { "name": "before", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "排他游标：只返回该北京时间日期之前的记录" } }
+        ],
+        "responses": {
+          "200": { "description": "Own digest records with items and delivery receipt; sent only means the channel accepted the message", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotificationRecordPage" } } } },
+          "400": { "description": "Invalid limit or before" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
     "/api/me/notification-destination": {
       "put": {
         "operationId": "verifyNotificationDestination",
@@ -1307,6 +1321,78 @@
           "targets": { "type": "array", "items": { "$ref": "#/components/schemas/SubscriptionTarget" } }
         },
         "required": ["settings", "targets"],
+        "additionalProperties": false
+      },
+      "NotificationRecordPage": {
+        "type": "object",
+        "properties": {
+          "records": { "type": "array", "items": { "$ref": "#/components/schemas/NotificationRecord" } },
+          "nextBefore": { "type": ["string", "null"], "description": "下一页游标（上一页最末记录的北京时间日期）；没有更早记录时为 null" }
+        },
+        "required": ["records", "nextBefore"],
+        "additionalProperties": false
+      },
+      "NotificationRecord": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["digest"] },
+          "localDate": { "type": "string", "description": "北京时间的本地日期 YYYY-MM-DD" },
+          "status": { "type": "string", "enum": ["queued", "sent", "cancelled", "expired", "suppressed", "failed"] },
+          "statusReason": { "type": "string", "description": "原因代码（如 push_disabled/settings_changed/empty/merged_stale/destination_invalidated/consent_revoked/recipient_unreachable），文案由展示层翻译" },
+          "scheduledAt": { "type": "string", "format": "date-time" },
+          "sentAt": { "type": "string", "format": "date-time" },
+          "catchUp": { "type": "boolean", "description": "错过 09:30 后当日补发" },
+          "settingsVersion": { "type": "integer", "minimum": 0 },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/NotificationRecordItem" } },
+          "delivery": { "oneOf": [{ "$ref": "#/components/schemas/NotificationRecordDelivery" }, { "type": "null" }], "description": "从未发起投递时为 null" }
+        },
+        "required": ["id", "kind", "localDate", "status", "scheduledAt", "settingsVersion", "createdAt", "updatedAt", "items", "delivery"],
+        "additionalProperties": false
+      },
+      "NotificationRecordItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["effect_alert"] },
+          "taskId": { "type": "string" },
+          "title": { "type": "string" },
+          "summary": { "type": "string" },
+          "relevance": { "type": "string" },
+          "sources": { "type": "array", "items": { "$ref": "#/components/schemas/NotificationRecordSource" } },
+          "revision": { "type": "integer", "minimum": 1 },
+          "status": { "type": "string", "enum": ["queued", "sent", "cancelled", "expired"] },
+          "deliveryId": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "kind", "title", "summary", "relevance", "sources", "revision", "status", "createdAt", "updatedAt"],
+        "additionalProperties": false
+      },
+      "NotificationRecordSource": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "url": { "type": "string", "format": "uri" },
+          "publishedAt": { "type": ["string", "null"], "description": "未知保留 null，不补成采集时间" },
+          "observedAt": { "type": "string" }
+        },
+        "required": ["label"],
+        "additionalProperties": false
+      },
+      "NotificationRecordDelivery": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["pending", "sent", "failed", "cancelled", "suppressed"] },
+          "sentAt": { "type": "string", "format": "date-time" },
+          "externalMessageId": { "type": "string" },
+          "lastError": { "type": "string" },
+          "suppressionReason": { "type": "string" },
+          "checkedAt": { "type": "string", "format": "date-time", "description": "发送前最后一次复检通过时刻，不是发送回执" }
+        },
+        "required": ["status"],
         "additionalProperties": false
       },
       "SubscriptionSettingsInput": {

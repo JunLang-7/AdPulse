@@ -11,6 +11,7 @@ import SessionsPage from "../views/adpulse/sessions";
 import TaskEditorPage from "../views/adpulse/tasks/editor";
 import TaskReviewPage from "../views/adpulse/tasks/review";
 import NotificationSettingsPage from "../views/adpulse/settings/notifications";
+import NotificationRecordsPage from "../views/adpulse/settings/notification-records";
 import SubscriptionSettingsPage from "../views/adpulse/settings/subscriptions";
 import TasksPage from "../views/adpulse/tasks";
 
@@ -135,6 +136,7 @@ const Router = [
 					{ path: "/tasks/:taskId", element: <TaskEditorPage /> },
 					{ path: "/tasks/:taskId/review", element: <TaskReviewPage /> },
 					{ path: "/settings/notifications", element: <NotificationSettingsPage /> },
+					{ path: "/settings/notification-records", element: <NotificationRecordsPage /> },
 					{ path: "/settings/subscriptions", element: <SubscriptionSettingsPage /> },
 				],
 			},

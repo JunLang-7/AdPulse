@@ -36,6 +36,7 @@ export interface MenuItem {
 
 import {
 	BellRing,
+	History,
 	SlidersHorizontal,
 	ClipboardList,
 	House,
@@ -62,6 +63,12 @@ const SidebarContent: MenuItem[] = [
 				name: "通知设置",
 				icon: BellRing,
 				url: "/settings/notifications",
+			},
+			{
+				id: "notification-records",
+				name: "通知记录",
+				icon: History,
+				url: "/settings/notification-records",
 			},
 			{
 				id: "subscription-settings",

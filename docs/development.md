@@ -406,6 +406,23 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
    因此**禁止混跑或直接把待发交给旧版消费**。设置降级写入可能丢失独立确认，重升后须重新确认；
    不重置冻结时间、不重放取消状态，也不自动恢复备份中的旧通知。服务不可用与投递失败不作为业务决定失败。
 
+### 5.5 通知记录与解释（#37 PR4）
+
+`GET /api/me/notifications` 与控制台「通知记录」（`/settings/notification-records`）把已发生的汇总批次、
+条目与投递回执投影成本人可读的记录。核心是 `NotificationRecordService`
+（`packages/core/src/notifications-records.ts`），**只读**：不发消息、不改状态、不重试、不创建 Session。
+
+- 只返回本人批次（按北京时间 `localDate` 倒序）。没有按 id 直取的公开入口，因此不存在「知道 id 就能读别人记录」
+  的路径；`delivery` 还会再校验 `ownerId`，防止派生 id 撞车时串号。
+- 分页用 `limit`（1–50，默认 20）+ `before`（排他游标，北京时间 `YYYY-MM-DD`）；非法值返回 400，不静默改写。
+- 记录只陈述已存事实：批次状态、`statusReason` 代码、计划/发送时间、条目与 `Delivery` 回执。
+  原因代码到中文文案的翻译在控制台 `record-view.ts`；未翻译的代码显示原码并注明「不推测」，不补未知原因。
+- `sent` 只表示渠道接收，页面明确写「不代表你已读」；业务结果与投递状态仍然分开。
+- 页面顶部复用订阅页的 `describeReadiness` 判断「现在会不会收到」，避免两套说法；空记录时说明
+  「没有新内容不发空汇总」，不把空列表解释成已发送。
+- **尚无生产者**：`NotificationQueue.queue()` 目前只被测试调用，尚未接入订阅筛选与 #38/#39 来源，
+  因此真实环境不会自动生成汇总条目；本页只能看到已经存在的批次，真机投递验收仍未执行。
+
 ## 6. PostgreSQL 集成测试
 
 TEST_DATABASE_URL 必须指向独立、可丢弃的测试数据库，不能使用生产数据库。
