@@ -69,3 +69,21 @@ test("spreadsheet mapping rejects English lead counts as consultations", () => {
 		assert.throws(() => reviewInputFromRow(["10"], [title], { spend: "", consultations: "0" }), /口径/);
 	}
 });
+
+test("a separate currency column prevents treating foreign spend as yuan", () => {
+	const header = ["Product Name", "Total Cost", "Currency Unit", "Consultations Count"];
+	const columns = { spend: "1", consultations: "3" };
+	assert.throws(
+		() => reviewInputFromRow(["PetalBook Journal", "88.00", "USD", "2"], header, columns),
+		/不是人民币元/,
+	);
+	assert.throws(
+		() => reviewInputFromRow(["PetalBook Journal", "88.00", "CHF", "2"], header, columns),
+		/不是人民币元/,
+	);
+	assert.deepEqual(reviewInputFromRow(["PetalBook Journal", "88.00", "USD", "2"], header, { ...columns, spend: "" }),
+		{ spend: "", consultations: "2" });
+	assert.deepEqual(reviewInputFromRow(["PetalBook Journal", "88.00", "CNY", "2"], header, columns),
+		{ spend: "88.00", consultations: "2" });
+	assert.equal(isYuanColumn("Total Cost (RMB)"), true);
+});

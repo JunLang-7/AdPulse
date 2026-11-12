@@ -41,6 +41,7 @@ export function estimateReview(input: QuickReviewInput, rules: TaskRules) {
 
 const spendHeaders = new Set(["花费", "投放花费", "广告花费", "消耗", "广告消耗", "消费", "spend", "cost"]);
 const consultationHeaders = new Set(["咨询", "咨询次数", "咨询量", "咨询数", "consultations"]);
+const currencyHeaders = new Set(["币种", "货币", "货币单位", "金额单位", "currency", "currencycode", "currencyunit"]);
 const foreignCurrency = /\b(?:USD|HKD|EUR|GBP|JPY|KRW|TWD|CAD|AUD|SGD|INR)\b|美元|港[元币]|欧元|英镑|日[元圆]|円|韩[元圆]|台币|卢比|[$€£₩₹]/i;
 const nonYuanUnit = /\((?:单位:)?(?:人民币)?分\)$|(?:人民币分|单位:分)$|[百千万亿]元|\b(?:FEN|CENTS?)\b/i;
 const nonConsultationMetric = /线索|咨询人数|\(人\)|\bleads?\b/i;
@@ -51,7 +52,7 @@ export function cellText(cell: Row<string>[number] | undefined): string {
 
 function columnKind(title: string): keyof QuickReviewInput | undefined {
 	const name = title.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
-	if (spendHeaders.has(name.replace(/\((?:人民币元|元|cny)\)$/, ""))) return "spend";
+	if (spendHeaders.has(name.replace(/\((?:人民币元|元|cny|rmb)\)$/, ""))) return "spend";
 	if (consultationHeaders.has(name.replace(/\(次\)$/, ""))) return "consultations";
 }
 
@@ -78,7 +79,17 @@ export function findReviewHeader(data: SheetData<string>): number {
 
 export function isYuanColumn(title: string): boolean {
 	const normalized = title.normalize("NFKC").replace(/\s+/g, "");
-	return /\((?:单位:)?(?:人民币元|元|CNY)\)$|人民币元$/i.test(normalized);
+	return /\((?:单位:)?(?:人民币元|元|CNY|RMB)\)$|人民币元$/i.test(normalized);
+}
+
+function hasNonYuanCurrency(header: Row<string>, row: Row<string>): boolean {
+	return header.some((cell, index) => {
+		const name = cellText(cell).normalize("NFKC").toLowerCase().replace(/[\s_-]+/g, "");
+		if (!currencyHeaders.has(name)) return false;
+		const unit = cellText(row[index]).normalize("NFKC");
+		return foreignCurrency.test(unit) || nonYuanUnit.test(unit) ||
+			/^(?:人民币)?分$/.test(unit) || (/^[A-Z]{3}$/i.test(unit) && !/^(?:CNY|RMB)$/i.test(unit));
+	});
 }
 
 export function reviewInputFromRow(
@@ -89,7 +100,8 @@ export function reviewInputFromRow(
 	if (columns.spend && columns.spend === columns.consultations)
 		throw new Error("请为花费和咨询次数选择不同的列。");
 	const spendColumn = cellText(header[Number(columns.spend)]).normalize("NFKC").replace(/_/g, " ");
-	if (columns.spend && (foreignCurrency.test(spendColumn) || nonYuanUnit.test(spendColumn.replace(/\s*([():])\s*/g, "$1"))))
+	if (columns.spend && (foreignCurrency.test(spendColumn) ||
+		nonYuanUnit.test(spendColumn.replace(/\s*([():])\s*/g, "$1")) || hasNonYuanCurrency(header, row)))
 		throw new Error("花费列的单位不是人民币元。请换一列，或换算后手动填写。");
 	const consultationColumn = cellText(header[Number(columns.consultations)]).normalize("NFKC").replace(/_/g, " ");
 	if (columns.consultations && nonConsultationMetric.test(consultationColumn))
