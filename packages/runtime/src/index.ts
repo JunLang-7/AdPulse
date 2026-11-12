@@ -138,8 +138,10 @@ export function compose(
 }
 export type Runtime = ReturnType<typeof compose> & { extractTaskDraft?: TaskDraftExtractor; taskDraftModels?: ReturnType<typeof createTaskDraftModels> };
 
-export { taskDraftProviderIds } from "./task-draft-models.js";
 export { taskDraftBriefMaxLength, taskDraftStages } from "./task-draft-extractor.js";
+export type { TaskDraftSelection } from "./task-draft-models.js";
+export { catalogForClient, findCatalogModel, findCatalogProvider, modelCatalogProviders } from "./model-catalog.js";
+export type { ModelCatalogModel, ModelCatalogProvider } from "./model-catalog.js";
 
 export {
 	HttpSourceFetcher,

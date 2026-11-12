@@ -1,4 +1,6 @@
+import { catalogForClient, catalogModelLabel, findCatalogModel, findCatalogProvider } from "./model-catalog.js";
 import {
+	createCatalogTaskDraftExtractor,
 	createTaskDraftExtractor,
 	createTaskDraftRequestLimit,
 	getTaskDraftGateway,
@@ -6,34 +8,57 @@ import {
 	type TaskDraftStage,
 } from "./task-draft-extractor.js";
 
-export const taskDraftProviderIds = ["deepseek", "openai-compatible"] as const;
-export type TaskDraftProviderId = (typeof taskDraftProviderIds)[number];
+export interface TaskDraftSelection {
+	provider: string;
+	model: string;
+}
 
-type ModelRoute = { id: TaskDraftProviderId; label: string; model: string };
+type StoredConnection = {
+	ownerId: string;
+	selection: TaskDraftSelection;
+	label: string;
+	extract: TaskDraftExtractor;
+	until: number;
+	timer: NodeJS.Timeout;
+	connectedAt: number;
+};
+
+type SharedRoute = {
+	selection: TaskDraftSelection;
+	label: string;
+	extract: TaskDraftExtractor;
+};
+
 const connectionLifetimeMs = 8 * 60 * 60 * 1000;
 const maxConnections = 64;
 const testBrief = "产品：连接测试";
+
+/** Deployment-managed routes. Kept for the existing explicit selection only. */
+function sharedRoutes(env: Record<string, string | undefined>, fetchImpl: typeof fetch, limit: ReturnType<typeof createTaskDraftRequestLimit>): SharedRoute[] {
+	const routes: SharedRoute[] = [];
+	const deepseek = createTaskDraftExtractor({ ...env, TASK_DRAFT_PROVIDER: "deepseek" }, fetchImpl, limit);
+	if (deepseek) routes.push({ selection: { provider: "deepseek", model: "deepseek-flash" }, label: "DeepSeek（部署提供）", extract: deepseek });
+	const gateway = getTaskDraftGateway(env);
+	if (gateway) {
+		const extract = createTaskDraftExtractor({ ...env, TASK_DRAFT_PROVIDER: "openai-compatible" }, fetchImpl, limit);
+		if (extract) routes.push({ selection: { provider: "openai-compatible", model: gateway.modelId }, label: "兼容网关（部署提供）", extract });
+	}
+	return routes;
+}
 
 export function createTaskDraftModels(
 	env: Record<string, string | undefined>,
 	fetchImpl: typeof fetch = fetch,
 	now: () => number = Date.now,
 ) {
-	const gateway = getTaskDraftGateway(env);
-	const routes: ModelRoute[] = [{ id: "deepseek", label: "DeepSeek", model: "deepseek-flash" }];
-	if (gateway) routes.push({ id: "openai-compatible", label: "兼容网关", model: gateway.modelId });
-	const defaultId = env.TASK_DRAFT_PROVIDER?.trim() || "deepseek";
-	const defaultProvider = routes.find(({ id }) => id === defaultId)?.id ?? null;
 	const canConnect = env.TASK_DRAFT_USER_KEYS_ENABLED === "1";
 	const limit = createTaskDraftRequestLimit();
-	const shared = new Map<TaskDraftProviderId, TaskDraftExtractor>();
-	for (const { id } of routes) {
-		const extract = createTaskDraftExtractor({ ...env, TASK_DRAFT_PROVIDER: id }, fetchImpl, limit);
-		if (extract) shared.set(id, extract);
-	}
-	const connections = new Map<string, { extract: TaskDraftExtractor; until: number; timer: NodeJS.Timeout }>();
+	const shared = sharedRoutes(env, fetchImpl, limit);
+	const sharedSelection = shared[0]?.selection ?? null;
+	const connections = new Map<string, StoredConnection>();
 	const pending = new Set<string>();
-	const connectionKey = (ownerId: string, provider: TaskDraftProviderId) => JSON.stringify([ownerId, provider]);
+	const connectionKey = (ownerId: string, { provider, model }: TaskDraftSelection) =>
+		JSON.stringify([ownerId, provider, model]);
 
 	function remove(key: string) {
 		const connection = connections.get(key);
@@ -48,56 +73,92 @@ export function createTaskDraftModels(
 		}
 	}
 
-	function list(ownerId: string) {
+	function labelFor(selection: TaskDraftSelection): string {
+		const sharedRoute = shared.find((route) => route.selection.provider === selection.provider && route.selection.model === selection.model);
+		if (sharedRoute) return sharedRoute.label;
+		const provider = findCatalogProvider(selection.provider)?.name ?? selection.provider;
+		const model = catalogModelLabel(selection.provider, selection.model) ?? selection.model;
+		return `${provider} · ${model}`;
+	}
+
+	function ownConnections(ownerId: string) {
 		prune();
-		return {
-			defaultProvider,
-			canConnect,
-			models: routes.map((route) => {
-				const connection = connections.get(connectionKey(ownerId, route.id));
-				return {
-					...route,
-					status: connection ? "connected" as const
-						: shared.has(route.id) ? "configured" as const : "unconfigured" as const,
-				};
-			}),
-		};
+		return [...connections.values()]
+			.filter((connection) => connection.ownerId === ownerId)
+			.map((connection) => ({
+				provider: connection.selection.provider,
+				model: connection.selection.model,
+				label: connection.label,
+				connectedAt: new Date(connection.connectedAt).toISOString(),
+			}))
+			.sort((left, right) => right.connectedAt.localeCompare(left.connectedAt));
+	}
+
+	/** Most recent personal connection wins; otherwise the deployment default. */
+	function defaultSelection(ownerId: string): TaskDraftSelection | null {
+		const [latest] = ownConnections(ownerId);
+		if (latest) return { provider: latest.provider, model: latest.model };
+		return sharedSelection;
+	}
+
+	function createExtractor(selection: TaskDraftSelection, apiKey: string) {
+		return createCatalogTaskDraftExtractor(selection.provider, selection.model, apiKey, fetchImpl, limit);
 	}
 
 	return {
-		list,
-		async connect(ownerId: string, provider: TaskDraftProviderId, secret: string) {
-			if (!canConnect || !routes.some(({ id }) => id === provider)) return false;
+		list(ownerId: string) {
+			return {
+				canConnect,
+				defaultSelection: defaultSelection(ownerId),
+				providers: catalogForClient(),
+				shared: shared.map(({ selection, label }) => ({ ...selection, label })),
+				connections: ownConnections(ownerId),
+			};
+		},
+		/** Tests a candidate key without storing or selecting anything. */
+		async test(selection: TaskDraftSelection, secret: string) {
+			if (!canConnect || !findCatalogModel(selection.provider, selection.model)) return false;
+			const extract = createExtractor(selection, secret);
+			if (!extract) return false;
+			return await extract(testBrief, "overview") !== null;
+		},
+		async connect(ownerId: string, selection: TaskDraftSelection, secret: string) {
+			if (!canConnect || !findCatalogModel(selection.provider, selection.model)) return false;
 			prune();
-			const key = connectionKey(ownerId, provider);
+			const key = connectionKey(ownerId, selection);
 			if (pending.has(key) || (!connections.has(key) && connections.size >= maxConnections)) return false;
 			pending.add(key);
 			try {
-				const credential = provider === "deepseek" ? "DEEPSEEK_API_KEY" : "TASK_DRAFT_GATEWAY_API_KEY";
-				const extract = createTaskDraftExtractor({ ...env, TASK_DRAFT_PROVIDER: provider, [credential]: secret }, fetchImpl, limit);
+				const extract = createExtractor(selection, secret);
 				if (!extract || await extract(testBrief, "overview") === null) return false;
 				prune();
 				if (!connections.has(key) && connections.size >= maxConnections) return false;
 				remove(key);
 				const timer = setTimeout(() => remove(key), connectionLifetimeMs).unref();
-				connections.set(key, { extract, until: now() + connectionLifetimeMs, timer });
+				connections.set(key, {
+					ownerId, selection, label: labelFor(selection), extract,
+					until: now() + connectionLifetimeMs, timer, connectedAt: now(),
+				});
 				return true;
 			} finally {
 				pending.delete(key);
 			}
 		},
-		disconnect(ownerId: string, provider: TaskDraftProviderId) {
-			const key = connectionKey(ownerId, provider);
+		disconnect(ownerId: string, selection: TaskDraftSelection) {
+			const key = connectionKey(ownerId, selection);
 			if (!canConnect || pending.has(key)) return false;
 			remove(key);
 			return true;
 		},
-		async extract(ownerId: string, provider: TaskDraftProviderId | undefined, brief: string, stage?: TaskDraftStage) {
+		async extract(ownerId: string, selection: TaskDraftSelection | undefined, brief: string, stage?: TaskDraftStage) {
 			prune();
-			const id = provider ?? defaultProvider;
-			if (!id) return null;
-			const extract = connections.get(connectionKey(ownerId, id))?.extract ?? shared.get(id);
-			return extract ? extract(brief, stage) : null;
+			const chosen = selection ?? defaultSelection(ownerId);
+			if (!chosen) return null;
+			const connection = connections.get(connectionKey(ownerId, chosen));
+			if (connection) return connection.extract(brief, stage);
+			const sharedRoute = shared.find((route) =>
+				route.selection.provider === chosen.provider && route.selection.model === chosen.model);
+			return sharedRoute ? sharedRoute.extract(brief, stage) : null;
 		},
 	};
 }
