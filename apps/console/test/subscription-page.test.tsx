@@ -153,6 +153,127 @@ test("订阅页：本地校验拦住非法时段，不发出请求", async () =>
 	cleanup();
 });
 
+test("决策卡偏好：浏览与取消不写入，明确确认只提交独立字段", async () => {
+	let stored = {
+		...subscription,
+		settings: { ...subscription.settings, decisionCards: { enabled: false } },
+	};
+	const bodies: unknown[] = [];
+	const { calls } = serve(defaults, {
+		"GET /api/me/subscription": () => json(stored),
+		"PUT /api/me/subscription/settings": async (request) => {
+			bodies.push(await request.json());
+			stored = {
+				...stored,
+				settings: {
+					...stored.settings,
+					version: 4,
+					decisionCards: { enabled: true },
+				},
+			};
+			return json(stored);
+		},
+	});
+	renderPage();
+	const open = await screen.findByRole("button", {
+		name: "了解并单独确认决策卡",
+	});
+	assert.equal(calls.includes("PUT /api/me/subscription/settings"), false);
+	fireEvent.click(open);
+	fireEvent.click(screen.getByRole("button", { name: "暂不确认决策卡" }));
+	assert.equal(calls.includes("PUT /api/me/subscription/settings"), false);
+	fireEvent.click(screen.getByRole("button", { name: "了解并单独确认决策卡" }));
+	fireEvent.click(screen.getByRole("button", { name: "确认记录决策卡偏好" }));
+	await screen.findByText(
+		"已记录决策卡确认；本版本尚未接通投递，不会补发历史候选。",
+	);
+	await screen.findByRole("button", { name: "关闭决策卡偏好" });
+	assert.deepEqual(bodies, [
+		{ expectedVersion: 3, decisionCardsEnabled: true },
+	]);
+	assert.ok(screen.getByRole("button", { name: "配置并开启" }));
+	cleanup();
+});
+
+test("决策卡偏好：提交中不可撤回确认或重复提交", async () => {
+	serve(defaults, {
+		"PUT /api/me/subscription/settings": () => new Promise<Response>(() => {}),
+	});
+	renderPage();
+	fireEvent.click(
+		await screen.findByRole("button", { name: "了解并单独确认决策卡" }),
+	);
+	fireEvent.click(screen.getByRole("button", { name: "确认记录决策卡偏好" }));
+	assert.equal(
+		(
+			await screen.findByRole<HTMLButtonElement>("button", {
+				name: "正在记录…",
+			})
+		).disabled,
+		true,
+	);
+	assert.equal(
+		screen.getByRole<HTMLButtonElement>("button", { name: "暂不确认决策卡" })
+			.disabled,
+		true,
+	);
+	cleanup();
+});
+
+test("决策卡偏好：冲突时显示失败且不冒充已开启", async () => {
+	serve(defaults, {
+		"PUT /api/me/subscription/settings": () =>
+			json({ error: "subscription_conflict" }, 409),
+	});
+	renderPage();
+	fireEvent.click(
+		await screen.findByRole("button", { name: "了解并单独确认决策卡" }),
+	);
+	fireEvent.click(screen.getByRole("button", { name: "确认记录决策卡偏好" }));
+	assert.match(
+		(await screen.findByRole("alert")).textContent ?? "",
+		/其他标签页修改，请刷新/,
+	);
+	assert.equal(screen.queryByText("已记录单独确认"), null);
+	assert.ok(screen.getByText("尚未单独确认"));
+	cleanup();
+});
+
+test("决策卡偏好：关闭只提交独立字段，不关闭日汇总", async () => {
+	const bodies: unknown[] = [];
+	serve(defaults, {
+		"GET /api/me/subscription": () =>
+			json({
+				...subscription,
+				settings: {
+					...subscription.settings,
+					proactiveEnabled: true,
+					decisionCards: { enabled: true },
+				},
+			}),
+		"PUT /api/me/subscription/settings": async (request) => {
+			bodies.push(await request.json());
+			return json({
+				...subscription,
+				settings: {
+					...subscription.settings,
+					proactiveEnabled: true,
+					decisionCards: { enabled: false },
+				},
+			});
+		},
+	});
+	renderPage();
+	fireEvent.click(
+		await screen.findByRole("button", { name: "关闭决策卡偏好" }),
+	);
+	await screen.findByText("已关闭决策卡偏好；日汇总设置不变。");
+	assert.deepEqual(bodies, [
+		{ expectedVersion: 3, decisionCardsEnabled: false },
+	]);
+	cleanup();
+});
+
 test("订阅页：品牌名称留空时不提交，给出字段级提示", async () => {
 	const { calls } = serve(defaults);
 	renderPage();

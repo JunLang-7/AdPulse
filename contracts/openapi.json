@@ -1053,17 +1053,30 @@
         "required": ["timezone", "digestAt", "quietStart", "quietEnd"],
         "additionalProperties": false
       },
+      "DecisionCardPreference": {
+        "type": "object",
+        "description": "决策卡独立确认记录；本期仅保存偏好，不启用投递，不补发历史 Web 候选。缺少历史记录时 enabled=false。",
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "enabledAt": { "type": "string", "format": "date-time", "description": "最近一次明确开启的服务端时间；关闭后重开更新，不因重复开启或保存其他配置而延长" },
+          "disabledAt": { "type": "string", "format": "date-time" },
+          "confirmedVersion": { "type": "integer", "minimum": 1, "description": "最近一次明确开启时的订阅配置版本" }
+        },
+        "required": ["enabled"],
+        "additionalProperties": false
+      },
       "SubscriptionSettings": {
         "type": "object",
         "properties": {
           "version": { "type": "integer", "minimum": 0, "description": "每人单调版本：开关与关注列表的所有写入共用" },
           "proactiveEnabled": { "type": "boolean", "description": "默认关闭；保存配置不等于启用" },
+          "decisionCards": { "$ref": "#/components/schemas/DecisionCardPreference" },
           "schedule": { "$ref": "#/components/schemas/SubscriptionSchedule", "description": "未保存过配置时返回默认值（09:30 汇总、22:00–08:00 免打扰）" },
           "enabledAt": { "type": "string", "format": "date-time" },
           "disabledAt": { "type": "string", "format": "date-time" },
           "updatedAt": { "type": "string", "format": "date-time", "description": "从未保存过配置时缺省（不返回空串）" }
         },
-        "required": ["version", "proactiveEnabled", "schedule"],
+        "required": ["version", "proactiveEnabled", "decisionCards", "schedule"],
         "additionalProperties": false
       },
       "SubscriptionTarget": {
@@ -1097,6 +1110,7 @@
         "properties": {
           "expectedVersion": { "type": "integer", "minimum": 0, "description": "调用方看到的版本；未配置时为 0。旧请求重放会因版本不符被拒" },
           "proactiveEnabled": { "type": "boolean" },
+          "decisionCardsEnabled": { "type": "boolean", "description": "本人单独明确确认；不改变全部主动推送开关、地址或通知授权。本期仅记录，不排队或发送。" },
           "schedule": { "$ref": "#/components/schemas/SubscriptionSchedule" }
         },
         "required": ["expectedVersion"],

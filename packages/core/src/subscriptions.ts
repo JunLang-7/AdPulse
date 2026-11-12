@@ -53,6 +53,7 @@ export interface SubscriptionView {
 	settings: {
 		version: number;
 		proactiveEnabled: boolean;
+		decisionCards: NonNullable<SubscriptionSettings["decisionCards"]>;
 		schedule: SubscriptionSettings["schedule"];
 		enabledAt?: string;
 		disabledAt?: string;
@@ -184,6 +185,7 @@ export class SubscriptionService {
 		input: {
 			expectedVersion: number;
 			proactiveEnabled?: boolean;
+			decisionCardsEnabled?: boolean;
 			schedule?: SubscriptionSettings["schedule"];
 		},
 	): Promise<SubscriptionView> {
@@ -207,11 +209,33 @@ export class SubscriptionService {
 					"invalid_target",
 					"proactiveEnabled must be boolean",
 				);
+			if (
+				input.decisionCardsEnabled !== undefined &&
+				typeof input.decisionCardsEnabled !== "boolean"
+			)
+				throw new SubscriptionError(
+					"invalid_target",
+					"decisionCardsEnabled must be boolean",
+				);
+			const decisionCards = {
+				...current?.decisionCards,
+				enabled: current?.decisionCards?.enabled ?? false,
+			};
+			if (input.decisionCardsEnabled !== undefined) {
+				if (input.decisionCardsEnabled && !decisionCards.enabled) {
+					decisionCards.enabledAt = at;
+					decisionCards.confirmedVersion = (current?.version ?? 0) + 1;
+				}
+				if (!input.decisionCardsEnabled && decisionCards.enabled)
+					decisionCards.disabledAt = at;
+				decisionCards.enabled = input.decisionCardsEnabled;
+			}
 			const next: SubscriptionSettings = {
 				id: userId,
 				userId,
 				version: (current?.version ?? 0) + 1,
 				proactiveEnabled,
+				decisionCards,
 				schedule,
 				updatedAt: at,
 				...(current?.enabledAt ? { enabledAt: current.enabledAt } : {}),
@@ -448,6 +472,7 @@ export class SubscriptionService {
 			settings: {
 				version: settings?.version ?? 0,
 				proactiveEnabled: settings?.proactiveEnabled ?? false,
+				decisionCards: settings?.decisionCards ?? { enabled: false },
 				schedule: settings?.schedule ?? DEFAULT_SCHEDULE,
 				...(settings?.enabledAt ? { enabledAt: settings.enabledAt } : {}),
 				...(settings?.disabledAt ? { disabledAt: settings.disabledAt } : {}),
