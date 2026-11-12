@@ -73,12 +73,34 @@ function RequireSession() {
 		};
 		const focus = () => { void verify(); };
 		const restored = (event: PageTransitionEvent) => { if (event.persisted) invalidate(); };
+		let lastActivityReport = 0;
+		const reportActivity = () => {
+			const now = Date.now();
+			if (now - lastActivityReport < 60_000) return;
+			lastActivityReport = now;
+			void consoleClient
+				.POST("/api/session/activity")
+				.then(({ response }) => {
+					if (response.status === 401) invalidate();
+				})
+				.catch(() => {});
+		};
+		const activityEvents = ["click", "keydown", "input", "pointerdown"] as const;
+		for (const eventName of activityEvents)
+			window.addEventListener(eventName, reportActivity, { passive: true, capture: true });
+		const visibility = () => {
+			if (document.visibilityState === "visible") reportActivity();
+		};
+		document.addEventListener("visibilitychange", visibility);
 		window.addEventListener("focus", focus);
 		window.addEventListener("pageshow", restored);
 		void verify(true);
 		return () => {
 			active = false;
 			stopWatching();
+			for (const eventName of activityEvents)
+				window.removeEventListener(eventName, reportActivity, true);
+			document.removeEventListener("visibilitychange", visibility);
 			window.removeEventListener("focus", focus);
 			window.removeEventListener("pageshow", restored);
 		};
