@@ -426,6 +426,41 @@ test("Feishu outbound uses correct recipient type, caches token and reuses deliv
 	assert.equal(calls[1].body.msg_type, "interactive");
 });
 
+test("Feishu outbound keeps bounded delivery UUIDs stable across retries", async () => {
+	const uuids: string[] = [];
+	const outbound = new FeishuOutbound(
+		{ ...config, appSecret: "app-secret" },
+		async (input, options) => {
+			if (String(input).includes("/auth/"))
+				return Response.json({
+					code: 0,
+					tenant_access_token: "test-token",
+					expire: 3600,
+				});
+			const body: unknown = JSON.parse(String(options?.body));
+			assert.ok(body && typeof body === "object" && "uuid" in body);
+			if (typeof body.uuid !== "string") throw new Error("missing UUID");
+			uuids.push(body.uuid);
+			return Response.json({ code: 0, data: { message_id: "message" } });
+		},
+	);
+	const delivery: CardDelivery = {
+		id: "a".repeat(50),
+		recipient: { accountId: "account-a", kind: "user", externalId: "u" },
+		card: { title: "title", summary: "summary", evidence: [], options: [] },
+		actions: [],
+	};
+	await outbound.send(delivery);
+	await outbound.send({ ...delivery, id: "a".repeat(51) });
+	await outbound.send({ ...delivery, id: "a".repeat(51) });
+	await outbound.send({ ...delivery, id: `${"a".repeat(50)}b` });
+	assert.equal(uuids[0], delivery.id);
+	assert.ok(uuids[1]);
+	assert.match(uuids[1], /^[a-f0-9]{50}$/);
+	assert.equal(uuids[1], uuids[2]);
+	assert.notEqual(uuids[1], uuids[3]);
+});
+
 test("decision cards carry a same-origin detail link only when https", () => {
 	const base = {
 		id: "delivery-1",

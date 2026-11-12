@@ -185,7 +185,7 @@ test("决策卡偏好：浏览与取消不写入，明确确认只提交独立�
 	fireEvent.click(screen.getByRole("button", { name: "了解并单独确认决策卡" }));
 	fireEvent.click(screen.getByRole("button", { name: "确认记录决策卡偏好" }));
 	await screen.findByText(
-		"已记录决策卡确认；本版本尚未接通投递，不会补发历史候选。",
+		"已记录决策卡确认；投递仍需服务端启用与发送前检查，不补发历史候选。",
 	);
 	await screen.findByRole("button", { name: "关闭决策卡偏好" });
 	assert.deepEqual(bodies, [

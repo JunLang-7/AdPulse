@@ -1055,7 +1055,7 @@
       },
       "DecisionCardPreference": {
         "type": "object",
-        "description": "决策卡独立确认记录；本期仅保存偏好，不启用投递，不补发历史 Web 候选。缺少历史记录时 enabled=false。",
+        "description": "决策卡独立确认记录；不代替服务端启用及发送前检查，不补发历史 Web 候选。缺少历史记录时 enabled=false。",
         "properties": {
           "enabled": { "type": "boolean" },
           "enabledAt": { "type": "string", "format": "date-time", "description": "最近一次明确开启的服务端时间；关闭后重开更新，不因重复开启或保存其他配置而延长" },
@@ -1110,7 +1110,7 @@
         "properties": {
           "expectedVersion": { "type": "integer", "minimum": 0, "description": "调用方看到的版本；未配置时为 0。旧请求重放会因版本不符被拒" },
           "proactiveEnabled": { "type": "boolean" },
-          "decisionCardsEnabled": { "type": "boolean", "description": "本人单独明确确认；不改变全部主动推送开关、地址或通知授权。本期仅记录，不排队或发送。" },
+          "decisionCardsEnabled": { "type": "boolean", "description": "本人单独明确确认；不改变全部主动推送开关、地址或通知授权。此接口仅记录，不直接排队或发送。" },
           "schedule": { "$ref": "#/components/schemas/SubscriptionSchedule" }
         },
         "required": ["expectedVersion"],
@@ -1900,7 +1900,23 @@
           },
           "suppressionReason": {
             "type": "string",
-            "description": "suppressed 时的原因：未授权、目的地失效或身份绑定失效"
+            "description": "suppressed 时的原因：授权/设置变化、候选失效、渠道停用或免打扰期间过期等"
+          },
+          "proactiveCheckedAt": { "type": "string", "format": "date-time", "description": "最近一次通过发送前检查并在网络调用前持久化的时刻，不是投递成功回执" },
+          "proactiveDecision": {
+            "type": "object",
+            "description": "新效果排查候选的冻结授权快照；仅服务端写入，发送前重新验证",
+            "properties": {
+              "frozenAt": { "type": "string", "format": "date-time" },
+              "settingsVersion": { "type": "integer", "minimum": 1 },
+              "confirmedVersion": { "type": "integer", "minimum": 1 },
+              "enabledAt": { "type": "string", "format": "date-time" },
+              "destinationId": { "type": "string" },
+              "destinationVerifiedAt": { "type": "string", "format": "date-time" },
+              "consentVersion": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["frozenAt", "settingsVersion", "confirmedVersion", "enabledAt", "destinationId", "destinationVerifiedAt", "consentVersion"],
+            "additionalProperties": false
           },
           "purpose": {
             "type": "string",
@@ -2025,7 +2041,8 @@
               "kind": {
                 "type": "string",
                 "enum": [
-                  "send_delivery"
+                  "send_delivery",
+                  "send_investigation_decision"
                 ]
               },
               "deliveryId": {

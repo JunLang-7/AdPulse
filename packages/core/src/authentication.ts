@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { cancelDecisionDeliveriesIn } from "./decision-cancellation.js";
 import type { IdentityBinding, LoginTransaction } from "./state/model.js";
 import type { PlatformIdentity } from "./ports/channel.js";
 import type { Storage, Transaction } from "./ports/storage.js";
@@ -295,6 +296,7 @@ export class AuthenticationService {
 			if (!binding) return;
 			if (binding.status !== "revoked")
 				await tx.identityBindings.put({ ...binding, status: "revoked" });
+			await cancelDecisionDeliveriesIn(tx, binding.userId, "identity_revoked");
 			for (const session of await tx.webSessions.all()) {
 				if (session.identityBindingId === binding.id && !session.revokedAt)
 					await tx.webSessions.put({ ...session, revokedAt: now });

@@ -2,6 +2,7 @@
 // 平台中立：输入只有已验证身份（来自 #34 的登录绑定），不认识 Feishu/钉钉差异。
 
 import crypto from "node:crypto";
+import { cancelDecisionDeliveriesIn } from "./decision-cancellation.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
 	NotificationConsent,
@@ -240,6 +241,7 @@ export class NotificationService {
 				version: existing.version + 1,
 			};
 			await tx.notificationConsents.put(consent);
+			await cancelDecisionDeliveriesIn(tx, userId, "consent_revoked");
 			return consent;
 		});
 	}
@@ -311,6 +313,7 @@ export async function noteUnreachableIn(
 	userId: string,
 	now: string,
 	recipient?: { accountId: string; kind: "user" | "group"; externalId: string },
+	exceptDeliveryId?: string,
 ): Promise<NotificationDestination | null> {
 	const destinations = (
 		await tx.notificationDestinations.all()
@@ -332,6 +335,8 @@ export async function noteUnreachableIn(
 		...(invalidated ? { status: "invalidated", invalidatedAt: now } : {}),
 	};
 	await tx.notificationDestinations.put(next);
+	if (invalidated)
+		await cancelDecisionDeliveriesIn(tx, userId, "destination_invalidated", exceptDeliveryId);
 	return next;
 }
 

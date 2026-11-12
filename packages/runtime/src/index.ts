@@ -17,6 +17,7 @@ import {
 	SOURCE_DEFINITIONS,
 	SourceService,
 	TaskService,
+	type DecisionAccountResolver,
 	type PolicyEngine,
 	type Storage,
 	Worker,
@@ -46,7 +47,7 @@ export function compose(
 	storage: Storage,
 	accounts: ChannelAccount[],
 	policy: PolicyEngine = reviewPolicy,
-	options: { detailUrlBase?: string } = {},
+	options: { detailUrlBase?: string; decisionCardsEnabled?: boolean } = {},
 ) {
 	const channels = new ChannelRegistry(accounts);
 	// 站内详情链接只在 HTTPS 控制台 origin 下生成：卡片渲染强制 https，
@@ -55,6 +56,28 @@ export function compose(
 		options.detailUrlBase && options.detailUrlBase.startsWith("https://")
 			? options.detailUrlBase.replace(/\/+$/, "")
 			: undefined;
+	// Only the first-party Feishu single-chat route is enabled in this milestone.
+	// Match the entire attested scope, never just platform or externalId.
+	const decisionAccountFor: DecisionAccountResolver | undefined =
+		options.decisionCardsEnabled
+			? (destination) => {
+					if (
+						destination.platform !== "feishu" ||
+						destination.idType !== "open_id"
+					)
+						return undefined;
+					const matches = accounts.filter(
+						(account) =>
+							account.inbound.identifyActor &&
+							account.identityScope?.platform === destination.platform &&
+							account.identityScope.applicationId ===
+								destination.applicationId &&
+							account.identityScope.tenantId === destination.tenantId,
+					);
+					return matches.length === 1 ? matches[0]?.id : undefined;
+				}
+			: undefined;
+
 	const decisions = new Orchestrator(
 		storage,
 		policy,
@@ -67,6 +90,7 @@ export function compose(
 				(await resolveActiveIdentity(tx, identity)) === actor.userId);
 		},
 		detailBase ? (sessionId) => `${detailBase}/sessions/${sessionId}` : undefined,
+		decisionAccountFor,
 	);
 	const tasks = new TaskService(storage);
 	const evidence = new EvidenceService(storage);
@@ -105,6 +129,8 @@ export function compose(
 				accountIdForPlatform: (platform) => platformAccounts.get(platform),
 				...(detailBase ? { detailBase } : {}),
 			},
+			30_000,
+			decisionAccountFor,
 		),
 	};
 }
@@ -185,6 +211,7 @@ export async function fromEnvironment(
 		});
 	return {
 		...compose(postgres ?? new MemoryStorage(), accounts, reviewPolicy, {
+			decisionCardsEnabled: env.DECISION_CARDS_ENABLED === "1",
 			...(env.PUBLIC_ORIGIN ? { detailUrlBase: env.PUBLIC_ORIGIN } : {}),
 		}),
 		close: async () => {

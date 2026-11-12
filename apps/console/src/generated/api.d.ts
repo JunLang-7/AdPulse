@@ -531,7 +531,7 @@ export interface components {
             quietStart: string;
             quietEnd: string;
         };
-        /** @description 决策卡独立确认记录；本期仅保存偏好，不启用投递，不补发历史 Web 候选。缺少历史记录时 enabled=false。 */
+        /** @description 决策卡独立确认记录；不代替服务端启用及发送前检查，不补发历史 Web 候选。缺少历史记录时 enabled=false。 */
         DecisionCardPreference: {
             enabled: boolean;
             /**
@@ -591,7 +591,7 @@ export interface components {
             /** @description 调用方看到的版本；未配置时为 0。旧请求重放会因版本不符被拒 */
             expectedVersion: number;
             proactiveEnabled?: boolean;
-            /** @description 本人单独明确确认；不改变全部主动推送开关、地址或通知授权。本期仅记录，不排队或发送。 */
+            /** @description 本人单独明确确认；不改变全部主动推送开关、地址或通知授权。此接口仅记录，不直接排队或发送。 */
             decisionCardsEnabled?: boolean;
             schedule?: components["schemas"]["SubscriptionSchedule"];
         };
@@ -843,8 +843,26 @@ export interface components {
             externalMessageId?: string;
             sentAt?: string;
             lastError?: string;
-            /** @description suppressed 时的原因：未授权、目的地失效或身份绑定失效 */
+            /** @description suppressed 时的原因：授权/设置变化、候选失效、渠道停用或免打扰期间过期等 */
             suppressionReason?: string;
+            /**
+             * Format: date-time
+             * @description 最近一次通过发送前检查并在网络调用前持久化的时刻，不是投递成功回执
+             */
+            proactiveCheckedAt?: string;
+            /** @description 新效果排查候选的冻结授权快照；仅服务端写入，发送前重新验证 */
+            proactiveDecision?: {
+                /** Format: date-time */
+                frozenAt: string;
+                settingsVersion: number;
+                confirmedVersion: number;
+                /** Format: date-time */
+                enabledAt: string;
+                destinationId: string;
+                /** Format: date-time */
+                destinationVerifiedAt: string;
+                consentVersion: number;
+            };
             /** @enum {string} */
             purpose: "decision" | "confirmation";
             expiresAt: string;
@@ -872,7 +890,7 @@ export interface components {
             alertId: string;
         } | {
             /** @enum {string} */
-            kind: "send_delivery";
+            kind: "send_delivery" | "send_investigation_decision";
             deliveryId: string;
         };
         Job: {

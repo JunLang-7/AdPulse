@@ -251,7 +251,10 @@ async function sessionForJob(
 	job: Job,
 ): Promise<string | null> {
 	if (job.task.kind === "prepare_round") return job.task.sessionId;
-	if (job.task.kind === "send_delivery")
+	if (
+		job.task.kind === "send_delivery" ||
+		job.task.kind === "send_investigation_decision"
+	)
 		return (await tx.deliveries.get(job.task.deliveryId))?.sessionId ?? null;
 	if (job.task.kind === "prepare_investigation_alert_session")
 		return (await tx.investigationAlerts.get(job.task.alertId))?.sessionId ?? null;
@@ -497,7 +500,7 @@ export async function handleAdmin(
 					? j.task.sessionId === id
 					: j.task.kind === "process_inbox"
 						? inboxIds.has(j.task.inboxId)
-						: j.task.kind === "send_delivery"
+						: j.task.kind === "send_delivery" || j.task.kind === "send_investigation_decision"
 							? deliveryIds.has(j.task.deliveryId)
 							: j.task.kind === "send_digest"
 								? false
@@ -549,13 +552,21 @@ export async function handleAdmin(
 				throw new HttpError(404, "job not found");
 			if (job.status !== "failed")
 				throw new HttpError(409, "only failed jobs may be retried");
+			if (job.task.kind === "send_investigation_decision") {
+				const delivery = await tx.deliveries.get(job.task.deliveryId);
+				if (!delivery?.proactiveDecision || delivery.status !== "failed")
+					throw new HttpError(409, "terminal proactive delivery cannot be retried");
+			}
 			await tx.jobs.put({
 				...job,
 				attempts: 0,
 				status: "pending",
 				runAt: new Date().toISOString(),
 			});
-			if (job.task.kind === "send_delivery") {
+			if (
+				job.task.kind === "send_delivery" ||
+				job.task.kind === "send_investigation_decision"
+			) {
 				const delivery = await tx.deliveries.get(job.task.deliveryId);
 				if (delivery && delivery.status !== "sent")
 					await tx.deliveries.put({ ...delivery, status: "pending" });

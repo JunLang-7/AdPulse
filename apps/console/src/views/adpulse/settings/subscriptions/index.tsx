@@ -399,7 +399,7 @@ export default function SubscriptionSettingsPage() {
 			setNotice(
 				variables.decisionCardsEnabled !== undefined
 					? variables.decisionCardsEnabled
-						? "已记录决策卡确认；本版本尚未接通投递，不会补发历史候选。"
+						? "已记录决策卡确认；投递仍需服务端启用与发送前检查，不补发历史候选。"
 						: "已关闭决策卡偏好；日汇总设置不变。"
 					: variables.proactiveEnabled === true
 						? "已开启订阅推送。"
@@ -603,7 +603,7 @@ export default function SubscriptionSettingsPage() {
 						{data.settings.decisionCards?.enabled ? "已记录单独确认" : "尚未单独确认"}
 					</p>
 					<p className="text-sm text-muted-foreground">
-						本版本仅保存偏好，尚未接通决策卡投递。日汇总授权不自动开启决策卡。
+						本页仅保存偏好；实际投递还需服务端明确启用。日汇总授权不自动开启决策卡。
 						后续投递仍须满足全部推送开关、本人授权、关注范围、免打扰与候选有效期。
 						不会补发历史 Web 候选；关闭后重新确认只考虑重新确认之后的新候选。
 					</p>
