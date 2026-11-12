@@ -13,6 +13,7 @@ import { Input } from "../../../components/ui/input";
 import { ComparisonPanel } from "./comparison-panel";
 import { readEvidenceCorrection, readEvidenceImport, type ReportSummary } from "./evidence-file";
 import { InvestigationAlertsPanel } from "./investigation-alerts-panel";
+import { QuickReviewPanel } from "./review-quick-panel";
 import { formatBeijingPeriod, formatBeijingTime } from "./task-form";
 
 type EvidenceImportInput = components["schemas"]["EvidenceImportInput"];
@@ -32,9 +33,11 @@ function reportError(status: number, conflict: string): Error {
 export function EvidencePanel({
 	taskId,
 	taskVersion,
+	rules,
 }: {
 	taskId: string;
 	taskVersion: number;
+	rules: components["schemas"]["TaskRules"];
 }) {
 	const queryClient = useQueryClient();
 	const [error, setError] = useState("");
@@ -103,7 +106,7 @@ export function EvidencePanel({
 				<CardHeader>
 					<CardTitle>{latestReport ? "最近一期投放" : "投放数据"}</CardTitle>
 					<p className="text-sm text-muted-foreground">
-						{empty ? "还没有投放数据。有了报表，就能在这里看到花了多少钱、收到了多少次咨询。" : "按报表的结束时间排列，时间均为北京时间。"}
+						{empty ? "还没有正式报表。手上有大概的数字，可以先试算。" : "正式报表按结束时间排列，时间均为北京时间。"}
 					</p>
 				</CardHeader>
 				<CardContent className="space-y-4">
@@ -123,10 +126,11 @@ export function EvidencePanel({
 							</div>
 						</details>
 					) : null}
-					<details className={empty ? "rounded-lg border border-dashed bg-muted/30" : "rounded-lg border"} open={empty || undefined}>
+					<QuickReviewPanel rules={rules} startOpen={empty} />
+					<details className="rounded-lg border">
 						<summary className="cursor-pointer px-4 py-3 text-sm font-medium">
 							<FileUp aria-hidden="true" className="mr-2 inline size-4" />
-							{latestReport ? "添加投放报表" : "导入投放报表"}
+							导入正式报表
 						</summary>
 						<ReportUpload
 							key={taskVersion}
