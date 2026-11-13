@@ -336,8 +336,8 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
   不得改写别人的结果。
 - 调度入口复用 worker 轮询：没有任务可领且距上次 tick ≥30s 时跑一次
   `DigestScheduler.tick()`（`runExclusive` 跨进程互斥），不引入第二个调度进程或 Redis。
-- 同一批次最多一个在途 `send_digest` 任务，重复 tick 不会重复发送；晚于计划时刻入队时标
-  `catchUp`。
+- 同一批次最多一个在途 `send_digest` 任务，重复 tick 不会重复发送；晚于计划时刻超过
+  `CATCH_UP_GRACE_MS`（5 分钟，覆盖 30s tick 抖动）才标 `catchUp`，准点发送不标补发（#101）。
 - 卡片：`buildDigestCard` 最多 5 条，超出部分在页脚写明「另有 N 条」并**顺延到下一批次**；
   发送期间被实质更新的条目同样顺延，不留在已发送批次里。
 - 投递复用 `Delivery`（`purpose: "digest"`，带 `ownerId`/`batchId`，无 session/round）；
