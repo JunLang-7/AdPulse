@@ -1,4 +1,4 @@
-﻿import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { consoleClient, type components } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
@@ -14,51 +14,54 @@ import { Input } from "../../../components/ui/input";
 
 export type ModelCatalog = components["schemas"]["TaskDraftModelCatalog"];
 export type ModelCatalogProvider = components["schemas"]["TaskDraftCatalogProvider"];
-export type ModelSelection = components["schemas"]["TaskDraftModelSelection"];
+export type ModelConnection = components["schemas"]["ModelConnectionView"];
+export type ModelConnectionList = components["schemas"]["ModelConnectionList"];
+export type ModelConnectionInput = components["schemas"]["ModelConnectionInput"];
+
+/** 任务页的选择：本人持久连接，或部署者提供的临时路由。 */
+export type TaskModelChoice =
+	| { connectionId: string; model: string }
+	| { provider: string; model: string };
 
 export const modelCatalogKey = ["task-draft-models"] as const;
+export const modelConnectionsKey = ["model-connections"] as const;
 
-const searchPlaceholder = "搜索供应商或模型";
 const keyPlaceholder = "粘贴你的 API Key";
-const statusText = {
-	idle: "尚未验证",
-	ok: "连接已保存，可直接在任务中使用",
-	error: "连接未通过。请检查密钥、模型与账户额度后重试。",
-} as const;
+const protocolHint = "OpenAI Chat Completions（其他协议尚未接通）";
 
-type Status = keyof typeof statusText;
-type Mode = "catalog" | "custom";
-
-export function selectionLabel(catalog: ModelCatalog | undefined, selection: ModelSelection): string {
-	const shared = catalog?.shared.find((item) => item.provider === selection.provider && item.model === selection.model);
-	if (shared) return shared.label;
-	const connection = catalog?.connections.find((item) => item.provider === selection.provider && item.model === selection.model);
-	if (connection) return connection.label;
-	const provider = catalog?.providers.find((item) => item.id === selection.provider);
-	const model = provider?.models.find((item) => item.id === selection.model);
-	return model?.name ?? selection.model;
+export function selectionLabel(choice: TaskModelChoice | undefined, connections: ModelConnectionList | undefined, catalog: ModelCatalog | undefined): string {
+	if (!choice) return "选择模型";
+	if ("connectionId" in choice) {
+		const connection = connections?.connections.find((item) => item.id === choice.connectionId);
+		return connection ? `${connection.displayName} · ${choice.model}` : choice.model;
+	}
+	const shared = catalog?.shared.find((item) => item.provider === choice.provider && item.model === choice.model);
+	return shared?.label ?? choice.model;
 }
 
 /**
- * 全局模型配置窗口：左侧是本人连接与 pi-ai 目录，右侧是配置表单。
- * 目录只展示真实 SDK 条目；未接通的供应商显示原因，不提供会失败的保存按钮。
- * 密钥只写、不回显，仅保存在服务端内存（最多 8 小时）。
+ * 统一模型配置窗口：左侧是本人连接、部署提供和 pi-ai 目录，右侧是配置表单。
+ * 保存前先用固定合成短句测试；密钥只写、不回显，服务端加密保存。
  */
-export function ModelConfigDialog({ open, onOpenChange, selection, onUse }: {
+export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	selection?: ModelSelection | undefined;
-	onUse?: (selection: ModelSelection) => void;
+	choice?: TaskModelChoice | undefined;
+	onUse?: (choice: TaskModelChoice) => void;
 }) {
 	const queryClient = useQueryClient();
-	const [mode, setMode] = useState<Mode>("catalog");
-	const [draft, setDraft] = useState<ModelSelection | null>(null);
+	const [mode, setMode] = useState<"catalog" | "custom">("catalog");
+	const [providerId, setProviderId] = useState<string>();
+	const [connectionId, setConnectionId] = useState<string>();
+	const [sharedSelection, setSharedSelection] = useState<{ provider: string; model: string }>();
+	const [model, setModel] = useState("");
 	const [apiKey, setApiKey] = useState("");
-	const [status, setStatus] = useState<Status>("idle");
-	const [working, setWorking] = useState(false);
 	const [search, setSearch] = useState("");
+	const [status, setStatus] = useState<{ tone: "idle" | "ok" | "error"; text: string }>({ tone: "idle", text: "尚未验证" });
+	const [working, setWorking] = useState(false);
+	const [custom, setCustom] = useState({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "" });
 
-	const { data, isPending, isError } = useQuery({
+	const catalogQuery = useQuery({
 		queryKey: modelCatalogKey,
 		enabled: open,
 		queryFn: async () => {
@@ -67,107 +70,254 @@ export function ModelConfigDialog({ open, onOpenChange, selection, onUse }: {
 			return result.data;
 		},
 	});
+	const connectionsQuery = useQuery({
+		queryKey: modelConnectionsKey,
+		enabled: open,
+		retry: false,
+		queryFn: async () => {
+			const result = await consoleClient.GET("/api/me/model-connections");
+			if (result.data) return result.data;
+			if (result.response.status === 503) return null;
+			throw new Error("个人模型连接不可用");
+		},
+	});
 
 	useEffect(() => {
 		if (!open) return;
 		setMode("catalog");
-		setDraft(selection ?? null);
 		setApiKey("");
-		setStatus("idle");
 		setSearch("");
-	}, [open, selection]);
+		setStatus({ tone: "idle", text: "尚未验证" });
+		setProviderId(undefined);
+		setConnectionId(undefined);
+		setSharedSelection(undefined);
+		setModel("");
+		setCustom({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "" });
+		if (choice && "connectionId" in choice) {
+			setConnectionId(choice.connectionId);
+			setModel(choice.model);
+		} else if (choice) {
+			setSharedSelection(choice);
+		}
+	}, [open, choice]);
 
-	useEffect(() => {
-		if (open && !draft && data?.defaultSelection) setDraft(data.defaultSelection);
-	}, [open, draft, data]);
-
-	const providers = data?.providers ?? [];
-	const connections = data?.connections ?? [];
-	const shared = data?.shared ?? [];
-	const provider = draft ? providers.find((item) => item.id === draft.provider) : undefined;
-	const connection = draft
-		? connections.find((item) => item.provider === draft.provider && item.model === draft.model)
-		: undefined;
-	const sharedRoute = draft
-		? shared.find((item) => item.provider === draft.provider && item.model === draft.model)
-		: undefined;
-
+	const connections = connectionsQuery.data ?? undefined;
+	const providers = catalogQuery.data?.providers ?? [];
+	const shared = catalogQuery.data?.shared ?? [];
 	const supported = useMemo(() => providers.filter((item) => item.supported), [providers]);
 	const unsupported = useMemo(() => providers.filter((item) => !item.supported), [providers]);
+	const provider = providerId ? providers.find((item) => item.id === providerId) : undefined;
+	const selectedConnection = connectionId
+		? connections?.connections.find((item) => item.id === connectionId)
+		: undefined;
 	const keyword = search.trim().toLowerCase();
 	const matches = (name: string, models: readonly { id: string; name: string }[]) =>
 		!keyword || name.toLowerCase().includes(keyword) ||
-		models.some((model) => model.id.toLowerCase().includes(keyword) || model.name.toLowerCase().includes(keyword));
+		models.some((item) => item.id.toLowerCase().includes(keyword) || item.name.toLowerCase().includes(keyword));
+	const defaultsUnavailable = connectionsQuery.data === null;
 
-	function pickProvider(next: ModelCatalogProvider) {
-		// Unsupported providers have no callable model; keep the id so the panel can
-		// explain why instead of silently ignoring the click.
-		setDraft({ provider: next.id, model: next.models[0]?.id ?? "" });
+	function resetDraft() {
 		setApiKey("");
-		setStatus("idle");
+		setStatus({ tone: "idle", text: "尚未验证" });
 	}
 
-	function pickConnection(next: { provider: string; model: string }) {
-		setDraft({ provider: next.provider, model: next.model });
-		setApiKey("");
-		setStatus("idle");
+	function pickCatalogProvider(next: ModelCatalogProvider) {
+		setMode("catalog");
+		setProviderId(next.id);
+		setConnectionId(undefined);
+		setSharedSelection(undefined);
+		setModel(next.models[0]?.id ?? "");
+		resetDraft();
 	}
 
-	async function runTest() {
-		if (!draft || working || apiKey.trim().length < 8) return;
+	function pickConnection(next: ModelConnection) {
+		setMode("catalog");
+		setProviderId(undefined);
+		setSharedSelection(undefined);
+		setConnectionId(next.id);
+		setModel(next.models[0]?.id ?? "");
+		resetDraft();
+	}
+
+	function pickShared(next: { provider: string; model: string }) {
+		setMode("catalog");
+		setProviderId(undefined);
+		setConnectionId(undefined);
+		setSharedSelection(next);
+		resetDraft();
+	}
+
+	async function refreshConnections() {
+		await queryClient.invalidateQueries({ queryKey: modelConnectionsKey });
+		await connectionsQuery.refetch();
+	}
+
+	async function setDefault(connection: ModelConnection, modelId: string) {
+		const version = connections?.preference.version ?? 0;
+		await consoleClient.PUT("/api/me/model-preferences", {
+			body: { expectedVersion: version, connectionId: connection.id, modelId },
+		});
+	}
+
+	async function create(input: ModelConnectionInput, modelId: string) {
+		if (working) return;
 		setWorking(true);
-		setStatus("idle");
+		setStatus({ tone: "idle", text: "正在测试并保存…" });
 		try {
-			const result = await consoleClient.POST("/api/task-drafts/models/test", {
-				body: { ...draft, apiKey: apiKey.trim() },
-			});
-			setStatus(result.data?.ok ? "ok" : "error");
-		} catch {
-			setStatus("error");
-		} finally {
-			setWorking(false);
-		}
-	}
-
-	async function save() {
-		if (!draft || working || apiKey.trim().length < 8) return;
-		setWorking(true);
-		setStatus("idle");
-		try {
-			const result = await consoleClient.PUT("/api/task-drafts/models", {
-				body: { ...draft, apiKey: apiKey.trim() },
-			});
-			if (!result.data) throw new Error("连接未保存");
-			queryClient.setQueryData(modelCatalogKey, result.data);
+			const created = await consoleClient.POST("/api/me/model-connections", { body: input });
+			if (!created.data) throw new Error("连接未保存");
+			await refreshConnections();
+			await setDefault(created.data, modelId);
 			setApiKey("");
-			setStatus("ok");
-			onUse?.(draft);
+			setStatus({ tone: "ok", text: "连接已保存，可直接在任务中使用" });
+			onUse?.({ connectionId: created.data.id, model: modelId });
 		} catch {
-			setStatus("error");
+			setStatus({ tone: "error", text: "连接未通过。请检查密钥、模型与账户额度后重试。" });
 		} finally {
 			setWorking(false);
 		}
 	}
 
-	async function disconnect() {
-		if (!draft || working) return;
+	async function test(input: ModelConnectionInput) {
+		if (working) return;
+		setWorking(true);
+		setStatus({ tone: "idle", text: "正在测试…" });
+		try {
+			const result = await consoleClient.POST("/api/me/model-connections/test", { body: input });
+			setStatus(result.data?.ok
+				? { tone: "ok", text: "测试通过" }
+				: { tone: "error", text: "测试未通过。请检查密钥、模型与账户额度。" });
+		} catch {
+			setStatus({ tone: "error", text: "测试未通过。请检查密钥、模型与账户额度。" });
+		} finally {
+			setWorking(false);
+		}
+	}
+
+	async function replaceKey(connection: ModelConnection) {
+		if (working || apiKey.trim().length < 8) return;
+		setWorking(true);
+		setStatus({ tone: "idle", text: "正在测试新密钥…" });
+		try {
+			const result = await consoleClient.PUT("/api/me/model-connections/{connectionId}", {
+				params: { path: { connectionId: connection.id } },
+				body: {
+					expectedVersion: connection.version,
+					models: connection.models,
+					credential: { action: "replace", apiKey: apiKey.trim() },
+				},
+			});
+			if (!result.data) throw new Error("密钥未更新");
+			setApiKey("");
+			await refreshConnections();
+			setStatus({ tone: "ok", text: "密钥已更新" });
+		} catch {
+			setStatus({ tone: "error", text: "密钥未通过测试，仍保留原密钥。" });
+		} finally {
+			setWorking(false);
+		}
+	}
+
+	async function updateModels(connection: ModelConnection) {
+		if (working) return;
 		setWorking(true);
 		try {
-			const result = await consoleClient.DELETE("/api/task-drafts/models", {
-				params: { query: { provider: draft.provider, model: draft.model } },
+			const result = await consoleClient.PUT("/api/me/model-connections/{connectionId}", {
+				params: { path: { connectionId: connection.id } },
+				body: { expectedVersion: connection.version, models: [{ id: model }] },
 			});
-			if (!result.data) throw new Error("连接未断开");
-			queryClient.setQueryData(modelCatalogKey, result.data);
-			setStatus("idle");
+			if (!result.data) throw new Error("模型未更新");
+			await refreshConnections();
+			setStatus({ tone: "ok", text: "模型已更新" });
 		} catch {
-			setStatus("error");
+			setStatus({ tone: "error", text: "模型未更新，请重试。" });
 		} finally {
 			setWorking(false);
 		}
 	}
 
-	const canSubmit = Boolean(draft && provider?.supported && apiKey.trim().length >= 8 && !working);
-	const alreadyConnected = Boolean(connection && !sharedRoute);
+	async function removeCredential(connection: ModelConnection) {
+		if (working) return;
+		setWorking(true);
+		try {
+			const result = await consoleClient.DELETE("/api/me/model-connections/{connectionId}/credential", {
+				params: { path: { connectionId: connection.id }, query: { expectedVersion: connection.version } },
+			});
+			if (!result.data) throw new Error("密钥未删除");
+			await refreshConnections();
+			setStatus({ tone: "ok", text: "密钥已删除，连接已停用" });
+		} catch {
+			setStatus({ tone: "error", text: "密钥未删除，请重试。" });
+		} finally {
+			setWorking(false);
+		}
+	}
+
+	async function deleteConnection(connection: ModelConnection) {
+		if (working) return;
+		setWorking(true);
+		try {
+			const result = await consoleClient.DELETE("/api/me/model-connections/{connectionId}", {
+				params: { path: { connectionId: connection.id }, query: { expectedVersion: connection.version } },
+			});
+			if (!result.data) throw new Error("连接未删除");
+			setConnectionId(undefined);
+			setModel("");
+			await refreshConnections();
+			setStatus({ tone: "ok", text: "连接已删除" });
+		} catch {
+			setStatus({ tone: "error", text: "连接未删除，请重试。" });
+		} finally {
+			setWorking(false);
+		}
+	}
+
+	async function useExisting(connection: ModelConnection, modelId: string) {
+		if (working) return;
+		setWorking(true);
+		try {
+			await setDefault(connection, modelId);
+			setStatus({ tone: "ok", text: "已设为默认模型" });
+			onUse?.({ connectionId: connection.id, model: modelId });
+		} catch {
+			setStatus({ tone: "error", text: "默认模型未保存，请重试。" });
+		} finally {
+			setWorking(false);
+		}
+	}
+
+	const canCreate = Boolean(
+		(mode === "custom"
+			? custom.providerId.trim() && custom.baseUrl.trim() && custom.modelId.trim() && custom.apiKey.trim().length >= 8
+			: provider?.supported && model && apiKey.trim().length >= 8) && !working,
+	);
+
+	function catalogInput(): ModelConnectionInput | undefined {
+		if (!provider || !provider.baseUrl || !model) return;
+		return {
+			providerId: provider.id,
+			kind: "catalog",
+			catalogId: provider.id,
+			displayName: provider.name,
+			baseUrl: provider.baseUrl,
+			protocol: "openai-completions",
+			models: [{ id: model }],
+			apiKey: apiKey.trim(),
+		};
+	}
+
+	function customInput(): ModelConnectionInput | undefined {
+		if (!custom.providerId.trim() || !custom.baseUrl.trim() || !custom.modelId.trim()) return;
+		return {
+			providerId: custom.providerId.trim(),
+			kind: "custom",
+			...(custom.displayName.trim() ? { displayName: custom.displayName.trim() } : {}),
+			baseUrl: custom.baseUrl.trim(),
+			protocol: "openai-completions",
+			models: [{ id: custom.modelId.trim() }],
+			apiKey: custom.apiKey.trim(),
+		};
+	}
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -176,7 +326,7 @@ export function ModelConfigDialog({ open, onOpenChange, selection, onUse }: {
 					<div className="space-y-0.5">
 						<DialogTitle>模型配置</DialogTitle>
 						<DialogDescription id="model-config-summary">
-							连接供应商或自定义 API，用于任务草稿的辅助填写。密钥只写不回显。
+							连接供应商或自定义 API，用于任务草稿的辅助填写。密钥加密保存，仅本人可用。
 						</DialogDescription>
 					</div>
 					<DialogCloseButton />
@@ -185,16 +335,21 @@ export function ModelConfigDialog({ open, onOpenChange, selection, onUse }: {
 				<div className="grid min-h-0 flex-1 sm:grid-cols-[13.5rem_1fr]">
 					<aside className="flex min-h-0 flex-col gap-2 border-b p-3 sm:border-r sm:border-b-0">
 						<Input value={search} onChange={(event) => setSearch(event.target.value)}
-							placeholder={searchPlaceholder} aria-label={searchPlaceholder} />
+							placeholder="搜索供应商或模型" aria-label="搜索供应商或模型" />
 						<div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-							{isPending ? <p role="status" className="text-xs text-muted-foreground">正在读取模型目录…</p> : null}
-							{isError ? <p role="alert" className="text-xs text-destructive">模型目录暂时不可用，请稍后重试。</p> : null}
+							{catalogQuery.isPending || connectionsQuery.isPending ? (
+								<p role="status" className="text-xs text-muted-foreground">正在读取模型目录…</p>
+							) : null}
+							{catalogQuery.isError ? <p role="alert" className="text-xs text-destructive">模型目录暂时不可用，请稍后重试。</p> : null}
+							{connectionsQuery.isError ? <p role="alert" className="text-xs text-destructive">个人连接暂时不可用，请稍后重试。</p> : null}
 
-							{connections.length ? (
+							{connections?.connections.length ? (
 								<ProviderGroup title="我的连接">
-									{connections.map((item) => (
-										<ProviderButton key={item.provider + ":" + item.model}
-											title={item.label} subtitle="已连接" active={draft?.provider === item.provider && draft.model === item.model}
+									{connections.connections.map((item) => (
+										<ProviderButton key={item.id}
+											title={item.displayName}
+											subtitle={item.hasCredential ? `${item.models[0]?.id ?? ""} · 已保存` : "已停用"}
+											active={connectionId === item.id}
 											onClick={() => pickConnection(item)} />
 									))}
 								</ProviderGroup>
@@ -204,8 +359,9 @@ export function ModelConfigDialog({ open, onOpenChange, selection, onUse }: {
 								<ProviderGroup title="部署提供">
 									{shared.map((item) => (
 										<ProviderButton key={"shared:" + item.provider + ":" + item.model}
-											title={item.label} subtitle="使用部署密钥" active={draft?.provider === item.provider && draft.model === item.model}
-											onClick={() => pickConnection(item)} />
+											title={item.label} subtitle="使用部署密钥"
+											active={sharedSelection?.provider === item.provider && sharedSelection.model === item.model}
+											onClick={() => pickShared({ provider: item.provider, model: item.model })} />
 									))}
 								</ProviderGroup>
 							) : null}
@@ -213,29 +369,28 @@ export function ModelConfigDialog({ open, onOpenChange, selection, onUse }: {
 							<ProviderGroup title="可直连供应商">
 								{supported.filter((item) => matches(item.name, item.models)).map((item) => (
 									<ProviderButton key={item.id} title={item.name}
-										subtitle={item.models.length + " 个模型"} active={provider?.id === item.id && !sharedRoute}
-										onClick={() => pickProvider(item)} />
+										subtitle={item.models.length + " 个模型"} active={providerId === item.id}
+										onClick={() => pickCatalogProvider(item)} />
 								))}
-								{supported.length === 0 && !isPending ? (
-									<p className="text-xs text-muted-foreground">暂无可直连供应商。</p>
-								) : null}
 							</ProviderGroup>
 
 							{unsupported.length ? (
 								<ProviderGroup title="其他供应商">
 									{unsupported.filter((item) => matches(item.name, [])).map((item) => (
 										<ProviderButton key={item.id} title={item.name} subtitle="暂不支持" muted
-											active={provider?.id === item.id} onClick={() => pickProvider(item)} />
+											active={providerId === item.id} onClick={() => pickCatalogProvider(item)} />
 									))}
 								</ProviderGroup>
 							) : null}
 						</div>
 						<Button type="button" variant="outline" size="sm" className="justify-center"
-							onClick={() => { setMode("custom"); setStatus("idle"); }}>
+							onClick={() => { setMode("custom"); setProviderId(undefined); setConnectionId(undefined); resetDraft(); }}>
 							＋ 自定义服务商
 						</Button>
 						<p className="text-[11px] leading-tight text-muted-foreground">
-							目前为临时连接：密钥只在服务端内存保留最多 8 小时，服务重启后需重新填写。
+							{defaultsUnavailable
+								? "部署者尚未配置主密钥，个人连接暂不可保存；可使用“部署提供”的模型。"
+								: "密钥在服务端加密保存，登出或重启后仍可用；这是服务端加密，不是端到端加密。"}
 						</p>
 					</aside>
 
@@ -246,35 +401,99 @@ export function ModelConfigDialog({ open, onOpenChange, selection, onUse }: {
 						</div>
 
 						<div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-							{mode === "custom" ? <CustomApiForm /> : (
-								<ProviderPanel
-									draft={draft} provider={provider} sharedRoute={sharedRoute} alreadyConnected={alreadyConnected}
-									connectionModel={connection?.model} apiKey={apiKey} working={working}
-									onApiKey={setApiKey} onModel={(model) => draft && setDraft({ ...draft, model })}
-									onDisconnect={() => void disconnect()} />
+							{mode === "custom" ? (
+								<CustomForm custom={custom} working={working} onChange={setCustom} />
+							) : selectedConnection ? (
+								<ExistingConnectionPanel
+									connection={selectedConnection} model={model} connections={connections} catalog={catalogQuery.data}
+									apiKey={apiKey} working={working} defaultsUnavailable={defaultsUnavailable}
+									onModel={setModel} onApiKey={setApiKey}
+									onUse={() => void useExisting(selectedConnection, model)}
+									onUpdateModels={() => void updateModels(selectedConnection)}
+									onReplaceKey={() => void replaceKey(selectedConnection)}
+									onRemoveCredential={() => void removeCredential(selectedConnection)}
+									onDelete={() => void deleteConnection(selectedConnection)} />
+							) : sharedSelection ? (
+								<div className="space-y-2 text-sm">
+									<p className="font-medium">
+										{shared.find((item) => item.provider === sharedSelection.provider && item.model === sharedSelection.model)?.label ?? sharedSelection.model}
+									</p>
+									<p className="text-muted-foreground">该模型由部署者配置密钥，不消耗你的个人额度。选择后仅用于本次任务。</p>
+								</div>
+							) : provider ? (
+								provider.supported ? (
+									<div className="space-y-3">
+										<Field label="供应商名称">
+											<Input value={provider.name} readOnly disabled />
+										</Field>
+										<Field label="API Key" hint="只写字段，保存后不再显示。">
+											<Input type="password" autoComplete="new-password" maxLength={512} value={apiKey} disabled={working}
+												placeholder={keyPlaceholder} onChange={(event) => setApiKey(event.target.value)} />
+										</Field>
+										<Field label="API Base URL" hint="由供应商目录提供，普通用户无需填写。">
+											<Input value={provider.baseUrl ?? ""} readOnly disabled />
+										</Field>
+										<Field label="Model ID" hint="每个连接当前保存一个模型；之后可在这里更换。">
+											<select value={model} onChange={(event) => setModel(event.target.value)} disabled={working}
+												className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm">
+												{provider.models.map((item) => (
+													<option key={item.id} value={item.id}>{item.name + "（" + item.id + "）"}</option>
+												))}
+											</select>
+										</Field>
+										<AdvancedDetails baseUrl={provider.baseUrl ?? ""} />
+									</div>
+								) : (
+									<div className="space-y-2 text-sm">
+										<p className="font-medium">{provider.name}</p>
+										<p role="note" className="rounded-lg border border-dashed px-3 py-2 text-muted-foreground">
+											{provider.reason ?? "该供应商暂不支持个人 API Key 直连。"}
+										</p>
+										<p className="text-xs text-muted-foreground">目录来自锁定的 pi-ai 版本，接入范围按真实协议能力列出。</p>
+									</div>
+								)
+							) : (
+								<p className="text-sm text-muted-foreground">从左侧选择供应商或已有连接，也可以添加自定义服务商。</p>
 							)}
 						</div>
 
 						<footer className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
-							<p role="status" className={status === "error" ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
-								{status === "ok" ? statusText.ok : status === "error" ? statusText.error : sharedRoute ? "由部署者提供，可直接选用" : provider && !provider.supported ? "等待协议或认证适配" : statusText.idle}
+							<p role="status" className={status.tone === "error" ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
+								{status.text}
 							</p>
-							{mode === "custom" || (provider && !provider.supported) ? null : sharedRoute ? (
-								<Button type="button" onClick={() => {
-									if (!draft) return;
-									onUse?.(draft);
-									onOpenChange(false);
-								}}>使用此模型</Button>
-							) : (
+							{mode === "custom" ? (
 								<div className="flex gap-2">
-									<Button type="button" variant="outline" disabled={!canSubmit} onClick={() => void runTest()}>
-										{working ? "正在测试…" : "测试连接"}
+									<Button type="button" variant="outline" disabled={!customInput() || working || defaultsUnavailable}
+										onClick={() => { const input = customInput(); if (input) void test(input); }}>
+										测试连接
 									</Button>
-									<Button type="button" disabled={!canSubmit} onClick={() => void save()}>
-										{working ? "正在保存…" : alreadyConnected ? "重新验证并保存" : "保存并使用"}
+									<Button type="button" disabled={!canCreate || defaultsUnavailable}
+										onClick={() => { const input = customInput(); if (input) void create(input, input.models[0]?.id ?? ""); }}>
+										保存并使用
 									</Button>
 								</div>
-							)}
+							) : sharedSelection ? (
+								<Button type="button" onClick={() => {
+									onUse?.(sharedSelection);
+									onOpenChange(false);
+								}}>使用此模型</Button>
+							) : selectedConnection ? (
+								<Button type="button" disabled={working || !selectedConnection.hasCredential || selectedConnection.status !== "active"}
+									onClick={() => void useExisting(selectedConnection, model)}>
+									设为默认并用于本次任务
+								</Button>
+							) : provider?.supported && !defaultsUnavailable ? (
+								<div className="flex gap-2">
+									<Button type="button" variant="outline" disabled={!catalogInput() || working}
+										onClick={() => { const input = catalogInput(); if (input) void test(input); }}>
+										测试连接
+									</Button>
+									<Button type="button" disabled={!canCreate}
+										onClick={() => { const input = catalogInput(); if (input) void create(input, model); }}>
+										保存并使用
+									</Button>
+								</div>
+							) : null}
 						</footer>
 					</section>
 				</div>
@@ -334,106 +553,134 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 	);
 }
 
-function ProviderPanel({ draft, provider, sharedRoute, alreadyConnected, connectionModel, apiKey, working, onApiKey, onModel, onDisconnect }: {
-	draft: ModelSelection | null;
-	provider: ModelCatalogProvider | undefined;
-	sharedRoute: { provider: string; model: string; label: string } | undefined;
-	alreadyConnected: boolean;
-	connectionModel: string | undefined;
+function AdvancedDetails({ baseUrl }: { baseUrl: string }) {
+	return (
+		<details className="rounded-lg border px-3 py-2 text-sm">
+			<summary className="cursor-pointer text-xs font-medium">高级选项</summary>
+			<dl className="mt-2 space-y-1 text-xs text-muted-foreground">
+				<div className="flex justify-between gap-4"><dt>协议</dt><dd>{protocolHint}</dd></div>
+				<div className="flex justify-between gap-4"><dt>请求地址</dt><dd className="truncate">{baseUrl + "/chat/completions"}</dd></div>
+				<div className="flex justify-between gap-4"><dt>凭据</dt><dd>服务端加密，仅本人可用</dd></div>
+			</dl>
+		</details>
+	);
+}
+
+function ExistingConnectionPanel({ connection, model, connections, catalog, apiKey, working, defaultsUnavailable, onModel, onApiKey, onUse, onUpdateModels, onReplaceKey, onRemoveCredential, onDelete }: {
+	connection: ModelConnection;
+	model: string;
+	connections: ModelConnectionList | undefined;
+	catalog: ModelCatalog | undefined;
 	apiKey: string;
 	working: boolean;
-	onApiKey: (value: string) => void;
+	defaultsUnavailable: boolean;
 	onModel: (value: string) => void;
-	onDisconnect: () => void;
+	onApiKey: (value: string) => void;
+	onUse: () => void;
+	onUpdateModels: () => void;
+	onReplaceKey: () => void;
+	onRemoveCredential: () => void;
+	onDelete: () => void;
 }) {
-	if (!draft) return <p className="text-sm text-muted-foreground">从左侧选择供应商，或添加自定义服务商。</p>;
-	if (sharedRoute) {
-		return (
-			<div className="space-y-2 text-sm">
-				<p className="font-medium">{sharedRoute.label}</p>
-				<p className="text-muted-foreground">该模型由部署者配置密钥，不消耗你的个人额度。选择后仅用于本次任务。</p>
-			</div>
-		);
-	}
-	if (!provider) return <p className="text-sm text-muted-foreground">未找到该供应商目录项。</p>;
-	if (!provider.supported) {
-		return (
-			<div className="space-y-2 text-sm">
-				<p className="font-medium">{provider.name}</p>
-				<p role="note" className="rounded-lg border border-dashed px-3 py-2 text-muted-foreground">
-					{provider.reason ?? "该供应商暂不支持个人 API Key 直连。"}
-				</p>
-				<p className="text-xs text-muted-foreground">目录来自锁定的 pi-ai 版本，接入范围按真实协议能力列出，不做品牌白名单。</p>
-			</div>
-		);
-	}
+	const catalogModels = catalog?.providers.find((item) => item.id === connection.catalogId)?.models ?? [];
+	const isDefault = connections?.preference.connectionId === connection.id &&
+		connections.preference.modelId === model;
+	const hasKey = connection.hasCredential && connection.status === "active";
 	return (
 		<div className="space-y-3">
-			<Field label="供应商名称">
-				<Input value={provider.name} readOnly disabled />
-			</Field>
-			<Field label="API Key" hint={alreadyConnected ? "已保存的密钥不会回显；更换请重新填写。" : "只写字段，保存后不再显示。"}>
-				<Input type="password" autoComplete="new-password" maxLength={512} value={apiKey} disabled={working}
-					placeholder={alreadyConnected ? "已保存，如需更换请重新填写" : keyPlaceholder}
-					onChange={(event) => onApiKey(event.target.value)} />
-			</Field>
-			<Field label="API Base URL" hint="由供应商目录提供，普通用户无需填写。">
-				<Input value={provider.baseUrl ?? ""} readOnly disabled />
-			</Field>
-			<Field label="Model ID" hint={"来自锁定的 pi-ai 目录（" + provider.models.length + " 个模型），选中后仍可修改。"}>
-				<div className="flex gap-2">
-					<select value={draft.model} onChange={(event) => onModel(event.target.value)} disabled={working}
-						className="h-8 min-w-0 flex-1 rounded-lg border bg-transparent px-2 text-sm">
-						{provider.models.map((model) => (
-							<option key={model.id} value={model.id}>{model.name + "（" + model.id + "）"}</option>
+			<div className="flex flex-wrap items-start justify-between gap-2">
+				<div className="space-y-0.5">
+					<p className="font-medium">{connection.displayName}</p>
+					<p className="text-xs text-muted-foreground">
+						{connection.kind === "catalog" ? "目录供应商" : "自定义 API"} · {connection.baseUrl}
+					</p>
+				</div>
+				<span className="rounded-full border px-2 py-0.5 text-[11px]">
+					{hasKey ? (connection.verifiedVersion === connection.version ? "已验证" : "已保存") : "已停用"}
+				</span>
+			</div>
+
+			<Field label="Model ID" hint={catalogModels.length ? "来自目录，选中后可更新到该连接。" : "自定义连接的模型 ID。"}>
+				{catalogModels.length ? (
+					<select value={model} onChange={(event) => onModel(event.target.value)} disabled={working}
+						className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm">
+						{catalogModels.map((item) => (
+							<option key={item.id} value={item.id}>{item.name + "（" + item.id + "）"}</option>
 						))}
 					</select>
-					{connectionModel ? (
-						<Button type="button" variant="outline" size="sm" disabled={working} onClick={onDisconnect}>
-							断开连接
-						</Button>
-					) : null}
+				) : (
+					<Input value={model} readOnly disabled />
+				)}
+			</Field>
+			<div className="flex flex-wrap gap-2">
+				<Button type="button" size="sm" variant="outline" disabled={working || isDefault || !hasKey} onClick={onUse}>
+					{isDefault ? "当前默认" : "设为默认"}
+				</Button>
+				<Button type="button" size="sm" variant="outline" disabled={working || isDefault || !hasKey}
+					onClick={onUpdateModels}>
+					更新模型
+				</Button>
+			</div>
+
+			<Field label="API Key" hint={hasKey ? "已保存的密钥不会回显；更换需重新测试。" : "该连接没有密钥，填写后会重新启用。"}>
+				<div className="flex gap-2">
+					<Input type="password" autoComplete="new-password" maxLength={512} value={apiKey} disabled={working}
+						placeholder={hasKey ? "已保存，如需更换请重新填写" : keyPlaceholder}
+						onChange={(event) => onApiKey(event.target.value)} />
+					<Button type="button" size="sm" variant="outline" disabled={working || apiKey.trim().length < 8 || defaultsUnavailable}
+						onClick={onReplaceKey}>
+						更换密钥
+					</Button>
 				</div>
 			</Field>
-			<details className="rounded-lg border px-3 py-2 text-sm">
-				<summary className="cursor-pointer text-xs font-medium">高级选项</summary>
-				<dl className="mt-2 space-y-1 text-xs text-muted-foreground">
-					<div className="flex justify-between gap-4">
-						<dt>协议</dt>
-						<dd>OpenAI Chat Completions</dd>
-					</div>
-					<div className="flex justify-between gap-4">
-						<dt>请求地址</dt>
-						<dd className="truncate">{(provider.baseUrl ?? "") + "/chat/completions"}</dd>
-					</div>
-					<div className="flex justify-between gap-4">
-						<dt>凭据</dt>
-						<dd>服务端内存，最多 8 小时</dd>
-					</div>
-				</dl>
-			</details>
+
+			{defaultsUnavailable ? (
+				<p role="note" className="text-xs text-muted-foreground">部署者未配置主密钥，无法保存或更换密钥。</p>
+			) : null}
+
+			<AdvancedDetails baseUrl={connection.baseUrl} />
+
+			<div className="flex flex-wrap gap-2 border-t pt-3">
+				<Button type="button" size="sm" variant="outline" disabled={working || !hasKey || defaultsUnavailable} onClick={onRemoveCredential}>
+					删除密钥
+				</Button>
+				<Button type="button" size="sm" variant="destructive" disabled={working || defaultsUnavailable} onClick={onDelete}>
+					删除连接
+				</Button>
+			</div>
 		</div>
 	);
 }
 
-function CustomApiForm() {
+function CustomForm({ custom, working, onChange }: {
+	custom: { providerId: string; displayName: string; baseUrl: string; modelId: string; apiKey: string };
+	working: boolean;
+	onChange: (value: { providerId: string; displayName: string; baseUrl: string; modelId: string; apiKey: string }) => void;
+}) {
 	return (
 		<div className="space-y-3">
 			<p role="note" className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
-				自定义 API 需要服务端受控出网（拒绝内网地址、绑定解析结果、禁止重定向），将在 #86 的下一阶段接通。
-				当前版本不保存自定义地址，避免把密钥转发到未校验的主机。
+				自定义 API 与目录供应商走同一套受控出网：仅 HTTPS 公网地址、绑定 DNS 结果、禁止重定向。供应商需支持 SSE 与 JSON 输出。
 			</p>
-			<Field label="供应商名称">
-				<Input placeholder="例如：公司内部网关" disabled />
+			<Field label="Provider ID" hint="稳定标识，创建后不可改；小写字母开头，可含数字与连字符。">
+				<Input value={custom.providerId} maxLength={48} disabled={working} placeholder="例如：company-gateway"
+					onChange={(event) => onChange({ ...custom, providerId: event.target.value })} />
 			</Field>
-			<Field label="API Base URL" hint="不是完整的聊天请求地址。">
-				<Input placeholder="https://api.example.com/v1" disabled />
+			<Field label="显示名称">
+				<Input value={custom.displayName} maxLength={80} disabled={working} placeholder="例如：公司内部网关"
+					onChange={(event) => onChange({ ...custom, displayName: event.target.value })} />
+			</Field>
+			<Field label="API Base URL" hint="不是完整的聊天请求地址；会请求 {Base URL}/chat/completions。">
+				<Input value={custom.baseUrl} maxLength={512} disabled={working} placeholder="https://api.example.com/v1"
+					onChange={(event) => onChange({ ...custom, baseUrl: event.target.value })} />
 			</Field>
 			<Field label="Model ID">
-				<Input placeholder="例如：mimo-v2-flash" disabled />
+				<Input value={custom.modelId} maxLength={160} disabled={working} placeholder="例如：mimo-v2-flash"
+					onChange={(event) => onChange({ ...custom, modelId: event.target.value })} />
 			</Field>
-			<Field label="API Key">
-				<Input type="password" placeholder={keyPlaceholder} disabled />
+			<Field label="API Key" hint="只写字段，保存后不再显示。">
+				<Input type="password" autoComplete="new-password" maxLength={512} value={custom.apiKey} disabled={working}
+					placeholder={keyPlaceholder} onChange={(event) => onChange({ ...custom, apiKey: event.target.value })} />
 			</Field>
 		</div>
 	);
