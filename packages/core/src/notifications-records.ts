@@ -2,8 +2,10 @@
 // 只读，不改变任何状态：不发消息、不改批次、不重试、不建 Session。
 // 解释只陈述已存事实（状态、原因代码、时间、投递回执），不推断未记录的原因。
 
+import type { InfoCard } from "./domain/infoCard.js";
 import type { Storage } from "./ports/storage.js";
 import type {
+	Delivery,
 	NotificationBatch,
 	NotificationItem,
 	NotificationItemStatus,
@@ -35,19 +37,25 @@ export interface NotificationRecordDelivery {
 	checkedAt?: string;
 }
 
+/**
+ * 记录条目。`itemsSource` 决定哪些字段可信：
+ * - `rows`：来自待发条目行，带 id/kind/revision/status；
+ * - `delivery`：来自发送时冻结的卡片内容（用户实际收到的），只保留展示字段，
+ *   不补造 revision/status——那一条行可能已因实质更新移到后续批次。
+ */
 export interface NotificationRecordItem {
-	id: string;
-	kind: NotificationItem["kind"];
-	taskId?: string;
 	title: string;
 	summary: string;
 	relevance: string;
 	sources: NotificationItem["sources"];
-	revision: number;
-	status: NotificationItemStatus;
+	id?: string;
+	kind?: NotificationItem["kind"];
+	taskId?: string;
+	revision?: number;
+	status?: NotificationItemStatus;
 	deliveryId?: string;
-	createdAt: string;
-	updatedAt: string;
+	createdAt?: string;
+	updatedAt?: string;
 }
 
 export interface NotificationRecord {
@@ -65,10 +73,14 @@ export interface NotificationRecord {
 	settingsVersion: number;
 	createdAt: string;
 	updatedAt: string;
+	/** items 的来源：发送时冻结的卡片内容，或条目行的当前状态。 */
+	itemsSource: NotificationRecordItemsSource;
 	items: NotificationRecordItem[];
 	/** 日汇总的投递回执；从未发起投递时为 null。 */
 	delivery: NotificationRecordDelivery | null;
 }
+
+export type NotificationRecordItemsSource = "delivery" | "rows";
 
 export interface NotificationRecordPage {
 	records: NotificationRecord[];
@@ -78,6 +90,24 @@ export interface NotificationRecordPage {
 
 /** 日汇总的投递 id 由批次派生（见 worker.sendDigest），不另建对照表。 */
 const digestDeliveryId = (id: string): string => `digest:${id}`;
+
+/**
+ * 已发送批次的内容只能取自发送那一刻冻结的卡片：
+ * queue() 在 revision 提升时复用同一条目行并改 batchId，按行回查会让历史批次变空、
+ * 或显示成更新后的版本，而用户当时收到的不是那个版本。
+ */
+const frozenItems = (delivery: Delivery | null): NotificationRecordItem[] => {
+	if (!delivery || delivery.purpose !== "digest") return [];
+	const card = delivery.card;
+	if (!("items" in card)) return [];
+	const infoCard = card as InfoCard;
+	return infoCard.items.map((item) => ({
+		title: item.title,
+		summary: item.summary,
+		relevance: item.relevance,
+		sources: item.sources,
+	}));
+};
 
 export class NotificationRecordService {
 	constructor(private readonly storage: Storage) {}
@@ -122,26 +152,30 @@ export class NotificationRecordService {
 			const records: NotificationRecord[] = [];
 			for (const batch of page) {
 				const delivery = await tx.deliveries.get(digestDeliveryId(batch.id));
+				const own = delivery && delivery.ownerId === ownerId ? delivery : null;
+				// 已发送批次优先用冻结卡片；缺回执（历史/测试数据）时退回条目行。
+				const frozen = batch.status === "sent" ? frozenItems(own) : [];
+				const rows = items
+					.filter((item) => item.batchId === batch.id)
+					.sort((left, right) => left.id.localeCompare(right.id));
 				records.push({
 					...toRecord(batch),
-					items: items
-						.filter((item) => item.batchId === batch.id)
-						.sort((left, right) => left.id.localeCompare(right.id))
-						.map(toRecordItem),
+					itemsSource: frozen.length > 0 ? "delivery" : "rows",
+					items: frozen.length > 0 ? frozen : rows.map(toRecordItem),
 					delivery:
-						delivery && delivery.ownerId === ownerId
+						own
 							? {
-									status: delivery.status,
-									...(delivery.sentAt ? { sentAt: delivery.sentAt } : {}),
-									...(delivery.externalMessageId
-										? { externalMessageId: delivery.externalMessageId }
+									status: own.status,
+									...(own.sentAt ? { sentAt: own.sentAt } : {}),
+									...(own.externalMessageId
+										? { externalMessageId: own.externalMessageId }
 										: {}),
-									...(delivery.lastError ? { lastError: delivery.lastError } : {}),
-									...(delivery.suppressionReason
-										? { suppressionReason: delivery.suppressionReason }
+									...(own.lastError ? { lastError: own.lastError } : {}),
+									...(own.suppressionReason
+										? { suppressionReason: own.suppressionReason }
 										: {}),
-									...(delivery.proactiveCheckedAt
-										? { checkedAt: delivery.proactiveCheckedAt }
+									...(own.proactiveCheckedAt
+										? { checkedAt: own.proactiveCheckedAt }
 										: {}),
 								}
 							: null,
@@ -158,7 +192,9 @@ export class NotificationRecordService {
 	}
 }
 
-function toRecord(batch: NotificationBatch): Omit<NotificationRecord, "items" | "delivery"> {
+function toRecord(
+	batch: NotificationBatch,
+): Omit<NotificationRecord, "items" | "itemsSource" | "delivery"> {
 	return {
 		id: batch.id,
 		kind: batch.kind,

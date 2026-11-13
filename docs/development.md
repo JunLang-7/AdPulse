@@ -417,6 +417,13 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
 - 分页用 `limit`（1–50，默认 20）+ `before`（排他游标，北京时间 `YYYY-MM-DD`）；非法值返回 400，不静默改写。
 - 记录只陈述已存事实：批次状态、`statusReason` 代码、计划/发送时间、条目与 `Delivery` 回执。
   原因代码到中文文案的翻译在控制台 `record-view.ts`；未翻译的代码显示原码并注明「不推测」，不补未知原因。
+- **历史内容以发送时冻结的卡片为准**：`queue()` 在 `revision` 提升时会复用同一条目行并改 `batchId`
+  （见 §5.1），所以按条目「当前所属批次」拼历史会让已发送批次变空、或显示成更新后的版本。
+  因此 `status: sent` 的批次从 `Delivery.card`（`purpose: digest`）读取当时实际发出的内容，
+  `itemsSource: "delivery"`；卡片没有行级 `id/revision/status`，服务端不补造。
+  缺快照（历史/测试数据）时退回条目行并标 `itemsSource: "rows"`，页面写明「可能与当时收到的版本不同」。
+- 取消/合并类批次保留为记录但不再尝试重建内容：`merged_stale` 明确写「已并入之后的汇总」；
+  `empty` 写「本批没有待发内容……或内容已因实质更新进入后续批次」，不冒充成「没有新内容」。
 - `sent` 只表示渠道接收，页面明确写「不代表你已读」；业务结果与投递状态仍然分开。
 - 页面顶部复用订阅页的 `describeReadiness` 判断「现在会不会收到」，避免两套说法；空记录时说明
   「没有新内容不发空汇总」，不把空列表解释成已发送。

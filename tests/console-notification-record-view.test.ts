@@ -28,6 +28,7 @@ const record = (overrides: Partial<RecordLike> = {}): RecordLike => ({
 	scheduledAt: "2026-11-12T01:30:00.000Z",
 	sentAt: "2026-11-12T01:31:00.000Z",
 	settingsVersion: 4,
+	itemsSource: "rows",
 	items: [
 		{
 			id: "user-a:effect|task:t1|alert-a|r1",
@@ -45,7 +46,19 @@ const record = (overrides: Partial<RecordLike> = {}): RecordLike => ({
 });
 
 test("通知记录视图: 已发送的汇总说明「已接收不等于已读」，不编造原因", () => {
-	const view = describeRecord(record());
+	// 正常路径：已发送批次读发送时冻结的卡片，条目没有行级 status/revision。
+	const view = describeRecord({
+		...record(),
+		itemsSource: "delivery",
+		items: [
+			{
+				title: "成本上升",
+				summary: "近 3 天咨询成本上升 35%。",
+				relevance: "与你关注的任务「护眼台灯」相关。",
+				sources: [source],
+			},
+		],
+	});
 
 	assert.equal(view.statusLabel, "已发送");
 	assert.equal(view.tone, "ok");
@@ -56,8 +69,9 @@ test("通知记录视图: 已发送的汇总说明「已接收不等于已读」
 	);
 	assert.equal(view.title, "11月12日 每日汇总");
 	assert.equal(view.times.planned, "09:30", "计划时刻固定北京时间");
-	assert.equal(view.items[0]?.statusLabel, "已发送");
+	assert.equal(view.items[0]?.statusLabel, "已发送", "冻结卡片没有行级状态时落到批次状态");
 	assert.equal(view.items[0]?.sources[0]?.publishedAt, null, "未知发布时间保留 null");
+	assert.match(view.itemsNote ?? "", /发送时实际发出的卡片内容/);
 });
 
 test("通知记录视图: 每个已知原因代码都有可读文案，未知代码不吞掉", () => {
@@ -138,4 +152,30 @@ test("通知记录视图: 时间格式化固定 Asia/Shanghai", () => {
 		"01:00",
 	);
 	assert.equal(formatBeijing("not-a-time"), "—");
+});
+
+test("通知记录视图: 已发送但缺快照时如实说明可能与当时不同", () => {
+	const view = describeRecord({
+		...record(),
+		itemsSource: "rows",
+		items: [{ ...record().items[0]!, status: "queued" }],
+	});
+	assert.match(view.itemsNote ?? "", /缺少发送时的卡片快照/);
+	assert.match(view.itemsNote ?? "", /可能与当时收到的版本不同/);
+});
+
+test("通知记录视图: 条目内容因更新移出后，空记录不冒充「没有新内容」", () => {
+	const view = describeRecord(
+		withoutSentAt(
+			record({
+				status: "cancelled",
+				statusReason: "empty",
+				items: [],
+				delivery: null,
+			}),
+		),
+	);
+	assert.equal(view.reason?.label, "本批没有待发内容");
+	assert.match(view.reason?.detail ?? "", /内容已因实质更新进入后续批次/);
+	assert.equal(view.itemsNote, null);
 });

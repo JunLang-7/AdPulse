@@ -7,6 +7,8 @@ import type { AuditEvent } from "../apps/api/dist/server.js";
 import {
 	AuthenticationService,
 	type PlatformIdentity,
+	NotificationQueue,
+	NotificationRecordService,
 	batchId,
 	digestInstant,
 	itemId,
@@ -77,7 +79,8 @@ type RecordResponse = {
 		statusReason?: string;
 		sentAt?: string;
 		catchUp?: boolean;
-		items: Array<{ id: string; title: string; status: string }>;
+		itemsSource: "delivery" | "rows";
+		items: Array<{ id?: string; title: string; status?: string }>;
 		delivery: { status: string; sentAt?: string } | null;
 	}>;
 	nextBefore: string | null;
@@ -217,12 +220,20 @@ test("通知记录: 只返回本人批次，分页与非法参数有明确边界
 	assert.equal(sent.status, "sent");
 	assert.equal(sent.delivery?.status, "sent");
 	assert.equal(sent.delivery?.sentAt, "2026-11-12T01:30:00.000Z");
-	assert.equal(sent.items[0]?.status, "sent");
+	// 已发送批次读冻结卡片内容，而不是条目行（行可能已被后续版本移走）。
+	assert.equal(sent.itemsSource, "delivery");
+	assert.equal(sent.items[0]?.title, "成本上升");
+	assert.equal(
+		sent.items[0]?.status,
+		undefined,
+		"冻结卡片没有行级状态，不补造",
+	);
 
 	const cancelled = all.records[2]!;
 	assert.equal(cancelled.status, "cancelled");
 	assert.equal(cancelled.statusReason, "push_disabled");
 	assert.equal(cancelled.delivery, null, "从未投递时没有回执");
+	assert.equal(cancelled.itemsSource, "rows");
 	assert.equal(cancelled.items[0]?.status, "cancelled");
 
 	// 分页：limit + 排他游标。
@@ -255,4 +266,87 @@ test("通知记录: 只返回本人批次，分页与非法参数有明确边界
 	).json()) as RecordResponse;
 	assert.deepEqual(none.records, []);
 	assert.equal(none.nextBefore, null);
+});
+
+test("通知记录: 实质更新移入后续批次后，已发送记录仍显示当时发出的内容", async () => {
+	// 复现：queue() 在 revision 提升时复用同一行并改 batchId，
+	// 若历史记录按条目「当前所属批次」拼装，已发送批次会变成空。
+	const storage = new MemoryStorage();
+	let clock = Date.parse("2026-11-11T01:00:00.000Z");
+	const queue = new NotificationQueue(storage, () => new Date(clock));
+	const ownerId = "user-a";
+	const logicalKey = "effect|task:t1|alert-a|r1";
+	const enqueue = (revision: number, title: string) =>
+		queue.queue(
+			ownerId,
+			{
+				logicalKey,
+				kind: "effect_alert",
+				taskId: "t1",
+				title,
+				summary: "咨询成本上升。",
+				relevance: "与你关注的任务相关。",
+				sources: [{ label: "投放后台", observedAt: "2026-11-11T00:30:00.000Z" }],
+				revision,
+			},
+			{ settingsVersion: 1, enabled: true },
+		);
+
+	await enqueue(1, "成本上升（首版）");
+	const first = await queue.ensureDigestBatch(ownerId, {
+		settingsVersion: 1,
+		enabled: true,
+	});
+	assert.ok(first);
+	const deliveryId = `digest:${first.id}`;
+	// 模拟 worker.sendDigest：投递里冻结了当时卡片实际展示的内容。
+	await storage.transaction((tx) =>
+		tx.deliveries.put({
+			id: deliveryId,
+			recipient: { accountId: "feishu-main", kind: "user", externalId: "ou-owner" },
+			card: {
+				title: "信息汇总 · 2026-11-11",
+				items: [
+					{
+						title: "成本上升（首版）",
+						summary: "咨询成本上升。",
+						relevance: "与你关注的任务相关。",
+						sources: [{ label: "投放后台", publishedAt: null }],
+					},
+				],
+			},
+			actions: [],
+			purpose: "digest",
+			ownerId,
+			batchId: first.id,
+			expiresAt: "2026-11-11T23:00:00.000Z",
+			status: "sent",
+			sentAt: "2026-11-11T01:30:00.000Z",
+		}),
+	);
+	assert.equal(
+		await queue.markSent(ownerId, logicalKey, { deliveryId, revision: 1 }),
+		true,
+	);
+	await queue.setBatchStatus(first.id, "sent");
+
+	// 次日同一逻辑事件出现实质更新：同一行被移入新批次。
+	clock = Date.parse("2026-11-12T01:00:00.000Z");
+	await enqueue(2, "成本上升（补充证据）");
+
+	const page = await new NotificationRecordService(storage).list(ownerId);
+	const sent = page.records.find((record) => record.localDate === "2026-11-11");
+	assert.equal(sent?.status, "sent");
+	assert.equal(sent?.itemsSource, "delivery", "已发送记录读取发送时的冻结内容");
+	assert.equal(sent?.items.length, 1, "已发送记录不能因为条目移动变成空");
+	assert.equal(
+		sent?.items[0]?.title,
+		"成本上升（首版）",
+		"历史记录显示当时发出的版本，而不是更新后的版本",
+	);
+
+	const next = page.records.find((record) => record.localDate === "2026-11-12");
+	assert.equal(next?.itemsSource, "rows");
+	assert.equal(next?.items[0]?.title, "成本上升（补充证据）");
+	assert.equal(next?.items[0]?.revision, 2);
 });

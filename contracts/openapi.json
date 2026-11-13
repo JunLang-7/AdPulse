@@ -1346,14 +1346,16 @@
           "settingsVersion": { "type": "integer", "minimum": 0 },
           "createdAt": { "type": "string", "format": "date-time" },
           "updatedAt": { "type": "string", "format": "date-time" },
+          "itemsSource": { "type": "string", "enum": ["delivery", "rows"], "description": "delivery：发送时冻结的卡片内容（用户实际收到的）；rows：条目行当前状态" },
           "items": { "type": "array", "items": { "$ref": "#/components/schemas/NotificationRecordItem" } },
           "delivery": { "oneOf": [{ "$ref": "#/components/schemas/NotificationRecordDelivery" }, { "type": "null" }], "description": "从未发起投递时为 null" }
         },
-        "required": ["id", "kind", "localDate", "status", "scheduledAt", "settingsVersion", "createdAt", "updatedAt", "items", "delivery"],
+        "required": ["id", "kind", "localDate", "status", "scheduledAt", "settingsVersion", "createdAt", "updatedAt", "itemsSource", "items", "delivery"],
         "additionalProperties": false
       },
       "NotificationRecordItem": {
         "type": "object",
+        "description": "itemsSource=delivery 时只保证展示字段（卡片冻结内容）；行级字段（id/kind/revision/status）仅 itemsSource=rows 时存在，服务端不补造",
         "properties": {
           "id": { "type": "string" },
           "kind": { "type": "string", "enum": ["effect_alert"] },
@@ -1368,7 +1370,7 @@
           "createdAt": { "type": "string", "format": "date-time" },
           "updatedAt": { "type": "string", "format": "date-time" }
         },
-        "required": ["id", "kind", "title", "summary", "relevance", "sources", "revision", "status", "createdAt", "updatedAt"],
+        "required": ["title", "summary", "relevance", "sources"],
         "additionalProperties": false
       },
       "NotificationRecordSource": {

@@ -679,27 +679,33 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            /**
+             * @description delivery：发送时冻结的卡片内容（用户实际收到的）；rows：条目行当前状态
+             * @enum {string}
+             */
+            itemsSource: "delivery" | "rows";
             items: components["schemas"]["NotificationRecordItem"][];
             /** @description 从未发起投递时为 null */
             delivery: components["schemas"]["NotificationRecordDelivery"] | null;
         };
+        /** @description itemsSource=delivery 时只保证展示字段（卡片冻结内容）；行级字段（id/kind/revision/status）仅 itemsSource=rows 时存在，服务端不补造 */
         NotificationRecordItem: {
-            id: string;
+            id?: string;
             /** @enum {string} */
-            kind: "effect_alert";
+            kind?: "effect_alert";
             taskId?: string;
             title: string;
             summary: string;
             relevance: string;
             sources: components["schemas"]["NotificationRecordSource"][];
-            revision: number;
+            revision?: number;
             /** @enum {string} */
-            status: "queued" | "sent" | "cancelled" | "expired";
+            status?: "queued" | "sent" | "cancelled" | "expired";
             deliveryId?: string;
             /** Format: date-time */
-            createdAt: string;
+            createdAt?: string;
             /** Format: date-time */
-            updatedAt: string;
+            updatedAt?: string;
         };
         NotificationRecordSource: {
             label: string;

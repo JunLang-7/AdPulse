@@ -169,6 +169,14 @@ export default function NotificationRecordsPage() {
 										</p>
 									</div>
 								) : null}
+								{view.itemsNote ? (
+									<p
+										className="text-xs text-muted-foreground"
+										data-testid="notification-record-items-note"
+									>
+										{view.itemsNote}
+									</p>
+								) : null}
 								{view.items.map((item) => (
 									<div key={item.id} className="space-y-1">
 										<div className="flex items-baseline justify-between gap-3">

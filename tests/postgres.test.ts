@@ -682,7 +682,17 @@ test("PostgreSQL: notification records project only the caller's batches with de
 		await tx.deliveries.put({
 			id: `digest:digest:${ownerId}:2026-11-12`,
 			recipient: { accountId: "feishu-main", kind: "user", externalId: `ou-${ownerId}` },
-			card: { title: "每日汇总", items: [] },
+			card: {
+				title: "每日汇总",
+				items: [
+					{
+						title: "成本上升",
+						summary: "近 3 天咨询成本上升 35%。",
+						relevance: "与你关注的任务相关。",
+						sources: [{ label: "投放后台", publishedAt: null }],
+					},
+				],
+			},
 			actions: [],
 			purpose: "digest",
 			ownerId,
@@ -704,7 +714,8 @@ test("PostgreSQL: notification records project only the caller's batches with de
 	const [sent] = page.records;
 	assert.equal(sent?.delivery?.status, "sent");
 	assert.equal(sent?.delivery?.externalMessageId, "om_pg");
-	assert.equal(sent?.items[0]?.status, "sent");
+	assert.equal(sent?.itemsSource, "delivery", "已发送批次读冻结卡片内容");
+	assert.equal(sent?.items[0]?.title, "成本上升");
 
 	const next = await records.list(ownerId, { before: "2026-11-12" });
 	assert.deepEqual(next.records.map((record) => record.localDate), ["2026-11-11"]);

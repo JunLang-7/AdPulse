@@ -29,14 +29,21 @@ export interface RecordSourceLike {
 	observedAt?: string;
 }
 
+/**
+ * 条目来源：
+ * - delivery：发送时冻结的卡片内容（用户实际收到的），没有行级 status/revision；
+ * - rows：条目行当前状态，可能是更新后的版本。
+ */
+export type RecordItemsSource = "delivery" | "rows";
+
 export interface RecordItemLike {
-	id: string;
 	title: string;
 	summary: string;
 	relevance: string;
 	sources: RecordSourceLike[];
-	revision: number;
-	status: RecordItemStatus;
+	id?: string;
+	revision?: number;
+	status?: RecordItemStatus;
 	taskId?: string;
 }
 
@@ -58,6 +65,7 @@ export interface RecordLike {
 	sentAt?: string;
 	catchUp?: boolean;
 	settingsVersion: number;
+	itemsSource?: RecordItemsSource;
 	items: RecordItemLike[];
 	delivery: RecordDeliveryLike | null;
 }
@@ -73,6 +81,8 @@ export interface RecordView {
 	reason: { label: string; detail: string } | null;
 	/** 已发送时的补充说明：平台接收不等于已读。 */
 	deliveryNote: string | null;
+	/** 条目内容的来源说明：冻结卡片 vs 条目行当前状态。 */
+	itemsNote: string | null;
 	items: Array<{
 		id: string;
 		title: string;
@@ -123,8 +133,9 @@ const REASONS: Record<string, { label: string; detail: string }> = {
 		detail: "这一批按旧配置生成，已作废；新内容会进入之后的汇总。",
 	},
 	empty: {
-		label: "没有新内容",
-		detail: "不发空汇总；有新内容时才会在下一个汇总时刻发送。",
+		label: "本批没有待发内容",
+		detail:
+			"生成后没有新增内容，或内容已因实质更新进入后续批次；不发空汇总，新内容进下一批。",
 	},
 	merged_stale: {
 		label: "错过了计划时刻",
@@ -205,6 +216,18 @@ function describeReason(record: RecordLike): RecordView["reason"] {
 	};
 }
 
+/**
+ * 历史内容的一致性策略：已发送批次只展示发送时冻结的卡片内容；
+ * 没有快照时如实说明「可能与当时收到的版本不同」，不把更新后的条目冒充历史。
+ */
+function describeItemsSource(record: RecordLike): string | null {
+	if (record.itemsSource === "delivery")
+		return "以下为发送时实际发出的卡片内容；之后的实质更新会作为新记录出现。";
+	if (record.status === "sent")
+		return "缺少发送时的卡片快照，下列条目为当前状态，可能与当时收到的版本不同。";
+	return null;
+}
+
 const deliveryNote = (record: RecordLike): string | null => {
 	if (!record.delivery) return null;
 	if (record.delivery.status === "sent")
@@ -226,12 +249,16 @@ export function describeRecord(record: RecordLike): RecordView {
 		tone: status.tone,
 		reason: describeReason(record),
 		deliveryNote: deliveryNote(record),
-		items: record.items.map((item) => ({
-			id: item.id,
+		itemsNote: describeItemsSource(record),
+		items: record.items.map((item, index) => ({
+			id: item.id ?? `${record.id}-item-${index}`,
 			title: item.title,
 			summary: item.summary,
 			relevance: item.relevance,
-			statusLabel: ITEM_STATUS[item.status],
+			// 冻结卡片没有行级状态：收到的条目就是已发送，但不据此编造 revision。
+			statusLabel: item.status
+				? ITEM_STATUS[item.status]
+				: (BATCH_STATUS[record.status]?.label ?? ""),
 			sources: item.sources.map((source) => ({
 				label: source.label,
 				...(source.url ? { url: source.url } : {}),

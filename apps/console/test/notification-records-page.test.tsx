@@ -88,6 +88,7 @@ test("通知记录页：已取消批次显示原因，且不冒充「平台已�
 						settingsVersion: 4,
 						createdAt: "2026-11-11T01:00:00.000Z",
 						updatedAt: "2026-11-11T01:30:00.000Z",
+						itemsSource: "rows",
 						items: [item("已取消的汇总", "cancelled")],
 						delivery: null,
 					},
@@ -150,7 +151,16 @@ test("通知记录页：有下一页时按游标请求更早记录", async () =>
 							settingsVersion: 4,
 							createdAt: "2026-11-12T01:00:00.000Z",
 							updatedAt: "2026-11-12T01:31:00.000Z",
-							items: [item("成本上升", "sent")],
+							itemsSource: "delivery",
+							// 冻结卡片只有展示字段：不补造 id/status/revision。
+							items: [
+								{
+									title: "成本上升（首版）",
+									summary: "近 3 天咨询成本上升 35%。",
+									relevance: "与你关注的任务「护眼台灯」相关。",
+									sources: [{ label: "投放后台", publishedAt: null }],
+								},
+							],
 							delivery: {
 								status: "sent",
 								sentAt: "2026-11-12T01:31:00.000Z",
@@ -171,6 +181,7 @@ test("通知记录页：有下一页时按游标请求更早记录", async () =>
 						settingsVersion: 4,
 						createdAt: "2026-11-10T01:00:00.000Z",
 						updatedAt: "2026-11-10T01:30:00.000Z",
+						itemsSource: "rows",
 						items: [],
 						delivery: null,
 					},
@@ -183,11 +194,24 @@ test("通知记录页：有下一页时按游标请求更早记录", async () =>
 
 	assert.ok(await screen.findByText("11月12日 每日汇总"));
 	assert.ok(screen.getByText(/已接收.*不代表你已读/));
+	// 历史内容取自发送时冻结的卡片，而不是条目行当前版本。
+	assert.ok(screen.getByText("成本上升（首版）"));
+	assert.ok(
+		await screen.findByTestId("notification-record-items-note"),
+		"说明这是当时发出的内容",
+	);
+	assert.match(
+		screen.getByTestId("notification-record-items-note").textContent ?? "",
+		/发送时实际发出的卡片内容/,
+	);
 
 	fireEvent.click(screen.getByRole("button", { name: "加载更早的记录" }));
 
 	assert.ok(await screen.findByText("11月10日 每日汇总"));
-	assert.ok(screen.getByText("没有新内容"));
+	assert.ok(
+		screen.getByText("本批没有待发内容"),
+		"不把「内容已移入后续批次」冒充成「没有新内容」",
+	);
 	assert.deepEqual(
 		requested.slice(0, 2),
 		["", "?before=2026-11-12"],
