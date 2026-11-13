@@ -137,6 +137,10 @@ export function validateModelConnectionInput(input: ModelConnectionInput): Model
 	// 自定义连接不挂目录 id，避免以后拿目录里的品牌/端点冒充用户自己的目的地。
 	if (kind === "custom" && input.catalogId !== undefined)
 		invalid("custom connections must not carry a catalogId");
+	// SDK 的 Anthropic 客户端自己拼 /v1/messages；基础地址再带 /v1 会变成 /v1/v1/messages。
+	if (protocol === "anthropic-messages" &&
+		new URL(baseUrl).pathname.replace(/\/+$/u, "").toLowerCase().endsWith("/v1"))
+		invalid("anthropic-messages baseUrl must not include the /v1 segment");
 	return {
 		providerId,
 		kind,
@@ -382,6 +386,11 @@ export class ModelConnectionService {
 			const revocation = await tx.userModelRevocations.get(connectionId);
 			const at = this.now();
 			const update = input.credential ?? { action: "keep" };
+			// 墓碑覆盖当前凭据时，不允许保留旧密文做任何元数据/状态更新；
+			// 只有替换密钥（新版本越过墓碑）或明确删除才被允许。
+			if (update.action === "keep" && credential &&
+				await this.isRevoked(tx, connectionId, credential.credentialVersion))
+				throw new ModelConnectionError("credential_unreadable", "credential was revoked");
 			const models =
 				input.models === undefined ? connection.models : validateModels(input.models);
 			const baseUrl =
@@ -509,6 +518,8 @@ export class ModelConnectionService {
 			const credential = await tx.userModelCredentials.get(connection.id);
 			if (!credential)
 				throw new ModelConnectionError("credential_missing", "connection has no credential");
+			if (await this.isRevoked(tx, connection.id, credential.credentialVersion))
+				throw new ModelConnectionError("credential_unreadable", "credential was revoked");
 			const next: UserModelConnection = {
 				...connection,
 				verifiedAt: at,
@@ -767,7 +778,13 @@ export class ModelConnectionService {
 					await this.clearPreference(tx, connection.ownerId, connection.id, at);
 					return "disabled" as const;
 				}
-				if (connection) return "skipped" as const;
+				if (connection) {
+					// 即使当前密钥已轮换、无需停用，也要补记墓碑：
+					// 否则将来一次更旧的恢复无法识别这次撤销。
+					if (apply)
+						await this.revoke(tx, connection, entry.credentialVersion, this.now(), entry.reason);
+					return "skipped" as const;
+				}
 				if (!apply) return "tombstoned" as const;
 				await this.revoke(
 					tx, { id: entry.connectionId, ownerId: entry.ownerId },
@@ -820,15 +837,23 @@ export class ModelConnectionService {
 			.filter((connection) => connection.ownerId === ownerId)
 			.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 		const items: ModelConnectionView[] = [];
+		const revokedIds = new Set<string>();
 		for (const connection of connections) {
 			const credential = await tx.userModelCredentials.get(connection.id);
 			// 被撤销的连接在界面与接口上都表现为停用，不依赖是否已重放。
 			const revoked = credential !== null && await this.isRevoked(tx, connection.id, credential.credentialVersion);
+			if (revoked) revokedIds.add(connection.id);
 			items.push(project(revoked ? { ...connection, status: "disabled" } : connection, credential !== null && !revoked));
 		}
+		const preference = await tx.userModelPreferences.get(ownerId);
+		// 不把指向已撤销连接的旧默认选择展示成可用；不写库，重放时才落盘。
+		const displayPreference = preference?.connectionId !== null && preference?.connectionId !== undefined &&
+			revokedIds.has(preference.connectionId)
+			? { ...preference, connectionId: null, modelId: null }
+			: preference;
 		return {
 			connections: items,
-			preference: preferenceView(await tx.userModelPreferences.get(ownerId)),
+			preference: preferenceView(displayPreference),
 		};
 	}
 }

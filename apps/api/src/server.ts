@@ -71,10 +71,12 @@ export interface ModelAuditEvent {
 		| "model.credential.removed"
 		| "model.preference.updated"
 		| "model.connection.probed"
-		| "model.discovery.requested";
+		| "model.discovery.requested"
+		| "model.request.rejected";
 	path: string;
 	connectionId?: string;
 	version?: number;
+	status?: number;
 	result: "ok" | "rejected" | "unavailable";
 }
 
@@ -700,6 +702,17 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 			}
 			throw new HttpError(404, "route not found");
 		} catch (error) {
+			// 模型配置的失败也要有最小审计：只记不含查询串的路径与状态码，
+			// 不记错误正文、上游文本或任何一次性凭据。
+			const rejectedPath = (req.url ?? "/").split("?")[0] ?? "/";
+			if (rejectedPath.startsWith("/api/me/model-connections") ||
+				rejectedPath === "/api/me/model-preferences")
+				audit({
+					event: "model.request.rejected",
+					path: rejectedPath,
+					result: "rejected",
+					status: error instanceof HttpError ? error.status : 500,
+				});
 			if (res.headersSent) {
 				res.destroy();
 				return;

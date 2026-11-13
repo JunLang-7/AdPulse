@@ -50,13 +50,28 @@ main
 | P2 | `github-copilot` 在三个适配器里走专用认证/动态头分支，却被列为可直连 | 生成器按 SDK 同名分支排除并给出原因，不再假装可用 |
 | P2 | 撤销后重设密钥会被自己的墓碑判为已撤销 | 新凭据版本取 `max(凭据版本, 墓碑版本) + 1` |
 
+## 3b. 第二轮评审（栈顶复核）
+
+| 级别 | 问题与影响 | 修复与证据 |
+| --- | --- | --- |
+| P1 | 部署提供的共享路由 `extractShared` 没有按 owner 限流，任何登录用户都能用共享 Key 绕过用户预算 | `extractShared` 与 `extract` 的共享分支都纳入 `userLimitFor(ownerId)`；新测试验证同用户 6 次后被拒、另一用户仍可用 |
+| P2 | 墓碑覆盖当前凭据时，仍可通过 `PUT {status:active}` 或 `recordVerification` 保留旧密文并重新启用/标记验证 | `update(keep)` 与 `recordVerification` 增加撤销检查；明确删除仍可执行；新增拒绝与放行测试 |
+| P2 | 恢复重放遇到「凭据版本已更新」就只跳过、不补墓碑，将来更旧的恢复无法识别这次撤销 | apply 模式在跳过时仍 upsert 墓碑；测试断言跳过也会留下版本正确的墓碑 |
+| P2 | 视图会把指向已撤销连接的旧默认选择继续展示为可用 | `view` 投影时忽略该引用（不写库，重放才落盘），并加测试 |
+| P2 | Anthropic 基础地址以 `/v1` 结尾时 SDK 会拼出 `/v1/v1/messages`，保存后才失败 | `validateModelConnectionInput` 在保存前拒绝该形态；正常无版本段地址仍可用 |
+| P3 | 发现与调用各有一份协议白名单，新增协议可能只接通一半 | `isDiscoveryProtocolWired` 直接复用 `isTaskDraftProtocolWired`，测试对全部枚举逐项比对 |
+| P3 | 最小审计只记成功动作，409/404 等失败没有结果代码 | 中央 catch 为模型路径补 `model.request.rejected`（仅路径与状态码），并加 409 审计测试 |
+| P3 | Harness 快照只有结果、没有可复现的抓取脚本 | 新增 `scripts/capture-harness-provider-data.mjs`；已用它重生成快照并逐字节比对一致 |
+
+第二轮仍为 AI 代码评审，不冒充人工 Review。
+
 ## 4. 验证证据（每一栈的最新本地实跑）
 
 | 检查 | 结果 |
 | --- | --- |
-| `bun run typecheck` / `build` / `test` | 通过；Node **444 项：426 通过 / 18 跳过**；组件 **24 项全通过** |
+| `bun run typecheck` / `build` / `test` | 通过；Node **450 项：432 通过 / 18 跳过**；组件 **24 项全通过** |
 | `bun run sdk:check`、console typecheck / build | 通过（OpenAPI 与生成 SDK 同步） |
-| 临时专用 PostgreSQL 17.11（embedded-postgres） | 模型相关 + PG 集成 **108 项全通过，0 跳过** |
+| 临时专用 PostgreSQL 17.11（embedded-postgres） | 模型相关 + PG 集成 **118 项全通过，0 跳过** |
 | 主密钥轮换演练（真实 PG） | `readable 2/awaiting 2` → `rotated 2/awaiting 0` → 退役旧 key 仍 2 → 只留旧 key 时 0/failed 2 → 未确认退出码 2 |
 | 撤销恢复演练（真实 PG） | 导出 1 条（无密钥/密文）→ 只读报告退出码 1 → 未确认退出码 2 → 应用后连接停用、默认清空、密文删除 |
 | GitHub CI `verify` / GitGuardian | 每个 PR 的最新提交均通过 |

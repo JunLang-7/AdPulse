@@ -621,7 +621,7 @@ export async function handleAdmin(
 		if (modelApi && provider === undefined) throw new HttpError(409, "model_selection_required");
 		const selection = provider === undefined || model === undefined ? undefined : { provider, model };
 		if (selection && models) {
-			const shared = models.extractShared(selection, brief, stage);
+			const shared = models.extractShared(userId, selection, brief, stage);
 			if (shared) {
 				const suggestions = await shared;
 				if (!suggestions) throw new HttpError(503, "task draft extraction unavailable");

@@ -61,7 +61,7 @@ async function serve(
 	runtime: Runtime,
 	verifiedAt = new Date().toISOString(),
 	externalId = "ou-model-owner",
-	audit?: (event: { event: string; path: string; result: string; connectionId?: string; version?: number }) => void,
+	audit?: (event: { event: string; path: string; result: string; connectionId?: string; version?: number; status?: number }) => void,
 ) {
 	const service = new AuthenticationService(runtime.storage);
 	const publicOrigin = "http://localhost";
@@ -212,8 +212,25 @@ test("model connections API: Anthropic Messages tests, persists and extracts wit
 	}
 });
 
+test("model connections API: rejected model writes get a minimal audit record with only a status code", async (t) => {
+	const events: { event: string; path: string; result: string; status?: number }[] = [];
+	const { runtime } = withModels();
+	const server = await serve(t, runtime, new Date().toISOString(), "ou-model-owner", (event) => events.push(event));
+	const created = await (await call(server, "/api/me/model-connections", "POST", customInput())).json() as { id: string; version: number };
+	// 旧 expectedVersion 触发 409；被拒绝的请求也必须有审计结果代码。
+	const conflict = await call(server, `/api/me/model-connections/${created.id}`, "PUT", {
+		expectedVersion: created.version + 1, models: [{ id: "mimo-v2-flash" }],
+	});
+	assert.equal(conflict.status, 409);
+	const rejected = events.find((event) => event.event === "model.request.rejected");
+	assert.equal(rejected?.status, 409);
+	assert.equal(rejected?.result, "rejected");
+	assert.match(rejected?.path ?? "", /^\/api\/me\/model-connections\//u);
+	assert.doesNotMatch(JSON.stringify(events), /synthetic-personal-key|ciphertext|nonce|authTag/u);
+});
+
 test("model connections API: minimal audit records actions without keys or bodies", async (t) => {
-	const events: { event: string; path: string; result: string; connectionId?: string; version?: number }[] = [];
+	const events: { event: string; path: string; result: string; connectionId?: string; version?: number; status?: number }[] = [];
 	const { runtime } = withModels();
 	const server = await serve(t, runtime, new Date().toISOString(), "ou-model-owner", (event) => events.push(event));
 	const created = await (await call(server, "/api/me/model-connections", "POST", customInput())).json() as { id: string; version: number };

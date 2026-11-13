@@ -96,6 +96,59 @@ test("revocation: a restore that wipes tombstones fails closed until replay is a
 	assert.equal(view.connections[0]?.status, "disabled");
 });
 
+test("revocation: a revoked connection cannot be re-enabled or re-verified without replacing the key", async () => {
+	const { storage, service } = setup();
+	const created = await service.create("owner-a", input(), { verified: true });
+	await storage.transaction(async (tx) => {
+		await tx.userModelRevocations.put({
+			id: created.id, ownerId: "owner-a", connectionId: created.id, credentialVersion: 1,
+			reason: "credential_removed", revokedAt: at,
+		});
+	});
+	await assert.rejects(
+		service.update("owner-a", created.id, { expectedVersion: created.version, status: "active" }),
+		/revoked/u,
+	);
+	await assert.rejects(service.recordVerification("owner-a", created.id, created.version), /revoked/u);
+	// 元数据编辑（keep）同样拒绝，但明确删除仍可执行。
+	await assert.rejects(
+		service.update("owner-a", created.id, { expectedVersion: created.version, displayName: "改名" }),
+		/revoked/u,
+	);
+	assert.equal((await service.removeCredential("owner-a", created.id, created.version)).status, "disabled");
+});
+
+test("revocation: a restored preference pointing at a revoked connection is not shown as usable", async () => {
+	const { storage, service } = setup();
+	const created = await service.create("owner-a", input(), { verified: true });
+	await service.setPreference("owner-a", { expectedVersion: 0, connectionId: created.id, modelId: "mimo-v2-flash" });
+	await storage.transaction(async (tx) => {
+		await tx.userModelRevocations.put({
+			id: created.id, ownerId: "owner-a", connectionId: created.id, credentialVersion: 1,
+			reason: "credential_removed", revokedAt: at,
+		});
+	});
+	const view = await service.view("owner-a");
+	assert.equal(view.preference.connectionId, null);
+	assert.equal(view.connections[0]?.status, "disabled");
+	// 展示层不写库；重放才会真正清空默认选择。
+	assert.equal((await storage.transaction((tx) => tx.userModelPreferences.get("owner-a")))?.connectionId, created.id);
+});
+
+test("anthropic-messages base URLs must not include the SDK-implied /v1 segment", async () => {
+	const { service } = setup();
+	await assert.rejects(
+		service.create("owner-a", input({ protocol: "anthropic-messages", baseUrl: "https://claude.example/v1" })),
+		/must not include the \/v1 segment/u,
+	);
+	await assert.rejects(
+		service.create("owner-a", input({ protocol: "anthropic-messages", baseUrl: "https://claude.example/api/v1/" })),
+		/must not include the \/v1 segment/u,
+	);
+	const ok = await service.create("owner-a", input({ protocol: "anthropic-messages", baseUrl: "https://claude.example" }));
+	assert.equal(ok.protocol, "anthropic-messages");
+});
+
 test("revocation: a replacement key after removal gets a version above the tombstone", async () => {
 	const { service } = setup();
 	const created = await service.create("owner-a", input(), { verified: true });
@@ -162,6 +215,9 @@ test("replay: newer credentials are skipped, missing connections are only tombst
 	}];
 	assert.deepEqual(await service.replayRevocations(stale, { apply: true }), { skipped: 1, disabled: 0, tombstoned: 0 });
 	assert.equal((await service.resolveCredential("owner-a", created.id)).apiKey, "synthetic-rotated-key");
+	// 跳过停用也要补记墓碑：以后更旧的恢复仍能识别这次撤销。
+	assert.deepEqual((await service.listRevocations()).map((item) => [item.connectionId, item.credentialVersion]),
+		[[created.id, 1]]);
 
 	// 连接已不存在：只补记墓碑，便于后续恢复继续生效。
 	const orphan = [{
@@ -169,7 +225,7 @@ test("replay: newer credentials are skipped, missing connections are only tombst
 		connectionId: "3f1a3a54-0000-4000-8000-000000000000",
 	}];
 	assert.deepEqual(await service.replayRevocations(orphan, { apply: true }), { skipped: 0, disabled: 0, tombstoned: 1 });
-	assert.equal((await service.listRevocations()).length, 1);
+	assert.equal((await service.listRevocations()).length, 2);
 });
 
 test("revocation file parser rejects anything but the minimal fields", () => {
