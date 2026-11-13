@@ -134,7 +134,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Extract editable suggestions from the submitted stage. Omitting stage keeps all fields eligible. This operation does not save a draft or create a task. */
+        /** @description Extract editable suggestions from the submitted stage. A personal default is used when no selection is sent. A legacy provider-only request requires an unambiguous personal connection. No draft or task is saved. */
         post: operations["extractTaskDraft"];
         delete?: never;
         options?: never;
@@ -2403,6 +2403,24 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description Personal connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Model selection required or personal connection changed or disabled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Request too large */
             413: {
                 headers: {
@@ -2436,6 +2454,7 @@ export interface operations {
         parameters: {
             query?: {
                 returnTo?: string;
+                reauth?: "1";
             };
             header?: never;
             path?: never;

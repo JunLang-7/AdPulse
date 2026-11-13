@@ -174,7 +174,7 @@ export function createModelConnections(
 			return extract ? await extract(modelConnectionTestBrief, "overview") !== null : false;
 		},
 		draftExtractor(input: ModelRouteInput): TaskDraftExtractor | undefined {
-			return createPersistedTaskDraftExtractor(input, fetchImpl);
+			return createPersistedTaskDraftExtractor(input, fetchImpl, limit);
 		},
 		protocolWired: isTaskDraftProtocolWired,
 	};
@@ -267,7 +267,7 @@ export async function fromEnvironment(
 	const storage = postgres ?? new MemoryStorage();
 	const modelConnections = createModelConnections(storage, env);
 	return {
-		...compose(postgres ?? new MemoryStorage(), accounts, reviewPolicy, {
+		...compose(storage, accounts, reviewPolicy, {
 			decisionCardsEnabled: env.DECISION_CARDS_ENABLED === "1",
 			...(env.PUBLIC_ORIGIN ? { detailUrlBase: env.PUBLIC_ORIGIN } : {}),
 		}),

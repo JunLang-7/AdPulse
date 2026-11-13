@@ -54,7 +54,7 @@ function withModels(options: { env?: Record<string, string>; reply?: () => Respo
 	return { runtime, storage, requests };
 }
 
-async function serve(t: TestContext, runtime: Runtime) {
+async function serve(t: TestContext, runtime: Runtime, verifiedAt = new Date().toISOString()) {
 	const service = new AuthenticationService(runtime.storage);
 	const publicOrigin = "http://localhost";
 	const token = randomBytes(32).toString("base64url");
@@ -64,7 +64,7 @@ async function serve(t: TestContext, runtime: Runtime) {
 		tenantId: "tenant-model-test",
 		idType: "open_id",
 		externalId: "ou-model-owner",
-	}, createHash("sha256").update(token).digest("hex"), new Date().toISOString());
+	}, createHash("sha256").update(token).digest("hex"), verifiedAt);
 	const server = createApi(runtime, {
 		service,
 		publicOrigin,
@@ -149,9 +149,10 @@ test("model connections API: verification gates storage and never echoes the key
 	const createdText = await created.text();
 	assert.doesNotMatch(createdText, /synthetic-personal-key/);
 	assert.doesNotMatch(createdText, /ciphertext|authTag|nonce/);
-	const view = JSON.parse(createdText) as { id: string; hasCredential: boolean; status: string; version: number };
+	const view = JSON.parse(createdText) as { id: string; hasCredential: boolean; status: string; version: number; verifiedVersion: number };
 	assert.equal(view.hasCredential, true);
 	assert.equal(view.status, "active");
+	assert.equal(view.verifiedVersion, view.version);
 	assert.equal(requests[0]?.url, "https://api.mimotest.example/v1/chat/completions");
 	assert.equal(requests[0]?.auth, "Bearer synthetic-personal-key");
 	assert.equal(requests[0]?.model, "mimo-v2-flash");
@@ -310,4 +311,45 @@ test("model connections API: extraction uses the owned connection and fails clos
 
 	// 不存在或未归属的连接同样 not found，不泄露存在性。
 	assert.equal((await call(server, "/api/task-drafts/extract", "POST", { brief: "产品", connectionId: crypto.randomUUID() })).status, 404);
+});
+
+test("model connections API: stale authentication cannot send probes or change credentials and preferences", async (t) => {
+	const { runtime, requests } = withModels();
+	const server = await serve(t, runtime, new Date(Date.now() - 20 * 60_000).toISOString());
+	const id = crypto.randomUUID();
+	for (const [path, method, body] of [
+		["/api/me/model-connections", "POST", customInput()],
+		["/api/me/model-connections/test", "POST", customInput()],
+		[`/api/me/model-connections/${id}`, "PUT", {}],
+		[`/api/me/model-connections/${id}`, "DELETE", undefined],
+		[`/api/me/model-connections/${id}/credential`, "DELETE", undefined],
+		["/api/me/model-preferences", "PUT", {}],
+		["/api/task-drafts/models/test", "POST", {}],
+	] as const) {
+		const result = await call(server, path, method, body);
+		assert.equal(result.status, 401, path);
+		assert.deepEqual(await result.json(), { error: "reauth_required" });
+	}
+	assert.equal((await call(server, "/api/me/model-connections")).status, 200);
+	assert.equal(requests.length, 0);
+});
+
+test("model connections API: default, legacy and explicit personal selection share the request budget", async (t) => {
+	const { runtime, requests } = withModels();
+	const server = await serve(t, runtime);
+	const noChoice = { brief: "产品", stage: "overview" };
+	const route = "/api/task-drafts/extract";
+	assert.equal((await call(server, route, "POST", noChoice)).status, 409);
+	const created = await (await call(server, "/api/me/model-connections", "POST", customInput())).json() as { id: string };
+	const preference = await call(server, "/api/me/model-preferences", "PUT", {
+		expectedVersion: 0, connectionId: created.id, modelId: "mimo-v2-flash",
+	});
+	assert.equal(preference.status, 200);
+	assert.equal((await call(server, route, "POST", noChoice)).status, 200);
+	assert.equal((await call(server, route, "POST", { ...noChoice, provider: "mimo" })).status, 200);
+	assert.equal((await call(server, route, "POST", { ...noChoice, provider: "deepseek" })).status, 409);
+	for (let n = 0; n < 5; n++)
+		assert.equal((await call(server, route, "POST", { ...noChoice, connectionId: created.id })).status, 200);
+	assert.equal((await call(server, route, "POST", noChoice)).status, 503);
+	assert.equal(requests.length, 8);
 });

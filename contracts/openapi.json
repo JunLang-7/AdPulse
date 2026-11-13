@@ -331,12 +331,14 @@
     "/api/task-drafts/extract": {
       "post": {
         "operationId": "extractTaskDraft",
-        "description": "Extract editable suggestions from the submitted stage. Omitting stage keeps all fields eligible. This operation does not save a draft or create a task.",
+        "description": "Extract editable suggestions from the submitted stage. A personal default is used when no selection is sent. A legacy provider-only request requires an unambiguous personal connection. No draft or task is saved.",
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDraftExtractionInput" } } } },
         "responses": {
           "200": { "description": "Suggestions supported by verbatim snippets from the brief", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDraftSuggestions" } } } },
           "400": { "description": "Invalid request or blank brief", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Personal connection not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Model selection required or personal connection changed or disabled", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "413": { "description": "Request too large", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "415": { "description": "JSON required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "503": { "description": "Extraction not configured, busy or temporarily unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
@@ -347,7 +349,10 @@
       "get": {
         "operationId": "beginFeishuLogin",
         "security": [],
-        "parameters": [{ "name": "returnTo", "in": "query", "required": false, "schema": { "type": "string" } }],
+        "parameters": [
+          { "name": "returnTo", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "reauth", "in": "query", "required": false, "schema": { "type": "string", "enum": ["1"] } }
+        ],
         "responses": { "302": { "description": "Redirect to Feishu authorization" }, "400": { "description": "Invalid return target" } }
       }
     },

@@ -1,6 +1,7 @@
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import type { IncomingMessage } from "node:http";
 import {
 	SourceFetchError,
@@ -21,15 +22,22 @@ const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 
 /** Blocks loopback, private, link-local, CGNAT and metadata ranges. */
 export function isPublicAddress(address: string): boolean {
-	if (address.includes(":")) {
-		const normalized = address.toLowerCase();
-		if (normalized === "::1" || normalized === "::") return false;
-		if (normalized.startsWith("fe8") || normalized.startsWith("fe9")) return false;
-		if (normalized.startsWith("fea") || normalized.startsWith("feb")) return false;
-		if (normalized.startsWith("fc") || normalized.startsWith("fd")) return false;
-		const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(normalized);
-		return mapped?.[1] ? isPublicAddress(mapped[1]) : true;
+	const family = isIP(address);
+	if (family === 6) {
+		if (address.includes("%")) return false;
+		const normalized = new URL(`http://[${address}]`).hostname.slice(1, -1);
+		const mapped = /^::ffff:([\da-f]+):([\da-f]+)$/.exec(normalized);
+		if (mapped) {
+			const high = Number.parseInt(mapped[1]!, 16);
+			const low = Number.parseInt(mapped[2]!, 16);
+			return isPublicAddress([high >> 8, high & 255, low >> 8, low & 255].join("."));
+		}
+		const [prefix, subnet] = normalized.split(":");
+		return /^[23][\da-f]{3}$/.test(prefix ?? "") && prefix !== "2002" &&
+			!(prefix === "2001" && (subnet === "db8" || Number.parseInt(subnet || "0", 16) < 0x200)) &&
+			prefix !== "3fff";
 	}
+	if (family !== 4) return false;
 	const octets = address.split(".").map(Number);
 	if (octets.length !== 4 || octets.some((part) => Number.isNaN(part)))
 		return false;
@@ -39,6 +47,10 @@ export function isPublicAddress(address: string): boolean {
 	if (a === 172 && b >= 16 && b <= 31) return false;
 	if (a === 192 && b === 168) return false;
 	if (a === 100 && b >= 64 && b <= 127) return false;
+	const c = octets[2];
+	if ((a === 192 && b === 0 && (c === 0 || c === 2)) ||
+		(a === 192 && b === 88 && c === 99) || (a === 198 && (b === 18 || b === 19)) ||
+		(a === 198 && b === 51 && c === 100) || (a === 203 && b === 0 && c === 113)) return false;
 	if (a >= 224) return false;
 	return true;
 }

@@ -150,6 +150,17 @@ export function createTaskDraftModels(
 			remove(key);
 			return true;
 		},
+		async extractLegacy(ownerId: string, provider: string, brief: string, stage?: TaskDraftStage) {
+			const matching = ownConnections(ownerId).filter((item) => item.provider === provider);
+			const [route] = matching;
+			if (matching.length !== 1 || !route) return null;
+			return connections.get(connectionKey(ownerId, route))?.extract(brief, stage) ?? null;
+		},
+		extractShared(selection: TaskDraftSelection, brief: string, stage?: TaskDraftStage) {
+			const route = shared.find(({ selection: item }) =>
+				item.provider === selection.provider && item.model === selection.model);
+			return route?.extract(brief, stage);
+		},
 		async extract(ownerId: string, selection: TaskDraftSelection | undefined, brief: string, stage?: TaskDraftStage) {
 			prune();
 			const chosen = selection ?? defaultSelection(ownerId);

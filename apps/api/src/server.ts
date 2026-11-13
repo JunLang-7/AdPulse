@@ -657,8 +657,12 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					return json(res, 200, { ok: true });
 				}
 				if (
-					path === "/api/task-drafts/models" &&
-					(req.method === "PUT" || req.method === "DELETE")
+					((req.method === "PUT" || req.method === "DELETE") && path === "/api/task-drafts/models") ||
+					(req.method === "POST" && path === "/api/task-drafts/models/test") ||
+					(req.method === "POST" && ["/api/me/model-connections", "/api/me/model-connections/test"].includes(path)) ||
+					((req.method === "PUT" || req.method === "DELETE") &&
+						(/^\/api\/me\/model-connections\/[0-9a-f-]{36}(?:\/credential)?$/.test(path) ||
+							path === "/api/me/model-preferences"))
 				) {
 					const verifiedAt = Date.parse(
 						session.recentlyVerifiedAt ?? session.authenticatedAt ?? session.createdAt,
@@ -668,6 +672,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						now().getTime() - verifiedAt > 15 * 60 * 1000
 					) {
 						reject("session_invalid", req, path);
+						res.setHeader("Cache-Control", "no-store");
 						throw new HttpError(401, "reauth_required");
 					}
 				}

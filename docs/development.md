@@ -88,12 +88,9 @@ TASK_DRAFT_GATEWAY_API_KEY=
 
 需要允许已认证用户通过界面连接临时 API 密钥时，部署者可设置 `TASK_DRAFT_USER_KEYS_ENABLED=1`。连接用固定合成短句验证，密钥在服务端内存按用户隔离，最多保留 8 小时，且可断开。服务重启会清空临时连接。部署时应通过受信任的 HTTPS 入口访问。
 
-<<<<<<< HEAD
-所选供应商需支持 Chat Completions 的 SSE 和 JSON 输出，界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
-=======
 ### 持久化模型凭据（#86 PR1）
 
-持久化部分已完成存储、加密与领域规则，尚未接 HTTP 与界面（下一个 PR）。启用前必须配置主密钥，否则 `createModelConnections()` 返回 undefined，能力保持不可用，不会退回明文或内存连接：
+启用个人连接前必须配置主密钥，否则个人连接接口不可用：
 
 ```dotenv
 # 逗号分隔 keyId:base64(32 字节)；默认最后一支为 active。
@@ -125,7 +122,6 @@ MODEL_CREDENTIAL_ACTIVE_KEY=v1
 模型调用统一走受控出网层：只允许 HTTPS，校验全部 DNS 结果并把连接绑定到已校验地址，禁止重定向并移除 `location`，不读取环境代理，限制 512 KiB 与 15 秒。未接通的协议（`openai-responses`、`anthropic-messages`、`google-generative-ai`）返回 422，不会降级成 Chat Completions；自定义连接需自行确认供应商支持 SSE 与 JSON 输出。
 
 网关需支持 Chat Completions 的 SSE 和 JSON 输出，界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
->>>>>>> 73766e4
 
 ## 3. 持久化与独立 worker
 

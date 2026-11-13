@@ -110,11 +110,8 @@ const taskDraftExtractionInput = z
 	})
 	.strict()
 	.refine(({ provider, model, connectionId }) => {
-		// 有 provider 就必须带 model；只给 model 时必须有 connectionId；两者不能混用。
 		if (connectionId !== undefined && provider !== undefined) return false;
-		if (provider !== undefined) return model !== undefined;
-		if (model !== undefined) return connectionId !== undefined;
-		return true;
+		return model === undefined || provider !== undefined || connectionId !== undefined;
 	}, { message: "invalid model selection" });
 /** Catalog membership is checked before any credential is stored or used. */
 function supportedSelection(input: TaskDraftSelection): TaskDraftSelection {
@@ -432,7 +429,7 @@ export async function handleAdmin(
 			// 未通过测试就不写库：不留下半个可用连接。
 			if (!ok) throw new HttpError(503, "model connection unavailable");
 			const created = await withModelConnectionErrors(() =>
-				modelApi.service.create(userId, input));
+				modelApi.service.create(userId, input, { verified: true }));
 			return json(res, 201, created);
 		}
 		const connectionPath = /^\/api\/me\/model-connections\/([0-9a-f-]{36})(\/credential)?$/.exec(path);
@@ -455,6 +452,7 @@ export async function handleAdmin(
 				const view = await modelApi.service.view(userId);
 				const existing = view.connections.find((item) => item.id === connectionId);
 				if (!existing) throw new HttpError(404, "connection_not_found");
+				if (body.expectedVersion !== existing.version) throw new HttpError(409, "connection_conflict");
 				const protocol = (body.protocol ?? existing.protocol) as ModelConnectionProtocol;
 				if (!modelApi.protocolWired(protocol)) throw new HttpError(422, "protocol not wired");
 				const baseUrl = body.baseUrl === undefined
@@ -487,7 +485,7 @@ export async function handleAdmin(
 						...(body.baseUrl === undefined ? {} : { baseUrl: body.baseUrl }),
 						...(body.protocol === undefined ? {} : { protocol: body.protocol }),
 						...(body.credential === undefined ? {} : { credential: body.credential }),
-					}));
+					}, { verified: replace }));
 				return json(res, 200, updated);
 			}
 		}
@@ -533,11 +531,22 @@ export async function handleAdmin(
 	}
 	if (path === "/api/task-drafts/extract" && req.method === "POST") {
 		const { brief, stage, provider, model, connectionId } = taskDraftExtractionInput.parse(await readJson(req));
-		if (connectionId !== undefined) {
-			const modelApi = runtime.modelConnections;
+		const modelApi = runtime.modelConnections;
+		let personal = connectionId === undefined ? undefined : { connectionId, modelId: model };
+		if (!personal && modelApi && model === undefined) {
+			const { preference, connections } = await modelApi.service.view(userId);
+			const matching = provider === undefined ? undefined : connections.find((item) =>
+				item.providerId === provider && item.status === "active" && item.hasCredential && item.models.length === 1);
+			if (provider === undefined && preference.connectionId !== null && preference.modelId !== null) {
+				personal = { connectionId: preference.connectionId, modelId: preference.modelId };
+			} else if (matching) {
+				personal = { connectionId: matching.id, modelId: matching.models[0]?.id };
+			}
+		}
+		if (personal) {
 			if (!modelApi) throw new HttpError(503, "model connections unavailable");
 			const resolved = await withModelConnectionErrors(() =>
-				modelApi.service.resolveCredential(userId, connectionId, model));
+				modelApi.service.resolveCredential(userId, personal.connectionId, personal.modelId));
 			const extract = modelApi.draftExtractor({
 				providerId: resolved.connection.providerId,
 				kind: resolved.connection.kind,
@@ -549,9 +558,29 @@ export async function handleAdmin(
 			});
 			const suggestions = extract ? await extract(brief, stage) : null;
 			if (!suggestions) throw new HttpError(503, "task draft extraction unavailable");
+			const current = await modelApi.service.view(userId);
+			if (!current.connections.some((item) => item.id === resolved.connection.id &&
+				item.version === resolved.connection.version && item.status === "active" && item.hasCredential))
+				throw new HttpError(409, "connection_conflict");
 			return json(res, 200, suggestions);
 		}
-		const selection = provider === undefined || model === undefined ? undefined : supportedSelection({ provider, model });
+		const models = runtime.taskDraftModels;
+		if (provider !== undefined && model === undefined) {
+			const suggestions = await models?.extractLegacy(userId, provider, brief, stage);
+			if (!suggestions) throw new HttpError(409, "model_selection_required");
+			return json(res, 200, suggestions);
+		}
+		if (modelApi && provider === undefined) throw new HttpError(409, "model_selection_required");
+		const selection = provider === undefined || model === undefined ? undefined : { provider, model };
+		if (selection && models) {
+			const shared = models.extractShared(selection, brief, stage);
+			if (shared) {
+				const suggestions = await shared;
+				if (!suggestions) throw new HttpError(503, "task draft extraction unavailable");
+				return json(res, 200, suggestions);
+			}
+		}
+		if (selection) supportedSelection(selection);
 		const suggestions = runtime.taskDraftModels
 			? await runtime.taskDraftModels.extract(userId, selection, brief, stage)
 			: await runtime.extractTaskDraft?.(brief, stage);

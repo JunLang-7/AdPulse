@@ -59,7 +59,7 @@ test("模型配置：未接通供应商只给原因不给保存", async (t) => {
 	assert.equal(screen.queryByRole("button", { name: "测试连接" }), null);
 });
 
-test("模型配置：保存时创建本人连接、设为默认并回传，密钥不回显", async (t) => {
+test("模型配置：保存后用于本次任务，密钥不回显且不修改默认模型", async (t) => {
 	t.after(cleanup);
 	const calls: string[] = [];
 	serve(baseRoutes, {
@@ -89,7 +89,6 @@ test("模型配置：保存时创建本人连接、设为默认并回传，密�
 	assert.deepEqual(used, { connectionId: connectionList.connections[0].id, model: "mimo-v2.6-flash" });
 	assert.deepEqual(calls, [
 		"create:xiaomi:catalog:https://api.xiaomimimo.com/v1:mimo-v2.6-flash:synthetic-personal-key",
-		`preference:${connectionList.connections[0].id}:mimo-v2.6-flash`,
 	]);
 	assert.equal(screen.queryByDisplayValue("synthetic-personal-key"), null, "密钥不得回显");
 });
@@ -149,6 +148,40 @@ test("模型配置：已有连接显示状态，切换模型后可设为默认",
 		connectionId: connectionList.connections[0].id,
 		modelId: "mimo-v2-flash",
 	});
+});
+
+test("模型配置：任务选择和默认设置分开，默认冲突显示失败", async (t) => {
+	t.after(cleanup);
+	let writes = 0;
+	const selected: unknown[] = [];
+	serve(baseRoutes, {
+		"PUT /api/me/model-preferences": () => {
+			writes++;
+			return json({ error: "connection_conflict" }, 409);
+		},
+	});
+	renderDialog((value) => selected.push(value));
+	fireEvent.click(await screen.findByRole("button", { name: /MiMo/ }));
+	fireEvent.click(screen.getByRole("button", { name: "用于本次任务" }));
+	assert.equal(selected.length, 1);
+	assert.equal(writes, 0);
+	fireEvent.click(screen.getByRole("button", { name: "设为默认" }));
+	await screen.findByText("默认模型未保存，请重试。");
+	assert.equal(writes, 1);
+	assert.equal(selected.length, 1);
+});
+
+test("模型配置：需要二次验证时给出飞书入口，不显示保存成功", async (t) => {
+	t.after(cleanup);
+	serve(baseRoutes, {
+		"PUT /api/me/model-preferences": () => json({ error: "reauth_required" }, 401),
+	});
+	renderDialog();
+	fireEvent.click(await screen.findByRole("button", { name: /MiMo/ }));
+	fireEvent.click(screen.getByRole("button", { name: "设为默认" }));
+	const link = await screen.findByRole("link", { name: "用飞书确认身份" });
+	assert.match(link.getAttribute("href") ?? "", /^\/auth\/feishu\/login\?reauth=1&returnTo=/);
+	assert.equal(screen.queryByText("已设为默认模型"), null);
 });
 
 test("模型配置：部署未配置主密钥时提示不可保存，但仍可使用部署提供", async (t) => {

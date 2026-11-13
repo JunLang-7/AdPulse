@@ -11,6 +11,7 @@ import {
 	DialogTitle,
 } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
+import { safeReturnTo } from "../../auth/return-to";
 
 export type ModelCatalog = components["schemas"]["TaskDraftModelCatalog"];
 export type ModelCatalogProvider = components["schemas"]["TaskDraftCatalogProvider"];
@@ -59,6 +60,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 	const [search, setSearch] = useState("");
 	const [status, setStatus] = useState<{ tone: "idle" | "ok" | "error"; text: string }>({ tone: "idle", text: "尚未验证" });
 	const [working, setWorking] = useState(false);
+	const [needsVerification, setNeedsVerification] = useState(false);
 	const [custom, setCustom] = useState({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "" });
 
 	const catalogQuery = useQuery({
@@ -83,16 +85,17 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 	});
 
 	useEffect(() => {
+		setApiKey("");
+		setCustom({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "" });
+		setNeedsVerification(false);
 		if (!open) return;
 		setMode("catalog");
-		setApiKey("");
 		setSearch("");
 		setStatus({ tone: "idle", text: "尚未验证" });
 		setProviderId(undefined);
 		setConnectionId(undefined);
 		setSharedSelection(undefined);
 		setModel("");
-		setCustom({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "" });
 		if (choice && "connectionId" in choice) {
 			setConnectionId(choice.connectionId);
 			setModel(choice.model);
@@ -149,14 +152,14 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 
 	async function refreshConnections() {
 		await queryClient.invalidateQueries({ queryKey: modelConnectionsKey });
-		await connectionsQuery.refetch();
 	}
 
-	async function setDefault(connection: ModelConnection, modelId: string) {
-		const version = connections?.preference.version ?? 0;
-		await consoleClient.PUT("/api/me/model-preferences", {
-			body: { expectedVersion: version, connectionId: connection.id, modelId },
-		});
+	function requireVerification(statusCode: number, error: unknown) {
+		if (statusCode !== 401 || typeof error !== "object" || error === null ||
+			!("error" in error) || error.error !== "reauth_required") return false;
+		setNeedsVerification(true);
+		setStatus({ tone: "error", text: "请先用飞书确认身份，再继续操作。" });
+		return true;
 	}
 
 	async function create(input: ModelConnectionInput, modelId: string) {
@@ -165,10 +168,12 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 		setStatus({ tone: "idle", text: "正在测试并保存…" });
 		try {
 			const created = await consoleClient.POST("/api/me/model-connections", { body: input });
+			if (requireVerification(created.response.status, created.error)) return;
 			if (!created.data) throw new Error("连接未保存");
-			await refreshConnections();
-			await setDefault(created.data, modelId);
 			setApiKey("");
+			setCustom((draft) => ({ ...draft, apiKey: "" }));
+			await refreshConnections();
+			pickConnection(created.data);
 			setStatus({ tone: "ok", text: "连接已保存，可直接在任务中使用" });
 			onUse?.({ connectionId: created.data.id, model: modelId });
 		} catch {
@@ -184,6 +189,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 		setStatus({ tone: "idle", text: "正在测试…" });
 		try {
 			const result = await consoleClient.POST("/api/me/model-connections/test", { body: input });
+			if (requireVerification(result.response.status, result.error)) return;
 			setStatus(result.data?.ok
 				? { tone: "ok", text: "测试通过" }
 				: { tone: "error", text: "测试未通过。请检查密钥、模型与账户额度。" });
@@ -207,6 +213,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 					credential: { action: "replace", apiKey: apiKey.trim() },
 				},
 			});
+			if (requireVerification(result.response.status, result.error)) return;
 			if (!result.data) throw new Error("密钥未更新");
 			setApiKey("");
 			await refreshConnections();
@@ -226,6 +233,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 				params: { path: { connectionId: connection.id } },
 				body: { expectedVersion: connection.version, models: [{ id: model }] },
 			});
+			if (requireVerification(result.response.status, result.error)) return;
 			if (!result.data) throw new Error("模型未更新");
 			await refreshConnections();
 			setStatus({ tone: "ok", text: "模型已更新" });
@@ -243,6 +251,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 			const result = await consoleClient.DELETE("/api/me/model-connections/{connectionId}/credential", {
 				params: { path: { connectionId: connection.id }, query: { expectedVersion: connection.version } },
 			});
+			if (requireVerification(result.response.status, result.error)) return;
 			if (!result.data) throw new Error("密钥未删除");
 			await refreshConnections();
 			setStatus({ tone: "ok", text: "密钥已删除，连接已停用" });
@@ -260,6 +269,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 			const result = await consoleClient.DELETE("/api/me/model-connections/{connectionId}", {
 				params: { path: { connectionId: connection.id }, query: { expectedVersion: connection.version } },
 			});
+			if (requireVerification(result.response.status, result.error)) return;
 			if (!result.data) throw new Error("连接未删除");
 			setConnectionId(undefined);
 			setModel("");
@@ -272,13 +282,22 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 		}
 	}
 
-	async function useExisting(connection: ModelConnection, modelId: string) {
+	async function setDefault(connection: ModelConnection, modelId: string) {
 		if (working) return;
 		setWorking(true);
 		try {
-			await setDefault(connection, modelId);
+			const result = await consoleClient.PUT("/api/me/model-preferences", {
+				body: { expectedVersion: connections?.preference.version ?? 0, connectionId: connection.id, modelId },
+			});
+			if (requireVerification(result.response.status, result.error)) return;
+			if (!result.data) {
+				if (result.response.status === 409) await refreshConnections();
+				throw new Error("默认模型未保存");
+			}
+			const preference = result.data;
+			queryClient.setQueryData<ModelConnectionList | null>(modelConnectionsKey, (current) =>
+				current ? { ...current, preference } : current);
 			setStatus({ tone: "ok", text: "已设为默认模型" });
-			onUse?.({ connectionId: connection.id, model: modelId });
 		} catch {
 			setStatus({ tone: "error", text: "默认模型未保存，请重试。" });
 		} finally {
@@ -320,7 +339,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog open={open} onOpenChange={(next) => { if (!working) onOpenChange(next); }}>
 			<DialogContent aria-describedby="model-config-summary">
 				<DialogHeader>
 					<div className="space-y-0.5">
@@ -408,7 +427,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 									connection={selectedConnection} model={model} connections={connections} catalog={catalogQuery.data}
 									apiKey={apiKey} working={working} defaultsUnavailable={defaultsUnavailable}
 									onModel={setModel} onApiKey={setApiKey}
-									onUse={() => void useExisting(selectedConnection, model)}
+										onUse={() => void setDefault(selectedConnection, model)}
 									onUpdateModels={() => void updateModels(selectedConnection)}
 									onReplaceKey={() => void replaceKey(selectedConnection)}
 									onRemoveCredential={() => void removeCredential(selectedConnection)}
@@ -461,6 +480,11 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 							<p role="status" className={status.tone === "error" ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
 								{status.text}
 							</p>
+							{needsVerification ? (
+								<a className="text-sm underline" href={`/auth/feishu/login?reauth=1&returnTo=${encodeURIComponent(safeReturnTo(window.location.pathname + window.location.search + window.location.hash))}`}>
+									用飞书确认身份
+								</a>
+							) : null}
 							{mode === "custom" ? (
 								<div className="flex gap-2">
 									<Button type="button" variant="outline" disabled={!customInput() || working || defaultsUnavailable}
@@ -469,18 +493,19 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 									</Button>
 									<Button type="button" disabled={!canCreate || defaultsUnavailable}
 										onClick={() => { const input = customInput(); if (input) void create(input, input.models[0]?.id ?? ""); }}>
-										保存并使用
+										{onUse ? "保存并使用" : "测试并保存"}
 									</Button>
 								</div>
-							) : sharedSelection ? (
+							) : sharedSelection && onUse ? (
 								<Button type="button" onClick={() => {
 									onUse?.(sharedSelection);
 									onOpenChange(false);
 								}}>使用此模型</Button>
-							) : selectedConnection ? (
-								<Button type="button" disabled={working || !selectedConnection.hasCredential || selectedConnection.status !== "active"}
-									onClick={() => void useExisting(selectedConnection, model)}>
-									设为默认并用于本次任务
+							) : selectedConnection && onUse ? (
+								<Button type="button" disabled={working || !selectedConnection.hasCredential || selectedConnection.status !== "active" ||
+									!selectedConnection.models.some((item) => item.id === model)}
+									onClick={() => onUse({ connectionId: selectedConnection.id, model })}>
+									用于本次任务
 								</Button>
 							) : provider?.supported && !defaultsUnavailable ? (
 								<div className="flex gap-2">
@@ -490,7 +515,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 									</Button>
 									<Button type="button" disabled={!canCreate}
 										onClick={() => { const input = catalogInput(); if (input) void create(input, model); }}>
-										保存并使用
+										{onUse ? "保存并使用" : "测试并保存"}
 									</Button>
 								</div>
 							) : null}
@@ -613,10 +638,12 @@ function ExistingConnectionPanel({ connection, model, connections, catalog, apiK
 				)}
 			</Field>
 			<div className="flex flex-wrap gap-2">
-				<Button type="button" size="sm" variant="outline" disabled={working || isDefault || !hasKey} onClick={onUse}>
+				<Button type="button" size="sm" variant="outline" disabled={working || isDefault || !hasKey ||
+					!connection.models.some((item) => item.id === model)} onClick={onUse}>
 					{isDefault ? "当前默认" : "设为默认"}
 				</Button>
-				<Button type="button" size="sm" variant="outline" disabled={working || isDefault || !hasKey}
+				<Button type="button" size="sm" variant="outline" disabled={working || !hasKey ||
+					connection.models.some((item) => item.id === model)}
 					onClick={onUpdateModels}>
 					更新模型
 				</Button>

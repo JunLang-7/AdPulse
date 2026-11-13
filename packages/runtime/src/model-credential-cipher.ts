@@ -35,8 +35,8 @@ export function parseModelCredentialKeyring(
 		const encoded = trimmed.slice(separator + 1);
 		if (!keyIdPattern.test(keyId) || keys.has(keyId)) return;
 		const decoded = Buffer.from(encoded, "base64");
-		// 32 字节是 AES-256 的要求；长度不对说明配置写错，直接失败关闭。
-		if (decoded.length !== keyBytes) return;
+		const canonical = decoded.toString("base64");
+		if (decoded.length !== keyBytes || (encoded !== canonical && encoded !== canonical.slice(0, -1))) return;
 		keys.set(keyId, decoded);
 	}
 	if (keys.size === 0) return;
@@ -74,14 +74,17 @@ export function createModelCredentialCipher(
 			// 未知 keyId、被篡改的密文/tag、AAD 不匹配都按失败关闭处理。
 			try {
 				const key = keyring.keys.get(ciphertext.keyId);
-				if (!key) return null;
+				if (!key || ciphertext.algorithm !== algorithm) return null;
+				const nonce = Buffer.from(ciphertext.nonce, "base64");
+				const tag = Buffer.from(ciphertext.authTag, "base64");
+				if (nonce.length !== nonceBytes || tag.length !== 16) return null;
 				const decipher = crypto.createDecipheriv(
 					algorithm,
 					key,
-					Buffer.from(ciphertext.nonce, "base64"),
+					nonce,
 				);
 				decipher.setAAD(Buffer.from(aad, "utf8"));
-				decipher.setAuthTag(Buffer.from(ciphertext.authTag, "base64"));
+				decipher.setAuthTag(tag);
 				return Buffer.concat([
 					decipher.update(Buffer.from(ciphertext.ciphertext, "base64")),
 					decipher.final(),

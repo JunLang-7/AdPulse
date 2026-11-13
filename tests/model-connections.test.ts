@@ -52,6 +52,10 @@ test("keyring: missing, malformed or half-configured master keys fail closed", (
 	assert.equal(createModelCredentialCipher({ MODEL_CREDENTIAL_KEYRING: `v1:${crypto.randomBytes(16).toString("base64")}` }), undefined);
 	assert.equal(createModelCredentialCipher({ MODEL_CREDENTIAL_KEYRING: keyringOf("v1", "v1") }), undefined);
 	assert.equal(createModelCredentialCipher(envOf(keyringOf("v1"), "v9")), undefined);
+	const padded = keyringOf("v1");
+	assert.ok(parseModelCredentialKeyring(padded.slice(0, -1)));
+	for (const invalid of [padded + "!", padded + "=", padded.replace(":", ": ")])
+		assert.equal(parseModelCredentialKeyring(invalid), undefined);
 	assert.ok(parseModelCredentialKeyring(keyringOf("old", "new")));
 	assert.equal(parseModelCredentialKeyring(keyringOf("old", "new"))?.activeKeyId, "new");
 	assert.equal(parseModelCredentialKeyring(keyringOf("old", "new"), "old")?.activeKeyId, "old");
@@ -253,6 +257,19 @@ test("service: preferences only point at owned, active, credentialed connections
 		() => service.setPreference("owner", { expectedVersion: 2, connectionId: created.id, modelId: "mimo-v2.6-flash" }),
 		(error) => reason(error) === "credential_missing",
 	);
+});
+
+test("service: changing the model or disabling its connection clears the former default", async () => {
+	const service = new ModelConnectionService(new MemoryStorage(), cipherOf());
+	const created = await service.create("owner", connectionInput());
+	await service.setPreference("owner", {
+		expectedVersion: 0, connectionId: created.id, modelId: "mimo-v2.6-flash",
+	});
+	const edited = await service.update("owner", created.id, { expectedVersion: 1, models: [{ id: "replacement" }] });
+	assert.deepEqual((await service.view("owner")).preference, { connectionId: null, modelId: null, version: 2 });
+	await service.setPreference("owner", { expectedVersion: 2, connectionId: created.id, modelId: "replacement" });
+	await service.update("owner", created.id, { expectedVersion: edited.version, status: "disabled" });
+	assert.deepEqual((await service.view("owner")).preference, { connectionId: null, modelId: null, version: 4 });
 });
 
 test("service: deleting a connection removes metadata, credential and default together", async () => {

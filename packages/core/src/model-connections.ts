@@ -302,7 +302,7 @@ export class ModelConnectionService {
 		return this.storage.transaction((tx) => this.viewIn(tx, ownerId));
 	}
 
-	async create(ownerId: string, rawInput: ModelConnectionInput): Promise<ModelConnectionView> {
+	async create(ownerId: string, rawInput: ModelConnectionInput, options: { verified?: boolean } = {}): Promise<ModelConnectionView> {
 		const input = validateModelConnectionInput(rawInput);
 		const { providerId, kind, baseUrl, protocol, models, apiKey, catalogId } = input;
 		const at = this.now();
@@ -319,6 +319,7 @@ export class ModelConnectionService {
 			models,
 			status: "active",
 			version: 1,
+			...(options.verified ? { verifiedAt: at, verifiedVersion: 1 } : {}),
 			createdAt: at,
 			updatedAt: at,
 		};
@@ -361,6 +362,7 @@ export class ModelConnectionService {
 			protocol?: unknown;
 			credential?: ModelCredentialUpdate;
 		},
+		options: { verified?: boolean } = {},
 	): Promise<ModelConnectionView> {
 		return this.storage.transaction(async (tx) => {
 			const connection = await this.requireOwned(tx, ownerId, connectionId);
@@ -410,9 +412,14 @@ export class ModelConnectionService {
 				// 没有密钥就没有可调用的连接；不要留下“启用但无凭据”的中间态。
 				invalid("cannot enable a connection without a credential");
 			}
-			// 删除密钥会停用连接并清空默认选择；替换密钥只换凭据版本。
-			if (update.action === "remove")
+			if (status === "disabled")
 				await this.clearPreference(tx, ownerId, connection.id, at);
+			else {
+				const preference = await tx.userModelPreferences.get(ownerId);
+				if (preference?.connectionId === connection.id &&
+					!models.some((model) => model.id === preference.modelId))
+					await this.clearPreference(tx, ownerId, connection.id, at);
+			}
 			const next: UserModelConnection = {
 				...connection,
 				displayName:
@@ -429,6 +436,10 @@ export class ModelConnectionService {
 			// 任何配置变更都让旧的验证结果失效。
 			delete next.verifiedAt;
 			delete next.verifiedVersion;
+			if (options.verified && update.action === "replace") {
+				next.verifiedAt = at;
+				next.verifiedVersion = nextVersion;
+			}
 			await tx.userModelConnections.put(next);
 			if (nextCredential) await tx.userModelCredentials.put(nextCredential);
 			else await tx.userModelCredentials.delete(connectionId);

@@ -7,6 +7,7 @@ import { lookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import type { IncomingMessage } from "node:http";
 import { Readable } from "node:stream";
+import { addAbortListener } from "node:events";
 import { isPublicAddress } from "./source-fetch.js";
 
 export const modelEgressTimeoutMs = 15_000;
@@ -40,7 +41,7 @@ function targetUrl(input: RequestInfo | URL): URL {
 	}
 	if (url.protocol !== "https:")
 		throw new ModelEgressError("blocked", "https required");
-	if (url.username || url.password)
+	if (url.username || url.password || url.hash)
 		throw new ModelEgressError("blocked", "credentials in url");
 	return url;
 }
@@ -49,10 +50,7 @@ function targetUrl(input: RequestInfo | URL): URL {
 async function pinnedAddress(url: URL, resolver: typeof lookup): Promise<string> {
 	let results: { address: string; family: number }[];
 	try {
-		results = await (resolver as unknown as (
-			hostname: string,
-			options: { all: true },
-		) => Promise<{ address: string; family: number }[]>)(url.hostname, { all: true });
+		results = await resolver(url.hostname.replace(/^\[|\]$/g, ""), { all: true });
 	} catch {
 		throw new ModelEgressError("network", "dns lookup failed");
 	}
@@ -63,6 +61,21 @@ async function pinnedAddress(url: URL, resolver: typeof lookup): Promise<string>
 	const first = results[0];
 	if (!first) throw new ModelEgressError("network", "no address");
 	return first.address;
+}
+
+async function resolveBeforeAbort(url: URL, resolver: typeof lookup, signal: AbortSignal): Promise<string> {
+	if (signal.aborted) throw new ModelEgressError("network", "aborted");
+	let listener: ReturnType<typeof addAbortListener> | undefined;
+	try {
+		return await Promise.race([
+			pinnedAddress(url, resolver),
+			new Promise<never>((_resolve, reject) => {
+				listener = addAbortListener(signal, () => reject(new ModelEgressError("network", "aborted")));
+			}),
+		]);
+	} finally {
+		listener?.[Symbol.dispose]();
+	}
 }
 
 function bodyOf(init: RequestInit | undefined): string | undefined {
@@ -100,8 +113,11 @@ export function createModelEgressFetch(options: EgressOptions = {}): typeof fetc
 
 	return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
 		const url = targetUrl(input);
-		const address = await pinnedAddress(url, resolver);
 		const body = bodyOf(init);
+		const deadline = AbortSignal.timeout(timeoutMs);
+		const signal = init?.signal ? AbortSignal.any([deadline, init.signal]) : deadline;
+		const address = await resolveBeforeAbort(url, resolver, signal);
+		if (signal.aborted) throw new ModelEgressError("network", "aborted");
 		const headers = headerRecord(init);
 		headers.Host = url.host;
 		headers["Accept-Encoding"] = "identity";
@@ -117,22 +133,34 @@ export function createModelEgressFetch(options: EgressOptions = {}): typeof fetc
 			const req = request({
 				protocol: "https:",
 				host: address,
-				servername: url.hostname,
+				servername: url.hostname.replace(/^\[|\]$/g, ""),
+				agent: false,
 				port: Number(url.port || 443),
 				path: `${url.pathname}${url.search}`,
 				method: init?.method ?? "GET",
 				headers,
 			}, (response: IncomingMessage) => {
 				if (settled) {
-					response.resume();
+					response.destroy();
 					return;
 				}
-				settled = true;
 				const responseHeaders = new Headers();
 				for (const [name, value] of Object.entries(response.headers)) {
 					if (name === "location" || name === "content-encoding") continue;
 					if (Array.isArray(value)) for (const item of value) responseHeaders.append(name, item);
 					else if (value !== undefined) responseHeaders.set(name, value);
+				}
+				const status = response.statusCode ?? 0;
+				if (status < 200 || status > 599 || response.headers["content-encoding"]) {
+					response.destroy();
+					fail(new ModelEgressError("network", "unsupported upstream response"));
+					return;
+				}
+				settled = true;
+				if (status === 204 || status === 205 || status === 304) {
+					response.destroy();
+					resolve(new Response(null, { status, headers: responseHeaders }));
+					return;
 				}
 				let bytes = 0;
 				const reader = (Readable.toWeb(response) as unknown as ReadableStream<Uint8Array>).getReader();
@@ -157,26 +185,18 @@ export function createModelEgressFetch(options: EgressOptions = {}): typeof fetc
 					},
 				});
 				resolve(new Response(limited, {
-					status: response.statusCode ?? 0,
+					status,
 					statusText: response.statusMessage ?? "",
 					headers: responseHeaders,
 				}));
 			});
-			req.setTimeout(timeoutMs, () => {
-				req.destroy(new ModelEgressError("network", "request timed out"));
+			const abort = addAbortListener(signal, () => {
+				req.destroy(new ModelEgressError("network", "aborted"));
 			});
+			req.once("close", () => abort[Symbol.dispose]());
 			req.on("error", (error) => {
 				fail(error instanceof ModelEgressError ? error : new ModelEgressError("network", error.message));
 			});
-			if (init?.signal) {
-				if (init.signal.aborted) {
-					req.destroy(new ModelEgressError("network", "aborted"));
-					return;
-				}
-				init.signal.addEventListener("abort", () => {
-					req.destroy(new ModelEgressError("network", "aborted"));
-				}, { once: true });
-			}
 			if (body !== undefined) req.write(body);
 			req.end();
 		});

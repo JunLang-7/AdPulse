@@ -121,6 +121,11 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 							: {}),
 					},
 				});
+				if (result.response.status === 409 && result.error?.error === "model_selection_required") {
+					setFailed(true);
+					setError("请先选择一个模型，或按已填写的内容继续。");
+					return;
+				}
 				if (!result.data) throw new Error("整理服务不可用");
 				if (preview) {
 					setSuggestion({ brief, data: result.data });

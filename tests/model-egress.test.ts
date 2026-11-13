@@ -51,6 +51,11 @@ test("egress: private, loopback, metadata and mixed DNS answers are refused befo
 		async () => [{ address: "10.1.2.3", family: 4 }],
 		async () => [{ address: "169.254.169.254", family: 4 }],
 		async () => [{ address: "::1", family: 6 }],
+		async () => [{ address: "0:0:0:0:0:0:0:1", family: 6 }],
+		async () => [{ address: "::ffff:7f00:1", family: 6 }],
+		async () => [{ address: "::ffff:a9fe:a9fe", family: 6 }],
+		async () => [{ address: "64:ff9b::7f00:1", family: 6 }],
+		async () => [{ address: "ff02::1", family: 6 }],
 		async () => [{ address: "fd00::1", family: 6 }],
 		async () => [{ address: "93.184.216.34", family: 4 }, { address: "192.168.1.10", family: 4 }],
 	];
@@ -99,6 +104,7 @@ test("egress: pins the verified address, keeps Host/servername and drops redirec
 	assert.equal(response.headers.get("location"), null, "redirect target must not leak to callers");
 	assert.equal(await response.text(), "redirecting");
 	assert.equal(captured.options.host, "93.184.216.34");
+	assert.equal(captured.options.agent, false);
 	assert.equal(captured.options.servername, "api.example.com");
 	assert.equal(captured.options.path, "/v1/chat/completions?x=1");
 	assert.equal(captured.options.method, "POST");
@@ -141,4 +147,15 @@ test("egress: an aborted signal destroys the request without resolving", async (
 		() => failed("https://api.example.com/v1", { method: "POST", signal: controller.signal }),
 		(error) => error instanceof ModelEgressError,
 	);
+});
+
+test("egress: a stalled lookup cannot outlive the caller's request deadline", async () => {
+	const controller = new AbortController();
+	const egress = createModelEgressFetch({
+		lookup: (() => new Promise(() => {})) as never,
+		request: (() => assert.fail("must not connect")) as never,
+	});
+	const result = assert.rejects(egress("https://api.example.com/v1", { signal: controller.signal }), ModelEgressError);
+	controller.abort();
+	await result;
 });
