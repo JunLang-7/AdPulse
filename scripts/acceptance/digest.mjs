@@ -22,9 +22,13 @@ export const USAGE = `用法：node --env-file=.env scripts/acceptance/digest.mj
   --json                输出机器可读 JSON（默认人类可读摘要）
 
 enqueue 选项：
-  --revision <n>        实质更新序号，默认 1；同一 revision 重复执行返回 duplicate
+  --scene <name>        场景标识（[a-z0-9-]{1,32}），默认 default；不同场景是不同逻辑事件
+  --revision <n>        实质更新序号，默认 1；同一 scene + revision 重复执行返回 duplicate
   --title <text>        标题，默认「${TEST_MARKER}成本波动示例」
   --confirm-synthetic   必填：确认写入的是验收用合成数据
+
+取消是终态：同一 scene 的条目被取消后，提高 revision 也不会复活（这是产品规则，不是缺陷）。
+要验证「重开之后的新内容能发」，换一个新的 --scene，得到新的逻辑事件与新的逻辑键。
 
 本工具不发送消息、不改订阅或授权。需要真机收到消息时，先按 runbook 第 16 节确认
 实例处于允许发送状态，再由实例自身的 worker 在调度时刻投递。`;
@@ -33,8 +37,24 @@ export class UsageError extends Error {}
 
 const DEFAULT_TITLE = `${TEST_MARKER}成本波动示例`;
 
-/** 合成条目的固定逻辑键：与真实事件不可能撞车，重复执行只更新同一行。 */
-export const SYNTHETIC_LOGICAL_KEY = "effect|account|acceptance:digest|synthetic-a";
+const DEFAULT_SCENE = "default";
+const SCENE_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+/** 场景标识参与逻辑键：不同场景是不同逻辑事件，同一场景内按 revision 幂等。 */
+export function parseScene(value) {
+	const scene = String(value ?? "").trim().toLowerCase();
+	if (!SCENE_PATTERN.test(scene))
+		throw new UsageError("--scene 只允许 1-32 位字母/数字/短横线，且以字母或数字开头");
+	return scene;
+}
+
+/** 合成条目的逻辑键：与真实事件不可能撞车；同一场景重复执行只更新同一行。 */
+export function syntheticLogicalKey(scene = DEFAULT_SCENE) {
+	return `effect|account|acceptance:${parseScene(scene)}|synthetic-a`;
+}
+
+/** 兼容默认场景的固定键（runbook 第 16 节的初次入队）。 */
+export const SYNTHETIC_LOGICAL_KEY = syntheticLogicalKey(DEFAULT_SCENE);
 
 export function parseArgs(argv) {
 	const options = {
@@ -44,6 +64,7 @@ export function parseArgs(argv) {
 		openId: undefined,
 		json: false,
 		revision: 1,
+		scene: DEFAULT_SCENE,
 		title: DEFAULT_TITLE,
 		confirmSynthetic: false,
 		help: false,
@@ -68,7 +89,8 @@ export function parseArgs(argv) {
 			if (!Number.isInteger(revision) || revision < 1)
 				throw new UsageError("--revision 必须是 >= 1 的整数");
 			options.revision = revision;
-		} else if (flag === "--title") options.title = value();
+		} else if (flag === "--scene") options.scene = parseScene(value());
+		else if (flag === "--title") options.title = value();
 		else if (flag === "--help") options.help = true;
 		else if (flag.startsWith("--")) throw new UsageError(`未知选项：${flag}`);
 		else positionals.push(flag);
@@ -89,7 +111,7 @@ export function syntheticItemInput(options = {}) {
 	const title = (options.title ?? DEFAULT_TITLE).trim();
 	if (!title) throw new UsageError("--title 不能为空");
 	return {
-		logicalKey: SYNTHETIC_LOGICAL_KEY,
+		logicalKey: syntheticLogicalKey(options.scene),
 		kind: "effect_alert",
 		title: title.startsWith(TEST_MARKER) ? title : `${TEST_MARKER}${title}`,
 		summary: `${TEST_MARKER}这是一条用于验证日汇总投递的合成内容，不代表真实经营数据。`,
@@ -216,6 +238,7 @@ async function main(argv) {
 			const payload = {
 				outcome: result.outcome,
 				owner: mask(ownerId),
+				scene: parseScene(options.scene),
 				settingsVersion,
 				revision: input.revision,
 				title: input.title,
@@ -226,7 +249,9 @@ async function main(argv) {
 			if (options.json) console.log(JSON.stringify(payload, null, 2));
 			else {
 				console.log(`写入结果：${result.outcome}`);
-				console.log(`  用户 ${payload.owner} · 配置版本 v${settingsVersion}`);
+				console.log(
+					`  用户 ${payload.owner} · 场景 ${payload.scene} · 配置版本 v${settingsVersion}`,
+				);
 				console.log(`  条目 ${payload.title}（revision ${payload.revision}）`);
 				console.log(`  批次 ${payload.batchId} · 状态 ${payload.itemStatus}`);
 				if (result.outcome === "duplicate")

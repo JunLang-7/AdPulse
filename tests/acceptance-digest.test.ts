@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { NotificationQueue } from "../packages/core/dist/index.js";
 import { MemoryStorage } from "../packages/storage/dist/index.js";
 import {
 	SYNTHETIC_LOGICAL_KEY,
@@ -9,8 +10,10 @@ import {
 	enqueueSynthetic,
 	formatRecords,
 	parseArgs,
+	parseScene,
 	readRecords,
 	redactId,
+	syntheticLogicalKey,
 	resolveOwnerId,
 	syntheticItemInput,
 } from "../scripts/acceptance/digest.mjs";
@@ -100,7 +103,7 @@ test("验收工具: 合成条目固定标记与逻辑键，按 revision 幂等",
 	assert.ok(first.title.startsWith(TEST_MARKER), "标题必须带测试标记");
 	assert.ok(first.summary.includes(TEST_MARKER));
 	assert.ok(first.relevance.includes(TEST_MARKER));
-	assert.equal(first.logicalKey, SYNTHETIC_LOGICAL_KEY, "逻辑键固定，重复执行只更新一行");
+	assert.equal(first.logicalKey, SYNTHETIC_LOGICAL_KEY, "默认场景逻辑键固定，重复执行只更新一行");
 	assert.equal(first.revision, 1);
 	assert.deepEqual(syntheticItemInput({ revision: 3 }).revision, 3);
 	// 已经带标记的标题不会重复加。
@@ -109,6 +112,14 @@ test("验收工具: 合成条目固定标记与逻辑键，按 revision 幂等",
 		`${TEST_MARKER}已标记`,
 	);
 	assert.throws(() => syntheticItemInput({ title: "  " }), UsageError);
+	// 场景是逻辑键的一部分：不同场景是不同逻辑事件。
+	assert.notEqual(
+		syntheticLogicalKey("initial"),
+		syntheticLogicalKey("after-reopen"),
+	);
+	assert.equal(parseScene(" After-Reopen "), "after-reopen");
+	for (const bad of ["", "-x", "有中文", "a".repeat(33), "a b"])
+		assert.throws(() => parseScene(bad), UsageError, `${bad} 应被拒绝`);
 });
 
 test("验收工具: 按 open_id 反查用户，歧义或缺失时明确失败", async () => {
@@ -215,4 +226,43 @@ test("验收工具: 批次/条目 id 里的用户段也要脱敏", () => {
 	// 不含用户段的 id 原样返回，不制造假脱敏。
 	assert.equal(redactId("digest:x:2026-11-13", "user-b"), "digest:x:2026-11-13");
 	assert.equal(redactId(undefined, "user-b"), undefined);
+});
+
+test("验收工具: 取消是终态，换场景才能继续验证新内容", async () => {
+	const storage = new MemoryStorage();
+	await seedUser(storage, { userId: "user-on" });
+
+	const first = await enqueueSynthetic(storage, "user-on", { scene: "cancel-me" });
+	assert.equal(first.result.outcome, "queued");
+
+	// 关闭全部推送后，调度侧取消待发条目（终态）。
+	await new NotificationQueue(storage).cancelPending("user-on", "push_disabled");
+
+	const revived = await enqueueSynthetic(storage, "user-on", {
+		scene: "cancel-me",
+		revision: 2,
+	});
+	assert.equal(
+		revived.result.outcome,
+		"cancelled",
+		"同一场景提高 revision 也不复活（产品规则）",
+	);
+
+	// 重开之后的新内容必须是新场景：新逻辑键、新条目、可再次排队。
+	const fresh = await enqueueSynthetic(storage, "user-on", { scene: "after-reopen" });
+	assert.equal(fresh.result.outcome, "queued", "新场景是新逻辑事件");
+	assert.notEqual(
+		fresh.result.item?.logicalKey,
+		first.result.item?.logicalKey,
+	);
+
+	// 同一新场景重复执行仍然幂等。
+	const again = await enqueueSynthetic(storage, "user-on", { scene: "after-reopen" });
+	assert.equal(again.result.outcome, "duplicate");
+
+	const page = await readRecords(storage, "user-on");
+	const cancelled = page.records.find((record) => record.status === "cancelled");
+	assert.equal(cancelled?.items[0]?.status, "cancelled");
+	const pending = page.records.find((record) => record.status === "queued");
+	assert.equal(pending?.items[0]?.title, `${TEST_MARKER}成本波动示例`);
 });

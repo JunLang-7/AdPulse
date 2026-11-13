@@ -466,11 +466,23 @@ curl -sS -X POST -H "Cookie: $COOKIE" -H "Origin: $ORIGIN" -H 'content-type: app
 # 先看现状（不发消息）
 bun run notify:acceptance -- status --open-id ou_xxx
 # 写入一条带标记的合成条目（需显式确认）
-bun run notify:acceptance -- enqueue --open-id ou_xxx --confirm-synthetic
+bun run notify:acceptance -- enqueue --open-id ou_xxx --scene initial --confirm-synthetic
 ```
 
-脚本行为：`logicalKey` 固定为 `acceptance:digest|synthetic-a`，标题/摘要/相关性/来源都带
-`【验收测试】`；同一 `revision` 重复执行返回 `duplicate`（不重复通知），`--revision 2` 视为实质更新。
+脚本行为：`logicalKey` 为 `acceptance:<scene>|synthetic-a`，标题/摘要/相关性/来源都带
+`【验收测试】`；同一 `scene` + `revision` 重复执行返回 `duplicate`（不重复通知），`--revision 2` 视为实质更新。
+
+**场景（`--scene`）就是逻辑事件**，推荐固定名字，便于把记录对回步骤：
+
+| 步骤 | `--scene` | 说明 |
+| --- | --- | --- |
+| 16.2 首次送达 | `initial` | 主链路证据 |
+| 16.5 取消待发 | `cancel-me` | 会被取消，**之后不会复活** |
+| 16.6 重开后新内容 | `after-reopen` | 新场景 = 新逻辑事件 |
+| 16.8 不可达 | `unreachable` | 复现失败与重新确认 |
+
+取消是**终态**：同一 `scene` 的条目被取消后，`--revision 2` 仍返回 `cancelled` 且不排队。
+这是产品规则（重新开启不补旧队列），不是工具缺陷；要验证「重开后的新内容能发」必须换新 `scene`。
 
 判读：
 
@@ -504,10 +516,13 @@ bun run notify:acceptance -- enqueue --open-id ou_xxx --confirm-synthetic
 
 前置：条目已入队但**尚未到计划时刻**，或当前在免打扰时段。
 
-1. 控制台 `/settings/subscriptions` 关闭全部主动推送。
-2. 等一个调度 tick（≤30s）后跑 `status`。
-3. 判读：批次 `cancelled` + `statusReason=push_disabled`，条目 `cancelled`，`delivery=null`（从未投递）。
-4. 真机**不得**收到这条消息。
+1. 先写入一个待取消的条目：`enqueue --open-id ou_xxx --scene cancel-me --confirm-synthetic`，
+   确认是 `queued`（若当前已过 09:30 且不在免打扰，请在**下一次入队前**立刻执行第 2 步，
+   否则可能已在途发送；在途情形按下面的竞态说明如实记录）。
+2. 控制台 `/settings/subscriptions` 关闭全部主动推送。
+3. 等一个调度 tick（≤30s）后跑 `status`。
+4. 判读：批次 `cancelled` + `statusReason=push_disabled`，条目 `cancelled`，`delivery=null`（从未投递）。
+5. 真机**不得**收到这条消息。
 
 **在途竞态如实记录**：若 worker 已领取该批次并在发网络请求，消息仍可能送达。
 这不是「点关闭瞬间全部拦截」，记录里必须写明实际时序，不承诺撤回。
@@ -517,7 +532,10 @@ bun run notify:acceptance -- enqueue --open-id ou_xxx --confirm-synthetic
 1. 重新开启主动推送（`/settings/subscriptions`）。
 2. `status` 确认被取消的批次仍是 `cancelled/push_disabled`，没有复活、没有补发。
 3. 真机确认没有收到旧内容。
-4. 再 `enqueue --revision 2`：只有新内容按新批次发送。
+4. 用**新的场景**写入新内容：`enqueue --open-id ou_xxx --scene after-reopen --confirm-synthetic`。
+   - 期望 `queued`；同场景重复执行返回 `duplicate`（幂等）。
+   - 反例（必须复现并记录）：用被取消的 `cancel-me` 场景加 `--revision 2` → 返回 `cancelled`，
+     不排队、不发消息。这正是「重新开启不自动恢复旧队列」的证据，不是失败。
 
 ### 16.7 免打扰顺延（时间窗受限）
 
@@ -529,11 +547,12 @@ bun run notify:acceptance -- enqueue --open-id ou_xxx --confirm-synthetic
 ### 16.8 收件人不可达
 
 1. 让机器人从该用户单聊中离开（或使用一个平台明确判定不可达的地址）。
-2. `enqueue --revision 3 --confirm-synthetic`，等 tick。
+2. `enqueue --open-id ou_xxx --scene unreachable --confirm-synthetic`，等 tick。
 3. 判读：投递 `failed`，`lastError=recipient unreachable`；批次 `failed` + 原因
    `recipient_unreachable`；条目 `cancelled`；地址一次判定 `invalidated`。
 4. 控制台「通知设置」必须出现「重新确认地址」入口，不能静默失败；重新确认**不自动**恢复已撤销授权。
-5. 恢复后重新开启推送再验一次送达（回到 16.2）。
+5. 重新确认地址并开启推送后，用新场景再验一次送达：
+   `enqueue --open-id ou_xxx --scene recovered --confirm-synthetic`。
 
 ### 16.9 判读表
 
@@ -555,7 +574,7 @@ bun run notify:acceptance -- status --open-id ou_xxx --json   # 脱敏前不要�
 ```
 
 记录写入 `docs/acceptance/records/<UTC>-notification-digest.md`，只保留：release commit、
-状态与原因代码、时间戳与计划到发送间隔、脱敏消息 ID 前缀、条目数与来源类型。
+状态与原因代码、时间戳与计划到发送间隔、脱敏消息 ID 前缀、条目数与来源类型、步骤与 `--scene` 的对应关系。
 **不要**写入 open_id 全值、会话 cookie、卡片全文或真实业务数据。
 
 结论表（逐项填写，未执行就写「未覆盖」，不勾选）：
