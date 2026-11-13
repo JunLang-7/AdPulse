@@ -7,6 +7,7 @@ import { createCatalogTaskDraftExtractor } from "../packages/runtime/dist/task-d
 interface SdkModel {
 	id: string;
 	api: string;
+	thinkingLevelMap?: unknown;
 }
 
 interface SdkProvider {
@@ -54,6 +55,9 @@ test("generated catalog matches the locked pi-ai provider directory", () => {
 		const supported = expectedModels.length > 0 && Boolean(provider.baseUrl?.startsWith("https://")) && Boolean(provider.auth?.apiKey);
 		assert.equal(entry.supported, supported, `support flag drifted for ${provider.id}`);
 		assert.deepEqual(entry.models.map((model) => model.id), supported ? expectedModels : []);
+		for (const model of entry.models.filter((item) => item.api === "openai-responses")) {
+			assert.deepEqual(model.thinkingLevelMap, provider.getModels().find((item) => item.id === model.id)?.thinkingLevelMap, model.id);
+		}
 	}
 	assert.equal(modelCatalogDocument.generatedFrom.package, "@earendil-works/pi-ai");
 	assert.match(modelCatalogDocument.generatedFrom.version, /^\d+\.\d+\.\d+$/);

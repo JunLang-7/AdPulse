@@ -56,6 +56,22 @@ test("every Responses catalog provider uses its own endpoint and personal bearer
 	}
 });
 
+test("Responses preserves SDK reasoning-off compatibility instead of assuming every model accepts none", async () => {
+	for (const [modelId, expected] of [["gpt-5", undefined], ["o3", undefined], ["gpt-5.1", "none"]] as const) {
+		let calls = 0;
+		const extract = createCatalogTaskDraftExtractor("openai", modelId, "synthetic-key", async (input, init) => {
+			calls++;
+			const sent = new Request(input, init);
+			const body = await sent.json();
+			assert.equal(body.reasoning?.effort, expected, modelId);
+			return responsesReply(JSON.stringify({ product: "连接测试" }));
+		});
+		assert.ok(extract);
+		assert.deepEqual(await extract("产品：连接测试", "overview"), { product: "连接测试" });
+		assert.equal(calls, 1);
+	}
+});
+
 test("Responses rejects malformed, incomplete, missing-terminal and upstream-error replies without retry", async () => {
 	const replies = [
 		() => responsesReply("not JSON"),

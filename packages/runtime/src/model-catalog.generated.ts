@@ -1199,6 +1199,15 @@ export const modelCatalogDocument = {
 					"maxTokens": 128000,
 					"compat": {
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "low",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -1222,6 +1231,15 @@ export const modelCatalogDocument = {
 					"maxTokens": 128000,
 					"compat": {
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "low",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -1256,6 +1274,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsAdditionalTools": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "low",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -1290,6 +1317,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsAdditionalTools": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "low",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -1324,6 +1360,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsAdditionalTools": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "low",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -1358,6 +1403,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsAdditionalTools": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -1392,6 +1446,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsAdditionalTools": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -1426,6 +1489,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsAdditionalTools": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -1460,6 +1532,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsAdditionalTools": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -1494,6 +1575,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsAdditionalTools": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -1523,7 +1613,16 @@ export const modelCatalogDocument = {
 						]
 					},
 					"contextWindow": 500000,
-					"maxTokens": 128000
+					"maxTokens": 128000,
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": null,
+						"max": null
+					}
 				},
 				{
 					"id": "grok-4.6",
@@ -1552,7 +1651,16 @@ export const modelCatalogDocument = {
 						]
 					},
 					"contextWindow": 500000,
-					"maxTokens": 128000
+					"maxTokens": 128000,
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
+					}
 				},
 				{
 					"id": "grok-4.7",
@@ -1581,7 +1689,16 @@ export const modelCatalogDocument = {
 						]
 					},
 					"contextWindow": 500000,
-					"maxTokens": 128000
+					"maxTokens": 128000,
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
+					}
 				},
 				{
 					"id": "mai-code-1.1-flash",
@@ -1601,7 +1718,16 @@ export const modelCatalogDocument = {
 						"cacheWrite": 0
 					},
 					"contextWindow": 256000,
-					"maxTokens": 128000
+					"maxTokens": 128000,
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": null,
+						"max": null
+					}
 				}
 			]
 		},
@@ -3888,7 +4014,16 @@ export const modelCatalogDocument = {
 						"cacheWrite": 0
 					},
 					"contextWindow": 1048576,
-					"maxTokens": 131072
+					"maxTokens": 131072,
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "minimal",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
+					}
 				},
 				{
 					"id": "muse-spark-1.2",
@@ -3908,7 +4043,16 @@ export const modelCatalogDocument = {
 						"cacheWrite": 0
 					},
 					"contextWindow": 1048576,
-					"maxTokens": 131072
+					"maxTokens": 131072,
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "minimal",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
+					}
 				},
 				{
 					"id": "muse-spark-1.2-contributor",
@@ -3928,7 +4072,16 @@ export const modelCatalogDocument = {
 						"cacheWrite": 0
 					},
 					"contextWindow": 1048576,
-					"maxTokens": 131072
+					"maxTokens": 131072,
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "minimal",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
+					}
 				},
 				{
 					"id": "muse-spark-1.3",
@@ -3948,7 +4101,16 @@ export const modelCatalogDocument = {
 						"cacheWrite": 0
 					},
 					"contextWindow": 1048576,
-					"maxTokens": 131072
+					"maxTokens": 131072,
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "minimal",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
+					}
 				},
 				{
 					"id": "muse-spark-1.3-contributor",
@@ -3968,7 +4130,16 @@ export const modelCatalogDocument = {
 						"cacheWrite": 0
 					},
 					"contextWindow": 1048576,
-					"maxTokens": 131072
+					"maxTokens": 131072,
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "minimal",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
+					}
 				},
 				{
 					"id": "muse-wonder-1.0",
@@ -3988,7 +4159,16 @@ export const modelCatalogDocument = {
 						"cacheWrite": 0
 					},
 					"contextWindow": 1048576,
-					"maxTokens": 131072
+					"maxTokens": 131072,
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "minimal",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
+					}
 				}
 			]
 		},
@@ -5326,6 +5506,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "minimal",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": null,
+						"max": null
 					}
 				},
 				{
@@ -5350,6 +5539,9 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null
 					}
 				},
 				{
@@ -5374,6 +5566,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "minimal",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": null,
+						"max": null
 					}
 				},
 				{
@@ -5398,6 +5599,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "minimal",
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": null,
+						"max": null
 					}
 				},
 				{
@@ -5422,6 +5632,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": null,
+						"medium": null,
+						"high": "high",
+						"xhigh": null,
+						"max": null
 					}
 				},
 				{
@@ -5446,6 +5665,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": null,
+						"max": null
 					}
 				},
 				{
@@ -5470,6 +5698,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -5494,6 +5731,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": null,
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -5518,6 +5764,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -5542,6 +5797,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -5576,6 +5840,15 @@ export const modelCatalogDocument = {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true,
 						"supportsMidConvoSystemMessages": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -5601,6 +5874,15 @@ export const modelCatalogDocument = {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true,
 						"supportsMidConvoSystemMessages": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -5625,6 +5907,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -5659,6 +5950,15 @@ export const modelCatalogDocument = {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true,
 						"supportsMidConvoSystemMessages": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": null,
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -5693,6 +5993,15 @@ export const modelCatalogDocument = {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true,
 						"supportsMidConvoSystemMessages": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -5726,6 +6035,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": null,
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -5751,6 +6069,15 @@ export const modelCatalogDocument = {
 						"supportsStrictMode": true,
 						"supportsOpenAIGrammarTools": true,
 						"supportsExplicitPromptCacheMode": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -5788,6 +6115,15 @@ export const modelCatalogDocument = {
 						"supportsToolSearch": true,
 						"supportsMidConvoSystemMessages": true,
 						"supportsExplicitPromptCacheMode": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -5825,6 +6161,15 @@ export const modelCatalogDocument = {
 						"supportsToolSearch": true,
 						"supportsMidConvoSystemMessages": true,
 						"supportsExplicitPromptCacheMode": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -5862,6 +6207,15 @@ export const modelCatalogDocument = {
 						"supportsToolSearch": true,
 						"supportsMidConvoSystemMessages": true,
 						"supportsExplicitPromptCacheMode": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -5900,6 +6254,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsExplicitPromptCacheMode": true,
 						"supportsMidConvoEffort": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -5938,6 +6301,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsExplicitPromptCacheMode": true,
 						"supportsMidConvoEffort": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -5976,6 +6348,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsExplicitPromptCacheMode": true,
 						"supportsMidConvoEffort": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -6014,6 +6395,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsExplicitPromptCacheMode": true,
 						"supportsMidConvoEffort": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -6052,6 +6442,15 @@ export const modelCatalogDocument = {
 						"supportsMidConvoSystemMessages": true,
 						"supportsExplicitPromptCacheMode": true,
 						"supportsMidConvoEffort": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -6085,6 +6484,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsExplicitPromptCacheMode": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -6109,6 +6517,15 @@ export const modelCatalogDocument = {
 					"compat": {
 						"supportsStrictMode": true,
 						"supportsExplicitPromptCacheMode": true
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": "max"
 					}
 				},
 				{
@@ -6132,6 +6549,15 @@ export const modelCatalogDocument = {
 					"maxTokens": 100000,
 					"compat": {
 						"supportsStrictMode": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": null,
+						"max": null
 					}
 				},
 				{
@@ -6155,6 +6581,15 @@ export const modelCatalogDocument = {
 					"maxTokens": 100000,
 					"compat": {
 						"supportsStrictMode": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": null,
+						"max": null
 					}
 				},
 				{
@@ -6178,6 +6613,15 @@ export const modelCatalogDocument = {
 					"maxTokens": 100000,
 					"compat": {
 						"supportsStrictMode": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": null,
+						"max": null
 					}
 				},
 				{
@@ -6200,6 +6644,15 @@ export const modelCatalogDocument = {
 					"maxTokens": 100000,
 					"compat": {
 						"supportsStrictMode": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": null,
+						"max": null
 					}
 				},
 				{
@@ -6223,6 +6676,15 @@ export const modelCatalogDocument = {
 					"maxTokens": 100000,
 					"compat": {
 						"supportsStrictMode": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": null,
+						"max": null
 					}
 				},
 				{
@@ -6246,6 +6708,15 @@ export const modelCatalogDocument = {
 					"maxTokens": 100000,
 					"compat": {
 						"supportsStrictMode": true
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": null,
+						"max": null
 					}
 				}
 			]
@@ -18356,6 +18827,15 @@ export const modelCatalogDocument = {
 					"maxTokens": 30000,
 					"compat": {
 						"supportsLongCacheRetention": false
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -18388,6 +18868,15 @@ export const modelCatalogDocument = {
 					"maxTokens": 500000,
 					"compat": {
 						"supportsLongCacheRetention": false
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -18420,6 +18909,15 @@ export const modelCatalogDocument = {
 					"maxTokens": 500000,
 					"compat": {
 						"supportsLongCacheRetention": false
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				},
 				{
@@ -18452,6 +18950,15 @@ export const modelCatalogDocument = {
 					"maxTokens": 500000,
 					"compat": {
 						"supportsLongCacheRetention": false
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": null,
+						"low": "low",
+						"medium": "medium",
+						"high": "high",
+						"xhigh": "xhigh",
+						"max": null
 					}
 				}
 			]

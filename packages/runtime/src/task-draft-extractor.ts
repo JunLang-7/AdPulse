@@ -277,6 +277,7 @@ export function createCatalogTaskDraftExtractor(
 		provider: providerId,
 		baseUrl: entry.baseUrl,
 		reasoning: entry.reasoning ?? false,
+		...(entry.thinkingLevelMap ? { thinkingLevelMap: entry.thinkingLevelMap } : {}),
 		input: (entry.input ?? ["text"]) as Model<"openai-completions">["input"],
 		cost: entry.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: entry.contextWindow ?? 8_192,

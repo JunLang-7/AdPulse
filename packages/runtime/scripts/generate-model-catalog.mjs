@@ -22,6 +22,9 @@ function pickModel(model) {
 	for (const field of modelFields) {
 		if (model[field] !== undefined) picked[field] = model[field];
 	}
+	// Responses 必须保留 off:null；省略后 SDK 会误发 effort:none。
+	if (model.api === "openai-responses" && model.thinkingLevelMap !== undefined)
+		picked.thinkingLevelMap = model.thinkingLevelMap;
 	return picked;
 }
 

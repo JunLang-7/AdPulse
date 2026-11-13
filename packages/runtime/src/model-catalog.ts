@@ -1,3 +1,4 @@
+import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { modelCatalogDocument } from "./model-catalog.generated.js";
 
 /**
@@ -14,6 +15,7 @@ export interface ModelCatalogModel {
 	baseUrl: string;
 	provider: string;
 	reasoning?: boolean;
+	thinkingLevelMap?: ThinkingLevelMap;
 	input?: readonly string[];
 	cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
 	contextWindow?: number;
