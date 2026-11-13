@@ -9,6 +9,8 @@ import {
 	EvidenceValidationError,
 	InvestigationAlertValidationError,
 	NotificationError,
+	NotificationRecordError,
+	NotificationRecordService,
 	NotificationService,
 	SubscriptionError,
 	SubscriptionService,
@@ -123,6 +125,7 @@ function validatePublicOrigin(value: string): URL {
 export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 	const publicOrigin = validatePublicOrigin(auth.publicOrigin);
 	const notifications = new NotificationService(runtime.storage);
+	const notificationRecords = new NotificationRecordService(runtime.storage);
 	const subscriptions = new SubscriptionService(runtime.storage);
 	const subscriptionErrorStatus = (reason: SubscriptionError["reason"]): number => {
 		switch (reason) {
@@ -542,6 +545,32 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				}
 				if (path === "/api/me/notification-status" && req.method === "GET") {
 					return json(res, 200, await notifications.status(session.userId));
+				}
+				if (path === "/api/me/notifications" && req.method === "GET") {
+					// 只读投影：本人批次/条目/投递回执。不按 id 直取，跨用户无入口。
+					const limitParam = requestUrl.searchParams.get("limit");
+					const before = requestUrl.searchParams.get("before") ?? undefined;
+					let limit: number | undefined;
+					if (limitParam !== null) {
+						const parsed = Number(limitParam);
+						if (!Number.isInteger(parsed))
+							throw new HttpError(400, "invalid_query");
+						limit = parsed;
+					}
+					try {
+						return json(
+							res,
+							200,
+							await notificationRecords.list(session.userId, {
+								...(limit === undefined ? {} : { limit }),
+								...(before === undefined ? {} : { before }),
+							}),
+						);
+					} catch (error) {
+						if (error instanceof NotificationRecordError)
+							throw new HttpError(400, error.reason);
+						throw error;
+					}
 				}
 				if (
 					path === "/api/me/notification-destination" &&

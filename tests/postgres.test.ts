@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
+	NotificationRecordService,
 	NotificationService,
 	SourceService,
 	type ChoiceCommand,
@@ -633,4 +634,96 @@ test("PostgreSQL: notification batch and item keys are enforced by unique indexe
 			error.code === "23505",
 		"同人同日同类型只能有一份批次",
 	);
+});
+
+test("PostgreSQL: notification records project only the caller's batches with delivery receipts", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async (t) => {
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const storage = PostgresStorage.connect(databaseUrl);
+	t.after(() => storage.close());
+	await storage.initialize();
+
+	const now = new Date().toISOString();
+	const ownerId = crypto.randomUUID();
+	const otherId = crypto.randomUUID();
+	const batch = (userId: string, date: string, status: "sent" | "cancelled") => ({
+		id: `digest:${userId}:${date}`,
+		ownerId: userId,
+		kind: "digest" as const,
+		localDate: date,
+		settingsVersion: 2,
+		status,
+		scheduledAt: `${date}T01:30:00.000Z`,
+		createdAt: now,
+		updatedAt: now,
+		...(status === "cancelled" ? { statusReason: "push_disabled" } : {}),
+	});
+	const item = (userId: string, date: string) => ({
+		id: `${userId}:effect|task:t1|alert|r1`,
+		ownerId: userId,
+		batchId: `digest:${userId}:${date}`,
+		logicalKey: "effect|task:t1|alert|r1",
+		kind: "effect_alert" as const,
+		title: "成本上升",
+		summary: "近 3 天咨询成本上升 35%。",
+		relevance: "与你关注的任务相关。",
+		sources: [{ label: "投放后台", publishedAt: null }],
+		revision: 1,
+		status: "sent" as const,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	await storage.transaction(async (tx) => {
+		await tx.notificationBatches.put(batch(ownerId, "2026-11-12", "sent"));
+		await tx.notificationBatches.put(batch(ownerId, "2026-11-11", "cancelled"));
+		await tx.notificationItems.put(item(ownerId, "2026-11-12"));
+		await tx.deliveries.put({
+			id: `digest:digest:${ownerId}:2026-11-12`,
+			recipient: { accountId: "feishu-main", kind: "user", externalId: `ou-${ownerId}` },
+			card: {
+				title: "每日汇总",
+				items: [
+					{
+						title: "成本上升",
+						summary: "近 3 天咨询成本上升 35%。",
+						relevance: "与你关注的任务相关。",
+						sources: [{ label: "投放后台", publishedAt: null }],
+					},
+				],
+			},
+			actions: [],
+			purpose: "digest",
+			ownerId,
+			batchId: `digest:${ownerId}:2026-11-12`,
+			expiresAt: "2026-11-12T23:00:00.000Z",
+			status: "sent",
+			externalMessageId: "om_pg",
+			sentAt: now,
+		});
+		// 另一个人的批次不得出现在本人记录里。
+		await tx.notificationBatches.put(batch(otherId, "2026-11-12", "sent"));
+		await tx.notificationItems.put(item(otherId, "2026-11-12"));
+	});
+
+	const records = new NotificationRecordService(storage);
+	const page = await records.list(ownerId, { limit: 1 });
+	assert.deepEqual(page.records.map((record) => record.localDate), ["2026-11-12"]);
+	assert.equal(page.nextBefore, "2026-11-12");
+	const [sent] = page.records;
+	assert.equal(sent?.delivery?.status, "sent");
+	assert.equal(sent?.delivery?.externalMessageId, "om_pg");
+	assert.equal(sent?.itemsSource, "delivery", "已发送批次读冻结卡片内容");
+	assert.equal(sent?.items[0]?.title, "成本上升");
+
+	const next = await records.list(ownerId, { before: "2026-11-12" });
+	assert.deepEqual(next.records.map((record) => record.localDate), ["2026-11-11"]);
+	assert.equal(next.records[0]?.statusReason, "push_disabled");
+	assert.equal(next.records[0]?.delivery, null, "从未投递时没有回执");
+	assert.equal(next.nextBefore, null);
+
+	const other = await records.list(otherId);
+	assert.equal(other.records.length, 1);
+	assert.equal(other.records[0]?.items.length, 1);
 });

@@ -261,9 +261,9 @@ bun run dev
 
 Vite 将同源 `/api`、`/auth`、`/webhooks` 请求代理到 127.0.0.1:3000，控制台与 API 不做跨域部署。`PUBLIC_ORIGIN` 必须与浏览器 origin 完全一致；Feishu 后台须登记 `${PUBLIC_ORIGIN}/auth/feishu/callback`。
 
-登录采用 Feishu OAuth authorization code + S256 PKCE；按[授权码接口当前说明](https://open.feishu.cn/document/common-capabilities/sso/api/obtain-oauth-code)，该授权入口的 PKCE 暂时搭配 `https://open.feishu.cn/open-apis/authen/v2/oauth/token`，不混用 v3、不在失败后自动切换端点重试同一码；服务端检查授权用户的 tenant scope，身份键包含 platform、application、tenant、ID 类型和外部 ID。首次验证自动建立个人用户；不保存 access/refresh token，不提供静态 Bearer 或开发绕过。浏览器 session cookie 为 HttpOnly、SameSite=Lax，生产设置 Secure；服务端固定 8 小时绝对过期且不滑动，退出会撤销 session。所有有副作用的 `/api/*` 请求还必须携带与 `PUBLIC_ORIGIN` 一致的 `Origin`。控制台在受保护 API 返回 401 时携带经校验的站内 `returnTo` 跳转登录，退出会撤销会话并清空本地查询缓存。跨标签页登录或退出会通知其他标签页清除旧页面并重新验证；通知只含非凭据身份标识，不充当登录凭证。
+登录采用 Feishu OAuth authorization code + S256 PKCE；按[授权码接口当前说明](https://open.feishu.cn/document/common-capabilities/sso/api/obtain-oauth-code)，该授权入口的 PKCE 暂时搭配 `https://open.feishu.cn/open-apis/authen/v2/oauth/token`，不混用 v3、不在失败后自动切换端点重试同一码；服务端检查授权用户的 tenant scope，身份键包含 platform、application、tenant、ID 类型和外部 ID。首次验证自动建立个人用户；不保存 access/refresh token，不提供静态 Bearer 或开发绕过。浏览器 session cookie 为 HttpOnly、SameSite=Lax，生产设置 Secure；会话随控制台上报的活动滑动到期——默认 24 小时无活动或登录起 7 天（先到者为准），登录时勾选「记住我」为 7 天 / 30 天，旧版会话仍按 8 小时绝对过期；令牌轮换带短暂宽限期。敏感写入（当前为模型凭据写入/删除）要求最近 15 分钟内重新验证过飞书身份，退出会撤销 session。所有有副作用的 `/api/*` 请求还必须携带与 `PUBLIC_ORIGIN` 一致的 `Origin`。控制台在受保护 API 返回 401 时携带经校验的站内 `returnTo` 跳转登录，退出会撤销会话并清空本地查询缓存。跨标签页登录或退出会通知其他标签页清除旧页面并重新验证；通知只含非凭据身份标识，不充当登录凭证。
 
-机器人卡片动作按飞书 open_id 的应用/租户作用域映射到内部用户；仅当映射用户是会话 owner 且 open_id 在 `allowedActorIds` 中时才允许。尚未在控制台登录建立绑定的用户会被拒绝，需先登录一次；`GET /api/me` 返回本人的 `identities`，可用于创建会话时填写收件人与允许操作者。worker 执行平台动作时还在同一数据库事务内复核有效用户与完整作用域的绑定，入库后撤销的动作会被拒绝；控制台正常8小时到期不撤销机器人绑定。通知授权由 #35 单独处理，本映射不改变发送授权。
+机器人卡片动作按飞书 open_id 的应用/租户作用域映射到内部用户；仅当映射用户是会话 owner 且 open_id 在 `allowedActorIds` 中时才允许。尚未在控制台登录建立绑定的用户会被拒绝，需先登录一次；`GET /api/me` 返回本人的 `identities`，可用于创建会话时填写收件人与允许操作者。worker 执行平台动作时还在同一数据库事务内复核有效用户与完整作用域的绑定，入库后撤销的动作会被拒绝；控制台会话到期（空闲或绝对上限）不撤销机器人绑定。通知授权由 #35 单独处理，本映射不改变发送授权。
 
 接口清单见 contracts/openapi.json；HTTP 调用示例见 scripts/demo.mjs。页面通过 apps/console/src/adpulse-client.ts 的 consoleClient 使用生成类型，不手写另一套 HTTP 契约。
 
@@ -405,6 +405,30 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
 5. 回滚先关闭闸门并停止所有新版 worker，备份并核对新增 outbox 状态；旧 worker 不认识新任务类型，可能把它完成而不发送，
    因此**禁止混跑或直接把待发交给旧版消费**。设置降级写入可能丢失独立确认，重升后须重新确认；
    不重置冻结时间、不重放取消状态，也不自动恢复备份中的旧通知。服务不可用与投递失败不作为业务决定失败。
+
+### 5.5 通知记录与解释（#37 PR4）
+
+`GET /api/me/notifications` 与控制台「通知记录」（`/settings/notification-records`）把已发生的汇总批次、
+条目与投递回执投影成本人可读的记录。核心是 `NotificationRecordService`
+（`packages/core/src/notifications-records.ts`），**只读**：不发消息、不改状态、不重试、不创建 Session。
+
+- 只返回本人批次（按北京时间 `localDate` 倒序）。没有按 id 直取的公开入口，因此不存在「知道 id 就能读别人记录」
+  的路径；`delivery` 还会再校验 `ownerId`，防止派生 id 撞车时串号。
+- 分页用 `limit`（1–50，默认 20）+ `before`（排他游标，北京时间 `YYYY-MM-DD`）；非法值返回 400，不静默改写。
+- 记录只陈述已存事实：批次状态、`statusReason` 代码、计划/发送时间、条目与 `Delivery` 回执。
+  原因代码到中文文案的翻译在控制台 `record-view.ts`；未翻译的代码显示原码并注明「不推测」，不补未知原因。
+- **历史内容以发送时冻结的卡片为准**：`queue()` 在 `revision` 提升时会复用同一条目行并改 `batchId`
+  （见 §5.1），所以按条目「当前所属批次」拼历史会让已发送批次变空、或显示成更新后的版本。
+  因此 `status: sent` 的批次从 `Delivery.card`（`purpose: digest`）读取当时实际发出的内容，
+  `itemsSource: "delivery"`；卡片没有行级 `id/revision/status`，服务端不补造。
+  缺快照（历史/测试数据）时退回条目行并标 `itemsSource: "rows"`，页面写明「可能与当时收到的版本不同」。
+- 取消/合并类批次保留为记录但不再尝试重建内容：`merged_stale` 明确写「已并入之后的汇总」；
+  `empty` 写「本批没有待发内容……或内容已因实质更新进入后续批次」，不冒充成「没有新内容」。
+- `sent` 只表示渠道接收，页面明确写「不代表你已读」；业务结果与投递状态仍然分开。
+- 页面顶部复用订阅页的 `describeReadiness` 判断「现在会不会收到」，避免两套说法；空记录时说明
+  「没有新内容不发空汇总」，不把空列表解释成已发送。
+- **尚无生产者**：`NotificationQueue.queue()` 目前只被测试调用，尚未接入订阅筛选与 #38/#39 来源，
+  因此真实环境不会自动生成汇总条目；本页只能看到已经存在的批次，真机投递验收仍未执行。
 
 ## 6. PostgreSQL 集成测试
 
