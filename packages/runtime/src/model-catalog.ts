@@ -4,8 +4,8 @@ import { modelCatalogDocument } from "./model-catalog.generated.js";
  * The provider/model directory is generated from the locked
  * `@earendil-works/pi-ai` package by `scripts/generate-model-catalog.mjs`.
  * Nothing here is hand-written per vendor: `supported` only means "AdPulse can
- * call this model through its personal API Key with the Chat Completions
- * adapter we have wired"; it is not a claim of live acceptance testing.
+ * call this model through its personal API Key with the native
+ * Chat Completions / Responses adapters we have wired"; it is not a claim of live acceptance testing.
  */
 export interface ModelCatalogModel {
 	id: string;
@@ -48,7 +48,7 @@ export function catalogForClient() {
 		baseUrl: provider.baseUrl,
 		supported: provider.supported,
 		...(provider.reason === undefined ? {} : { reason: provider.reason }),
-		models: provider.models.map((model) => ({ id: model.id, name: model.name })),
+		models: provider.models.map((model) => ({ id: model.id, name: model.name, api: model.api })),
 	}));
 }
 

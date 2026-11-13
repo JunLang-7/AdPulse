@@ -28,7 +28,15 @@ export const modelCatalogKey = ["task-draft-models"] as const;
 export const modelConnectionsKey = ["model-connections"] as const;
 
 const keyPlaceholder = "粘贴你的 API Key";
-const protocolHint = "OpenAI Chat Completions（其他协议尚未接通）";
+type CustomModelDraft = {
+	providerId: string; displayName: string; baseUrl: string; modelId: string; apiKey: string;
+	protocol: "openai-completions" | "openai-responses";
+};
+
+function protocolLabel(protocol: ModelConnectionInput["protocol"]) {
+	return protocol === "openai-responses" ? "OpenAI Responses" :
+		protocol === "openai-completions" ? "OpenAI Chat Completions" : protocol;
+}
 
 export function selectionLabel(choice: TaskModelChoice | undefined, connections: ModelConnectionList | undefined, catalog: ModelCatalog | undefined): string {
 	if (!choice) return "选择模型";
@@ -61,7 +69,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 	const [status, setStatus] = useState<{ tone: "idle" | "ok" | "error"; text: string }>({ tone: "idle", text: "尚未验证" });
 	const [working, setWorking] = useState(false);
 	const [needsVerification, setNeedsVerification] = useState(false);
-	const [custom, setCustom] = useState({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "" });
+	const [custom, setCustom] = useState<CustomModelDraft>({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "", protocol: "openai-completions" });
 	const [discovered, setDiscovered] = useState<string[]>([]);
 	const [discovering, setDiscovering] = useState(false);
 	const discoveryRequest = useRef(0);
@@ -92,7 +100,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 		setDiscovering(false);
 		setModel("");
 		setApiKey("");
-		setCustom({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "" });
+		setCustom({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "", protocol: "openai-completions" });
 		setDiscovered([]);
 		setNeedsVerification(false);
 		if (!open) return;
@@ -175,7 +183,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 	function updateCustom(next: typeof custom) {
 		discoveryRequest.current++;
 		setDiscovering(false);
-		if (next.baseUrl !== custom.baseUrl || next.apiKey !== custom.apiKey) setDiscovered([]);
+		if (next.baseUrl !== custom.baseUrl || next.apiKey !== custom.apiKey || next.protocol !== custom.protocol) setDiscovered([]);
 		setCustom(next);
 	}
 
@@ -189,7 +197,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 			const result = await consoleClient.POST("/api/me/model-connections/models", {
 				body: {
 					baseUrl: custom.baseUrl.trim(),
-					protocol: "openai-completions",
+					protocol: custom.protocol,
 					apiKey: custom.apiKey.trim(),
 				},
 			});
@@ -368,7 +376,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 			catalogId: provider.id,
 			displayName: provider.name,
 			baseUrl: provider.baseUrl,
-			protocol: "openai-completions",
+			protocol: provider.models.find((item) => item.id === model)?.api ?? "openai-completions",
 			models: [{ id: model }],
 			apiKey: apiKey.trim(),
 		};
@@ -381,7 +389,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 			kind: "custom",
 			...(custom.displayName.trim() ? { displayName: custom.displayName.trim() } : {}),
 			baseUrl: custom.baseUrl.trim(),
-			protocol: "openai-completions",
+			protocol: custom.protocol,
 			models: [{ id: custom.modelId.trim() }],
 			apiKey: custom.apiKey.trim(),
 		};
@@ -510,7 +518,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 												))}
 											</select>
 										</Field>
-										<AdvancedDetails baseUrl={provider.baseUrl ?? ""} />
+										<AdvancedDetails baseUrl={provider.baseUrl ?? ""} protocol={provider.models.find((item) => item.id === model)?.api ?? "openai-completions"} />
 									</div>
 								) : (
 									<div className="space-y-2 text-sm">
@@ -628,12 +636,12 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 	);
 }
 
-function AdvancedDetails({ baseUrl }: { baseUrl: string }) {
+function AdvancedDetails({ baseUrl, protocol }: { baseUrl: string; protocol: ModelConnectionInput["protocol"] }) {
 	return (
 		<details className="rounded-lg border px-3 py-2 text-sm">
 			<summary className="cursor-pointer text-xs font-medium">高级选项</summary>
 			<dl className="mt-2 space-y-1 text-xs text-muted-foreground">
-				<div className="flex justify-between gap-4"><dt>协议</dt><dd>{protocolHint}</dd></div>
+				<div className="flex justify-between gap-4"><dt>协议</dt><dd>{protocolLabel(protocol)}</dd></div>
 				<div className="flex justify-between gap-4"><dt>请求地址</dt><dd className="truncate">{baseUrl + "/chat/completions"}</dd></div>
 				<div className="flex justify-between gap-4"><dt>凭据</dt><dd>服务端加密，仅本人可用</dd></div>
 			</dl>
@@ -715,7 +723,7 @@ function ExistingConnectionPanel({ connection, model, connections, catalog, apiK
 				<p role="note" className="text-xs text-muted-foreground">部署者未配置主密钥，无法保存或更换密钥。</p>
 			) : null}
 
-			<AdvancedDetails baseUrl={connection.baseUrl} />
+			<AdvancedDetails baseUrl={connection.baseUrl} protocol={connection.protocol} />
 
 			<div className="flex flex-wrap gap-2 border-t pt-3">
 				<Button type="button" size="sm" variant="outline" disabled={working || !hasKey || defaultsUnavailable} onClick={onRemoveCredential}>
@@ -730,11 +738,11 @@ function ExistingConnectionPanel({ connection, model, connections, catalog, apiK
 }
 
 function CustomForm({ custom, working, discovered, discovering, onChange, onDiscover, onManual }: {
-	custom: { providerId: string; displayName: string; baseUrl: string; modelId: string; apiKey: string };
+	custom: CustomModelDraft;
 	working: boolean;
 	discovered: string[];
 	discovering: boolean;
-	onChange: (value: { providerId: string; displayName: string; baseUrl: string; modelId: string; apiKey: string }) => void;
+	onChange: (value: CustomModelDraft) => void;
 	onDiscover: () => void;
 	onManual: () => void;
 }) {
@@ -751,7 +759,15 @@ function CustomForm({ custom, working, discovered, discovering, onChange, onDisc
 				<Input value={custom.displayName} maxLength={80} disabled={working} placeholder="例如：公司内部网关"
 					onChange={(event) => onChange({ ...custom, displayName: event.target.value })} />
 			</Field>
-			<Field label="API Base URL" hint="不是完整的聊天请求地址；会请求 {Base URL}/chat/completions。">
+			<Field label="API 协议" hint="选择供应商实际提供的协议；不会自动切换协议。">
+				<select aria-label="API 协议" value={custom.protocol} disabled={working}
+					onChange={(event) => onChange({ ...custom, protocol: event.target.value === "openai-responses" ? "openai-responses" : "openai-completions" })}
+					className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm">
+					<option value="openai-completions">OpenAI Chat Completions</option>
+					<option value="openai-responses">OpenAI Responses</option>
+				</select>
+			</Field>
+			<Field label="API Base URL" hint={`不是完整的请求地址；会请求 {Base URL}/${custom.protocol === "openai-responses" ? "responses" : "chat/completions"}。`}>
 				<Input value={custom.baseUrl} maxLength={512} disabled={working} placeholder="https://api.example.com/v1"
 					onChange={(event) => onChange({ ...custom, baseUrl: event.target.value })} />
 			</Field>
@@ -759,7 +775,7 @@ function CustomForm({ custom, working, discovered, discovering, onChange, onDisc
 				<div className="space-y-2">
 					{discovered.length ? (
 						<>
-							<select value={custom.modelId} onChange={(event) => onChange({ ...custom, modelId: event.target.value })} disabled={working}
+							<select aria-label="发现的模型" value={custom.modelId} onChange={(event) => onChange({ ...custom, modelId: event.target.value })} disabled={working}
 								className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm">
 								{discovered.map((id) => <option key={id} value={id}>{id}</option>)}
 							</select>

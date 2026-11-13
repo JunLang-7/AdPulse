@@ -1,5 +1,6 @@
 import { createModels, createProvider, envApiKeyAuth, type Model, type Provider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
 import type { ModelConnectionProtocol } from "@adpluse/core";
 import { findCatalogModel } from "./model-catalog.js";
@@ -200,13 +201,15 @@ export interface ModelRouteInput {
 }
 
 /** 已接通的协议。未接通的协议不得作为可用项，也不能降级成 Chat Completions。 */
-export function isTaskDraftProtocolWired(protocol: ModelConnectionProtocol): boolean {
-	return protocol === "openai-completions";
+type TaskDraftProtocol = "openai-completions" | "openai-responses";
+
+export function isTaskDraftProtocolWired(protocol: string): protocol is TaskDraftProtocol {
+	return protocol === "openai-completions" || protocol === "openai-responses";
 }
 
 /**
  * 按持久化连接构造抽取器。目录连接必须与目录端点一致（不允许改主机后沿用旧 Key）；
- * 自定义连接用保守的模型元数据走同一条 Chat Completions 适配。
+ * 自定义连接用保守的模型元数据走所选协议的原生适配。
  */
 export function createPersistedTaskDraftExtractor(
 	input: ModelRouteInput,
@@ -217,14 +220,14 @@ export function createPersistedTaskDraftExtractor(
 	if (!key || !isTaskDraftProtocolWired(input.protocol)) return;
 	if (input.kind === "catalog") {
 		const entry = findCatalogModel(input.catalogId ?? input.providerId, input.modelId);
-		if (!entry || entry.baseUrl !== input.baseUrl) return;
+		if (!entry || entry.baseUrl !== input.baseUrl || entry.api !== input.protocol) return;
 		return createCatalogTaskDraftExtractor(entry.provider, entry.id, key, fetchImpl, limit);
 	}
 	// 未知上下文/价格保持未知；这里只给传输层一个保守上限。
 	const model = {
 		id: input.modelId,
 		name: input.modelId,
-		api: "openai-completions",
+		api: input.protocol,
 		provider: input.providerId,
 		baseUrl: input.baseUrl,
 		reasoning: false,
@@ -232,20 +235,22 @@ export function createPersistedTaskDraftExtractor(
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: 8_192,
 		maxTokens: maxOutputTokens,
-		compat: {
+		compat: input.protocol === "openai-responses" ? {
+			supportsMaxOutputTokens: true,
+		} : {
 			supportsStore: false,
 			supportsDeveloperRole: false,
 			supportsUsageInStreaming: false,
 			maxTokensField: "max_tokens",
 		},
-	} satisfies Model<"openai-completions">;
+	} satisfies Model<TaskDraftProtocol>;
 	const provider = createProvider({
 		id: input.providerId,
 		name: input.providerId,
 		baseUrl: input.baseUrl,
 		auth: { apiKey: envApiKeyAuth(input.providerId, []) },
 		models: [model],
-		api: openAICompletionsApi(),
+		api: input.protocol === "openai-responses" ? openAIResponsesApi() : openAICompletionsApi(),
 	});
 	return createRouteExtractor(provider, input.modelId, key, fetchImpl, limit);
 }
@@ -264,11 +269,11 @@ export function createCatalogTaskDraftExtractor(
 ): TaskDraftExtractor | undefined {
 	const entry = findCatalogModel(providerId, modelId);
 	const key = apiKey.trim();
-	if (!entry || !key || entry.provider !== providerId) return;
+	if (!entry || !key || entry.provider !== providerId || !isTaskDraftProtocolWired(entry.api)) return;
 	const model = {
 		id: entry.id,
 		name: entry.name,
-		api: "openai-completions",
+		api: entry.api,
 		provider: providerId,
 		baseUrl: entry.baseUrl,
 		reasoning: entry.reasoning ?? false,
@@ -276,21 +281,21 @@ export function createCatalogTaskDraftExtractor(
 		cost: entry.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: entry.contextWindow ?? 8_192,
 		maxTokens: entry.maxTokens ?? maxOutputTokens,
-		...(entry.compat ? { compat: entry.compat as NonNullable<Model<"openai-completions">["compat"]> } : {}),
-	} satisfies Model<"openai-completions">;
+		...(entry.compat ? { compat: entry.compat as NonNullable<Model<TaskDraftProtocol>["compat"]> } : {}),
+	} satisfies Model<TaskDraftProtocol>;
 	const provider = createProvider({
 		id: providerId,
 		name: entry.name,
 		baseUrl: entry.baseUrl,
 		auth: { apiKey: envApiKeyAuth(entry.name, []) },
 		models: [model],
-		api: openAICompletionsApi(),
+		api: entry.api === "openai-responses" ? openAIResponsesApi() : openAICompletionsApi(),
 	});
 	return createRouteExtractor(provider, entry.id, key, fetchImpl, limit);
 }
 
 function createRouteExtractor(
-	provider: Provider<"openai-completions">,
+	provider: Provider,
 	modelId: string,
 	key: string,
 	fetchImpl: typeof fetch,
@@ -299,8 +304,9 @@ function createRouteExtractor(
 	const models = createModels();
 	models.setProvider(provider);
 	const model = models.getModel(provider.id, modelId);
-	if (!model) return;
-	const guardedFetch = providerFetch(model.baseUrl + "/chat/completions", fetchImpl);
+	if (!model || !isTaskDraftProtocolWired(model.api)) return;
+	const responses = model.api === "openai-responses";
+	const guardedFetch = providerFetch(model.baseUrl + (responses ? "/responses" : "/chat/completions"), fetchImpl);
 	return async (brief, stage) => {
 		if (!brief.trim() || brief.length > taskDraftBriefMaxLength) return null;
 		return limit(async () => {
@@ -317,8 +323,13 @@ function createRouteExtractor(
 					maxRetries: 0,
 					cacheRetention: "none",
 					maxTokens: maxOutputTokens,
-					temperature: 0,
-					samplingParams: {
+					// Responses 的推理模型可能拒绝 temperature；JSON 格式使用原生 text.format。
+					...(responses ? {} : { temperature: 0 }),
+					samplingParams: responses ? {
+						text: { format: { type: "json_object" } },
+						store: false,
+						max_output_tokens: maxOutputTokens,
+					} : {
 						response_format: { type: "json_object" },
 						...(model.provider === "deepseek" ? { thinking: { type: "disabled" } } : {}),
 					},

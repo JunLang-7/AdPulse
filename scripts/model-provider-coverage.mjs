@@ -34,7 +34,7 @@ export function renderCoverage(document) {
 	const unsupported = providers.length - supported.length;
 	const rows = providers.map((provider, index) => {
 		const adaptation = provider.supported
-			? "可直连（个人 API Key · Chat Completions）"
+			? `可直连（个人 API Key · ${[...new Set(provider.models.map((model) => model.api === "openai-responses" ? "Responses" : "Chat Completions"))].join(" / ")}）`
 			: `未接通：${provider.reason ?? "未说明"}`;
 		return `| ${index + 1} | ${cell(provider.name)} | \`${provider.id}\` | ${cell(authLabel(provider.auth))} | ${provider.protocols.length ? provider.protocols.map((item) => `\`${item}\``).join(" / ") : "—"} | ${provider.catalogModelCount} | ${cell(adaptation)} | 未验收 |`;
 	});
@@ -49,7 +49,7 @@ export function renderCoverage(document) {
 		"状态是四个独立事实，不能互相替代：",
 		"",
 		"1. **目录存在**：SDK 里有这个供应商与模型。",
-		"2. **AdPulse 适配可用**：本期只接通“个人 API Key + OpenAI Chat Completions”。",
+		"2. **AdPulse 适配可用**：已接通“个人 API Key + OpenAI Chat Completions / Responses”；通过的是合成适配测试。",
 		"3. **本人已配置密钥**：运行时数据，不在本文档里。",
 		"4. **真实供应商验收**：逐家真实联调；本表统一记为“未验收”，不因目录存在或合成测试通过而改写。",
 		"",
@@ -61,7 +61,7 @@ export function renderCoverage(document) {
 		"",
 		"## 差异与后续",
 		"",
-		"- 未接通的主因：原生协议未适配（`openai-responses`、`anthropic-messages`、`google-generative-ai`、`mistral-conversations`、`bedrock-converse-stream` 等），或需要账号/区域/部署名等额外参数，或仅提供账号授权。提供可选 OAuth 不妨碍其个人 API Key 路径单独接入。",
+		"- 未接通的主因：原生协议未适配（`anthropic-messages`、`google-generative-ai`、`mistral-conversations`、`bedrock-converse-stream` 等），或需要账号/区域/部署名等额外参数，或仅提供账号授权。提供可选 OAuth 不妨碍其个人 API Key 路径单独接入。",
 		"- `google-generative-ai` 的 pi-ai 适配器拒绝自定义 `fetch`，要纳入受控出网需要自研传输层，不能直接开启。",
 		"- 接入新协议时，必须同时补：协议适配、合成响应测试、二次验证与共享限额复用、“真实供应商验收”单独取证。",
 		"",

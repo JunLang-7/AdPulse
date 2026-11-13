@@ -1177,6 +1177,431 @@ export const modelCatalogDocument = {
 						"supportsReasoningEffort": false,
 						"supportsMidConvoSystemMessages": true
 					}
+				},
+				{
+					"id": "gpt-5.3-codex",
+					"name": "GPT-5.3 Codex",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.75,
+						"output": 14,
+						"cacheRead": 0.175,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5.4-nano",
+					"name": "GPT-5.4 nano",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 1.25,
+						"cacheRead": 0.02,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5.6-luna",
+					"name": "GPT-5.6 Luna",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 1.2,
+						"cacheRead": 0.02,
+						"cacheWrite": 0.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 0.4,
+								"output": 1.8,
+								"cacheRead": 0.04,
+								"cacheWrite": 0.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsMidConvoSystemMessages": true,
+						"supportsAdditionalTools": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5.6-sol",
+					"name": "GPT-5.6 Sol",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 4,
+						"output": 20,
+						"cacheRead": 0.4,
+						"cacheWrite": 5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 8,
+								"output": 30,
+								"cacheRead": 0.8,
+								"cacheWrite": 10
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsMidConvoSystemMessages": true,
+						"supportsAdditionalTools": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5.6-terra",
+					"name": "GPT-5.6 Terra",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 12,
+						"cacheRead": 0.2,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 18,
+								"cacheRead": 0.4,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsMidConvoSystemMessages": true,
+						"supportsAdditionalTools": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-6-astra",
+					"name": "GPT-6 Astra",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 10,
+						"output": 50,
+						"cacheRead": 1,
+						"cacheWrite": 12.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 20,
+								"output": 75,
+								"cacheRead": 2,
+								"cacheWrite": 25
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsMidConvoSystemMessages": true,
+						"supportsAdditionalTools": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-6-luna",
+					"name": "GPT-6 Luna",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.5,
+						"cacheRead": 0.01,
+						"cacheWrite": 0.125,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 0.2,
+								"output": 0.75,
+								"cacheRead": 0.02,
+								"cacheWrite": 0.25
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsMidConvoSystemMessages": true,
+						"supportsAdditionalTools": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-6-sol",
+					"name": "GPT-6 Sol",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.2,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 15,
+								"cacheRead": 0.4,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsMidConvoSystemMessages": true,
+						"supportsAdditionalTools": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-6.1-sol",
+					"name": "GPT-6.1 Sol",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.1,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 15,
+								"cacheRead": 0.2,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsMidConvoSystemMessages": true,
+						"supportsAdditionalTools": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-6.1-terra",
+					"name": "GPT-6.1 Terra",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 5,
+						"cacheRead": 0.05,
+						"cacheWrite": 1.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 2,
+								"output": 7.5,
+								"cacheRead": 0.1,
+								"cacheWrite": 2.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsMidConvoSystemMessages": true,
+						"supportsAdditionalTools": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "grok-4.5",
+					"name": "Grok 4.5",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.5,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 4,
+								"output": 12,
+								"cacheRead": 1,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 500000,
+					"maxTokens": 128000
+				},
+				{
+					"id": "grok-4.6",
+					"name": "Grok 4.6",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.5,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 4,
+								"output": 12,
+								"cacheRead": 1,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 500000,
+					"maxTokens": 128000
+				},
+				{
+					"id": "grok-4.7",
+					"name": "Grok 4.7",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.5,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 4,
+								"output": 12,
+								"cacheRead": 1,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 500000,
+					"maxTokens": 128000
+				},
+				{
+					"id": "mai-code-1.1-flash",
+					"name": "MAI-Code-1.1-Flash",
+					"api": "openai-responses",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 1.2,
+						"cacheRead": 0.02,
+						"cacheWrite": 0
+					},
+					"contextWindow": 256000,
+					"maxTokens": 128000
 				}
 			]
 		},
@@ -3434,8 +3859,7 @@ export const modelCatalogDocument = {
 			"id": "meta",
 			"name": "Meta",
 			"baseUrl": "https://api.meta.ai/v1",
-			"supported": false,
-			"reason": "该供应商使用 openai-responses 原生协议，尚未接通。",
+			"supported": true,
 			"auth": {
 				"apiKey": true,
 				"name": "Meta Model API key",
@@ -3445,7 +3869,128 @@ export const modelCatalogDocument = {
 				"openai-responses"
 			],
 			"catalogModelCount": 6,
-			"models": []
+			"models": [
+				{
+					"id": "muse-spark-1.1",
+					"name": "Muse Spark 1.1",
+					"api": "openai-responses",
+					"baseUrl": "https://api.meta.ai/v1",
+					"provider": "meta",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 4.25,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072
+				},
+				{
+					"id": "muse-spark-1.2",
+					"name": "Muse Spark 1.2",
+					"api": "openai-responses",
+					"baseUrl": "https://api.meta.ai/v1",
+					"provider": "meta",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 4.25,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072
+				},
+				{
+					"id": "muse-spark-1.2-contributor",
+					"name": "Muse Spark 1.2 Contributor",
+					"api": "openai-responses",
+					"baseUrl": "https://api.meta.ai/v1",
+					"provider": "meta",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.2,
+						"cacheRead": 0.002,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072
+				},
+				{
+					"id": "muse-spark-1.3",
+					"name": "Muse Spark 1.3",
+					"api": "openai-responses",
+					"baseUrl": "https://api.meta.ai/v1",
+					"provider": "meta",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 4.25,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072
+				},
+				{
+					"id": "muse-spark-1.3-contributor",
+					"name": "Muse Spark 1.3 Contributor",
+					"api": "openai-responses",
+					"baseUrl": "https://api.meta.ai/v1",
+					"provider": "meta",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.2,
+						"cacheRead": 0.002,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072
+				},
+				{
+					"id": "muse-wonder-1.0",
+					"name": "Muse Wonder",
+					"api": "openai-responses",
+					"baseUrl": "https://api.meta.ai/v1",
+					"provider": "meta",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 4,
+						"output": 20,
+						"cacheRead": 0.2,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072
+				}
+			]
 		},
 		{
 			"id": "minimax",
@@ -4496,8 +5041,7 @@ export const modelCatalogDocument = {
 			"id": "openai",
 			"name": "OpenAI",
 			"baseUrl": "https://api.openai.com/v1",
-			"supported": false,
-			"reason": "该供应商使用 openai-responses 原生协议，尚未接通。",
+			"supported": true,
 			"auth": {
 				"apiKey": true,
 				"name": "OpenAI API key",
@@ -4507,7 +5051,1204 @@ export const modelCatalogDocument = {
 				"openai-responses"
 			],
 			"catalogModelCount": 44,
-			"models": []
+			"models": [
+				{
+					"id": "chat-latest",
+					"name": "Chat Latest",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 30,
+						"cacheRead": 0.5,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "gpt-4",
+					"name": "GPT-4",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 30,
+						"output": 60,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 8192,
+					"maxTokens": 8192,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "gpt-4-turbo",
+					"name": "GPT-4 Turbo",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 10,
+						"output": 30,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 4096,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "gpt-4.1",
+					"name": "GPT-4.1",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 8,
+						"cacheRead": 0.5,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1047576,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "gpt-4.1-mini",
+					"name": "GPT-4.1 mini",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.4,
+						"output": 1.6,
+						"cacheRead": 0.1,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1047576,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "gpt-4.1-nano",
+					"name": "GPT-4.1 nano",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.4,
+						"cacheRead": 0.025,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1047576,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "gpt-4o",
+					"name": "GPT-4o",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 10,
+						"cacheRead": 1.25,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "gpt-4o-2024-05-13",
+					"name": "GPT-4o (2024-05-13)",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 15,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 4096,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "gpt-4o-2024-08-06",
+					"name": "GPT-4o (2024-08-06)",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 10,
+						"cacheRead": 1.25,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "gpt-4o-2024-11-20",
+					"name": "GPT-4o (2024-11-20)",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 10,
+						"cacheRead": 1.25,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "gpt-4o-mini",
+					"name": "GPT-4o mini",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.6,
+						"cacheRead": 0.075,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "gpt-5",
+					"name": "GPT-5",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 10,
+						"cacheRead": 0.125,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5-chat-latest",
+					"name": "GPT-5 Chat Latest",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 10,
+						"cacheRead": 0.125,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5-mini",
+					"name": "GPT-5 Mini",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.25,
+						"output": 2,
+						"cacheRead": 0.025,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5-nano",
+					"name": "GPT-5 Nano",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.4,
+						"cacheRead": 0.005,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5-pro",
+					"name": "GPT-5 Pro",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 15,
+						"output": 120,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5.1",
+					"name": "GPT-5.1",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 10,
+						"cacheRead": 0.125,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5.2",
+					"name": "GPT-5.2",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.75,
+						"output": 14,
+						"cacheRead": 0.175,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5.2-pro",
+					"name": "GPT-5.2 Pro",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 21,
+						"output": 168,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5.3-codex",
+					"name": "GPT-5.3 Codex",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.75,
+						"output": 14,
+						"cacheRead": 0.175,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5.3-codex-spark",
+					"name": "GPT-5.3 Codex Spark",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.75,
+						"output": 14,
+						"cacheRead": 0.175,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 32000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5.4",
+					"name": "GPT-5.4",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 15,
+						"cacheRead": 0.25,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 5,
+								"output": 22.5,
+								"cacheRead": 0.5,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 272000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "gpt-5.4-mini",
+					"name": "GPT-5.4 mini",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.75,
+						"output": 4.5,
+						"cacheRead": 0.075,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "gpt-5.4-nano",
+					"name": "GPT-5.4 nano",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 1.25,
+						"cacheRead": 0.02,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5.4-pro",
+					"name": "GPT-5.4 Pro",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 30,
+						"output": 180,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 60,
+								"output": 270,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "gpt-5.5",
+					"name": "GPT-5.5",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 30,
+						"cacheRead": 0.5,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 10,
+								"output": 45,
+								"cacheRead": 1,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 272000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "gpt-5.5-pro",
+					"name": "GPT-5.5 Pro",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 30,
+						"output": 180,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 60,
+								"output": 270,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true
+					}
+				},
+				{
+					"id": "gpt-5.6-cyber",
+					"name": "GPT-5.6 Cyber",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 12.5,
+						"output": 75,
+						"cacheRead": 1.25,
+						"cacheWrite": 15.625
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsExplicitPromptCacheMode": true
+					}
+				},
+				{
+					"id": "gpt-5.6-luna",
+					"name": "GPT-5.6 Luna",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 1.2,
+						"cacheRead": 0.02,
+						"cacheWrite": 0.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 0.4,
+								"output": 1.8,
+								"cacheRead": 0.04,
+								"cacheWrite": 0.5
+							}
+						]
+					},
+					"contextWindow": 272000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsAdditionalTools": true,
+						"supportsToolSearch": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsExplicitPromptCacheMode": true
+					}
+				},
+				{
+					"id": "gpt-5.6-sol",
+					"name": "GPT-5.6 Sol",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 4,
+						"output": 20,
+						"cacheRead": 0.4,
+						"cacheWrite": 5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 8,
+								"output": 30,
+								"cacheRead": 0.8,
+								"cacheWrite": 10
+							}
+						]
+					},
+					"contextWindow": 272000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsAdditionalTools": true,
+						"supportsToolSearch": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsExplicitPromptCacheMode": true
+					}
+				},
+				{
+					"id": "gpt-5.6-terra",
+					"name": "GPT-5.6 Terra",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 12,
+						"cacheRead": 0.2,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 18,
+								"cacheRead": 0.4,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 272000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsAdditionalTools": true,
+						"supportsToolSearch": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsExplicitPromptCacheMode": true
+					}
+				},
+				{
+					"id": "gpt-6-astra",
+					"name": "GPT-6 Astra",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 10,
+						"output": 50,
+						"cacheRead": 1,
+						"cacheWrite": 12.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 20,
+								"output": 75,
+								"cacheRead": 2,
+								"cacheWrite": 25
+							}
+						]
+					},
+					"contextWindow": 272000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsAdditionalTools": true,
+						"supportsToolSearch": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsExplicitPromptCacheMode": true,
+						"supportsMidConvoEffort": true
+					}
+				},
+				{
+					"id": "gpt-6-luna",
+					"name": "GPT-6 Luna",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.5,
+						"cacheRead": 0.01,
+						"cacheWrite": 0.125,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 0.2,
+								"output": 0.75,
+								"cacheRead": 0.02,
+								"cacheWrite": 0.25
+							}
+						]
+					},
+					"contextWindow": 272000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsAdditionalTools": true,
+						"supportsToolSearch": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsExplicitPromptCacheMode": true,
+						"supportsMidConvoEffort": true
+					}
+				},
+				{
+					"id": "gpt-6-sol",
+					"name": "GPT-6 Sol",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.2,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 15,
+								"cacheRead": 0.4,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 272000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsAdditionalTools": true,
+						"supportsToolSearch": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsExplicitPromptCacheMode": true,
+						"supportsMidConvoEffort": true
+					}
+				},
+				{
+					"id": "gpt-6.1-sol",
+					"name": "GPT-6.1 Sol",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.1,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 15,
+								"cacheRead": 0.2,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 272000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsAdditionalTools": true,
+						"supportsToolSearch": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsExplicitPromptCacheMode": true,
+						"supportsMidConvoEffort": true
+					}
+				},
+				{
+					"id": "gpt-6.1-terra",
+					"name": "GPT-6.1 Terra",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 5,
+						"cacheRead": 0.05,
+						"cacheWrite": 1.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 2,
+								"output": 7.5,
+								"cacheRead": 0.1,
+								"cacheWrite": 2.5
+							}
+						]
+					},
+					"contextWindow": 272000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsOpenAIGrammarTools": true,
+						"supportsAdditionalTools": true,
+						"supportsToolSearch": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsExplicitPromptCacheMode": true,
+						"supportsMidConvoEffort": true
+					}
+				},
+				{
+					"id": "gpt-daybreak-blue-latest",
+					"name": "Daybreak Blue",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 4,
+						"output": 20,
+						"cacheRead": 0.4,
+						"cacheWrite": 5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 8,
+								"output": 30,
+								"cacheRead": 0.8,
+								"cacheWrite": 10
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsExplicitPromptCacheMode": true
+					}
+				},
+				{
+					"id": "gpt-daybreak-red-latest",
+					"name": "Daybreak Red",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 12.5,
+						"output": 75,
+						"cacheRead": 1.25,
+						"cacheWrite": 15.625
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsExplicitPromptCacheMode": true
+					}
+				},
+				{
+					"id": "o1",
+					"name": "o1",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 15,
+						"output": 60,
+						"cacheRead": 7.5,
+						"cacheWrite": 0
+					},
+					"contextWindow": 200000,
+					"maxTokens": 100000,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "o1-pro",
+					"name": "o1-pro",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 150,
+						"output": 600,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 200000,
+					"maxTokens": 100000,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "o3",
+					"name": "o3",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 8,
+						"cacheRead": 0.5,
+						"cacheWrite": 0
+					},
+					"contextWindow": 200000,
+					"maxTokens": 100000,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "o3-mini",
+					"name": "o3-mini",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 1.1,
+						"output": 4.4,
+						"cacheRead": 0.55,
+						"cacheWrite": 0
+					},
+					"contextWindow": 200000,
+					"maxTokens": 100000,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "o3-pro",
+					"name": "o3-pro",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 20,
+						"output": 80,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 200000,
+					"maxTokens": 100000,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				},
+				{
+					"id": "o4-mini",
+					"name": "o4-mini",
+					"api": "openai-responses",
+					"baseUrl": "https://api.openai.com/v1",
+					"provider": "openai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.1,
+						"output": 4.4,
+						"cacheRead": 0.275,
+						"cacheWrite": 0
+					},
+					"contextWindow": 200000,
+					"maxTokens": 100000,
+					"compat": {
+						"supportsStrictMode": true
+					}
+				}
+			]
 		},
 		{
 			"id": "openai-codex",
@@ -16574,8 +18315,7 @@ export const modelCatalogDocument = {
 			"id": "xai",
 			"name": "xAI",
 			"baseUrl": "https://api.x.ai/v1",
-			"supported": false,
-			"reason": "该供应商使用 openai-responses 原生协议，尚未接通。",
+			"supported": true,
 			"auth": {
 				"apiKey": true,
 				"name": "xAI API key",
@@ -16585,7 +18325,136 @@ export const modelCatalogDocument = {
 				"openai-responses"
 			],
 			"catalogModelCount": 4,
-			"models": []
+			"models": [
+				{
+					"id": "grok-4.3",
+					"name": "Grok 4.3",
+					"api": "openai-responses",
+					"baseUrl": "https://api.x.ai/v1",
+					"provider": "xai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 2.5,
+						"cacheRead": 0.2,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 2.5,
+								"output": 5,
+								"cacheRead": 0.4,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 30000,
+					"compat": {
+						"supportsLongCacheRetention": false
+					}
+				},
+				{
+					"id": "grok-4.5",
+					"name": "Grok 4.5",
+					"api": "openai-responses",
+					"baseUrl": "https://api.x.ai/v1",
+					"provider": "xai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.3,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 4,
+								"output": 12,
+								"cacheRead": 0.6,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 500000,
+					"maxTokens": 500000,
+					"compat": {
+						"supportsLongCacheRetention": false
+					}
+				},
+				{
+					"id": "grok-4.6",
+					"name": "Grok 4.6",
+					"api": "openai-responses",
+					"baseUrl": "https://api.x.ai/v1",
+					"provider": "xai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.5,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 4,
+								"output": 12,
+								"cacheRead": 1,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 500000,
+					"maxTokens": 500000,
+					"compat": {
+						"supportsLongCacheRetention": false
+					}
+				},
+				{
+					"id": "grok-4.7",
+					"name": "Grok 4.7",
+					"api": "openai-responses",
+					"baseUrl": "https://api.x.ai/v1",
+					"provider": "xai",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.5,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 4,
+								"output": 12,
+								"cacheRead": 1,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 500000,
+					"maxTokens": 500000,
+					"compat": {
+						"supportsLongCacheRetention": false
+					}
+				}
+			]
 		},
 		{
 			"id": "xiaomi",

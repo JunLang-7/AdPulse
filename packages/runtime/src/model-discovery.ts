@@ -18,7 +18,7 @@ export interface ModelDiscoveryInput {
 
 /** 发现与调用共用同一条路由能力；未接通的协议不得单独开放发现。 */
 export function isDiscoveryProtocolWired(protocol: ModelConnectionProtocol): boolean {
-	return protocol === "openai-completions";
+	return protocol === "openai-completions" || protocol === "openai-responses";
 }
 
 /**
