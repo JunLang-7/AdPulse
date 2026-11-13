@@ -288,10 +288,10 @@ test("configured model selection routes only to the chosen provider", async () =
 		urls.push(sent.url);
 		return providerReply("{}");
 	});
-	assert.deepEqual(models.list("owner").models.map(({ id, status }) => [id, status]), [
-		["deepseek", "configured"], ["openai-compatible", "configured"],
+	assert.deepEqual(models.list("owner").shared.map(({ provider, model }) => [provider, model]), [
+		["deepseek", "deepseek-flash"], ["openai-compatible", "synthetic-alt"],
 	]);
-	assert.deepEqual(await models.extract("owner", "openai-compatible", "产品", "overview"), {});
+	assert.deepEqual(await models.extract("owner", { provider: "openai-compatible", model: "synthetic-alt" }, "产品", "overview"), {});
 	assert.deepEqual(await models.extract("owner", undefined, "产品", "overview"), {});
 	assert.deepEqual(urls, ["https://gateway.example/v1/chat/completions", "https://api.deepseek.com/chat/completions"]);
 });
@@ -305,26 +305,27 @@ test("temporary model credentials are verified, isolated, redacted, removable an
 		requests.push({ auth: sent.headers.get("authorization"), brief: body.messages[1].content });
 		return providerReply("{}");
 	}, () => now);
+	const selection = { provider: "deepseek", model: "deepseek-flash" };
 	const base = await serve(t, { ...compose(new MemoryStorage(), []), taskDraftModels: models });
 	const url = base.url + "/api/task-drafts/models";
 	assert.equal((await fetch(url)).status, 401);
 	const headers = base.headers;
-	const connect = () => fetch(url, { method: "PUT", headers, body: JSON.stringify({ provider: "deepseek", apiKey: "synthetic-personal-key" }) });
+	const connect = () => fetch(url, { method: "PUT", headers, body: JSON.stringify({ ...selection, apiKey: "synthetic-personal-key" }) });
 	const connected = await connect();
 	assert.equal(connected.status, 200);
 	assert.equal(connected.headers.get("cache-control"), "no-store");
 	const result = await connected.text();
-	assert.match(result, /connected/);
+	assert.match(result, /DeepSeek/);
 	assert.doesNotMatch(result, /synthetic-personal-key/);
-	assert.equal(models.list("other-owner").models[0]?.status, "unconfigured");
-	assert.equal(await models.extract("other-owner", "deepseek", "其他用户资料"), null);
+	assert.deepEqual(models.list("other-owner").connections, []);
+	assert.equal(await models.extract("other-owner", selection, "其他用户资料"), null);
 	assert.deepEqual(requests, [{ auth: "Bearer synthetic-personal-key", brief: "产品：连接测试" }]);
-	assert.equal((await request(base, { provider: "deepseek", stage: "overview", brief: "本用户资料" })).status, 200);
-	assert.equal((await fetch(url + "?provider=deepseek", { method: "DELETE", headers })).status, 200);
-	assert.equal((await request(base, { provider: "deepseek", brief: "不能再调用" })).status, 503);
+	assert.equal((await request(base, { ...selection, stage: "overview", brief: "本用户资料" })).status, 200);
+	assert.equal((await fetch(url + "?provider=deepseek&model=deepseek-flash", { method: "DELETE", headers })).status, 200);
+	assert.equal((await request(base, { ...selection, brief: "不能再调用" })).status, 503);
 	assert.equal((await connect()).status, 200);
 	now = 8 * 60 * 60 * 1000;
-	assert.equal(models.list(base.userId).models[0]?.status, "unconfigured");
+	assert.deepEqual(models.list(base.userId).connections, []);
 });
 
 test("connection changes are disabled unless enabled by deployment", async (t) => {
@@ -333,7 +334,7 @@ test("connection changes are disabled unless enabled by deployment", async (t) =
 	const response = await fetch(base.url + "/api/task-drafts/models", {
 		method: "PUT",
 		headers: base.headers,
-		body: JSON.stringify({ provider: "deepseek", apiKey: "synthetic-personal-key" }),
+		body: JSON.stringify({ provider: "deepseek", model: "deepseek-flash", apiKey: "synthetic-personal-key" }),
 	});
 	assert.equal(response.status, 403);
 });

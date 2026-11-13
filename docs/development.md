@@ -61,7 +61,17 @@ demo 脚本直接调用同源 HTTP API，固定使用 demo 收件账户；控制
 
 “补充说明或文件”支持选择或拖放 UTF-8 的 TXT、Markdown、CSV，以及文字型 PDF、Word（DOCX）、Excel（XLSX）。解析在浏览器内进行，文件文字先转成可编辑预览。PDF 最多 40 页，Office 和 PDF 最多 8 MB。长文档可预览前 30,000 字并选留相关内容，中文 PDF 按需加载本机服务提供的 PDF.js 字符映射（[许可](../apps/console/public/licenses/pdfjs-cmaps.txt)）。没有可读取文字的页面会提示，扫描件需先识别文字。本阶段的选项和补充文字在点击“提交本阶段”或“AI 辅助填写”后才发送到模型服务，上限 2,500 字。阶段结果只用于本次待确认草稿，金额、日期和提醒条件由用户补充。整理服务不可用时，可选择按已填写内容继续。
 
-模型调用在服务端通过 pi-ai 统一适配。API 进程默认读取 `DEEPSEEK_API_KEY`。使用另一供应商的 HTTPS OpenAI-compatible 网关时，在 API 进程的本地 `.env` 中同时设置：
+模型调用在服务端通过 pi-ai 统一适配。供应商与模型目录由锁定的 `@earendil-works/pi-ai` 生成，不逐家手写：
+
+```bash
+bun run model-catalog:generate
+```
+
+该命令写出 `packages/runtime/src/model-catalog.generated.ts`（供应商、协议、模型 ID 与可调用模型元数据）。提交前 `tests/model-catalog.test.ts` 会重新读取 SDK 比对，目录漂移即失败；不要手改生成文件。目录里是否“可直连”只表示 AdPulse 已接通个人 API Key + OpenAI Chat Completions 这一条适配路径，不代表已对每家做过真实联调。
+
+右上角个人菜单 →“模型配置”打开统一窗口：左侧是本人连接、部署提供和目录分组，右侧是配置表单与“测试连接 / 保存并使用”。需要 OAuth 账号授权、云凭据链或账号/区域/部署名等额外参数的供应商会显示原因（如 `openai-responses` 原生协议尚未接通），不给出会失败或会误用凭据的假保存按钮。自定义 API 需要受控出网（拒绝内网地址、绑定解析结果、禁止重定向），本期不开放保存。
+
+API 进程仍可读取 `DEEPSEEK_API_KEY` 作为部署提供的默认路由。使用另一供应商的 HTTPS OpenAI-compatible 网关时，在 API 进程的本地 `.env` 中同时设置：
 
 ```dotenv
 TASK_DRAFT_PROVIDER=openai-compatible
@@ -70,11 +80,11 @@ TASK_DRAFT_GATEWAY_MODEL=your-model-id
 TASK_DRAFT_GATEWAY_API_KEY=
 ```
 
-部署配置决定默认提供方。任务页面的“模型设置”按提供方列出连接状态，可为本次任务切换后续请求使用的模型。阶段里的“AI 辅助填写”先展示建议，采用后写回表单。
+这些路由在窗口里显示为“部署提供”，只有用户显式选中才会使用；用户自填密钥失败时不会自动回退到部署密钥或其他人的连接。任务页只保留一个轻量模型入口，选择只作用于本次任务，不写全局默认，也不改已完成操作的历史记录。
 
-需要允许已认证用户通过界面连接临时 API 密钥时，部署者可设置 `TASK_DRAFT_USER_KEYS_ENABLED=1`。连接用固定合成短句验证，密钥在服务端内存按用户隔离，最多保留 8 小时，且可断开。服务重启会清空临时连接。部署时应通过受信任的 HTTPS 入口访问。
+需要允许已认证用户通过界面连接临时 API 密钥时，部署者可设置 `TASK_DRAFT_USER_KEYS_ENABLED=1`。连接会在保存前用固定合成短句测试所选模型，密钥只写、不回显，在服务端内存按用户 + 供应商 + 模型隔离，最多保留 8 小时，且可断开。服务重启会清空临时连接；这是临时连接，不是 #86 规划中的持久化加密凭据。部署时应通过受信任的 HTTPS 入口访问。
 
-网关需支持 Chat Completions 的 SSE 和 JSON 输出，界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
+所选供应商需支持 Chat Completions 的 SSE 和 JSON 输出，界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
 
 ## 3. 持久化与独立 worker
 

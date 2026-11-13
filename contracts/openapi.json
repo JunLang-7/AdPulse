@@ -38,7 +38,7 @@
       },
       "put": {
         "operationId": "connectTaskDraftModel",
-        "description": "Verify a temporary API key on a preconfigured route. The credential is write-only and remains in server memory for up to eight hours.",
+        "description": "Verify a personal API key against the selected catalog model, then keep it as a temporary connection. The credential is write-only, returns no value, and stays in server memory for up to eight hours.",
         "requestBody": {
           "required": true,
           "content": {
@@ -132,6 +132,12 @@
             "schema": {
               "$ref": "#/components/schemas/TaskDraftProvider"
             }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 160 }
           }
         ],
         "responses": {
@@ -185,6 +191,35 @@
               }
             }
           }
+        }
+      }
+    },
+    "/api/task-drafts/models/test": {
+      "post": {
+        "operationId": "testTaskDraftModel",
+        "description": "Send one fixed synthetic test message to the selected catalog model with the supplied key. Nothing is stored and no task material is sent.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TaskDraftModelConnection" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Whether the selected model accepted the test request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TaskDraftConnectionCheck" }
+              }
+            }
+          },
+          "400": { "description": "Invalid or unsupported model selection", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Temporary model connections disabled", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "413": { "description": "Request too large", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "415": { "description": "JSON required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
@@ -1477,23 +1512,39 @@
         "properties": {
           "brief": { "type": "string", "minLength": 1, "maxLength": 2500 },
           "stage": { "$ref": "#/components/schemas/TaskDraftStage" },
-          "provider": { "$ref": "#/components/schemas/TaskDraftProvider" }
+          "provider": { "$ref": "#/components/schemas/TaskDraftProvider" },
+          "model": { "$ref": "#/components/schemas/TaskDraftModelId" }
         },
         "required": ["brief"],
         "additionalProperties": false
       },
-      "TaskDraftProvider": {"type":"string","enum":["deepseek","openai-compatible"]},
+      "TaskDraftProvider": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "description": "Provider id from the generated pi-ai catalog. A deployed route uses its own id (deepseek or openai-compatible)."
+      },
+      "TaskDraftModelId": { "type": "string", "minLength": 1, "maxLength": 160 },
+      "TaskDraftModelSelection": {
+        "type": "object",
+        "required": ["provider", "model"],
+        "additionalProperties": false,
+        "properties": {
+          "provider": { "$ref": "#/components/schemas/TaskDraftProvider" },
+          "model": { "$ref": "#/components/schemas/TaskDraftModelId" }
+        }
+      },
       "TaskDraftModelConnection": {
         "type": "object",
         "required": [
           "provider",
+          "model",
           "apiKey"
         ],
         "additionalProperties": false,
         "properties": {
-          "provider": {
-            "$ref": "#/components/schemas/TaskDraftProvider"
-          },
+          "provider": { "$ref": "#/components/schemas/TaskDraftProvider" },
+          "model": { "$ref": "#/components/schemas/TaskDraftModelId" },
           "apiKey": {
             "type": "string",
             "minLength": 8,
@@ -1503,59 +1554,73 @@
           }
         }
       },
-      "TaskDraftModelCatalog": {
+      "TaskDraftConnectionCheck": {
         "type": "object",
-        "required": [
-          "defaultProvider",
-          "canConnect",
-          "models"
-        ],
+        "required": ["ok"],
+        "additionalProperties": false,
+        "properties": { "ok": { "type": "boolean" } }
+      },
+      "TaskDraftCatalogModel": {
+        "type": "object",
+        "required": ["id", "name"],
         "additionalProperties": false,
         "properties": {
-          "defaultProvider": {
-            "type": "string",
+          "id": { "$ref": "#/components/schemas/TaskDraftModelId" },
+          "name": { "type": "string" }
+        }
+      },
+      "TaskDraftCatalogProvider": {
+        "type": "object",
+        "required": ["id", "name", "baseUrl", "supported", "models"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "$ref": "#/components/schemas/TaskDraftProvider" },
+          "name": { "type": "string" },
+          "baseUrl": { "type": "string", "nullable": true },
+          "supported": { "type": "boolean" },
+          "reason": { "type": "string", "description": "Why an unsupported provider cannot be connected yet." },
+          "models": { "type": "array", "items": { "$ref": "#/components/schemas/TaskDraftCatalogModel" } }
+        }
+      },
+      "TaskDraftModelRoute": {
+        "type": "object",
+        "required": ["provider", "model", "label"],
+        "additionalProperties": false,
+        "properties": {
+          "provider": { "$ref": "#/components/schemas/TaskDraftProvider" },
+          "model": { "$ref": "#/components/schemas/TaskDraftModelId" },
+          "label": { "type": "string" }
+        }
+      },
+      "TaskDraftConnectionInfo": {
+        "type": "object",
+        "required": ["provider", "model", "label", "connectedAt"],
+        "additionalProperties": false,
+        "properties": {
+          "provider": { "$ref": "#/components/schemas/TaskDraftProvider" },
+          "model": { "$ref": "#/components/schemas/TaskDraftModelId" },
+          "label": { "type": "string" },
+          "connectedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TaskDraftModelCatalog": {
+        "type": "object",
+        "required": ["canConnect", "defaultSelection", "providers", "shared", "connections"],        "additionalProperties": false,
+        "properties": {
+          "canConnect": { "type": "boolean" },
+          "defaultSelection": {
+            "type": "object",
             "nullable": true,
-            "enum": [
-              "deepseek",
-              "openai-compatible",
-              null
-            ]
-          },
-          "canConnect": {
-            "type": "boolean"
-          },
-          "models": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "id",
-                "label",
-                "model",
-                "status"
-              ],
-              "additionalProperties": false,
-              "properties": {
-                "id": {
-                  "$ref": "#/components/schemas/TaskDraftProvider"
-                },
-                "label": {
-                  "type": "string"
-                },
-                "model": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "configured",
-                    "connected",
-                    "unconfigured"
-                  ]
-                }
-              }
+            "required": ["provider", "model"],
+            "additionalProperties": false,
+            "properties": {
+              "provider": { "$ref": "#/components/schemas/TaskDraftProvider" },
+              "model": { "$ref": "#/components/schemas/TaskDraftModelId" }
             }
-          }
+          },
+          "providers": { "type": "array", "items": { "$ref": "#/components/schemas/TaskDraftCatalogProvider" } },
+          "shared": { "type": "array", "items": { "$ref": "#/components/schemas/TaskDraftModelRoute" } },
+          "connections": { "type": "array", "items": { "$ref": "#/components/schemas/TaskDraftConnectionInfo" } }
         }
       },
       "TaskDraftStage": {

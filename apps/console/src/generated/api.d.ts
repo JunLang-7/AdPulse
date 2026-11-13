@@ -12,10 +12,27 @@ export interface paths {
             cookie?: never;
         };
         get: operations["listTaskDraftModels"];
-        /** @description Verify a temporary API key on a preconfigured route. The credential is write-only and remains in server memory for up to eight hours. */
+        /** @description Verify a personal API key against the selected catalog model, then keep it as a temporary connection. The credential is write-only, returns no value, and stays in server memory for up to eight hours. */
         put: operations["connectTaskDraftModel"];
         post?: never;
         delete: operations["disconnectTaskDraftModel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/task-drafts/models/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Send one fixed synthetic test message to the selected catalog model with the supplied key. Nothing is stored and no task material is sent. */
+        post: operations["testTaskDraftModel"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -786,25 +803,58 @@ export interface components {
             brief: string;
             stage?: components["schemas"]["TaskDraftStage"];
             provider?: components["schemas"]["TaskDraftProvider"];
+            model?: components["schemas"]["TaskDraftModelId"];
         };
-        /** @enum {string} */
-        TaskDraftProvider: "deepseek" | "openai-compatible";
+        /** @description Provider id from the generated pi-ai catalog. A deployed route uses its own id (deepseek or openai-compatible). */
+        TaskDraftProvider: string;
+        TaskDraftModelId: string;
+        TaskDraftModelSelection: {
+            provider: components["schemas"]["TaskDraftProvider"];
+            model: components["schemas"]["TaskDraftModelId"];
+        };
         TaskDraftModelConnection: {
             provider: components["schemas"]["TaskDraftProvider"];
+            model: components["schemas"]["TaskDraftModelId"];
             /** Format: password */
             apiKey: string;
         };
+        TaskDraftConnectionCheck: {
+            ok: boolean;
+        };
+        TaskDraftCatalogModel: {
+            id: components["schemas"]["TaskDraftModelId"];
+            name: string;
+        };
+        TaskDraftCatalogProvider: {
+            id: components["schemas"]["TaskDraftProvider"];
+            name: string;
+            baseUrl: string | null;
+            supported: boolean;
+            /** @description Why an unsupported provider cannot be connected yet. */
+            reason?: string;
+            models: components["schemas"]["TaskDraftCatalogModel"][];
+        };
+        TaskDraftModelRoute: {
+            provider: components["schemas"]["TaskDraftProvider"];
+            model: components["schemas"]["TaskDraftModelId"];
+            label: string;
+        };
+        TaskDraftConnectionInfo: {
+            provider: components["schemas"]["TaskDraftProvider"];
+            model: components["schemas"]["TaskDraftModelId"];
+            label: string;
+            /** Format: date-time */
+            connectedAt: string;
+        };
         TaskDraftModelCatalog: {
-            /** @enum {string|null} */
-            defaultProvider: "deepseek" | "openai-compatible" | null;
             canConnect: boolean;
-            models: {
-                id: components["schemas"]["TaskDraftProvider"];
-                label: string;
-                model: string;
-                /** @enum {string} */
-                status: "configured" | "connected" | "unconfigured";
-            }[];
+            defaultSelection: {
+                provider: components["schemas"]["TaskDraftProvider"];
+                model: components["schemas"]["TaskDraftModelId"];
+            } | null;
+            providers: components["schemas"]["TaskDraftCatalogProvider"][];
+            shared: components["schemas"]["TaskDraftModelRoute"][];
+            connections: components["schemas"]["TaskDraftConnectionInfo"][];
         };
         /**
          * @description Overview limits suggestions to product and objective, audience to audience and sellingPoints, and channels to channel names.
@@ -1558,6 +1608,7 @@ export interface operations {
         parameters: {
             query: {
                 provider: components["schemas"]["TaskDraftProvider"];
+                model: string;
             };
             header?: never;
             path?: never;
@@ -1603,6 +1654,75 @@ export interface operations {
             };
             /** @description Connection test is in progress */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    testTaskDraftModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskDraftModelConnection"];
+            };
+        };
+        responses: {
+            /** @description Whether the selected model accepted the test request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDraftConnectionCheck"];
+                };
+            };
+            /** @description Invalid or unsupported model selection */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporary model connections disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description JSON required */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

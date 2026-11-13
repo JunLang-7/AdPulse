@@ -9,7 +9,7 @@ import type {
 	TaskInput,
 	Transaction,
 } from "@adpluse/core";
-import { taskDraftBriefMaxLength, taskDraftProviderIds, taskDraftStages, type Runtime } from "@adpluse/runtime";
+import { findCatalogModel, taskDraftBriefMaxLength, taskDraftStages, type Runtime, type TaskDraftSelection } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
 
@@ -86,12 +86,35 @@ const sessionInput = z
 		expiresAt: z.iso.datetime(),
 	})
 	.strict();
+const taskDraftSelection = z
+	.object({
+		provider: z.string().trim().min(1).max(64),
+		model: z.string().trim().min(1).max(160),
+	})
+	.strict();
+const taskDraftConnectionInput = z
+	.object({
+		provider: z.string().trim().min(1).max(64),
+		model: z.string().trim().min(1).max(160),
+		apiKey: z.string().trim().min(8).max(512),
+	})
+	.strict();
 const taskDraftExtractionInput = z
 	.object({
 		brief: z.string().max(taskDraftBriefMaxLength).trim().min(1),
-		stage: z.enum(taskDraftStages).optional(), provider: z.enum(taskDraftProviderIds).optional(),
+		stage: z.enum(taskDraftStages).optional(),
+		provider: z.string().trim().min(1).max(64).optional(),
+		model: z.string().trim().min(1).max(160).optional(),
 	})
-	.strict();
+	.strict()
+	.refine(({ provider, model }) => (provider === undefined) === (model === undefined), {
+		message: "provider and model must be provided together",
+	});
+/** Catalog membership is checked before any credential is stored or used. */
+function supportedSelection(input: TaskDraftSelection): TaskDraftSelection {
+	if (!findCatalogModel(input.provider, input.model)) throw new HttpError(400, "unsupported model selection");
+	return input;
+}
 const taskInput = z
 	.object({
 		product: z.string().trim().min(1).max(200),
@@ -284,24 +307,37 @@ export async function handleAdmin(
 	if (path === "/api/task-drafts/models") {
 		res.setHeader("Cache-Control", "no-store");
 		const models = runtime.taskDraftModels;
-		if (req.method === "GET") return json(res, 200, models?.list(userId) ?? { defaultProvider: null, canConnect: false, models: [] });
+		if (req.method === "GET") return json(res, 200, models?.list(userId) ?? { canConnect: false, defaultSelection: null, providers: [], shared: [], connections: [] });
 		if (req.method === "PUT" || req.method === "DELETE") {
 			if (!models?.list(userId).canConnect) throw new HttpError(403, "model connections disabled");
-			const provider = z.enum(taskDraftProviderIds);
 			if (req.method === "DELETE") {
-				const choice = provider.parse(new URL(req.url ?? "", "http://localhost").searchParams.get("provider"));
-				if (!models.disconnect(userId, choice)) throw new HttpError(409, "model connection busy");
+				const query = new URL(req.url ?? "", "http://localhost").searchParams;
+				const selection = supportedSelection(taskDraftSelection.parse({
+					provider: query.get("provider"),
+					model: query.get("model"),
+				}));
+				if (!models.disconnect(userId, selection)) throw new HttpError(409, "model connection busy");
 			} else {
-				const input = z.object({ provider, apiKey: z.string().trim().min(8).max(512) }).strict().parse(await readJson(req));
-				if (!await models.connect(userId, input.provider, input.apiKey)) throw new HttpError(503, "model connection unavailable");
+				const input = taskDraftConnectionInput.parse(await readJson(req));
+				const selection = supportedSelection(input);
+				if (!await models.connect(userId, selection, input.apiKey)) throw new HttpError(503, "model connection unavailable");
 			}
 			return json(res, 200, models.list(userId));
 		}
 	}
+	if (path === "/api/task-drafts/models/test" && req.method === "POST") {
+		res.setHeader("Cache-Control", "no-store");
+		const models = runtime.taskDraftModels;
+		if (!models?.list(userId).canConnect) throw new HttpError(403, "model connections disabled");
+		const input = taskDraftConnectionInput.parse(await readJson(req));
+		const selection = supportedSelection(input);
+		return json(res, 200, { ok: await models.test(selection, input.apiKey) });
+	}
 	if (path === "/api/task-drafts/extract" && req.method === "POST") {
-		const { brief, stage, provider } = taskDraftExtractionInput.parse(await readJson(req));
+		const { brief, stage, provider, model } = taskDraftExtractionInput.parse(await readJson(req));
+		const selection = provider === undefined || model === undefined ? undefined : supportedSelection({ provider, model });
 		const suggestions = runtime.taskDraftModels
-			? await runtime.taskDraftModels.extract(userId, provider, brief, stage)
+			? await runtime.taskDraftModels.extract(userId, selection, brief, stage)
 			: await runtime.extractTaskDraft?.(brief, stage);
 		if (!suggestions) throw new HttpError(503, "task draft extraction unavailable");
 		return json(res, 200, suggestions);

@@ -1,6 +1,7 @@
 import { createModels, createProvider, envApiKeyAuth, type Model, type Provider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
+import { findCatalogModel } from "./model-catalog.js";
 
 export const taskDraftBriefMaxLength = 2_500;
 export const taskDraftStages = ["overview", "audience", "channels"] as const;
@@ -124,7 +125,6 @@ type ProviderRoute = {
 	modelId: string;
 	key: string;
 };
-
 export function getTaskDraftGateway(env: Record<string, string | undefined>) {
 	const modelId = env.TASK_DRAFT_GATEWAY_MODEL?.trim();
 	const configuredUrl = env.TASK_DRAFT_GATEWAY_BASE_URL?.trim();
@@ -184,9 +184,58 @@ export function createTaskDraftExtractor(
 ): TaskDraftExtractor | undefined {
 	const route = configureProvider(env);
 	if (!route) return;
+	return createRouteExtractor(route.provider, route.modelId, route.key, fetchImpl, limit);
+}
+
+/**
+ * Personal API-key route for one catalog model. The provider id/model id must
+ * resolve to a supported entry of the generated directory; a missing entry is
+ * a hard failure, never a silent fallback to a deployment key.
+ */
+export function createCatalogTaskDraftExtractor(
+	providerId: string,
+	modelId: string,
+	apiKey: string,
+	fetchImpl: typeof fetch = fetch,
+	limit = createTaskDraftRequestLimit(),
+): TaskDraftExtractor | undefined {
+	const entry = findCatalogModel(providerId, modelId);
+	const key = apiKey.trim();
+	if (!entry || !key || entry.provider !== providerId) return;
+	const model = {
+		id: entry.id,
+		name: entry.name,
+		api: "openai-completions",
+		provider: providerId,
+		baseUrl: entry.baseUrl,
+		reasoning: entry.reasoning ?? false,
+		input: (entry.input ?? ["text"]) as Model<"openai-completions">["input"],
+		cost: entry.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: entry.contextWindow ?? 8_192,
+		maxTokens: entry.maxTokens ?? maxOutputTokens,
+		...(entry.compat ? { compat: entry.compat as NonNullable<Model<"openai-completions">["compat"]> } : {}),
+	} satisfies Model<"openai-completions">;
+	const provider = createProvider({
+		id: providerId,
+		name: entry.name,
+		baseUrl: entry.baseUrl,
+		auth: { apiKey: envApiKeyAuth(entry.name, []) },
+		models: [model],
+		api: openAICompletionsApi(),
+	});
+	return createRouteExtractor(provider, entry.id, key, fetchImpl, limit);
+}
+
+function createRouteExtractor(
+	provider: Provider<"openai-completions">,
+	modelId: string,
+	key: string,
+	fetchImpl: typeof fetch,
+	limit: ReturnType<typeof createTaskDraftRequestLimit>,
+): TaskDraftExtractor | undefined {
 	const models = createModels();
-	models.setProvider(route.provider);
-	const model = models.getModel(route.provider.id, route.modelId);
+	models.setProvider(provider);
+	const model = models.getModel(provider.id, modelId);
 	if (!model) return;
 	const guardedFetch = providerFetch(model.baseUrl + "/chat/completions", fetchImpl);
 	return async (brief, stage) => {
@@ -198,7 +247,7 @@ export function createTaskDraftExtractor(
 					systemPrompt: prompt(fields),
 					messages: [{ role: "user", content: brief, timestamp: Date.now() }],
 				}, {
-					apiKey: route.key,
+					apiKey: key,
 					fetch: guardedFetch,
 					signal: AbortSignal.timeout(requestTimeoutMs),
 					timeoutMs: requestTimeoutMs,
