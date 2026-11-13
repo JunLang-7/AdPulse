@@ -172,7 +172,8 @@ export function createModelConnections(
 		/** 用固定合成短句验证候选连接；不写入、不发送任务材料。 */
 		async probe(input: ModelRouteInput): Promise<boolean> {
 			const extract = createPersistedTaskDraftExtractor(input, fetchImpl, limit);
-			return extract ? await extract(modelConnectionTestBrief, "overview") !== null : false;
+			const suggestions = extract ? await extract(modelConnectionTestBrief, "overview") : null;
+			return suggestions !== null && Object.keys(suggestions).length > 0;
 		},
 		draftExtractor(input: ModelRouteInput): TaskDraftExtractor | undefined {
 			return createPersistedTaskDraftExtractor(input, fetchImpl, limit);

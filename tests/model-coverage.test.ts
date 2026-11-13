@@ -7,7 +7,7 @@ import test from "node:test";
 import { modelCatalogDocument } from "../packages/runtime/dist/model-catalog.generated.js";
 import { authLabel, coverageDocPath, renderCoverage } from "../scripts/model-provider-coverage.mjs";
 
-const doc = () => readFileSync(coverageDocPath, "utf8");
+const doc = () => readFileSync(coverageDocPath, "utf8").replaceAll("\r\n", "\n");
 
 test("coverage doc is generated from the committed catalog, not hand-edited", () => {
 	assert.equal(doc(), renderCoverage(modelCatalogDocument));
@@ -31,6 +31,15 @@ test("coverage doc never marks an unreviewed provider as accepted", () => {
 	assert.equal(rows.length, providers.length);
 	for (const row of rows) assert.match(row, /\| 未验收 \|$/, row);
 	assert.doesNotMatch(text, /已验收/);
+});
+
+test("coverage keeps SDK cloud-auth labels and full directory model counts", () => {
+	assert.equal(authLabel({ apiKey: true, oauth: false, name: "AWS credentials or bearer token" }), "AWS credentials or bearer token");
+	const text = doc();
+	for (const provider of modelCatalogDocument.providers) {
+		const row = text.split("\n").find((line) => line.includes(`| \`${provider.id}\` |`));
+		assert.ok(row?.includes(`| ${provider.catalogModelCount} |`), provider.id);
+	}
 });
 
 test("auth labels come from the SDK declaration", () => {

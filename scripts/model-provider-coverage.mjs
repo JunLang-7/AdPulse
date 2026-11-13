@@ -15,8 +15,9 @@ export const coverageDocPath = join(root, "docs", "model-provider-coverage.md");
 
 export function authLabel(auth) {
 	if (!auth) return "—";
-	if (auth.apiKey && auth.oauth) return "API Key / 账号授权（OAuth）";
-	if (auth.apiKey) return "API Key";
+	const keyLabel = auth.name ?? "API Key";
+	if (auth.apiKey && auth.oauth) return `${keyLabel} / 账号授权（OAuth）`;
+	if (auth.apiKey) return keyLabel;
 	if (auth.oauth) return "账号授权（OAuth）";
 	return "—";
 }
@@ -35,7 +36,7 @@ export function renderCoverage(document) {
 		const adaptation = provider.supported
 			? "可直连（个人 API Key · Chat Completions）"
 			: `未接通：${provider.reason ?? "未说明"}`;
-		return `| ${index + 1} | ${cell(provider.name)} | \`${provider.id}\` | ${authLabel(provider.auth)} | ${provider.protocols.length ? provider.protocols.map((item) => `\`${item}\``).join(" / ") : "—"} | ${provider.models.length} | ${cell(adaptation)} | 未验收 |`;
+		return `| ${index + 1} | ${cell(provider.name)} | \`${provider.id}\` | ${cell(authLabel(provider.auth))} | ${provider.protocols.length ? provider.protocols.map((item) => `\`${item}\``).join(" / ") : "—"} | ${provider.catalogModelCount} | ${cell(adaptation)} | 未验收 |`;
 	});
 	return [
 		"<!-- 由 `bun run model-coverage:generate` 生成，勿手改。 -->",
@@ -43,7 +44,7 @@ export function renderCoverage(document) {
 		"# 模型供应商覆盖清单",
 		"",
 		`来源：锁定版本 \`${document.generatedFrom.package}@${document.generatedFrom.version}\` 的完整供应商目录。`,
-		"本表由目录生成，不是手工维护的品牌白名单；改锁定版本后重跑生成命令并提交。",
+		"本表由锁定 pi-ai 目录生成；目录模型数包含未接通项，可直连汇总仅计算已适配模型。认证列保留 SDK 认证名称，apiKey 扩展点也可能代表云凭据链。尚未完成与 Harness 参考提交的逐项差异核对。",
 		"",
 		"状态是四个独立事实，不能互相替代：",
 		"",
@@ -60,7 +61,7 @@ export function renderCoverage(document) {
 		"",
 		"## 差异与后续",
 		"",
-		"- 未接通的主因：原生协议未适配（`openai-responses`、`anthropic-messages`、`google-generative-ai`、`mistral-conversations`、`bedrock-converse-stream` 等），或需要账号/区域/部署名等额外参数，或依赖 OAuth 账号授权。",
+		"- 未接通的主因：原生协议未适配（`openai-responses`、`anthropic-messages`、`google-generative-ai`、`mistral-conversations`、`bedrock-converse-stream` 等），或需要账号/区域/部署名等额外参数，或仅提供账号授权。提供可选 OAuth 不妨碍其个人 API Key 路径单独接入。",
 		"- `google-generative-ai` 的 pi-ai 适配器拒绝自定义 `fetch`，要纳入受控出网需要自研传输层，不能直接开启。",
 		"- 接入新协议时，必须同时补：协议适配、合成响应测试、二次验证与共享限额复用、“真实供应商验收”单独取证。",
 		"",

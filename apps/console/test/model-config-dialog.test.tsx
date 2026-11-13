@@ -121,6 +121,27 @@ test("模型配置：自定义 API 可获取模型列表并选用", async (t) =>
 	assert.deepEqual([...((select as HTMLSelectElement).options)].map((option) => option.value), ["mimo-v2-flash", "mimo-v2-pro"]);
 });
 
+test("模型配置：地址修改后忽略晚到的发现结果", async (t) => {
+	t.after(cleanup);
+	let finish: ((response: Response) => void) | undefined;
+	serve(baseRoutes, {
+		"POST /api/me/model-connections/models": () => new Promise<Response>((resolve) => { finish = resolve; }),
+	});
+	renderDialog();
+	fireEvent.click(await screen.findByRole("button", { name: "自定义 API" }));
+	const address = screen.getByPlaceholderText("https://api.example.com/v1");
+	fireEvent.change(address, { target: { value: "https://first.example/v1" } });
+	fireEvent.change(screen.getByPlaceholderText("粘贴你的 API Key"), { target: { value: "synthetic-key" } });
+	fireEvent.click(screen.getByRole("button", { name: "获取模型列表" }));
+	await waitFor(() => assert.ok(finish));
+	fireEvent.change(address, { target: { value: "https://second.example/v1" } });
+	fireEvent.change(screen.getByPlaceholderText("例如：mimo-v2-flash"), { target: { value: "manual-model" } });
+	finish?.(json({ models: ["old-target-model"] }));
+	await waitFor(() => assert.equal((screen.getByRole("button", { name: "获取模型列表" }) as HTMLButtonElement).disabled, false));
+	assert.equal(screen.queryByRole("option", { name: "old-target-model" }), null);
+	assert.ok(screen.getByDisplayValue("manual-model"));
+});
+
 test("模型配置：自定义 API 可填写并保存自定义地址", async (t) => {
 	t.after(cleanup);
 	const bodies: unknown[] = [];

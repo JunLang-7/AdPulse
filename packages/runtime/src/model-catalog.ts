@@ -29,7 +29,9 @@ export interface ModelCatalogProvider {
 	/** Present only when `supported` is false. */
 	reason?: string;
 	/** SDK 声明的认证方式；用于覆盖清单，不参与运行时分发。 */
-	auth?: { apiKey: boolean; oauth: boolean };
+	auth?: { apiKey: boolean; oauth: boolean; name?: string | null };
+	/** 完整 SDK 目录计数，与可调用子集 models 分开。 */
+	catalogModelCount: number;
 	protocols: readonly string[];
 	models: readonly ModelCatalogModel[];
 }
