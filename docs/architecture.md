@@ -72,6 +72,8 @@ version 是决策版本，每次成功处理选择都会递增，即使 changes 
 
 个人模型连接（#86 PR1）另有三张表：`userModelConnections`（非敏感投影、版本、验证结果）、`userModelCredentials`（每条连接一份 AES-256-GCM 密文，密文与 nonce/tag 分列）、`userModelPreferences`（本人默认 `(connectionId, modelId)`）。唯一索引分别约束 `(ownerId, providerId)`、`(ownerId, connectionId)` 与 `ownerId`。加密端口在 core，实现在 runtime；AAD 绑定 owner/连接/凭据版本/目标地址/协议，主密钥不在数据库里。服务只在主密钥配置有效时装配，否则整个能力失败关闭。
 
+模型额度分两层：按 owner（6 次/分钟、并发 1）与实例总量（8 次/分钟、并发 2），测试、发现与抽取共用计数，均在网络请求前判定；`createUserRequestBudgets()` 只约束单进程，不是分布式限流。
+
 模型调用的出网层在 [model-egress.ts](../packages/runtime/src/model-egress.ts)：只允许 HTTPS，按全部 DNS 结果校验公网地址并把连接绑定到已校验地址，不跟随重定向，不读环境代理，限制响应大小与超时。自定义 API 仍属于个人连接，不允许绕开这层直接发请求。
 
 已适配的原生协议为 `openai-completions`、`openai-responses`、`anthropic-messages`；其余协议返回 422，不降级。供应商覆盖、认证类型与差异清单由目录生成：[model-provider-coverage.md](model-provider-coverage.md)。其中“真实供应商验收”统一为未验收，不因目录存在或合成测试通过而改写。

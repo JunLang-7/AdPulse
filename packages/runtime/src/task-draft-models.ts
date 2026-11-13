@@ -4,6 +4,7 @@ import {
 	createCatalogTaskDraftExtractor,
 	createTaskDraftExtractor,
 	createTaskDraftRequestLimit,
+	createUserRequestBudgets,
 	getTaskDraftGateway,
 	type TaskDraftExtractor,
 	type TaskDraftStage,
@@ -54,6 +55,8 @@ export function createTaskDraftModels(
 ) {
 	const canConnect = env.TASK_DRAFT_USER_KEYS_ENABLED === "1";
 	const limit = createTaskDraftRequestLimit();
+	// 兼容路径也按 owner 限流：部署路由由所有人共享，不能让单个用户刷满。
+	const userLimitFor = createUserRequestBudgets();
 	const shared = sharedRoutes(env, fetchImpl, limit);
 	const sharedSelection = shared[0]?.selection ?? null;
 	const connections = new Map<string, StoredConnection>();
@@ -117,11 +120,15 @@ export function createTaskDraftModels(
 			};
 		},
 		/** Tests a candidate key without storing or selecting anything. */
-		async test(selection: TaskDraftSelection, secret: string) {
+		async test(ownerId: string, selection: TaskDraftSelection, secret: string) {
 			if (!canConnect || !findCatalogModel(selection.provider, selection.model)) return false;
 			const extract = createExtractor(selection, secret);
 			if (!extract) return false;
-			return await extract(testBrief, "overview") !== null;
+			const userLimit = userLimitFor(ownerId);
+			return await userLimit(async () => {
+				const suggestions = await extract(testBrief, "overview");
+				return suggestions === null ? null : { ok: true };
+			}) !== null;
 		},
 		async connect(ownerId: string, selection: TaskDraftSelection, secret: string) {
 			if (!canConnect || !findCatalogModel(selection.provider, selection.model)) return false;
@@ -131,7 +138,12 @@ export function createTaskDraftModels(
 			pending.add(key);
 			try {
 				const extract = createExtractor(selection, secret);
-				if (!extract || await extract(testBrief, "overview") === null) return false;
+				if (!extract) return false;
+				const userLimit = userLimitFor(ownerId);
+				if (await userLimit(async () => {
+					const suggestions = await extract(testBrief, "overview");
+					return suggestions === null ? null : { ok: true };
+				}) === null) return false;
 				prune();
 				if (!connections.has(key) && connections.size >= maxConnections) return false;
 				remove(key);
@@ -155,7 +167,9 @@ export function createTaskDraftModels(
 			const matching = ownConnections(ownerId).filter((item) => item.provider === provider);
 			const [route] = matching;
 			if (matching.length !== 1 || !route) return null;
-			return connections.get(connectionKey(ownerId, route))?.extract(brief, stage) ?? null;
+			const extract = connections.get(connectionKey(ownerId, route))?.extract;
+			if (!extract) return null;
+			return userLimitFor(ownerId)(() => extract(brief, stage));
 		},
 		extractShared(selection: TaskDraftSelection, brief: string, stage?: TaskDraftStage) {
 			const route = shared.find(({ selection: item }) =>
@@ -167,7 +181,7 @@ export function createTaskDraftModels(
 			const chosen = selection ?? defaultSelection(ownerId);
 			if (!chosen) return null;
 			const connection = connections.get(connectionKey(ownerId, chosen));
-			if (connection) return connection.extract(brief, stage);
+			if (connection) return userLimitFor(ownerId)(() => connection.extract(brief, stage));
 			const sharedRoute = shared.find((route) =>
 				route.selection.provider === chosen.provider && route.selection.model === chosen.model);
 			return sharedRoute ? sharedRoute.extract(brief, stage) : null;

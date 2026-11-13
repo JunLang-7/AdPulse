@@ -56,7 +56,7 @@ function withModels(options: { env?: Record<string, string>; reply?: () => Respo
 	return { runtime, storage, requests };
 }
 
-async function serve(t: TestContext, runtime: Runtime, verifiedAt = new Date().toISOString()) {
+async function serve(t: TestContext, runtime: Runtime, verifiedAt = new Date().toISOString(), externalId = "ou-model-owner") {
 	const service = new AuthenticationService(runtime.storage);
 	const publicOrigin = "http://localhost";
 	const token = randomBytes(32).toString("base64url");
@@ -65,7 +65,7 @@ async function serve(t: TestContext, runtime: Runtime, verifiedAt = new Date().t
 		applicationId: "cli_model_test",
 		tenantId: "tenant-model-test",
 		idType: "open_id",
-		externalId: "ou-model-owner",
+		externalId,
 	}, createHash("sha256").update(token).digest("hex"), verifiedAt);
 	const server = createApi(runtime, {
 		service,
@@ -469,13 +469,37 @@ test("model connections API: stale authentication cannot send probes or change c
 	assert.equal(requests.length, 0);
 });
 
-test("model connections API: discovery shares the model request budget", async (t) => {
+test("model connections API: discovery shares the per-user budget", async (t) => {
 	const { runtime, requests } = withModels({ reply: () => Response.json({ data: [{ id: "mimo-v2-flash" }] }) });
 	const server = await serve(t, runtime);
 	const body = { baseUrl: "https://api.mimotest.example/v1", protocol: "openai-completions", apiKey: "synthetic-personal-key" };
-	for (let attempt = 0; attempt < 8; attempt++)
+	// 单用户上限 6 次/分钟，比实例的 8 次/分钟更小。
+	for (let attempt = 0; attempt < 6; attempt++)
 		assert.equal((await call(server, "/api/me/model-connections/models", "POST", body)).status, 200);
 	assert.equal((await call(server, "/api/me/model-connections/models", "POST", body)).status, 503);
+	assert.equal(requests.length, 6);
+});
+
+test("model connections API: per-user budgets stop one user from exhausting the instance", async (t) => {
+	const { runtime, requests } = withModels();
+	const owner = await serve(t, runtime);
+	const other = await serve(t, runtime, new Date().toISOString(), "ou-model-other");
+	const created = await (await call(owner, "/api/me/model-connections", "POST", customInput())).json() as { id: string };
+	assert.equal(requests.length, 1);
+	const route = "/api/task-drafts/extract";
+	const body = { connectionId: created.id, brief: "产品：连接测试", stage: "overview" };
+	for (let attempt = 0; attempt < 5; attempt++)
+		assert.equal((await call(owner, route, "POST", body)).status, 200);
+	// 第 7 次网络动作：该用户自己的窗口已满，实例预算还有余量。
+	assert.equal((await call(owner, route, "POST", body)).status, 503);
+	assert.equal(requests.length, 6);
+	// 另一个用户不受影响，但总量仍受实例 8 次/分钟约束。
+	const otherCreated = await call(other, "/api/me/model-connections", "POST", customInput({ providerId: "other-mimo" }));
+	assert.equal(otherCreated.status, 201);
+	const otherId = (await otherCreated.json() as { id: string }).id;
+	assert.equal((await call(other, route, "POST", { ...body, connectionId: otherId })).status, 200);
+	assert.equal(requests.length, 8);
+	assert.equal((await call(other, route, "POST", { ...body, connectionId: otherId })).status, 503);
 	assert.equal(requests.length, 8);
 });
 
@@ -493,8 +517,9 @@ test("model connections API: default, legacy and explicit personal selection sha
 	assert.equal((await call(server, route, "POST", noChoice)).status, 200);
 	assert.equal((await call(server, route, "POST", { ...noChoice, provider: "mimo" })).status, 200);
 	assert.equal((await call(server, route, "POST", { ...noChoice, provider: "deepseek" })).status, 409);
-	for (let n = 0; n < 5; n++)
+	// create(1) + 默认(2) + provider(3) 之后，该用户还剩 3 次预算。
+	for (let n = 0; n < 3; n++)
 		assert.equal((await call(server, route, "POST", { ...noChoice, connectionId: created.id })).status, 200);
 	assert.equal((await call(server, route, "POST", noChoice)).status, 503);
-	assert.equal(requests.length, 8);
+	assert.equal(requests.length, 6);
 });
