@@ -32,6 +32,7 @@ import type { TaskDraftExtractor } from "./task-draft-extractor.js";
 import {
 	createPersistedTaskDraftExtractor,
 	createTaskDraftRequestLimit,
+	createUserRequestBudgets,
 	isTaskDraftProtocolWired,
 	type ModelRouteInput,
 } from "./task-draft-extractor.js";
@@ -165,23 +166,28 @@ export function createModelConnections(
 	const cipher = createModelCredentialCipher(env);
 	if (!cipher) return;
 	const service = new ModelConnectionService(storage, cipher);
-	// 探针也消耗同一份请求预算，避免测试接口成为绕过限额的通道。
-	const limit = createTaskDraftRequestLimit();
+	// 探针、发现与抽取共用同一份实例预算；再叠一层按 owner 的预算，
+	// 避免单个用户耗尽全站额度。两者都在发起请求前判定。
+	const instanceLimit = createTaskDraftRequestLimit();
+	const userLimitFor = createUserRequestBudgets();
+	function budgeted<T>(ownerId: string, request: () => Promise<T | null>): Promise<T | null> {
+		return userLimitFor(ownerId)(() => instanceLimit(request));
+	}
 	return {
 		service,
 		/** 用固定合成短句验证候选连接；不写入、不发送任务材料。 */
-		async probe(input: ModelRouteInput): Promise<boolean> {
-			const extract = createPersistedTaskDraftExtractor(input, fetchImpl, limit);
+		async probe(ownerId: string, input: ModelRouteInput): Promise<boolean> {
+			const extract = createPersistedTaskDraftExtractor(input, fetchImpl, (request) => budgeted(ownerId, request));
 			const suggestions = extract ? await extract(modelConnectionTestBrief, "overview") : null;
 			return suggestions !== null && Object.keys(suggestions).length > 0;
 		},
-		draftExtractor(input: ModelRouteInput): TaskDraftExtractor | undefined {
-			return createPersistedTaskDraftExtractor(input, fetchImpl, limit);
+		draftExtractor(ownerId: string, input: ModelRouteInput): TaskDraftExtractor | undefined {
+			return createPersistedTaskDraftExtractor(input, fetchImpl, (request) => budgeted(ownerId, request));
 		},
 		/** 只在显式点击时调用；失败返回 null，不代替用户猜模型。 */
-		discover(input: { baseUrl: string; protocol: ModelRouteInput["protocol"]; apiKey: string }) {
+		discover(ownerId: string, input: { baseUrl: string; protocol: ModelRouteInput["protocol"]; apiKey: string }) {
 			// 发现与测试/调用共用同一份限额，避免它成为绕过预算的通道。
-			return limit(() => discoverModels(input, fetchImpl));
+			return budgeted(ownerId, () => discoverModels(input, fetchImpl));
 		},
 		protocolWired: isTaskDraftProtocolWired,
 	};

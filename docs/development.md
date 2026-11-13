@@ -122,7 +122,9 @@ MODEL_CREDENTIAL_ACTIVE_KEY=v1
 | `PUT /api/me/model-preferences` | 本人默认 `(connectionId, modelId)`，只能指向本人可用连接 |
 | `POST /api/task-drafts/extract` + `connectionId` | 用本人持久连接抽取；密钥只在服务端短暂解密，不回传 |
 
-模型调用统一走受控出网层：只允许 HTTPS，校验全部 DNS 结果并把连接绑定到已校验地址，禁止重定向并移除 `location`，不读取环境代理，限制 512 KiB 与 15 秒。未接通的协议（`google-generative-ai`）返回 422，不会降级成 Chat Completions；自定义连接需自行确认供应商支持 SSE 与 JSON 输出。
+模型调用统一走受控出网层：只允许 HTTPS，校验全部 DNS 结果并把连接绑定到已校验地址，禁止重定向并移除 `location`，不读取环境代理，限制 512 KiB 与 15 秒。
+
+额度分两层，都在发起请求前判定：**按用户 6 次/分钟、并发 1**；**实例总量 8 次/分钟、并发 2**。两者共用同一计数器口径（连接测试、显式模型发现、任务抽取、旧兼容路由都算），因此单用户无法耗尽全站额度，两个用户同时满额仍会被实例上限拦住。这是单进程内存限流，不是跨实例共享配额；多实例部署时总量会随实例数放大，需要网关或数据库层另行控制。未接通的协议（`google-generative-ai`）返回 422，不会降级成 Chat Completions；自定义连接需自行确认供应商支持 SSE 与 JSON 输出。
 
 轮换与恢复演练（先只读，再确认写入）：
 

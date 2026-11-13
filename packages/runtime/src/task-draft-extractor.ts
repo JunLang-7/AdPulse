@@ -18,6 +18,13 @@ const requestTimeoutMs = 12_000;
 const requestWindowMs = 60_000;
 const maxRequestsPerWindow = 8;
 const maxConcurrentRequests = 2;
+/**
+ * 单用户预算：比实例总量更小，使一个用户无法耗尽全站额度。
+ * 两个用户同时满额（6 + 6）仍会被实例的 8 次/分钟拦住。
+ */
+const maxRequestsPerUserPerWindow = 6;
+const maxConcurrentRequestsPerUser = 1;
+const maxTrackedUserBudgets = 512;
 const reservedChannelNames = new Set(["__proto__", "prototype", "constructor"]);
 
 export interface TaskDraftSuggestions {
@@ -376,14 +383,56 @@ function createRouteExtractor(
 	};
 }
 
-export function createTaskDraftRequestLimit() {
+type RequestLimit = ReturnType<typeof createTaskDraftRequestLimit>;
+
+/**
+ * 按 owner 隔离的预算表。只约束单个进程；跨实例总额度需网关或数据库层控制，
+ * 这里不把它当成分布式限流。逐出最久未用的条目只重置其窗口，不影响正确性。
+ */
+export function createUserRequestBudgets(
+	factory: () => RequestLimit = () =>
+		createTaskDraftRequestLimit({
+			maxPerWindow: maxRequestsPerUserPerWindow,
+			maxConcurrent: maxConcurrentRequestsPerUser,
+		}),
+	maxEntries = maxTrackedUserBudgets,
+) {
+	const budgets = new Map<string, { limit: RequestLimit; usedAt: number }>();
+	return (ownerId: string): RequestLimit => {
+		const existing = budgets.get(ownerId);
+		if (existing) {
+			existing.usedAt = Date.now();
+			return existing.limit;
+		}
+		if (budgets.size >= maxEntries) {
+			let oldestKey: string | undefined;
+			let oldest = Number.POSITIVE_INFINITY;
+			for (const [key, entry] of budgets)
+				if (entry.usedAt < oldest) {
+					oldest = entry.usedAt;
+					oldestKey = key;
+				}
+			if (oldestKey !== undefined) budgets.delete(oldestKey);
+		}
+		const limit = factory();
+		budgets.set(ownerId, { limit, usedAt: Date.now() });
+		return limit;
+	};
+}
+
+export function createTaskDraftRequestLimit(options: {
+	maxPerWindow?: number;
+	maxConcurrent?: number;
+} = {}) {
+	const windowLimit = options.maxPerWindow ?? maxRequestsPerWindow;
+	const concurrentLimit = options.maxConcurrent ?? maxConcurrentRequests;
 	let recentRequests: number[] = [];
 	let inFlight = 0;
 	/** 与模型相关的网络动作共用同一份预算（测试、发现、抽取）。 */
 	return async <T,>(request: () => Promise<T | null>): Promise<T | null> => {
 		const now = performance.now();
 		recentRequests = recentRequests.filter((start) => now - start < requestWindowMs);
-		if (inFlight >= maxConcurrentRequests || recentRequests.length >= maxRequestsPerWindow) return null;
+		if (inFlight >= concurrentLimit || recentRequests.length >= windowLimit) return null;
 		recentRequests.push(now);
 		inFlight++;
 		try {

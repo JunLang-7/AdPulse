@@ -406,7 +406,7 @@ export async function handleAdmin(
 			if (!modelApi.protocolWired(input.protocol as ModelConnectionProtocol))
 				throw new HttpError(422, "protocol not wired");
 			const baseUrl = await withModelConnectionErrors(async () => normalizeModelBaseUrl(input.baseUrl));
-			const models = await modelApi.discover({
+			const models = await modelApi.discover(userId, {
 				baseUrl,
 				protocol: input.protocol as ModelConnectionProtocol,
 				apiKey: input.apiKey,
@@ -421,7 +421,7 @@ export async function handleAdmin(
 				validateModelConnectionInput(parsed as ModelConnectionInput));
 			if (!modelApi.protocolWired(input.protocol))
 				throw new HttpError(422, "protocol not wired");
-			const ok = await modelApi.probe({
+			const ok = await modelApi.probe(userId, {
 				providerId: input.providerId,
 				kind: input.kind,
 				...(input.catalogId ? { catalogId: input.catalogId } : {}),
@@ -438,7 +438,7 @@ export async function handleAdmin(
 				validateModelConnectionInput(parsed as ModelConnectionInput));
 			if (!modelApi.protocolWired(input.protocol))
 				throw new HttpError(422, "protocol not wired");
-			const ok = await modelApi.probe({
+			const ok = await modelApi.probe(userId, {
 				providerId: input.providerId,
 				kind: input.kind,
 				...(input.catalogId ? { catalogId: input.catalogId } : {}),
@@ -486,7 +486,7 @@ export async function handleAdmin(
 					throw new HttpError(400, "changing the target requires a new API key");
 				if (replace) {
 					const models = body.models ?? existing.models;
-					const ok = await modelApi.probe({
+					const ok = await modelApi.probe(userId, {
 						providerId: existing.providerId,
 						kind: existing.kind,
 						...(existing.catalogId ? { catalogId: existing.catalogId } : {}),
@@ -548,7 +548,7 @@ export async function handleAdmin(
 		if (!models?.list(userId).canConnect) throw new HttpError(403, "model connections disabled");
 		const input = taskDraftConnectionInput.parse(await readJson(req));
 		const selection = supportedSelection(input);
-		return json(res, 200, { ok: await models.test(selection, input.apiKey) });
+		return json(res, 200, { ok: await models.test(userId, selection, input.apiKey) });
 	}
 	if (path === "/api/task-drafts/extract" && req.method === "POST") {
 		const { brief, stage, provider, model, connectionId } = taskDraftExtractionInput.parse(await readJson(req));
@@ -568,7 +568,7 @@ export async function handleAdmin(
 			if (!modelApi) throw new HttpError(503, "model connections unavailable");
 			const resolved = await withModelConnectionErrors(() =>
 				modelApi.service.resolveCredential(userId, personal.connectionId, personal.modelId));
-			const extract = modelApi.draftExtractor({
+			const extract = modelApi.draftExtractor(userId, {
 				providerId: resolved.connection.providerId,
 				kind: resolved.connection.kind,
 				...(resolved.connection.catalogId ? { catalogId: resolved.connection.catalogId } : {}),

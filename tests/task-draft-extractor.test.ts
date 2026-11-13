@@ -4,7 +4,7 @@ import test, { type TestContext } from "node:test";
 import { createApi } from "../apps/api/dist/server.js";
 import { AuthenticationService } from "../packages/core/dist/index.js";
 import { compose, type Runtime } from "../packages/runtime/dist/index.js";
-import { createTaskDraftExtractor, type TaskDraftStage } from "../packages/runtime/dist/task-draft-extractor.js";
+import { createTaskDraftExtractor, createTaskDraftRequestLimit, createUserRequestBudgets, type TaskDraftStage } from "../packages/runtime/dist/task-draft-extractor.js";
 import { createTaskDraftModels } from "../packages/runtime/dist/task-draft-models.js";
 import { MemoryStorage } from "../packages/storage/dist/index.js";
 
@@ -33,6 +33,42 @@ test("legacy/deployment model routes use controlled egress by default", async (t
 	});
 	assert.equal(await models.extractShared({ provider: "openai-compatible", model: "synthetic-model" }, "产品"), null);
 	assert.equal(ambientCalls, 0);
+});
+
+test("per-user budgets are isolated but still bounded by the instance budget", async () => {
+	const instance = createTaskDraftRequestLimit();
+	const userLimitFor = createUserRequestBudgets();
+	const run = (owner: string) => userLimitFor(owner)(() => instance(async () => ({ ok: true })));
+	for (let attempt = 0; attempt < 6; attempt++)
+		assert.deepEqual(await run("owner-a"), { ok: true }, `owner-a attempt ${attempt}`);
+	// 同一用户耗尽自己的窗口，但不影响另一个用户。
+	assert.equal(await run("owner-a"), null);
+	assert.deepEqual(await run("owner-b"), { ok: true });
+	assert.deepEqual(await run("owner-b"), { ok: true });
+	// 总量到这里刚好 8 次：实例预算耗尽，第三个人也拿不到。
+	assert.equal(await run("owner-c"), null);
+});
+
+test("per-user budgets cap a single user below the instance budget", async () => {
+	const userLimitFor = createUserRequestBudgets();
+	const limit = userLimitFor("owner-solo");
+	for (let attempt = 0; attempt < 6; attempt++)
+		assert.deepEqual(await limit(async () => ({ ok: true })), { ok: true });
+	assert.equal(await limit(async () => ({ ok: true })), null);
+});
+
+test("per-user budget table evicts the oldest owner instead of growing forever", async () => {
+	let created = 0;
+	const userLimitFor = createUserRequestBudgets(() => {
+		created++;
+		return async <T,>(request: () => Promise<T | null>) => request();
+	}, 2);
+	await userLimitFor("first")(async () => ({ ok: true }));
+	await userLimitFor("second")(async () => ({ ok: true }));
+	await userLimitFor("third")(async () => ({ ok: true }));
+	assert.equal(created, 3, "eviction should drop one entry, not keep growing");
+	await userLimitFor("first")(async () => ({ ok: true }));
+	assert.equal(created, 4);
 });
 
 test("task draft extracts only bounded, distinct excerpts from the submitted brief", async () => {
