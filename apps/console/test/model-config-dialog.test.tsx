@@ -1,5 +1,5 @@
-// 模型配置窗口的交互测试：目录分组、未接通供应商不给假保存、密钥只写、保存后回传选择。
-// 由 `bun run --cwd apps/console test:components` 运行（Node + tsx + jsdom）。
+// 模型配置窗口（持久连接版）：目录分组、未接通供应商不给假保存、
+// 保存后回传本人连接、密钥只写不回显、自定义 API 可保存。
 
 // 必须最先导入：harness 在被测模块求值前安装 fetch 桩。
 import { json, serve } from "./harness.ts";
@@ -14,7 +14,7 @@ import { ModelConfigDialog } from "../src/views/adpulse/models/model-config-dial
 
 const catalog = {
 	canConnect: true,
-	defaultSelection: { provider: "deepseek", model: "deepseek-flash" },
+	defaultSelection: null,
 	providers: [
 		{ id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com", supported: true, models: [{ id: "deepseek-flash", name: "DeepSeek Flash" }] },
 		{ id: "xiaomi", name: "Xiaomi", baseUrl: "https://api.xiaomimimo.com/v1", supported: true, models: [{ id: "mimo-v2.6-flash", name: "MiMo Flash" }] },
@@ -24,11 +24,14 @@ const catalog = {
 	connections: [],
 };
 
-const defaults = {
-	"GET /api/task-drafts/models": () => json(catalog),
+const connectionList = {
+	connections: [
+		{ id: "4ca3688c-a790-49be-b318-e8b244648bcf", providerId: "mimo", kind: "custom", displayName: "MiMo", baseUrl: "https://api.mimotest.example/v1", protocol: "openai-completions", models: [{ id: "mimo-v2-flash" }], status: "active", version: 1, createdAt: "2026-11-12T00:00:00.000Z", updatedAt: "2026-11-12T00:00:00.000Z", hasCredential: true },
+	],
+	preference: { connectionId: null, modelId: null, version: 0 },
 };
 
-function renderDialog(onUse: (selection: { provider: string; model: string }) => void = () => {}): void {
+function renderDialog(onUse: (choice: { connectionId: string; model: string } | { provider: string; model: string }) => void = () => {}): void {
 	const client = new QueryClient({
 		defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
 	});
@@ -39,9 +42,14 @@ function renderDialog(onUse: (selection: { provider: string; model: string }) =>
 	);
 }
 
-test("模型配置：按目录展示供应商，未接通项只给原因不给保存", async (t) => {
+const baseRoutes = {
+	"GET /api/task-drafts/models": () => json(catalog),
+	"GET /api/me/model-connections": () => json(connectionList),
+};
+
+test("模型配置：未接通供应商只给原因不给保存", async (t) => {
 	t.after(cleanup);
-	serve(defaults);
+	serve(baseRoutes);
 	renderDialog();
 
 	fireEvent.click(await screen.findByRole("button", { name: /OpenAI/ }));
@@ -51,21 +59,23 @@ test("模型配置：按目录展示供应商，未接通项只给原因不给�
 	assert.equal(screen.queryByRole("button", { name: "测试连接" }), null);
 });
 
-test("模型配置：密钥只写，保存时提交供应商与模型并回传选择", async (t) => {
+test("模型配置：保存时创建本人连接、设为默认并回传，密钥不回显", async (t) => {
 	t.after(cleanup);
 	const calls: string[] = [];
-	serve(defaults, {
-		"PUT /api/task-drafts/models": async (request) => {
-			const body = await request.json() as { provider: string; model: string; apiKey: string };
-			calls.push(`${body.provider}/${body.model}/${body.apiKey}`);
-			return json({
-				...catalog,
-				connections: [{ provider: body.provider, model: body.model, label: "Xiaomi · MiMo Flash", connectedAt: "2026-11-12T00:00:00.000Z" }],
-			});
+	serve(baseRoutes, {
+		"POST /api/me/model-connections": async (request) => {
+			const body = await request.json() as { providerId: string; kind: string; baseUrl: string; models: { id: string }[]; apiKey: string };
+			calls.push(`create:${body.providerId}:${body.kind}:${body.baseUrl}:${body.models[0]?.id}:${body.apiKey}`);
+			return json({ ...connectionList.connections[0], providerId: body.providerId, baseUrl: body.baseUrl }, 201);
+		},
+		"PUT /api/me/model-preferences": async (request) => {
+			const body = await request.json() as { connectionId: string; modelId: string };
+			calls.push(`preference:${body.connectionId}:${body.modelId}`);
+			return json({ connectionId: body.connectionId, modelId: body.modelId, version: 1 });
 		},
 	});
-	let used: { provider: string; model: string } | undefined;
-	renderDialog((selection) => { used = selection; });
+	let used: { connectionId: string; model: string } | { provider: string; model: string } | undefined;
+	renderDialog((choice) => { used = choice; });
 
 	fireEvent.click(await screen.findByRole("button", { name: /Xiaomi/ }));
 	const key = await screen.findByPlaceholderText("粘贴你的 API Key");
@@ -75,18 +85,82 @@ test("模型配置：密钥只写，保存时提交供应商与模型并回传�
 	fireEvent.change(key, { target: { value: "synthetic-personal-key" } });
 	fireEvent.click(screen.getByRole("button", { name: "保存并使用" }));
 
-	await waitFor(() => assert.deepEqual(used, { provider: "xiaomi", model: "mimo-v2.6-flash" }));
-	assert.deepEqual(calls, ["xiaomi/mimo-v2.6-flash/synthetic-personal-key"]);
+	await waitFor(() => assert.equal(used !== undefined, true));
+	assert.deepEqual(used, { connectionId: connectionList.connections[0].id, model: "mimo-v2.6-flash" });
+	assert.deepEqual(calls, [
+		"create:xiaomi:catalog:https://api.xiaomimimo.com/v1:mimo-v2.6-flash:synthetic-personal-key",
+		`preference:${connectionList.connections[0].id}:mimo-v2.6-flash`,
+	]);
 	assert.equal(screen.queryByDisplayValue("synthetic-personal-key"), null, "密钥不得回显");
 });
 
-test("模型配置：自定义 API 明确说明本期不开放保存", async (t) => {
+test("模型配置：自定义 API 可填写并保存自定义地址", async (t) => {
 	t.after(cleanup);
-	serve(defaults);
+	const bodies: unknown[] = [];
+	serve(baseRoutes, {
+		"POST /api/me/model-connections": async (request) => {
+			bodies.push(await request.json());
+			return json({ ...connectionList.connections[0], providerId: "company-gateway", kind: "custom" }, 201);
+		},
+		"PUT /api/me/model-preferences": () => json({ connectionId: connectionList.connections[0].id, modelId: "mimo-v2-flash", version: 1 }),
+	});
 	renderDialog();
 
 	fireEvent.click(await screen.findByRole("button", { name: "自定义 API" }));
+	fireEvent.change(await screen.findByPlaceholderText("例如：company-gateway"), { target: { value: "company-gateway" } });
+	fireEvent.change(screen.getByPlaceholderText("https://api.example.com/v1"), { target: { value: "https://gateway.example.com/v1" } });
+	fireEvent.change(screen.getByPlaceholderText("例如：mimo-v2-flash"), { target: { value: "internal-model" } });
+	fireEvent.change(screen.getByPlaceholderText("粘贴你的 API Key"), { target: { value: "synthetic-gateway-key" } });
 
-	await screen.findByText(/自定义 API 需要服务端受控出网/);
+	const save = screen.getByRole("button", { name: "保存并使用" }) as HTMLButtonElement;
+	assert.equal(save.disabled, false);
+	fireEvent.click(save);
+
+	await waitFor(() => assert.equal(bodies.length, 1));
+	assert.deepEqual(bodies[0], {
+		providerId: "company-gateway",
+		kind: "custom",
+		baseUrl: "https://gateway.example.com/v1",
+		protocol: "openai-completions",
+		models: [{ id: "internal-model" }],
+		apiKey: "synthetic-gateway-key",
+	});
+});
+
+test("模型配置：已有连接显示状态，切换模型后可设为默认", async (t) => {
+	t.after(cleanup);
+	const preferences: unknown[] = [];
+	serve(baseRoutes, {
+		"PUT /api/me/model-preferences": async (request) => {
+			preferences.push(await request.json());
+			return json({ connectionId: connectionList.connections[0].id, modelId: "mimo-v2-flash", version: 1 });
+		},
+	});
+	renderDialog();
+
+	fireEvent.click(await screen.findByRole("button", { name: /MiMo/ }));
+	await screen.findByText("自定义 API · https://api.mimotest.example/v1");
+	assert.equal(screen.queryByPlaceholderText("已保存，如需更换请重新填写") !== null, true, "应允许更换密钥");
+
+	fireEvent.click(screen.getByRole("button", { name: "设为默认" }));
+	await waitFor(() => assert.equal(preferences.length, 1));
+	assert.deepEqual(preferences[0], {
+		expectedVersion: 0,
+		connectionId: connectionList.connections[0].id,
+		modelId: "mimo-v2-flash",
+	});
+});
+
+test("模型配置：部署未配置主密钥时提示不可保存，但仍可使用部署提供", async (t) => {
+	t.after(cleanup);
+	serve(baseRoutes, {
+		"GET /api/me/model-connections": () => json({ error: "model connections unavailable" }, 503),
+		"GET /api/task-drafts/models": () => json({ ...catalog, shared: [{ provider: "deepseek", model: "deepseek-flash", label: "DeepSeek（部署提供）" }] }),
+	});
+	renderDialog();
+
+	await screen.findByText(/部署者尚未配置主密钥/);
+	fireEvent.click(await screen.findByRole("button", { name: /DeepSeek（部署提供）/ }));
+	await screen.findByText(/该模型由部署者配置密钥/);
 	assert.equal(screen.queryByRole("button", { name: "保存并使用" }), null);
 });

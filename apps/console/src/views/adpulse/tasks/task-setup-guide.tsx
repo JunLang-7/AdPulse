@@ -22,7 +22,7 @@ import { readTaskSetupAttachment, TASK_SETUP_ATTACHMENT_ACCEPT, TASK_SETUP_PREVI
 import type { FormState } from "./task-form.js";
 
 import { TaskModelSettings } from "./task-model-settings.js";
-import type { ModelSelection } from "../models/model-config-dialog.js";
+import type { TaskModelChoice } from "../models/model-config-dialog.js";
 
 type Suggestions = components["schemas"]["TaskDraftSuggestions"];
 
@@ -39,7 +39,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	saving: boolean;
 }) {
 	const [step, setStep] = useState(0);
-	const [provider, setProvider] = useState<ModelSelection>();
+	const [provider, setProvider] = useState<TaskModelChoice>();
 	const [suggestion, setSuggestion] = useState<{ brief: string; data?: Suggestions }>();
 	const [returnToReview, setReturnToReview] = useState(false);
 	const [notes, setNotes] = useState(emptyNotes);
@@ -111,7 +111,15 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 			onBusyChange(true);
 			try {
 				const result = await consoleClient.POST("/api/task-drafts/extract", {
-					body: { brief, stage: stage.id, ...(provider ? provider : {}) },
+					body: {
+						brief,
+						stage: stage.id,
+						...(provider
+							? "connectionId" in provider
+								? { connectionId: provider.connectionId, model: provider.model }
+								: { provider: provider.provider, model: provider.model }
+							: {}),
+					},
 				});
 				if (!result.data) throw new Error("整理服务不可用");
 				if (preview) {

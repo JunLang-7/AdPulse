@@ -4,23 +4,29 @@ import { Button } from "../../../components/ui/button";
 import {
 	ModelConfigDialog,
 	modelCatalogKey,
+	modelConnectionsKey,
 	selectionLabel,
 	type ModelCatalog,
-	type ModelSelection,
+	type ModelConnectionList,
+	type TaskModelChoice,
 } from "../models/model-config-dialog";
 
 /**
  * 任务内的轻量入口：只显示当前选择并打开统一配置窗口，
- * 不再维护第二份供应商/密钥配置。
+ * 不维护第二份供应商/密钥配置。
  */
 export function TaskModelSettings({ selected, onSelect, disabled }: {
-	selected: ModelSelection | undefined;
-	onSelect: (selection: ModelSelection) => void;
+	selected: TaskModelChoice | undefined;
+	onSelect: (choice: TaskModelChoice) => void;
 	disabled: boolean;
 }) {
 	const [open, setOpen] = useState(false);
-	const catalog = useQueryClient().getQueryData<ModelCatalog>(modelCatalogKey);
-	const label = selected ? selectionLabel(catalog, selected) : "选择模型";
+	const queryClient = useQueryClient();
+	const label = selectionLabel(
+		selected,
+		queryClient.getQueryData<ModelConnectionList | null>(modelConnectionsKey) ?? undefined,
+		queryClient.getQueryData<ModelCatalog>(modelCatalogKey),
+	);
 
 	return (
 		<>
@@ -30,7 +36,7 @@ export function TaskModelSettings({ selected, onSelect, disabled }: {
 			<ModelConfigDialog
 				open={open}
 				onOpenChange={setOpen}
-				selection={selected}
+				choice={selected}
 				onUse={(choice) => {
 					onSelect(choice);
 					setOpen(false);
