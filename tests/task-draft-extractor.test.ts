@@ -20,6 +20,26 @@ function providerReply(content: string, finishReason = "stop"): Response {
 	return new Response(stream, { headers: { "content-type": "text/event-stream" } });
 }
 
+test("shared deployment routes are also limited per owner", async () => {
+	let calls = 0;
+	const models = createTaskDraftModels({
+		TASK_DRAFT_PROVIDER: "openai-compatible",
+		TASK_DRAFT_GATEWAY_BASE_URL: "https://gateway.example/v1",
+		TASK_DRAFT_GATEWAY_MODEL: "synthetic-model",
+		TASK_DRAFT_GATEWAY_API_KEY: "synthetic-key",
+	}, async () => {
+		calls++;
+		return providerReply(JSON.stringify({ product: "产品" }));
+	});
+	const selection = { provider: "openai-compatible", model: "synthetic-model" };
+	for (let attempt = 0; attempt < 6; attempt++)
+		assert.deepEqual(await models.extractShared("owner-a", selection, "产品", "overview"), { product: "产品" });
+	// 同一个 owner 的按用户预算耗尽，但另一个 owner 仍可使用。
+	assert.equal(await models.extractShared("owner-a", selection, "产品", "overview"), null);
+	assert.deepEqual(await models.extractShared("owner-b", selection, "产品", "overview"), { product: "产品" });
+	assert.equal(calls, 7);
+});
+
 test("legacy/deployment model routes use controlled egress by default", async (t) => {
 	let ambientCalls = 0;
 	t.mock.method(globalThis, "fetch", async () => {
@@ -31,7 +51,7 @@ test("legacy/deployment model routes use controlled egress by default", async (t
 		TASK_DRAFT_GATEWAY_MODEL: "synthetic-model",
 		TASK_DRAFT_GATEWAY_API_KEY: "synthetic-key",
 	});
-	assert.equal(await models.extractShared({ provider: "openai-compatible", model: "synthetic-model" }, "产品"), null);
+	assert.equal(await models.extractShared("owner-a", { provider: "openai-compatible", model: "synthetic-model" }, "产品"), null);
 	assert.equal(ambientCalls, 0);
 });
 

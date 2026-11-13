@@ -3,6 +3,7 @@
 // 只有已接通受控传输的协议才允许发现；Google 适配器拒绝自定义 fetch，故不开放。
 
 import type { ModelConnectionProtocol } from "@adpluse/core";
+import { isTaskDraftProtocolWired } from "./task-draft-extractor.js";
 import { createModelEgressFetch } from "./model-egress.js";
 
 export const modelDiscoveryMaxModels = 100;
@@ -17,9 +18,9 @@ export interface ModelDiscoveryInput {
 }
 
 /** 发现与调用共用同一条路由能力；未接通的协议不得单独开放发现。 */
+/** 发现与调用必须遵守同一份协议白名单，避免只接通一半。 */
 export function isDiscoveryProtocolWired(protocol: ModelConnectionProtocol): boolean {
-	return protocol === "openai-completions" || protocol === "openai-responses" ||
-		protocol === "anthropic-messages";
+	return isTaskDraftProtocolWired(protocol);
 }
 
 /**

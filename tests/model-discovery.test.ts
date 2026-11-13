@@ -3,7 +3,9 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { discoverModels, modelDiscoveryMaxModels } from "../packages/runtime/dist/model-discovery.js";
+import { modelConnectionProtocols } from "../packages/core/dist/index.js";
+import { discoverModels, isDiscoveryProtocolWired, modelDiscoveryMaxModels } from "../packages/runtime/dist/model-discovery.js";
+import { isTaskDraftProtocolWired } from "../packages/runtime/dist/task-draft-extractor.js";
 
 const input = {
 	baseUrl: "https://api.example.com/v1",
@@ -14,6 +16,12 @@ const input = {
 function reply(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
+
+test("discovery and extraction share exactly one wired-protocol whitelist", () => {
+	for (const protocol of modelConnectionProtocols)
+		assert.equal(isDiscoveryProtocolWired(protocol), isTaskDraftProtocolWired(protocol), protocol);
+	assert.ok(modelConnectionProtocols.some((protocol) => !isDiscoveryProtocolWired(protocol)));
+});
 
 test("discovery: reads /models with the personal key and de-duplicates ids", async () => {
 	let seen: { url: string; method: string; auth: string | null } | undefined;

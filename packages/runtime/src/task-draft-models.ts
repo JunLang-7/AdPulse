@@ -171,10 +171,12 @@ export function createTaskDraftModels(
 			if (!extract) return null;
 			return userLimitFor(ownerId)(() => extract(brief, stage));
 		},
-		extractShared(selection: TaskDraftSelection, brief: string, stage?: TaskDraftStage) {
+		extractShared(ownerId: string, selection: TaskDraftSelection, brief: string, stage?: TaskDraftStage) {
 			const route = shared.find(({ selection: item }) =>
 				item.provider === selection.provider && item.model === selection.model);
-			return route?.extract(brief, stage);
+			if (!route) return null;
+			// 部署提供的共享路由同样按 owner 限流，不能用共享 Key 绕过配额。
+			return userLimitFor(ownerId)(() => route.extract(brief, stage));
 		},
 		async extract(ownerId: string, selection: TaskDraftSelection | undefined, brief: string, stage?: TaskDraftStage) {
 			prune();
@@ -184,7 +186,7 @@ export function createTaskDraftModels(
 			if (connection) return userLimitFor(ownerId)(() => connection.extract(brief, stage));
 			const sharedRoute = shared.find((route) =>
 				route.selection.provider === chosen.provider && route.selection.model === chosen.model);
-			return sharedRoute ? sharedRoute.extract(brief, stage) : null;
+			return sharedRoute ? userLimitFor(ownerId)(() => sharedRoute.extract(brief, stage)) : null;
 		},
 	};
 }
