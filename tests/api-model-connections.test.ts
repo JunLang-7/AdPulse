@@ -46,7 +46,7 @@ function withModels(options: { env?: Record<string, string>; reply?: () => Respo
 	const requests: Fixture["requests"] = [];
 	const modelConnections = createModelConnections(storage, options.env ?? cipherEnv(), async (input, init) => {
 		const sent = new Request(input, init);
-		const body = await sent.json() as { model?: string };
+		const body = sent.method === "GET" ? {} : await sent.json() as { model?: string };
 		requests.push({ url: sent.url, auth: sent.headers.get("authorization"), model: body.model ?? "" });
 		return options.reply?.() ?? providerReply(JSON.stringify({ product: "产品" }));
 	});
@@ -372,6 +372,7 @@ test("model connections API: stale authentication cannot send probes or change c
 	for (const [path, method, body] of [
 		["/api/me/model-connections", "POST", customInput()],
 		["/api/me/model-connections/test", "POST", customInput()],
+		["/api/me/model-connections/models", "POST", { baseUrl: "https://api.mimotest.example/v1", protocol: "openai-completions", apiKey: "synthetic-personal-key" }],
 		[`/api/me/model-connections/${id}`, "PUT", {}],
 		[`/api/me/model-connections/${id}`, "DELETE", undefined],
 		[`/api/me/model-connections/${id}/credential`, "DELETE", undefined],
@@ -384,6 +385,16 @@ test("model connections API: stale authentication cannot send probes or change c
 	}
 	assert.equal((await call(server, "/api/me/model-connections")).status, 200);
 	assert.equal(requests.length, 0);
+});
+
+test("model connections API: discovery shares the model request budget", async (t) => {
+	const { runtime, requests } = withModels({ reply: () => Response.json({ data: [{ id: "mimo-v2-flash" }] }) });
+	const server = await serve(t, runtime);
+	const body = { baseUrl: "https://api.mimotest.example/v1", protocol: "openai-completions", apiKey: "synthetic-personal-key" };
+	for (let attempt = 0; attempt < 8; attempt++)
+		assert.equal((await call(server, "/api/me/model-connections/models", "POST", body)).status, 200);
+	assert.equal((await call(server, "/api/me/model-connections/models", "POST", body)).status, 503);
+	assert.equal(requests.length, 8);
 });
 
 test("model connections API: default, legacy and explicit personal selection share the request budget", async (t) => {
