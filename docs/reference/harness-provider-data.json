@@ -1,0 +1,335 @@
+{
+	"source": {
+		"repository": "https://github.com/deepseek-ai/deepseek-harness",
+		"commit": "e8f7b93a344964de3dca1ace9e72b6e4d6de87cb",
+		"path": "packages/llm/llm-pi-ai/src/provider-data.generated.ts",
+		"piAiRange": "^1.3.0",
+		"note": "由 gen-provider-data 从当时安装的 pi-ai 目录生成；不含模型清单与真实可用性。"
+	},
+	"providers": [
+		{
+			"id": "amazon-bedrock",
+			"env": [
+				"AWS_BEARER_TOKEN_BEDROCK",
+				"AWS_PROFILE",
+				"AWS_ACCESS_KEY_ID",
+				"AWS_SECRET_ACCESS_KEY",
+				"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+				"AWS_CONTAINER_CREDENTIALS_FULL_URI",
+				"AWS_WEB_IDENTITY_TOKEN_FILE"
+			],
+			"baseUrlEnv": [
+				"AWS_REGION",
+				"AWS_DEFAULT_REGION"
+			]
+		},
+		{
+			"id": "ant-ling",
+			"env": [
+				"ANT_LING_API_KEY"
+			],
+			"defaultBaseURL": "https://api.ant-ling.com/v1"
+		},
+		{
+			"id": "anthropic",
+			"env": [
+				"ANTHROPIC_AUTH_TOKEN",
+				"ANTHROPIC_OAUTH_TOKEN",
+				"ANTHROPIC_API_KEY",
+				"ANTHROPIC_FEDERATION_RULE_ID",
+				"ANTHROPIC_ORGANIZATION_ID",
+				"ANTHROPIC_IDENTITY_TOKEN_FILE",
+				"ANTHROPIC_SERVICE_ACCOUNT_ID",
+				"ANTHROPIC_WORKSPACE_ID"
+			],
+			"defaultBaseURL": "https://api.anthropic.com"
+		},
+		{
+			"id": "azure",
+			"env": [
+				"AZURE_OPENAI_API_KEY"
+			],
+			"baseUrlEnv": [
+				"AZURE_OPENAI_BASE_URL",
+				"AZURE_OPENAI_RESOURCE_NAME"
+			]
+		},
+		{
+			"id": "baseten",
+			"env": [
+				"BASETEN_API_KEY"
+			],
+			"defaultBaseURL": "https://inference.baseten.co/v1"
+		},
+		{
+			"id": "cerebras",
+			"env": [
+				"CEREBRAS_API_KEY"
+			],
+			"defaultBaseURL": "https://api.cerebras.ai/v1"
+		},
+		{
+			"id": "cloudflare-ai-gateway",
+			"env": [
+				"CLOUDFLARE_API_KEY",
+				"CLOUDFLARE_ACCOUNT_ID",
+				"CLOUDFLARE_GATEWAY_ID"
+			],
+			"baseUrlEnv": [
+				"CLOUDFLARE_ACCOUNT_ID",
+				"CLOUDFLARE_GATEWAY_ID"
+			]
+		},
+		{
+			"id": "cloudflare-workers-ai",
+			"env": [
+				"CLOUDFLARE_API_KEY",
+				"CLOUDFLARE_ACCOUNT_ID"
+			],
+			"baseUrlEnv": [
+				"CLOUDFLARE_ACCOUNT_ID"
+			]
+		},
+		{
+			"id": "deepseek",
+			"env": [
+				"DEEPSEEK_API_KEY"
+			],
+			"defaultBaseURL": "https://api.deepseek.com"
+		},
+		{
+			"id": "fireworks",
+			"env": [
+				"FIREWORKS_API_KEY"
+			],
+			"defaultBaseURL": "https://api.fireworks.ai/inference"
+		},
+		{
+			"id": "github-copilot",
+			"env": [
+				"COPILOT_GITHUB_TOKEN"
+			],
+			"defaultBaseURL": "https://api.individual.githubcopilot.com"
+		},
+		{
+			"id": "google",
+			"env": [
+				"GEMINI_API_KEY"
+			],
+			"defaultBaseURL": "https://generativelanguage.googleapis.com/v1beta"
+		},
+		{
+			"id": "google-vertex",
+			"env": [
+				"GOOGLE_CLOUD_API_KEY",
+				"GOOGLE_APPLICATION_CREDENTIALS",
+				"GOOGLE_CLOUD_PROJECT",
+				"GCLOUD_PROJECT",
+				"GOOGLE_CLOUD_LOCATION"
+			],
+			"baseUrlEnv": [
+				"GOOGLE_CLOUD_PROJECT",
+				"GCLOUD_PROJECT",
+				"GOOGLE_CLOUD_LOCATION"
+			]
+		},
+		{
+			"id": "groq",
+			"env": [
+				"GROQ_API_KEY"
+			],
+			"defaultBaseURL": "https://api.groq.com/openai/v1"
+		},
+		{
+			"id": "huggingface",
+			"env": [
+				"HF_TOKEN"
+			],
+			"defaultBaseURL": "https://router.huggingface.co/v1"
+		},
+		{
+			"id": "kimi-coding",
+			"env": [
+				"KIMI_API_KEY"
+			],
+			"defaultBaseURL": "https://api.kimi.com/coding/v1"
+		},
+		{
+			"id": "meta",
+			"env": [
+				"META_API_KEY"
+			],
+			"defaultBaseURL": "https://api.meta.ai/v1"
+		},
+		{
+			"id": "minimax",
+			"env": [
+				"MINIMAX_API_KEY"
+			],
+			"defaultBaseURL": "https://api.minimax.io/anthropic"
+		},
+		{
+			"id": "minimax-cn",
+			"env": [
+				"MINIMAX_CN_API_KEY"
+			],
+			"defaultBaseURL": "https://api.minimaxi.com/anthropic"
+		},
+		{
+			"id": "mistral",
+			"env": [
+				"MISTRAL_API_KEY"
+			],
+			"defaultBaseURL": "https://api.mistral.ai"
+		},
+		{
+			"id": "moonshotai",
+			"env": [
+				"MOONSHOT_API_KEY"
+			],
+			"defaultBaseURL": "https://api.moonshot.ai/v1"
+		},
+		{
+			"id": "moonshotai-cn",
+			"env": [
+				"MOONSHOT_API_KEY"
+			],
+			"defaultBaseURL": "https://api.moonshot.cn/v1"
+		},
+		{
+			"id": "nvidia",
+			"env": [
+				"NVIDIA_API_KEY"
+			],
+			"defaultBaseURL": "https://integrate.api.nvidia.com/v1"
+		},
+		{
+			"id": "openai",
+			"env": [
+				"OPENAI_API_KEY"
+			],
+			"defaultBaseURL": "https://api.openai.com/v1"
+		},
+		{
+			"id": "openai-codex",
+			"env": [],
+			"defaultBaseURL": "https://chatgpt.com/backend-api"
+		},
+		{
+			"id": "opencode",
+			"env": [
+				"OPENCODE_API_KEY"
+			]
+		},
+		{
+			"id": "opencode-go",
+			"env": [
+				"OPENCODE_API_KEY"
+			]
+		},
+		{
+			"id": "openrouter",
+			"env": [
+				"OPENROUTER_API_KEY"
+			],
+			"defaultBaseURL": "https://openrouter.ai/api/v1"
+		},
+		{
+			"id": "qwen-token-plan",
+			"env": [
+				"QWEN_TOKEN_PLAN_API_KEY"
+			],
+			"defaultBaseURL": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+		},
+		{
+			"id": "qwen-token-plan-cn",
+			"env": [
+				"QWEN_TOKEN_PLAN_CN_API_KEY"
+			],
+			"defaultBaseURL": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+		},
+		{
+			"id": "qwen-token-plan-individual",
+			"env": [
+				"QWEN_TOKEN_PLAN_API_KEY"
+			],
+			"defaultBaseURL": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+		},
+		{
+			"id": "radius",
+			"env": [
+				"RADIUS_API_KEY"
+			],
+			"defaultBaseURL": "https://radius.pi.dev/v1"
+		},
+		{
+			"id": "together",
+			"env": [
+				"TOGETHER_API_KEY"
+			],
+			"defaultBaseURL": "https://api.together.ai/v1"
+		},
+		{
+			"id": "typesafe",
+			"env": [
+				"TYPESAFE_API_KEY"
+			]
+		},
+		{
+			"id": "vercel-ai-gateway",
+			"env": [
+				"AI_GATEWAY_API_KEY"
+			],
+			"defaultBaseURL": "https://ai-gateway.vercel.sh"
+		},
+		{
+			"id": "xai",
+			"env": [
+				"XAI_API_KEY"
+			],
+			"defaultBaseURL": "https://api.x.ai/v1"
+		},
+		{
+			"id": "xiaomi",
+			"env": [
+				"XIAOMI_API_KEY"
+			],
+			"defaultBaseURL": "https://api.xiaomimimo.com/v1"
+		},
+		{
+			"id": "xiaomi-token-plan-ams",
+			"env": [
+				"XIAOMI_TOKEN_PLAN_AMS_API_KEY"
+			],
+			"defaultBaseURL": "https://token-plan-ams.xiaomimimo.com/v1"
+		},
+		{
+			"id": "xiaomi-token-plan-cn",
+			"env": [
+				"XIAOMI_TOKEN_PLAN_CN_API_KEY"
+			],
+			"defaultBaseURL": "https://token-plan-cn.xiaomimimo.com/v1"
+		},
+		{
+			"id": "xiaomi-token-plan-sgp",
+			"env": [
+				"XIAOMI_TOKEN_PLAN_SGP_API_KEY"
+			],
+			"defaultBaseURL": "https://token-plan-sgp.xiaomimimo.com/v1"
+		},
+		{
+			"id": "zai",
+			"env": [
+				"ZAI_API_KEY"
+			],
+			"defaultBaseURL": "https://api.z.ai/api/coding/paas/v4"
+		},
+		{
+			"id": "zai-coding-cn",
+			"env": [
+				"ZAI_CODING_CN_API_KEY"
+			],
+			"defaultBaseURL": "https://open.bigmodel.cn/api/coding/paas/v4"
+		}
+	]
+}

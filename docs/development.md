@@ -71,6 +71,8 @@ bun run model-catalog:generate
 
 逐家覆盖与差异清单见 [model-provider-coverage.md](model-provider-coverage.md)，由 `bun run model-coverage:generate` 从同一目录生成并由测试守住。它把“目录存在 / 适配可用 / 本人已配置 / 真实供应商验收”分开记录，当前真实供应商验收为 0。
 
+与 Harness 参考提交的逐家差异见 [model-provider-diff-harness.md](model-provider-diff-harness.md)，由 `bun run model-diff:generate` 从 `docs/reference/harness-provider-data.json` 与同一目录渲染。参考快照固定提交 `e8f7b93`（其 pi-ai 依赖为 `^1.3.0`，本仓库锁 1.5.0），结论是供应商集合一致（各 42 家），差异在认证范围、协议接通与模型清单；参考快照不含模型清单，因此不做模型级比对。
+
 右上角个人菜单 →“模型配置”打开统一窗口：左侧是本人连接、部署提供和目录分组，右侧是配置表单与“测试连接 / 保存并使用”。保存前会用固定合成短句测试所选模型；密钥只写、不回显，服务端加密保存，登出或重启后仍可用。未适配的原生协议、仅账号授权、云凭据链或账号/区域/部署名等额外参数的供应商会显示原因；提供可选 OAuth 不妨碍单独使用其个人 API Key 路径。自定义 API 只接受 HTTPS 公网地址，校验全部 DNS 结果并绑定地址、禁止重定向；可显式选择 OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages；Anthropic 基础地址不含版本段，SDK 会请求 `${baseUrl}/v1/messages`。
 
 同一窗口还负责默认模型与连接维护：`ModelConnectionService` 的增删改查、删密钥停用、验证结果绑定版本等规则由服务端执行，界面只展示非敏感投影。部署未配置主密钥时，窗口提示个人连接不可保存，但仍可选用“部署提供”的模型。
