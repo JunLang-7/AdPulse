@@ -1,4 +1,4 @@
-// Generates packages/runtime/src/model-catalog.generated.json from the locked
+// Generates packages/runtime/src/model-catalog.generated.ts from the locked
 // @earendil-works/pi-ai catalog. Run: node packages/runtime/scripts/generate-model-catalog.mjs
 // The output is committed and guarded by tests/model-catalog.test.ts, which
 // re-reads the SDK and fails when the two drift.
@@ -31,7 +31,7 @@ function reasonFor(provider, chatModels, protocols) {
 	if (protocols.length === 0) return "目录中暂无对话模型。";
 	if (!provider.baseUrl) return "需要账号、区域或部署名等额外参数，本期未接入。";
 	if (chatModels.length === 0) return `该供应商使用 ${protocols.join(" / ")} 原生协议，尚未接通。`;
-	if (provider.auth?.oauth) return "该供应商还依赖账号授权（OAuth），本期只支持个人 API Key 直连。";
+	if (!provider.auth?.apiKey) return "该供应商没有声明个人 API Key 认证路径，当前不支持。";
 	return "该供应商需要额外参数，本期未接入。";
 }
 
@@ -40,14 +40,21 @@ const providers = builtinProviders().map((provider) => {
 	const protocols = [...new Set(models.map((model) => model.api))];
 	const chatModels = models.filter((model) => model.api === "openai-completions");
 	const supported = chatModels.length > 0 && Boolean(provider.baseUrl) &&
-		provider.baseUrl.startsWith("https://") && !provider.auth?.oauth;
+		provider.baseUrl.startsWith("https://") && Boolean(provider.auth?.apiKey);
 	return {
 		id: provider.id,
 		name: provider.name,
 		baseUrl: provider.baseUrl ?? null,
 		supported,
 		...(supported ? {} : { reason: reasonFor(provider, chatModels, protocols) }),
+		// 认证方式只记录 SDK 声明，不从品牌名猜；云凭据类仍需看 reason。
+		auth: {
+			apiKey: Boolean(provider.auth?.apiKey),
+			name: provider.auth?.apiKey?.name ?? null,
+			oauth: Boolean(provider.auth?.oauth),
+		},
 		protocols,
+		catalogModelCount: models.length,
 		models: supported ? chatModels.map(pickModel) : [],
 	};
 });

@@ -20,6 +20,21 @@ function providerReply(content: string, finishReason = "stop"): Response {
 	return new Response(stream, { headers: { "content-type": "text/event-stream" } });
 }
 
+test("legacy/deployment model routes use controlled egress by default", async (t) => {
+	let ambientCalls = 0;
+	t.mock.method(globalThis, "fetch", async () => {
+		ambientCalls++;
+		return providerReply(JSON.stringify({ product: "产品" }));
+	});
+	const models = createTaskDraftModels({
+		TASK_DRAFT_GATEWAY_BASE_URL: "https://127.0.0.1/v1",
+		TASK_DRAFT_GATEWAY_MODEL: "synthetic-model",
+		TASK_DRAFT_GATEWAY_API_KEY: "synthetic-key",
+	});
+	assert.equal(await models.extractShared({ provider: "openai-compatible", model: "synthetic-model" }, "产品"), null);
+	assert.equal(ambientCalls, 0);
+});
+
 test("task draft extracts only bounded, distinct excerpts from the submitted brief", async () => {
 	const names = Array.from({ length: 9 }, (_, index) => `人群${index + 1}`);
 	const objective = "长".repeat(321);

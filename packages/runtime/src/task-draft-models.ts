@@ -1,3 +1,4 @@
+import { createModelEgressFetch } from "./model-egress.js";
 import { catalogForClient, catalogModelLabel, findCatalogModel, findCatalogProvider } from "./model-catalog.js";
 import {
 	createCatalogTaskDraftExtractor,
@@ -48,7 +49,7 @@ function sharedRoutes(env: Record<string, string | undefined>, fetchImpl: typeof
 
 export function createTaskDraftModels(
 	env: Record<string, string | undefined>,
-	fetchImpl: typeof fetch = fetch,
+	fetchImpl: typeof fetch = createModelEgressFetch(),
 	now: () => number = Date.now,
 ) {
 	const canConnect = env.TASK_DRAFT_USER_KEYS_ENABLED === "1";

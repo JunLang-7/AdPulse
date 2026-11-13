@@ -69,6 +69,8 @@ bun run model-catalog:generate
 
 该命令写出 `packages/runtime/src/model-catalog.generated.ts`（供应商、协议、模型 ID 与可调用模型元数据）。提交前 `tests/model-catalog.test.ts` 会重新读取 SDK 比对，目录漂移即失败；不要手改生成文件。目录里是否“可直连”只表示 AdPulse 已接通个人 API Key + OpenAI Chat Completions 这一条适配路径，不代表已对每家做过真实联调。
 
+逐家覆盖与差异清单见 [model-provider-coverage.md](model-provider-coverage.md)，由 `bun run model-coverage:generate` 从同一目录生成并由测试守住。它把“目录存在 / 适配可用 / 本人已配置 / 真实供应商验收”分开记录，当前真实供应商验收为 0。
+
 右上角个人菜单 →“模型配置”打开统一窗口：左侧是本人连接、部署提供和目录分组，右侧是配置表单与“测试连接 / 保存并使用”。保存前会用固定合成短句测试所选模型；密钥只写、不回显，服务端加密保存，登出或重启后仍可用。需要 OAuth 账号授权、云凭据链或账号/区域/部署名等额外参数的供应商会显示原因（如 `openai-responses` 原生协议尚未接通），不给会失败或会误用凭据的假保存按钮。自定义 API 现在可保存：只接受 HTTPS 公网地址，校验全部 DNS 结果并绑定地址、禁止重定向，且只接通 OpenAI Chat Completions。
 
 同一窗口还负责默认模型与连接维护：`ModelConnectionService` 的增删改查、删密钥停用、验证结果绑定版本等规则由服务端执行，界面只展示非敏感投影。部署未配置主密钥时，窗口提示个人连接不可保存，但仍可选用“部署提供”的模型。

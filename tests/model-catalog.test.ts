@@ -13,7 +13,7 @@ interface SdkProvider {
 	id: string;
 	name: string;
 	baseUrl?: string;
-	auth?: { oauth?: unknown };
+	auth?: { apiKey?: { name?: string }; oauth?: unknown };
 	getModels(): readonly SdkModel[];
 }
 
@@ -45,11 +45,13 @@ test("generated catalog matches the locked pi-ai provider directory", () => {
 		const entry = modelCatalogProviders.find((candidate) => candidate.id === provider.id);
 		assert.ok(entry, `missing catalog entry for ${provider.id}`);
 		assert.equal(entry.name, provider.name);
+		assert.equal(entry.catalogModelCount, provider.getModels().length);
+		assert.deepEqual(entry.auth, { apiKey: Boolean(provider.auth?.apiKey), name: provider.auth?.apiKey?.name ?? null, oauth: Boolean(provider.auth?.oauth) });
 		assert.equal(entry.baseUrl, provider.baseUrl ?? null);
 		const expectedModels = provider.getModels()
 			.filter((model) => model.api === "openai-completions")
 			.map((model) => model.id);
-		const supported = expectedModels.length > 0 && Boolean(provider.baseUrl?.startsWith("https://")) && !provider.auth?.oauth;
+		const supported = expectedModels.length > 0 && Boolean(provider.baseUrl?.startsWith("https://")) && Boolean(provider.auth?.apiKey);
 		assert.equal(entry.supported, supported, `support flag drifted for ${provider.id}`);
 		assert.deepEqual(entry.models.map((model) => model.id), supported ? expectedModels : []);
 	}
@@ -70,6 +72,24 @@ test("only API-key Chat Completions providers are offered as connectable", () =>
 	for (const provider of modelCatalogProviders.filter((candidate) => !candidate.supported)) {
 		assert.ok(provider.reason, `unsupported provider ${provider.id} needs a reason`);
 		assert.deepEqual(provider.models, []);
+	}
+});
+
+test("every connectable catalog provider routes a synthetic Chat Completions response", async () => {
+	for (const provider of modelCatalogProviders.filter((entry) => entry.supported)) {
+		const model = provider.models[0];
+		assert.ok(model, provider.id);
+		let calls = 0;
+		const extract = createCatalogTaskDraftExtractor(provider.id, model.id, "synthetic-personal-key", async (input, init) => {
+			calls++;
+			const sent = new Request(input, init);
+			assert.equal(sent.url, model.baseUrl + "/chat/completions", provider.id);
+			assert.equal(sent.headers.get("authorization"), "Bearer synthetic-personal-key", provider.id);
+			return providerReply(JSON.stringify({ product: "连接测试" }));
+		});
+		assert.ok(extract, provider.id);
+		assert.deepEqual(await extract("产品：连接测试", "overview"), { product: "连接测试" }, provider.id);
+		assert.equal(calls, 1, provider.id);
 	}
 });
 

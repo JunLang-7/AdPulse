@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { consoleClient, type components } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
 import {
@@ -64,6 +64,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 	const [custom, setCustom] = useState({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "" });
 	const [discovered, setDiscovered] = useState<string[]>([]);
 	const [discovering, setDiscovering] = useState(false);
+	const discoveryRequest = useRef(0);
 
 	const catalogQuery = useQuery({
 		queryKey: modelCatalogKey,
@@ -87,6 +88,9 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 	});
 
 	useEffect(() => {
+		discoveryRequest.current++;
+		setDiscovering(false);
+		setModel("");
 		setApiKey("");
 		setCustom({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "" });
 		setDiscovered([]);
@@ -122,6 +126,10 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 	const defaultsUnavailable = connectionsQuery.data === null;
 
 	function resetDraft() {
+		discoveryRequest.current++;
+		setDiscovering(false);
+		setDiscovered([]);
+		setCustom((draft) => ({ ...draft, apiKey: "" }));
 		setApiKey("");
 		setStatus({ tone: "idle", text: "尚未验证" });
 	}
@@ -164,9 +172,17 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 		return true;
 	}
 
+	function updateCustom(next: typeof custom) {
+		discoveryRequest.current++;
+		setDiscovering(false);
+		if (next.baseUrl !== custom.baseUrl || next.apiKey !== custom.apiKey) setDiscovered([]);
+		setCustom(next);
+	}
+
 	async function discover() {
 		if (discovering) return;
 		if (!custom.baseUrl.trim() || custom.apiKey.trim().length < 8) return;
+		const requestId = ++discoveryRequest.current;
 		setDiscovering(true);
 		setStatus({ tone: "idle", text: "正在获取模型列表…" });
 		try {
@@ -177,6 +193,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 					apiKey: custom.apiKey.trim(),
 				},
 			});
+			if (requestId !== discoveryRequest.current) return;
 			if (requireVerification(result.response.status, result.error)) return;
 			if (!result.data) throw new Error("模型列表不可用");
 			setDiscovered(result.data.models);
@@ -187,9 +204,10 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 				setCustom((current) => ({ ...current, modelId: result.data.models[0] ?? current.modelId }));
 			}
 		} catch {
-			setStatus({ tone: "error", text: "无法获取模型列表，可手动填写 Model ID 后重试。" });
+			if (requestId === discoveryRequest.current)
+				setStatus({ tone: "error", text: "无法获取模型列表，可手动填写 Model ID 后重试。" });
 		} finally {
-			setDiscovering(false);
+			if (requestId === discoveryRequest.current) setDiscovering(false);
 		}
 	}
 
@@ -453,7 +471,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 						<div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
 							{mode === "custom" ? (
 								<CustomForm custom={custom} working={working} discovered={discovered} discovering={discovering}
-									onChange={setCustom} onDiscover={() => void discover()} onManual={() => setDiscovered([])} />
+									onChange={updateCustom} onDiscover={() => void discover()} onManual={() => setDiscovered([])} />
 							) : selectedConnection ? (
 								<ExistingConnectionPanel
 									connection={selectedConnection} model={model} connections={connections} catalog={catalogQuery.data}

@@ -132,6 +132,14 @@ test("model connections API: authentication, origin and validation failures", as
 	assert.equal((await call(server, "/api/me/model-connections/test", "POST", { ...customInput(), protocol: "openai-responses" })).status, 422);
 });
 
+test("model connections API: empty JSON cannot verify or save a connection", async (t) => {
+	const { runtime } = withModels({ reply: () => providerReply("{}") });
+	const server = await serve(t, runtime);
+	assert.deepEqual(await (await call(server, "/api/me/model-connections/test", "POST", customInput())).json(), { ok: false });
+	assert.equal((await call(server, "/api/me/model-connections", "POST", customInput())).status, 503);
+	assert.deepEqual((await runtime.modelConnections?.service.view(server.userId))?.connections, []);
+});
+
 test("model connections API: verification gates storage and never echoes the key", async (t) => {
 	const failing = withModels({ reply: () => new Response("nope", { status: 500 }) });
 	const failingServer = await serve(t, failing.runtime);

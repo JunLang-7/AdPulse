@@ -12,9 +12,15 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"name": "AWS credentials or bearer token",
+				"oauth": false
+			},
 			"protocols": [
 				"bedrock-converse-stream"
 			],
+			"catalogModelCount": 197,
 			"models": []
 		},
 		{
@@ -22,9 +28,15 @@ export const modelCatalogDocument = {
 			"name": "Ant Ling",
 			"baseUrl": "https://api.ant-ling.com/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Ant Ling API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 3,
 			"models": [
 				{
 					"id": "Ling-2.6-1T",
@@ -118,9 +130,15 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.anthropic.com",
 			"supported": false,
 			"reason": "该供应商使用 anthropic-messages 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"name": "Anthropic API key",
+				"oauth": true
+			},
 			"protocols": [
 				"anthropic-messages"
 			],
+			"catalogModelCount": 17,
 			"models": []
 		},
 		{
@@ -129,10 +147,16 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"name": "Azure OpenAI API key",
+				"oauth": false
+			},
 			"protocols": [
 				"azure-openai-responses",
 				"openai-completions"
 			],
+			"catalogModelCount": 45,
 			"models": []
 		},
 		{
@@ -140,9 +164,15 @@ export const modelCatalogDocument = {
 			"name": "Baseten",
 			"baseUrl": "https://inference.baseten.co/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Baseten API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 14,
 			"models": [
 				{
 					"id": "deepseek-ai/DeepSeek-V4-Flash-0731",
@@ -589,9 +619,15 @@ export const modelCatalogDocument = {
 			"name": "Cerebras",
 			"baseUrl": "https://api.cerebras.ai/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Cerebras API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 2,
 			"models": [
 				{
 					"id": "gpt-oss-120b",
@@ -648,11 +684,17 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"name": "Cloudflare API key",
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages",
 				"openai-completions",
 				"openai-responses"
 			],
+			"catalogModelCount": 59,
 			"models": []
 		},
 		{
@@ -661,9 +703,15 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"name": "Cloudflare API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 19,
 			"models": []
 		},
 		{
@@ -671,9 +719,15 @@ export const modelCatalogDocument = {
 			"name": "DeepSeek",
 			"baseUrl": "https://api.deepseek.com",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "DeepSeek API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 2,
 			"models": [
 				{
 					"id": "deepseek-flash",
@@ -738,10 +792,16 @@ export const modelCatalogDocument = {
 			"name": "Fireworks",
 			"baseUrl": "https://api.fireworks.ai/inference",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Fireworks API key",
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages",
 				"openai-completions"
 			],
+			"catalogModelCount": 29,
 			"models": [
 				{
 					"id": "accounts/fireworks/models/glm-5p3",
@@ -1026,14 +1086,99 @@ export const modelCatalogDocument = {
 			"id": "github-copilot",
 			"name": "GitHub Copilot",
 			"baseUrl": "https://api.individual.githubcopilot.com",
-			"supported": false,
-			"reason": "该供应商还依赖账号授权（OAuth），本期只支持个人 API Key 直连。",
+			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "GitHub Copilot token",
+				"oauth": true
+			},
 			"protocols": [
 				"anthropic-messages",
 				"openai-completions",
 				"openai-responses"
 			],
-			"models": []
+			"catalogModelCount": 27,
+			"models": [
+				{
+					"id": "gemini-3.8-flash",
+					"name": "Gemini 3.8 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.75,
+						"output": 3.75,
+						"cacheRead": 0.075,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 64000,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsStore": false,
+						"supportsDeveloperRole": false,
+						"supportsReasoningEffort": false
+					}
+				},
+				{
+					"id": "gemini-4-argon",
+					"name": "Gemini 4 Argon",
+					"api": "openai-completions",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.1,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsStore": false,
+						"supportsDeveloperRole": false,
+						"supportsReasoningEffort": false
+					}
+				},
+				{
+					"id": "kimi-k3",
+					"name": "Kimi K3",
+					"api": "openai-completions",
+					"baseUrl": "https://api.individual.githubcopilot.com",
+					"provider": "github-copilot",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 3,
+						"output": 15,
+						"cacheRead": 0.3,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsStrictMode": true,
+						"supportsStore": false,
+						"supportsDeveloperRole": false,
+						"supportsReasoningEffort": false,
+						"supportsMidConvoSystemMessages": true
+					}
+				}
+			]
 		},
 		{
 			"id": "google",
@@ -1041,9 +1186,15 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://generativelanguage.googleapis.com/v1beta",
 			"supported": false,
 			"reason": "该供应商使用 google-generative-ai 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"name": "Gemini API key",
+				"oauth": false
+			},
 			"protocols": [
 				"google-generative-ai"
 			],
+			"catalogModelCount": 23,
 			"models": []
 		},
 		{
@@ -1052,9 +1203,15 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"name": "Google Cloud credentials",
+				"oauth": false
+			},
 			"protocols": [
 				"google-vertex"
 			],
+			"catalogModelCount": 13,
 			"models": []
 		},
 		{
@@ -1062,9 +1219,15 @@ export const modelCatalogDocument = {
 			"name": "Groq",
 			"baseUrl": "https://api.groq.com/openai/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Groq API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 7,
 			"models": [
 				{
 					"id": "llama-3.1-8b-instant",
@@ -1229,9 +1392,15 @@ export const modelCatalogDocument = {
 			"name": "Hugging Face",
 			"baseUrl": "https://router.huggingface.co/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Hugging Face token",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 78,
 			"models": [
 				{
 					"id": "deepseek-ai/DeepSeek-R1",
@@ -3064,12 +3233,202 @@ export const modelCatalogDocument = {
 			"id": "kimi-coding",
 			"name": "Kimi For Coding",
 			"baseUrl": "https://api.kimi.com/coding/v1",
-			"supported": false,
-			"reason": "该供应商还依赖账号授权（OAuth），本期只支持个人 API Key 直连。",
+			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Kimi API key",
+				"oauth": true
+			},
 			"protocols": [
 				"openai-completions"
 			],
-			"models": []
+			"catalogModelCount": 6,
+			"models": [
+				{
+					"id": "k3",
+					"name": "Kimi K3",
+					"api": "openai-completions",
+					"baseUrl": "https://api.kimi.com/coding/v1",
+					"provider": "kimi-coding",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 3,
+						"output": 15,
+						"cacheRead": 0.3,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsStrictMode": false,
+						"supportsStore": false,
+						"supportsDeveloperRole": false,
+						"supportsReasoningEffort": true,
+						"maxTokensField": "max_tokens",
+						"thinkingFormat": "openai",
+						"requiresReasoningContentOnAssistantMessages": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsMidConvoToolAdditions": true
+					}
+				},
+				{
+					"id": "k3-256k",
+					"name": "Kimi K3-256K",
+					"api": "openai-completions",
+					"baseUrl": "https://api.kimi.com/coding/v1",
+					"provider": "kimi-coding",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 3,
+						"output": 15,
+						"cacheRead": 0.3,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsStrictMode": false,
+						"supportsStore": false,
+						"supportsDeveloperRole": false,
+						"supportsReasoningEffort": true,
+						"maxTokensField": "max_tokens",
+						"thinkingFormat": "openai",
+						"requiresReasoningContentOnAssistantMessages": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsMidConvoToolAdditions": true
+					}
+				},
+				{
+					"id": "k3.1-pro",
+					"name": "Kimi K3.1 Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://api.kimi.com/coding/v1",
+					"provider": "kimi-coding",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.2,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsStrictMode": false,
+						"supportsStore": false,
+						"supportsDeveloperRole": false,
+						"supportsReasoningEffort": true,
+						"maxTokensField": "max_tokens",
+						"thinkingFormat": "openai",
+						"requiresReasoningContentOnAssistantMessages": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsMidConvoToolAdditions": true
+					}
+				},
+				{
+					"id": "k3.1-pro-highspeed",
+					"name": "Kimi K3.1 Pro Highspeed",
+					"api": "openai-completions",
+					"baseUrl": "https://api.kimi.com/coding/v1",
+					"provider": "kimi-coding",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 4,
+						"output": 20,
+						"cacheRead": 0.2,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsStrictMode": false,
+						"supportsStore": false,
+						"supportsDeveloperRole": false,
+						"supportsReasoningEffort": true,
+						"maxTokensField": "max_tokens",
+						"thinkingFormat": "openai",
+						"requiresReasoningContentOnAssistantMessages": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsMidConvoToolAdditions": true
+					}
+				},
+				{
+					"id": "kimi-for-coding",
+					"name": "kimi-for-coding",
+					"api": "openai-completions",
+					"baseUrl": "https://api.kimi.com/coding/v1",
+					"provider": "kimi-coding",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.95,
+						"output": 4,
+						"cacheRead": 0.19,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsStrictMode": false,
+						"supportsStore": false,
+						"supportsDeveloperRole": false,
+						"supportsReasoningEffort": true,
+						"maxTokensField": "max_tokens",
+						"thinkingFormat": "openai",
+						"requiresReasoningContentOnAssistantMessages": true,
+						"supportsMidConvoSystemMessages": true,
+						"supportsMidConvoToolAdditions": true
+					}
+				},
+				{
+					"id": "kimi-for-coding-highspeed",
+					"name": "Kimi For Coding HighSpeed",
+					"api": "openai-completions",
+					"baseUrl": "https://api.kimi.com/coding/v1",
+					"provider": "kimi-coding",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.9,
+						"output": 8,
+						"cacheRead": 0.38,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsStrictMode": false,
+						"supportsStore": false,
+						"supportsDeveloperRole": false,
+						"supportsReasoningEffort": false,
+						"maxTokensField": "max_tokens",
+						"thinkingFormat": "deepseek",
+						"supportsMidConvoSystemMessages": true
+					}
+				}
+			]
 		},
 		{
 			"id": "meta",
@@ -3077,9 +3436,15 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.meta.ai/v1",
 			"supported": false,
 			"reason": "该供应商使用 openai-responses 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"name": "Meta Model API key",
+				"oauth": true
+			},
 			"protocols": [
 				"openai-responses"
 			],
+			"catalogModelCount": 6,
 			"models": []
 		},
 		{
@@ -3088,9 +3453,15 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.minimax.io/anthropic",
 			"supported": false,
 			"reason": "该供应商使用 anthropic-messages 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"name": "MiniMax API key",
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages"
 			],
+			"catalogModelCount": 4,
 			"models": []
 		},
 		{
@@ -3099,9 +3470,15 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.minimaxi.com/anthropic",
 			"supported": false,
 			"reason": "该供应商使用 anthropic-messages 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"name": "MiniMax CN API key",
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages"
 			],
+			"catalogModelCount": 4,
 			"models": []
 		},
 		{
@@ -3110,9 +3487,15 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.mistral.ai",
 			"supported": false,
 			"reason": "该供应商使用 mistral-conversations 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"name": "Mistral API key",
+				"oauth": false
+			},
 			"protocols": [
 				"mistral-conversations"
 			],
+			"catalogModelCount": 34,
 			"models": []
 		},
 		{
@@ -3120,9 +3503,15 @@ export const modelCatalogDocument = {
 			"name": "Moonshot AI",
 			"baseUrl": "https://api.moonshot.ai/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Moonshot AI API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 6,
 			"models": [
 				{
 					"id": "kimi-k2.6",
@@ -3311,9 +3700,15 @@ export const modelCatalogDocument = {
 			"name": "Moonshot AI CN",
 			"baseUrl": "https://api.moonshot.cn/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Moonshot AI API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 6,
 			"models": [
 				{
 					"id": "kimi-k2.6",
@@ -3502,9 +3897,15 @@ export const modelCatalogDocument = {
 			"name": "NVIDIA",
 			"baseUrl": "https://integrate.api.nvidia.com/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "NVIDIA API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 21,
 			"models": [
 				{
 					"id": "deepseek-ai/deepseek-v4.1-flash",
@@ -4097,9 +4498,15 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.openai.com/v1",
 			"supported": false,
 			"reason": "该供应商使用 openai-responses 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"name": "OpenAI API key",
+				"oauth": true
+			},
 			"protocols": [
 				"openai-responses"
 			],
+			"catalogModelCount": 44,
 			"models": []
 		},
 		{
@@ -4108,9 +4515,15 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://chatgpt.com/backend-api",
 			"supported": false,
 			"reason": "该供应商使用 openai-codex-responses 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": false,
+				"name": null,
+				"oauth": true
+			},
 			"protocols": [
 				"openai-codex-responses"
 			],
+			"catalogModelCount": 8,
 			"models": []
 		},
 		{
@@ -4119,12 +4532,18 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"name": "OpenCode API key",
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages",
 				"google-generative-ai",
 				"openai-completions",
 				"openai-responses"
 			],
+			"catalogModelCount": 79,
 			"models": []
 		},
 		{
@@ -4133,34 +4552,10143 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"name": "OpenCode API key",
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages",
 				"google-generative-ai",
 				"openai-completions",
 				"openai-responses"
 			],
+			"catalogModelCount": 30,
 			"models": []
 		},
 		{
 			"id": "openrouter",
 			"name": "OpenRouter",
 			"baseUrl": "https://openrouter.ai/api/v1",
-			"supported": false,
-			"reason": "该供应商还依赖账号授权（OAuth），本期只支持个人 API Key 直连。",
+			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "OpenRouter API key",
+				"oauth": true
+			},
 			"protocols": [
 				"anthropic-messages",
 				"openai-completions"
 			],
-			"models": []
+			"catalogModelCount": 388,
+			"models": [
+				{
+					"id": "~deepseek/deepseek-flash-latest",
+					"name": "DeepSeek: DeepSeek Flash Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.035,
+						"output": 0.5,
+						"cacheRead": 0.005,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~deepseek/deepseek-pro-latest",
+					"name": "DeepSeek: DeepSeek Pro Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.1035,
+						"output": 8,
+						"cacheRead": 0.1,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 393216,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~deepseek/deepseek-v4-flash-latest",
+					"name": "DeepSeek: DeepSeek V4 Flash Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.059,
+						"output": 0.3,
+						"cacheRead": 0.035,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"requiresReasoningContentOnAssistantMessages": true
+					}
+				},
+				{
+					"id": "~google/gemini-flash-latest",
+					"name": "Google: Gemini Flash Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.75,
+						"output": 3.75,
+						"cacheRead": 0.075,
+						"cacheWrite": 0.041667
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~google/gemini-pro-latest",
+					"name": "Google: Gemini Pro Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.1,
+						"cacheWrite": 0.1875
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~moonshotai/kimi-latest",
+					"name": "MoonshotAI: Kimi Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1495,
+						"output": 7.15,
+						"cacheRead": 0.07475,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~openai/gpt-astra-latest",
+					"name": "OpenAI: GPT Astra Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 10,
+						"output": 50,
+						"cacheRead": 1,
+						"cacheWrite": 12.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 20,
+								"output": 75,
+								"cacheRead": 2,
+								"cacheWrite": 25
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~openai/gpt-luna-latest",
+					"name": "OpenAI: GPT Luna Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.5,
+						"cacheRead": 0.01,
+						"cacheWrite": 0.125,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 0.2,
+								"output": 0.75,
+								"cacheRead": 0.02,
+								"cacheWrite": 0.25
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~openai/gpt-mini-latest",
+					"name": "OpenAI: GPT Mini Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.75,
+						"output": 4.5,
+						"cacheRead": 0.075,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~openai/gpt-sol-latest",
+					"name": "OpenAI: GPT Sol Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.1,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 15,
+								"cacheRead": 0.2,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~openai/gpt-terra-latest",
+					"name": "OpenAI: GPT Terra Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 5,
+						"cacheRead": 0.05,
+						"cacheWrite": 1.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 2,
+								"output": 7.5,
+								"cacheRead": 0.1,
+								"cacheWrite": 2.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~unbiased/pareto-latest",
+					"name": "Pareto Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.8,
+						"output": 3.2,
+						"cacheRead": 0.03,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~x-ai/grok-latest",
+					"name": "xAI: Grok Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.5,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 4,
+								"output": 12,
+								"cacheRead": 1,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 500000,
+					"maxTokens": 450000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~z-ai/glm-flash-latest",
+					"name": "Z.ai: GLM Flash Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.0285,
+						"output": 0.0923,
+						"cacheRead": 0.0285,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "~z-ai/glm-latest",
+					"name": "Z.ai: GLM Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.0699,
+						"output": 1.4,
+						"cacheRead": 0.0689,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "aion-labs/aion-2.0",
+					"name": "AionLabs: Aion-2.0",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.8,
+						"output": 1.6,
+						"cacheRead": 0.2,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "aion-labs/aion-3.0",
+					"name": "AionLabs: Aion-3.0",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 3,
+						"output": 6,
+						"cacheRead": 0.75,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "aion-labs/aion-3.0-mini",
+					"name": "AionLabs: Aion-3.0-Mini",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.7,
+						"output": 1.4,
+						"cacheRead": 0.18,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "aion-labs/aion-3.5",
+					"name": "AionLabs: Aion 3.5",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 3,
+						"output": 6,
+						"cacheRead": 0.75,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "aion-labs/aion-3.5-mini",
+					"name": "AionLabs: Aion 3.5 Mini",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.7,
+						"output": 1.4,
+						"cacheRead": 0.18,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "amazon/nova-2-lite-v1",
+					"name": "Amazon: Nova 2 Lite",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 2.5,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 65535,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "amazon/nova-lite-v1",
+					"name": "Amazon: Nova Lite 1.0",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.06,
+						"output": 0.24,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 300000,
+					"maxTokens": 5120,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "amazon/nova-micro-v1",
+					"name": "Amazon: Nova Micro 1.0",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.035,
+						"output": 0.14,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 5120,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "amazon/nova-premier-v1",
+					"name": "Amazon: Nova Premier 1.0",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 12.5,
+						"cacheRead": 0.625,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 32000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "amazon/nova-pro-v1",
+					"name": "Amazon: Nova Pro 1.0",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.8,
+						"output": 3.2,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 300000,
+					"maxTokens": 5120,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-fable-5:batch",
+					"name": "Anthropic: Claude Fable 5 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 25,
+						"cacheRead": 0.5,
+						"cacheWrite": 6.25
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-fable-5.1:batch",
+					"name": "Anthropic: Claude Fable 5.1 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 25,
+						"cacheRead": 0.125,
+						"cacheWrite": 6.25
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-haiku-4.5:batch",
+					"name": "Anthropic: Claude Haiku 4.5 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.5,
+						"output": 2.5,
+						"cacheRead": 0.05,
+						"cacheWrite": 0.625
+					},
+					"contextWindow": 200000,
+					"maxTokens": 64000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-haiku-5.5:batch",
+					"name": "Anthropic: Claude Haiku 5.5 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.25,
+						"cacheRead": 0.005,
+						"cacheWrite": 0.0625,
+						"tiers": [
+							{
+								"inputTokensAbove": 100000,
+								"input": 0.25,
+								"output": 1.25,
+								"cacheRead": 0.025,
+								"cacheWrite": 0.3125
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-opus-4.1:batch",
+					"name": "Anthropic: Claude Opus 4.1 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 7.5,
+						"output": 37.5,
+						"cacheRead": 0.75,
+						"cacheWrite": 9.375
+					},
+					"contextWindow": 200000,
+					"maxTokens": 32000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-opus-4.5:batch",
+					"name": "Anthropic: Claude Opus 4.5 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 12.5,
+						"cacheRead": 0.25,
+						"cacheWrite": 3.125
+					},
+					"contextWindow": 200000,
+					"maxTokens": 64000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-opus-4.6:batch",
+					"name": "Anthropic: Claude Opus 4.6 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 12.5,
+						"cacheRead": 0.25,
+						"cacheWrite": 3.125
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-opus-4.7:batch",
+					"name": "Anthropic: Claude Opus 4.7 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 12.5,
+						"cacheRead": 0.25,
+						"cacheWrite": 3.125
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-opus-4.8:batch",
+					"name": "Anthropic: Claude Opus 4.8 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 12.5,
+						"cacheRead": 0.25,
+						"cacheWrite": 3.125
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-opus-5:batch",
+					"name": "Anthropic: Claude Opus 5 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 12.5,
+						"cacheRead": 0.25,
+						"cacheWrite": 3.125
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-opus-5.5:batch",
+					"name": "Anthropic: Claude Opus 5.5 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.1,
+						"cacheWrite": 2.5
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-sonnet-4.5:batch",
+					"name": "Anthropic: Claude Sonnet 4.5 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.5,
+						"output": 7.5,
+						"cacheRead": 0.15,
+						"cacheWrite": 1.875,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 3,
+								"output": 11.25,
+								"cacheRead": 0.3,
+								"cacheWrite": 3.75
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 64000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-sonnet-4.6:batch",
+					"name": "Anthropic: Claude Sonnet 4.6 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.5,
+						"output": 7.5,
+						"cacheRead": 0.15,
+						"cacheWrite": 1.875
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-sonnet-5:batch",
+					"name": "Anthropic: Claude Sonnet 5 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 5,
+						"cacheRead": 0.1,
+						"cacheWrite": 1.25
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "anthropic/claude-sonnet-5.5:batch",
+					"name": "Anthropic: Claude Sonnet 5.5 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 5,
+						"cacheRead": 0.05,
+						"cacheWrite": 1.25
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"cacheControlFormat": "anthropic",
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "auto",
+					"name": "Auto",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 2000000,
+					"maxTokens": 30000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "bytedance-seed/seed-1.6",
+					"name": "ByteDance Seed: Seed 1.6",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.25,
+						"output": 2,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 128000,
+								"input": 0.5,
+								"output": 4,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 262144,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "bytedance-seed/seed-1.6-flash",
+					"name": "ByteDance Seed: Seed 1.6 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.075,
+						"output": 0.3,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 128000,
+								"input": 0.1,
+								"output": 0.8,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 262144,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "bytedance-seed/seed-2-1-turbo",
+					"name": "ByteDance Seed: Seed 2.1 Turbo",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.5,
+						"output": 2.5,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "bytedance-seed/seed-2.0-code",
+					"name": "ByteDance Seed: Seed-2.0-Code",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.5,
+						"output": 3,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 128000,
+								"input": 1,
+								"output": 6,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 262144,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "bytedance-seed/seed-2.0-lite",
+					"name": "ByteDance Seed: Seed-2.0-Lite",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.25,
+						"output": 2,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 128000,
+								"input": 0.5,
+								"output": 4,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 262144,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "bytedance-seed/seed-2.0-mini",
+					"name": "ByteDance Seed: Seed-2.0-Mini",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.4,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 128000,
+								"input": 0.2,
+								"output": 0.8,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 262144,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "cohere/command-a-plus",
+					"name": "Cohere: Command A+",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 1.5,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 192000,
+					"maxTokens": 64000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "cohere/command-r-08-2024",
+					"name": "Cohere: Command R (08-2024)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.6,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 4000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "cohere/command-r-plus-08-2024",
+					"name": "Cohere: Command R+ (08-2024)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 10,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 4000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "cohere/north-mini-code:free",
+					"name": "Cohere: North Mini Code (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 256000,
+					"maxTokens": 64000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-chat",
+					"name": "DeepSeek: DeepSeek V3",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.2574,
+						"output": 1.0287,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-chat-v3-0324",
+					"name": "DeepSeek: DeepSeek V3 0324",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.29,
+						"output": 1.14,
+						"cacheRead": 0.11,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 115200,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-chat-v3.1",
+					"name": "DeepSeek: DeepSeek V3.1",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.25,
+						"output": 0.95,
+						"cacheRead": 0.13,
+						"cacheWrite": 0
+					},
+					"contextWindow": 163840,
+					"maxTokens": 147456,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-r1-0528",
+					"name": "DeepSeek: R1 0528",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.5,
+						"output": 2.15,
+						"cacheRead": 0.35,
+						"cacheWrite": 0
+					},
+					"contextWindow": 163840,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v3.1-terminus",
+					"name": "DeepSeek: DeepSeek V3.1 Terminus",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.27,
+						"output": 1,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 163840,
+					"maxTokens": 147456,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v3.2",
+					"name": "DeepSeek: DeepSeek V3.2",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.26,
+						"output": 0.38,
+						"cacheRead": 0.13,
+						"cacheWrite": 0
+					},
+					"contextWindow": 163840,
+					"maxTokens": 147456,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v3.2-exp",
+					"name": "DeepSeek: DeepSeek V3.2 Exp",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.27,
+						"output": 0.41,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 163840,
+					"maxTokens": 147456,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v4-flash",
+					"name": "DeepSeek: DeepSeek V4 Flash 0423",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.091,
+						"output": 0.182,
+						"cacheRead": 0.0182,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048575,
+					"maxTokens": 943717,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"requiresReasoningContentOnAssistantMessages": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v4-flash-0731",
+					"name": "DeepSeek: DeepSeek V4 Flash 0731",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.119,
+						"output": 0.238,
+						"cacheRead": 0.0238,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"requiresReasoningContentOnAssistantMessages": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v4-flash-vision-exp",
+					"name": "DeepSeek: DeepSeek V4 Flash Vision Exp",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2156,
+						"output": 0.6468,
+						"cacheRead": 0.00686,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 262144,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"requiresReasoningContentOnAssistantMessages": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v4-pro",
+					"name": "DeepSeek: DeepSeek V4 Pro 0423",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 1.6,
+						"output": 3.2,
+						"cacheRead": 0.135,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 393216,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"requiresReasoningContentOnAssistantMessages": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v4-pro-0813",
+					"name": "DeepSeek: DeepSeek V4 Pro 0813",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.115,
+						"output": 4,
+						"cacheRead": 0.11,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"requiresReasoningContentOnAssistantMessages": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v4.1-flash",
+					"name": "DeepSeek: DeepSeek V4.1 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.045,
+						"output": 0.5,
+						"cacheRead": 0.006,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"requiresReasoningContentOnAssistantMessages": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v4.1-flash-1017",
+					"name": "DeepSeek: DeepSeek V4.1 Flash 1017",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.6,
+						"cacheRead": 0.003,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 393216,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"requiresReasoningContentOnAssistantMessages": true
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v4.1-flash:batch",
+					"name": "DeepSeek: DeepSeek V4.1 Flash (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.15,
+						"cacheRead": 0.004,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 384000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"requiresReasoningContentOnAssistantMessages": true
+					}
+				},
+				{
+					"id": "dots-studio/dots-3-note-preview:free",
+					"name": "Dots Studio: Dots3-Note Preview (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 512000,
+					"maxTokens": 460800,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "elorian/glimpse",
+					"name": "Elorian: Glimpse",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.6,
+						"output": 3,
+						"cacheRead": 0.06,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 256000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "fireworks/ember-1",
+					"name": "Fireworks: Ember-1",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 3,
+						"output": 15,
+						"cacheRead": 0.3,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-2.5-flash",
+					"name": "Google: Gemini 2.5 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 2.5,
+						"cacheRead": 0.03,
+						"cacheWrite": 0.083333
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65535,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-2.5-flash-lite",
+					"name": "Google: Gemini 2.5 Flash Lite",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.4,
+						"cacheRead": 0.01,
+						"cacheWrite": 0.083333
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65535,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-2.5-pro",
+					"name": "Google: Gemini 2.5 Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 10,
+						"cacheRead": 0.125,
+						"cacheWrite": 0.375,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 2.5,
+								"output": 15,
+								"cacheRead": 0.25,
+								"cacheWrite": 0.375
+							}
+						]
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-2.5-pro-preview",
+					"name": "Google: Gemini 2.5 Pro Preview 06-05",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 10,
+						"cacheRead": 0.125,
+						"cacheWrite": 0.375,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 2.5,
+								"output": 15,
+								"cacheRead": 0.25,
+								"cacheWrite": 0.375
+							}
+						]
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3-flash-preview",
+					"name": "Google: Gemini 3 Flash Preview",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.5,
+						"output": 3,
+						"cacheRead": 0.05,
+						"cacheWrite": 0.083333
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3-flash-preview:batch",
+					"name": "Google: Gemini 3 Flash Preview (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.25,
+						"output": 1.5,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3-pro-image",
+					"name": "Google: Nano Banana Pro (Gemini 3 Pro Image)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 12,
+						"cacheRead": 0.2,
+						"cacheWrite": 0.375
+					},
+					"contextWindow": 65536,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.1-flash-lite",
+					"name": "Google: Gemini 3.1 Flash Lite",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.25,
+						"output": 1.5,
+						"cacheRead": 0.025,
+						"cacheWrite": 0.083333
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.1-flash-lite-preview",
+					"name": "Google: Gemini 3.1 Flash Lite Preview",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.25,
+						"output": 1.5,
+						"cacheRead": 0.025,
+						"cacheWrite": 0.083333
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.1-flash-lite:batch",
+					"name": "Google: Gemini 3.1 Flash Lite (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.125,
+						"output": 0.75,
+						"cacheRead": 0.0125,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.1-pro-preview",
+					"name": "Google: Gemini 3.1 Pro Preview",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 12,
+						"cacheRead": 0.2,
+						"cacheWrite": 0.375,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 4,
+								"output": 18,
+								"cacheRead": 0.4,
+								"cacheWrite": 0.375
+							}
+						]
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.1-pro-preview-customtools",
+					"name": "Google: Gemini 3.1 Pro Preview Custom Tools",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 12,
+						"cacheRead": 0.2,
+						"cacheWrite": 0.375,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 4,
+								"output": 18,
+								"cacheRead": 0.4,
+								"cacheWrite": 0.375
+							}
+						]
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.1-pro-preview:batch",
+					"name": "Google: Gemini 3.1 Pro Preview (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 6,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 2,
+								"output": 9,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.5-flash",
+					"name": "Google: Gemini 3.5 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.5,
+						"output": 9,
+						"cacheRead": 0.15,
+						"cacheWrite": 0.083333
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.5-flash-lite",
+					"name": "Google: Gemini 3.5 Flash Lite",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 2.5,
+						"cacheRead": 0.03,
+						"cacheWrite": 0.083333
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.5-flash-lite:batch",
+					"name": "Google: Gemini 3.5 Flash Lite (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 1.25,
+						"cacheRead": 0.015,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.5-flash:batch",
+					"name": "Google: Gemini 3.5 Flash (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.75,
+						"output": 4.5,
+						"cacheRead": 0.075,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.6-flash",
+					"name": "Google: Gemini 3.6 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.75,
+						"output": 3.75,
+						"cacheRead": 0.075,
+						"cacheWrite": 0.041667
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.6-flash:batch",
+					"name": "Google: Gemini 3.6 Flash (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.375,
+						"output": 1.875,
+						"cacheRead": 0.0375,
+						"cacheWrite": 0.041667
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.7-flash",
+					"name": "Google: Gemini 3.7 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.75,
+						"output": 3.75,
+						"cacheRead": 0.075,
+						"cacheWrite": 0.041667
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.7-flash:batch",
+					"name": "Google: Gemini 3.7 Flash (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.375,
+						"output": 1.875,
+						"cacheRead": 0.0375,
+						"cacheWrite": 0.041667
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.8-flash",
+					"name": "Google: Gemini 3.8 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.825,
+						"output": 4.125,
+						"cacheRead": 0.0825,
+						"cacheWrite": 0.041667
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-3.8-flash:batch",
+					"name": "Google: Gemini 3.8 Flash (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.375,
+						"output": 1.875,
+						"cacheRead": 0.0375,
+						"cacheWrite": 0.041667
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-4-argon",
+					"name": "Google: Gemini 4 Argon",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.1,
+						"cacheWrite": 0.1875
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-4-argon:batch",
+					"name": "Google: Gemini 4 Argon (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 5,
+						"cacheRead": 0.05,
+						"cacheWrite": 0.1875
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemini-nano-banana-2.1",
+					"name": "Google: Nano Banana 2.1",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.5,
+						"output": 7.5,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 65536,
+					"maxTokens": 58982,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemma-3-12b-it",
+					"name": "Google: Gemma 3 12B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.15,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemma-3-27b-it",
+					"name": "Google: Gemma 3 27B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.08,
+						"output": 0.35,
+						"cacheRead": 0.04,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 117964,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemma-4-26b-a4b-it",
+					"name": "Google: Gemma 4 26B A4B ",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.074,
+						"output": 0.223,
+						"cacheRead": 0.037,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemma-4-26b-a4b-it:free",
+					"name": "Google: Gemma 4 26B A4B  (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemma-4-31b-it",
+					"name": "Google: Gemma 4 31B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 0.4,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "google/gemma-4-31b-it:free",
+					"name": "Google: Gemma 4 31B (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "ibm-granite/granite-4.2-8b",
+					"name": "IBM: Granite 4.2 8B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.06,
+						"output": 0.15,
+						"cacheRead": 0.015,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 117964,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "inception/mercury-2",
+					"name": "Inception: Mercury 2",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.25,
+						"output": 0.75,
+						"cacheRead": 0.025,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 50000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "inception/mercury-2.5",
+					"name": "Inception: Mercury 2.5",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.04,
+						"output": 0.15,
+						"cacheRead": 0.004,
+						"cacheWrite": 0
+					},
+					"contextWindow": 260000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "inception/mercury-3",
+					"name": "Inception: Mercury 3",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.35,
+						"cacheRead": 0.01,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "inclusionai/ling-3.0-flash",
+					"name": "inclusionAI: Ling 3.0 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.021,
+						"output": 0.063,
+						"cacheRead": 0.0042,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "inclusionai/ling-3.0-flash-vl",
+					"name": "inclusionAI: Ling 3.0 Flash VL",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.06,
+						"output": 0.18,
+						"cacheRead": 0.012,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "inclusionai/ling-3.1-flash",
+					"name": "inclusionAI: Ling 3.1 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.075,
+						"output": 0.225,
+						"cacheRead": 0.015,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 262144,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "liquid/lfm-2.5-2.6b",
+					"name": "LiquidAI: LFM2.5-2.6B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.35,
+						"output": 0.5,
+						"cacheRead": 0.04,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 8192,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "liquid/lfm-2.5-2.6b:free",
+					"name": "LiquidAI: LFM2.5-2.6B (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 65536,
+					"maxTokens": 8192,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "liquid/lfm-2.5-24b-a2b",
+					"name": "LiquidAI: LFM2.5-24B-A2B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.7,
+						"cacheRead": 0.025,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 8192,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meituan/longcat-2.0",
+					"name": "Meituan: LongCat 2.0",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 1.2,
+						"cacheRead": 0.006,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048756,
+					"maxTokens": 262144,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta-llama/llama-3.1-70b-instruct",
+					"name": "Meta: Llama 3.1 70B Instruct",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.4,
+						"output": 0.4,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta-llama/llama-3.1-8b-instruct",
+					"name": "Meta: Llama 3.1 8B Instruct",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.08,
+						"cacheRead": 0.025,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 117964,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta-llama/llama-3.3-70b-instruct",
+					"name": "Meta: Llama 3.3 70B Instruct",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.32,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta-llama/llama-4-maverick",
+					"name": "Meta: Llama 4 Maverick",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1875,
+						"output": 0.6525,
+						"cacheRead": 0.05,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta-llama/llama-4-scout",
+					"name": "Meta: Llama 4 Scout",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.3,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 327680,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta/muse-glimmer-30b",
+					"name": "Meta: Muse Glimmer 30B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 1.2,
+						"cacheRead": 0.04,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta/muse-spark-1.1",
+					"name": "Meta: Muse Spark 1.1",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 4.25,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta/muse-spark-1.2",
+					"name": "Meta: Muse Spark 1.2",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 4.25,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta/muse-spark-1.2-contributor",
+					"name": "Meta: Muse Spark 1.2 Contributor",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.2,
+						"cacheRead": 0.002,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta/muse-spark-1.3",
+					"name": "Meta: Muse Spark 1.3",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 4.25,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta/muse-spark-1.3-contributor",
+					"name": "Meta: Muse Spark 1.3 Contributor",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.2,
+						"cacheRead": 0.002,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta/muse-spark-open",
+					"name": "Meta: Muse Spark Open",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 4.25,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "meta/muse-wonder",
+					"name": "Meta: Muse Wonder",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 4,
+						"output": 20,
+						"cacheRead": 0.2,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "minimax/minimax-m1",
+					"name": "MiniMax: MiniMax M1",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.55,
+						"output": 2.2,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 40000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "minimax/minimax-m2",
+					"name": "MiniMax: MiniMax M2",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.255,
+						"output": 1.02,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 204800,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "minimax/minimax-m2.1",
+					"name": "MiniMax: MiniMax M2.1",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 1.2,
+						"cacheRead": 0.03,
+						"cacheWrite": 0
+					},
+					"contextWindow": 204800,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "minimax/minimax-m2.5",
+					"name": "MiniMax: MiniMax M2.5",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.27,
+						"output": 0.95,
+						"cacheRead": 0.03,
+						"cacheWrite": 0
+					},
+					"contextWindow": 198000,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "minimax/minimax-m2.7",
+					"name": "MiniMax: MiniMax M2.7",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 1.2,
+						"cacheRead": 0.06,
+						"cacheWrite": 0
+					},
+					"contextWindow": 204800,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "minimax/minimax-m3",
+					"name": "MiniMax: MiniMax M3",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 1.2,
+						"cacheRead": 0.06,
+						"cacheWrite": 0
+					},
+					"contextWindow": 524288,
+					"maxTokens": 512000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "minimax/minimax-m3.1-flash",
+					"name": "MiniMax: MiniMax M3.1 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.6,
+						"cacheRead": 0.015,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 524288,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/codestral-2508",
+					"name": "Mistral: Codestral 2508",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 0.9,
+						"cacheRead": 0.03,
+						"cacheWrite": 0
+					},
+					"contextWindow": 256000,
+					"maxTokens": 204800,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/devstral-2512",
+					"name": "Mistral: Devstral 2 2512",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.4,
+						"output": 2,
+						"cacheRead": 0.04,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 209715,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/ministral-14b-2512",
+					"name": "Mistral: Ministral 3 14B 2512",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 0.2,
+						"cacheRead": 0.02,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 209715,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/ministral-3b-2512",
+					"name": "Mistral: Ministral 3 3B 2512",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.1,
+						"cacheRead": 0.01,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 104857,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/ministral-8b-2512",
+					"name": "Mistral: Ministral 3 8B 2512",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.15,
+						"cacheRead": 0.015,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 209715,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-large",
+					"name": "Mistral Large",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.2,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 102400,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-large-2407",
+					"name": "Mistral Large 2407",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.2,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 104857,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-large-2512",
+					"name": "Mistral: Mistral Large 3 2512",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.5,
+						"output": 1.5,
+						"cacheRead": 0.05,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 209715,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-large-4-0",
+					"name": "Mistral: Mistral Large 4",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.7,
+						"output": 2.1,
+						"cacheRead": 0.07,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 262144,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-medium-3",
+					"name": "Mistral: Mistral Medium 3",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.4,
+						"output": 2,
+						"cacheRead": 0.04,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 104857,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-medium-3-5",
+					"name": "Mistral: Mistral Medium 3.5",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.5,
+						"output": 7.5,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 209715,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-medium-3-5:batch",
+					"name": "Mistral: Mistral Medium 3.5 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.75,
+						"output": 3.75,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 209715,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-medium-3.1",
+					"name": "Mistral: Mistral Medium 3.1",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.4,
+						"output": 2,
+						"cacheRead": 0.04,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 104857,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-nemo",
+					"name": "Mistral: Mistral Nemo",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.029,
+						"output": 0.03,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-saba",
+					"name": "Mistral: Saba",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 0.6,
+						"cacheRead": 0.02,
+						"cacheWrite": 0
+					},
+					"contextWindow": 32768,
+					"maxTokens": 26214,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-small-2603",
+					"name": "Mistral: Mistral Small 4",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.6,
+						"cacheRead": 0.015,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 209715,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-small-3.1-24b-instruct",
+					"name": "Mistral: Mistral Small 3.1 24B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.351,
+						"output": 0.555,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 102400,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mistral-small-3.2-24b-instruct",
+					"name": "Mistral: Mistral Small 3.2 24B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.075,
+						"output": 0.2,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/mixtral-8x22b-instruct",
+					"name": "Mistral: Mixtral 8x22B Instruct",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.2,
+						"cacheWrite": 0
+					},
+					"contextWindow": 65536,
+					"maxTokens": 52428,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "mistralai/voxtral-small-24b-2507",
+					"name": "Mistral: Voxtral Small 24B 2507",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.3,
+						"cacheRead": 0.01,
+						"cacheWrite": 0
+					},
+					"contextWindow": 32768,
+					"maxTokens": 26214,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "moonshotai/kimi-k2",
+					"name": "MoonshotAI: Kimi K2 0711",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.57,
+						"output": 2.3,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 98304,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "moonshotai/kimi-k2-0905",
+					"name": "MoonshotAI: Kimi K2 0905",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.6,
+						"output": 2.5,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 98304,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "moonshotai/kimi-k2-thinking",
+					"name": "MoonshotAI: Kimi K2 Thinking",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.6,
+						"output": 2.5,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 98304,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "moonshotai/kimi-k2.5",
+					"name": "MoonshotAI: Kimi K2.5",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.41,
+						"output": 2.06,
+						"cacheRead": 0.07,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 4096,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "moonshotai/kimi-k2.6",
+					"name": "MoonshotAI: Kimi K2.6",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.65,
+						"output": 3.41,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"requiresReasoningContentOnAssistantMessages": true
+					}
+				},
+				{
+					"id": "moonshotai/kimi-k2.7-code",
+					"name": "MoonshotAI: Kimi K2.7 Code",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.6,
+						"output": 3.5,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "moonshotai/kimi-k3",
+					"name": "MoonshotAI: Kimi K3",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.192,
+						"output": 15,
+						"cacheRead": 0.182,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "moonshotai/kimi-k3:batch",
+					"name": "MoonshotAI: Kimi K3 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.28,
+						"output": 11.4,
+						"cacheRead": 0.228,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "moonshotai/kimi-k3.1-pro",
+					"name": "MoonshotAI: Kimi K3.1 Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.2,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "nex-agi/nex-n2.5-pro",
+					"name": "Nex AGI: Nex-N2.5-Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.075,
+						"output": 0.25,
+						"cacheRead": 0.015,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "nvidia/nemotron-3-nano-30b-a3b",
+					"name": "NVIDIA: Nemotron 3 Nano 30B A3B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.06,
+						"output": 0.24,
+						"cacheRead": 0.012,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+					"name": "NVIDIA: Nemotron 3 Nano Omni (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 256000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "nvidia/nemotron-3-super-120b-a12b",
+					"name": "NVIDIA: Nemotron 3 Super",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 2.4,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 262144,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "nvidia/nemotron-3-ultra-550b-a55b",
+					"name": "NVIDIA: Nemotron 3 Ultra",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.6,
+						"output": 2.4,
+						"cacheRead": 0.12,
+						"cacheWrite": 0
+					},
+					"contextWindow": 202800,
+					"maxTokens": 182520,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+					"name": "NVIDIA: Nemotron 3 Ultra (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "nvidia/nemotron-3.5-lightning",
+					"name": "NVIDIA: Nemotron 3.5 Lightning",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.07,
+						"output": 0.2,
+						"cacheRead": 0.04,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "nvidia/nemotron-3.5-lightning:free",
+					"name": "NVIDIA: Nemotron 3.5 Lightning (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "nvidia/nemotron-3.5-super-vl",
+					"name": "NVIDIA: Nemotron 3.5 Super VL",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.5,
+						"cacheRead": 0.02,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "nvidia/nemotron-3.5-super-vl:free",
+					"name": "NVIDIA: Nemotron 3.5 Super VL (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-3.5-turbo-0613",
+					"name": "OpenAI: GPT-3.5 Turbo (older v0613)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 1,
+						"output": 2,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 4095,
+					"maxTokens": 3685,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-3.5-turbo-16k",
+					"name": "OpenAI: GPT-3.5 Turbo 16k",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 3,
+						"output": 4,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 16385,
+					"maxTokens": 4096,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4",
+					"name": "OpenAI: GPT-4",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 30,
+						"output": 60,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 8191,
+					"maxTokens": 4096,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4-turbo:batch",
+					"name": "OpenAI: GPT-4 Turbo (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 15,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 4096,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4.1",
+					"name": "OpenAI: GPT-4.1",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 8,
+						"cacheRead": 0.5,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1047576,
+					"maxTokens": 32768,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4.1-mini",
+					"name": "OpenAI: GPT-4.1 Mini",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.4,
+						"output": 1.6,
+						"cacheRead": 0.1,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1047576,
+					"maxTokens": 32768,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4.1-mini:batch",
+					"name": "OpenAI: GPT-4.1 Mini (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 0.8,
+						"cacheRead": 0.05,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1047576,
+					"maxTokens": 32768,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4.1-nano",
+					"name": "OpenAI: GPT-4.1 Nano",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.4,
+						"cacheRead": 0.03,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1047576,
+					"maxTokens": 942818,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4.1-nano:batch",
+					"name": "OpenAI: GPT-4.1 Nano (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.2,
+						"cacheRead": 0.0125,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1047576,
+					"maxTokens": 32768,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4.1:batch",
+					"name": "OpenAI: GPT-4.1 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 4,
+						"cacheRead": 0.25,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1047576,
+					"maxTokens": 32768,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4o",
+					"name": "OpenAI: GPT-4o",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 10,
+						"cacheRead": 1.25,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4o-2024-05-13",
+					"name": "OpenAI: GPT-4o (2024-05-13)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 15,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 4096,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4o-2024-08-06",
+					"name": "OpenAI: GPT-4o (2024-08-06)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 10,
+						"cacheRead": 1.25,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4o-2024-11-20",
+					"name": "OpenAI: GPT-4o (2024-11-20)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 10,
+						"cacheRead": 1.25,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4o-mini",
+					"name": "OpenAI: GPT-4o-mini",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.6,
+						"cacheRead": 0.075,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4o-mini-2024-07-18",
+					"name": "OpenAI: GPT-4o-mini (2024-07-18)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.6,
+						"cacheRead": 0.075,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4o-mini:batch",
+					"name": "OpenAI: GPT-4o-mini (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.075,
+						"output": 0.3,
+						"cacheRead": 0.0375,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-4o:batch",
+					"name": "OpenAI: GPT-4o (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 5,
+						"cacheRead": 0.625,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5",
+					"name": "OpenAI: GPT-5",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 10,
+						"cacheRead": 0.125,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5-mini",
+					"name": "OpenAI: GPT-5 Mini",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.25,
+						"output": 2,
+						"cacheRead": 0.025,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5-mini:batch",
+					"name": "OpenAI: GPT-5 Mini (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.125,
+						"output": 1,
+						"cacheRead": 0.0125,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5-nano",
+					"name": "OpenAI: GPT-5 Nano",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.4,
+						"cacheRead": 0.005,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5-nano:batch",
+					"name": "OpenAI: GPT-5 Nano (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.025,
+						"output": 0.2,
+						"cacheRead": 0.0025,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5-pro",
+					"name": "OpenAI: GPT-5 Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 15,
+						"output": 120,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5-pro:batch",
+					"name": "OpenAI: GPT-5 Pro (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 7.5,
+						"output": 60,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5:batch",
+					"name": "OpenAI: GPT-5 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.625,
+						"output": 5,
+						"cacheRead": 0.0625,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.1",
+					"name": "OpenAI: GPT-5.1",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 10,
+						"cacheRead": 0.125,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.1-codex",
+					"name": "OpenAI: GPT-5.1-Codex",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 10,
+						"cacheRead": 0.13,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.1-codex-max",
+					"name": "OpenAI: GPT-5.1-Codex-Max",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 10,
+						"cacheRead": 0.125,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.1-codex-mini",
+					"name": "OpenAI: GPT-5.1-Codex-Mini",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.25,
+						"output": 2,
+						"cacheRead": 0.03,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.1:batch",
+					"name": "OpenAI: GPT-5.1 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.625,
+						"output": 5,
+						"cacheRead": 0.0625,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.2",
+					"name": "OpenAI: GPT-5.2",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.75,
+						"output": 14,
+						"cacheRead": 0.175,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.2-chat",
+					"name": "OpenAI: GPT-5.2 Chat",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.75,
+						"output": 14,
+						"cacheRead": 0.175,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 32000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.2-codex",
+					"name": "OpenAI: GPT-5.2-Codex",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.75,
+						"output": 14,
+						"cacheRead": 0.175,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.2-pro",
+					"name": "OpenAI: GPT-5.2 Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 21,
+						"output": 168,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.2-pro:batch",
+					"name": "OpenAI: GPT-5.2 Pro (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 10.5,
+						"output": 84,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.2:batch",
+					"name": "OpenAI: GPT-5.2 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.875,
+						"output": 7,
+						"cacheRead": 0.0875,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.3-codex",
+					"name": "OpenAI: GPT-5.3-Codex",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.75,
+						"output": 14,
+						"cacheRead": 0.175,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.4",
+					"name": "OpenAI: GPT-5.4",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 15,
+						"cacheRead": 0.25,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 5,
+								"output": 22.5,
+								"cacheRead": 0.5,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.4-mini",
+					"name": "OpenAI: GPT-5.4 Mini",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.75,
+						"output": 4.5,
+						"cacheRead": 0.075,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.4-mini:batch",
+					"name": "OpenAI: GPT-5.4 Mini (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.375,
+						"output": 2.25,
+						"cacheRead": 0.0375,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.4-nano",
+					"name": "OpenAI: GPT-5.4 Nano",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 1.25,
+						"cacheRead": 0.02,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.4-nano:batch",
+					"name": "OpenAI: GPT-5.4 Nano (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.625,
+						"cacheRead": 0.01,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.4-pro",
+					"name": "OpenAI: GPT-5.4 Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 30,
+						"output": 180,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 60,
+								"output": 270,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.4-pro:batch",
+					"name": "OpenAI: GPT-5.4 Pro (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 15,
+						"output": 90,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 30,
+								"output": 135,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.4:batch",
+					"name": "OpenAI: GPT-5.4 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 7.5,
+						"cacheRead": 0.125,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 2.5,
+								"output": 11.25,
+								"cacheRead": 0.25,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.5",
+					"name": "OpenAI: GPT-5.5",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 30,
+						"cacheRead": 0.5,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 10,
+								"output": 45,
+								"cacheRead": 1,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.5-pro",
+					"name": "OpenAI: GPT-5.5 Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 30,
+						"output": 180,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 60,
+								"output": 270,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.5-pro:batch",
+					"name": "OpenAI: GPT-5.5 Pro (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 15,
+						"output": 90,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 30,
+								"output": 135,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.5:batch",
+					"name": "OpenAI: GPT-5.5 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 15,
+						"cacheRead": 0.25,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 5,
+								"output": 22.5,
+								"cacheRead": 0.5,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.6-luna",
+					"name": "OpenAI: GPT-5.6 Luna",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 1.2,
+						"cacheRead": 0.02,
+						"cacheWrite": 0.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 0.4,
+								"output": 1.8,
+								"cacheRead": 0.04,
+								"cacheWrite": 0.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.6-luna-pro",
+					"name": "OpenAI: GPT-5.6 Luna Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 1.2,
+						"cacheRead": 0.02,
+						"cacheWrite": 0.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 0.4,
+								"output": 1.8,
+								"cacheRead": 0.04,
+								"cacheWrite": 0.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.6-luna-pro:batch",
+					"name": "OpenAI: GPT-5.6 Luna Pro (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.6,
+						"cacheRead": 0.01,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 0.2,
+								"output": 0.9,
+								"cacheRead": 0.02,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.6-luna:batch",
+					"name": "OpenAI: GPT-5.6 Luna (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.6,
+						"cacheRead": 0.01,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 0.2,
+								"output": 0.9,
+								"cacheRead": 0.02,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.6-sol",
+					"name": "OpenAI: GPT-5.6 Sol",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 4,
+						"output": 20,
+						"cacheRead": 0.4,
+						"cacheWrite": 5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 8,
+								"output": 30,
+								"cacheRead": 0.8,
+								"cacheWrite": 10
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.6-sol-pro",
+					"name": "OpenAI: GPT-5.6 Sol Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 4,
+						"output": 20,
+						"cacheRead": 0.4,
+						"cacheWrite": 5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 8,
+								"output": 30,
+								"cacheRead": 0.8,
+								"cacheWrite": 10
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.6-sol-pro:batch",
+					"name": "OpenAI: GPT-5.6 Sol Pro (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.2,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 15,
+								"cacheRead": 0.4,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.6-sol:batch",
+					"name": "OpenAI: GPT-5.6 Sol (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.2,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 15,
+								"cacheRead": 0.4,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.6-terra",
+					"name": "OpenAI: GPT-5.6 Terra",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 12,
+						"cacheRead": 0.2,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 18,
+								"cacheRead": 0.4,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.6-terra-pro",
+					"name": "OpenAI: GPT-5.6 Terra Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 12,
+						"cacheRead": 0.2,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 18,
+								"cacheRead": 0.4,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.6-terra-pro:batch",
+					"name": "OpenAI: GPT-5.6 Terra Pro (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 6,
+						"cacheRead": 0.1,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 2,
+								"output": 9,
+								"cacheRead": 0.2,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-5.6-terra:batch",
+					"name": "OpenAI: GPT-5.6 Terra (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 6,
+						"cacheRead": 0.1,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 2,
+								"output": 9,
+								"cacheRead": 0.2,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6-astra",
+					"name": "OpenAI: GPT-6 Astra",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 10,
+						"output": 50,
+						"cacheRead": 1,
+						"cacheWrite": 12.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 20,
+								"output": 75,
+								"cacheRead": 2,
+								"cacheWrite": 25
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "openai/gpt-6-astra-pro",
+					"name": "OpenAI: GPT-6 Astra Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 10,
+						"output": 50,
+						"cacheRead": 1,
+						"cacheWrite": 12.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 20,
+								"output": 75,
+								"cacheRead": 2,
+								"cacheWrite": 25
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6-astra-pro:batch",
+					"name": "OpenAI: GPT-6 Astra Pro (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 25,
+						"cacheRead": 0.5,
+						"cacheWrite": 6.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 10,
+								"output": 37.5,
+								"cacheRead": 1,
+								"cacheWrite": 12.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6-astra:batch",
+					"name": "OpenAI: GPT-6 Astra (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 25,
+						"cacheRead": 0.5,
+						"cacheWrite": 6.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 10,
+								"output": 37.5,
+								"cacheRead": 1,
+								"cacheWrite": 12.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6-luna",
+					"name": "OpenAI: GPT-6 Luna",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.5,
+						"cacheRead": 0.01,
+						"cacheWrite": 0.125,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 0.2,
+								"output": 0.75,
+								"cacheRead": 0.02,
+								"cacheWrite": 0.25
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "openai/gpt-6-luna-pro",
+					"name": "OpenAI: GPT-6 Luna Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.5,
+						"cacheRead": 0.01,
+						"cacheWrite": 0.125,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 0.2,
+								"output": 0.75,
+								"cacheRead": 0.02,
+								"cacheWrite": 0.25
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6-luna-pro:batch",
+					"name": "OpenAI: GPT-6 Luna Pro (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.25,
+						"cacheRead": 0.005,
+						"cacheWrite": 0.0625,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 0.1,
+								"output": 0.375,
+								"cacheRead": 0.01,
+								"cacheWrite": 0.125
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6-luna:batch",
+					"name": "OpenAI: GPT-6 Luna (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.25,
+						"cacheRead": 0.005,
+						"cacheWrite": 0.0625,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 0.1,
+								"output": 0.375,
+								"cacheRead": 0.01,
+								"cacheWrite": 0.125
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6-sol",
+					"name": "OpenAI: GPT-6 Sol",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.2,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 15,
+								"cacheRead": 0.4,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "openai/gpt-6-sol-pro",
+					"name": "OpenAI: GPT-6 Sol Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.2,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 15,
+								"cacheRead": 0.4,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6-sol-pro:batch",
+					"name": "OpenAI: GPT-6 Sol Pro (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 5,
+						"cacheRead": 0.1,
+						"cacheWrite": 1.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 2,
+								"output": 7.5,
+								"cacheRead": 0.2,
+								"cacheWrite": 2.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6-sol:batch",
+					"name": "OpenAI: GPT-6 Sol (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 5,
+						"cacheRead": 0.1,
+						"cacheWrite": 1.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 2,
+								"output": 7.5,
+								"cacheRead": 0.2,
+								"cacheWrite": 2.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6.1-sol",
+					"name": "OpenAI: GPT-6.1 Sol",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.1,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 15,
+								"cacheRead": 0.2,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "openai/gpt-6.1-sol-pro",
+					"name": "OpenAI: GPT-6.1 Sol Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 10,
+						"cacheRead": 0.1,
+						"cacheWrite": 2.5,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 4,
+								"output": 15,
+								"cacheRead": 0.2,
+								"cacheWrite": 5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6.1-sol-pro:batch",
+					"name": "OpenAI: GPT-6.1 Sol Pro (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 5,
+						"cacheRead": 0.05,
+						"cacheWrite": 1.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 2,
+								"output": 7.5,
+								"cacheRead": 0.1,
+								"cacheWrite": 2.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6.1-sol:batch",
+					"name": "OpenAI: GPT-6.1 Sol (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 5,
+						"cacheRead": 0.05,
+						"cacheWrite": 1.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 2,
+								"output": 7.5,
+								"cacheRead": 0.1,
+								"cacheWrite": 2.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6.1-terra",
+					"name": "OpenAI: GPT-6.1 Terra",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 5,
+						"cacheRead": 0.05,
+						"cacheWrite": 1.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 2,
+								"output": 7.5,
+								"cacheRead": 0.1,
+								"cacheWrite": 2.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true,
+						"supportsMidConvoSystemMessages": true
+					}
+				},
+				{
+					"id": "openai/gpt-6.1-terra-pro",
+					"name": "OpenAI: GPT-6.1 Terra Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 5,
+						"cacheRead": 0.05,
+						"cacheWrite": 1.25,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 2,
+								"output": 7.5,
+								"cacheRead": 0.1,
+								"cacheWrite": 2.5
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6.1-terra-pro:batch",
+					"name": "OpenAI: GPT-6.1 Terra Pro (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.5,
+						"output": 2.5,
+						"cacheRead": 0.025,
+						"cacheWrite": 0.625,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 1,
+								"output": 3.75,
+								"cacheRead": 0.05,
+								"cacheWrite": 1.25
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-6.1-terra:batch",
+					"name": "OpenAI: GPT-6.1 Terra (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.5,
+						"output": 2.5,
+						"cacheRead": 0.025,
+						"cacheWrite": 0.625,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 1,
+								"output": 3.75,
+								"cacheRead": 0.05,
+								"cacheWrite": 1.25
+							}
+						]
+					},
+					"contextWindow": 1050000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-audio",
+					"name": "OpenAI: GPT Audio",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 10,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-audio-mini",
+					"name": "OpenAI: GPT Audio Mini",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.6,
+						"output": 2.4,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-chat-latest",
+					"name": "OpenAI: GPT Chat Latest",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 30,
+						"cacheRead": 0.5,
+						"cacheWrite": 0
+					},
+					"contextWindow": 400000,
+					"maxTokens": 128000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-oss-120b",
+					"name": "OpenAI: gpt-oss-120b",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.6,
+						"cacheRead": 0.075,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 65536,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-oss-120b:batch",
+					"name": "OpenAI: gpt-oss-120b (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.0296,
+						"output": 0.136,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 117964,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-oss-20b",
+					"name": "OpenAI: gpt-oss-20b",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.03,
+						"output": 0.13,
+						"cacheRead": 0.03,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 117964,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-oss-20b:batch",
+					"name": "OpenAI: gpt-oss-20b (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.024,
+						"output": 0.112,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 117964,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/gpt-oss-safeguard-20b",
+					"name": "OpenAI: gpt-oss-safeguard-20b",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.075,
+						"output": 0.3,
+						"cacheRead": 0.0375,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 65536,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/o3",
+					"name": "OpenAI: o3",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 8,
+						"cacheRead": 0.5,
+						"cacheWrite": 0
+					},
+					"contextWindow": 200000,
+					"maxTokens": 100000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/o3-mini:batch",
+					"name": "OpenAI: o3 Mini (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.55,
+						"output": 2.2,
+						"cacheRead": 0.275,
+						"cacheWrite": 0
+					},
+					"contextWindow": 200000,
+					"maxTokens": 100000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/o3-pro",
+					"name": "OpenAI: o3 Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 20,
+						"output": 80,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 200000,
+					"maxTokens": 100000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/o3:batch",
+					"name": "OpenAI: o3 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 4,
+						"cacheRead": 0.25,
+						"cacheWrite": 0
+					},
+					"contextWindow": 200000,
+					"maxTokens": 100000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openai/o4-mini:batch",
+					"name": "OpenAI: o4 Mini (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.55,
+						"output": 2.2,
+						"cacheRead": 0.1375,
+						"cacheWrite": 0
+					},
+					"contextWindow": 200000,
+					"maxTokens": 100000,
+					"compat": {
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openrouter/auto",
+					"name": "Auto Router",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 2000000,
+					"maxTokens": 4096,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openrouter/auto-beta",
+					"name": "Auto Router (Beta)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 2000000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openrouter/free",
+					"name": "Free Models Router",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 200000,
+					"maxTokens": 4096,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openrouter/fusion",
+					"name": "OpenRouter: Fusion",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 30000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "openrouter/pareto-code",
+					"name": "Pareto Code Router",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 2000000,
+					"maxTokens": 4096,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "particle-ai/particle-1",
+					"name": "Particle AI: Particle-1",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.5,
+						"cacheRead": 0.003,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "perceptron/perceptron-mk1.5",
+					"name": "Perceptron: Perceptron Mk1.5",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 1.5,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 36864,
+					"maxTokens": 8192,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "prism-ml/ternary-bonsai-2-27b",
+					"name": "PrismML: Ternary Bonsai 2 27B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.075,
+						"output": 0.5,
+						"cacheRead": 0.0375,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "prism-ml/ternary-bonsai-2-9b",
+					"name": "PrismML: Ternary Bonsai 2 9B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.08,
+						"output": 0.13,
+						"cacheRead": 0.04,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen-2.5-72b-instruct",
+					"name": "Qwen2.5 72B Instruct",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.36,
+						"output": 0.4,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 32768,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen-2.5-7b-instruct",
+					"name": "Qwen: Qwen2.5 7B Instruct",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.2,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 32768,
+					"maxTokens": 29491,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen-plus",
+					"name": "Qwen: Qwen-Plus",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.26,
+						"output": 0.78,
+						"cacheRead": 0.052,
+						"cacheWrite": 0.325,
+						"tiers": [
+							{
+								"inputTokensAbove": 256000,
+								"input": 0.78,
+								"output": 2.34,
+								"cacheRead": 0.156,
+								"cacheWrite": 0.975
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-14b",
+					"name": "Qwen: Qwen3 14B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.12,
+						"output": 0.24,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 40960,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-235b-a22b-2507",
+					"name": "Qwen: Qwen3 235B A22B Instruct 2507",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.09,
+						"output": 0.55,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-235b-a22b-thinking-2507",
+					"name": "Qwen: Qwen3 235B A22B Thinking 2507",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.45,
+						"output": 3.5,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 128000,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-30b-a3b",
+					"name": "Qwen: Qwen3 30B A3B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.12,
+						"output": 0.5,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 40960,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-30b-a3b-instruct-2507",
+					"name": "Qwen: Qwen3 30B A3B Instruct 2507",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.3,
+						"cacheRead": 0.1,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-32b",
+					"name": "Qwen: Qwen3 32B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.08,
+						"output": 0.28,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 40960,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-coder",
+					"name": "Qwen: Qwen3 Coder 480B A35B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 1,
+						"cacheRead": 0.1,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-coder-30b-a3b-instruct",
+					"name": "Qwen: Qwen3 Coder 30B A3B Instruct",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.07,
+						"output": 0.28,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-coder-flash",
+					"name": "Qwen: Qwen3 Coder Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.195,
+						"output": 0.975,
+						"cacheRead": 0.039,
+						"cacheWrite": 0.24375,
+						"tiers": [
+							{
+								"inputTokensAbove": 32000,
+								"input": 0.325,
+								"output": 1.625,
+								"cacheRead": 0.065,
+								"cacheWrite": 0.40625
+							},
+							{
+								"inputTokensAbove": 128000,
+								"input": 0.52,
+								"output": 2.6,
+								"cacheRead": 0.104,
+								"cacheWrite": 0.65
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-coder-next",
+					"name": "Qwen: Qwen3 Coder Next",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.12,
+						"output": 0.8,
+						"cacheRead": 0.07,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-next-80b-a3b-instruct",
+					"name": "Qwen: Qwen3 Next 80B A3B Instruct",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.09,
+						"output": 1.1,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-vl-235b-a22b-instruct",
+					"name": "Qwen: Qwen3 VL 235B A22B Instruct",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.21,
+						"output": 1.9,
+						"cacheRead": 0.1,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-vl-30b-a3b-instruct",
+					"name": "Qwen: Qwen3 VL 30B A3B Instruct",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.6,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-vl-30b-a3b-thinking",
+					"name": "Qwen: Qwen3 VL 30B A3B Thinking",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.29,
+						"output": 1,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3-vl-8b-instruct",
+					"name": "Qwen: Qwen3 VL 8B Instruct",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.25,
+						"output": 0.75,
+						"cacheRead": 0.12,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.5-122b-a10b",
+					"name": "Qwen: Qwen3.5-122B-A10B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.26,
+						"output": 2.08,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.5-27b",
+					"name": "Qwen: Qwen3.5-27B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.26,
+						"output": 2.6,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 81920,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.5-35b-a3b",
+					"name": "Qwen: Qwen3.5-35B-A3B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.14,
+						"output": 1,
+						"cacheRead": 0.05,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 81920,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.5-397b-a17b",
+					"name": "Qwen: Qwen3.5 397B A17B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.5,
+						"output": 3.6,
+						"cacheRead": 0.3,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.5-9b",
+					"name": "Qwen: Qwen3.5-9B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.17,
+						"output": 0.25,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.5-flash-02-23",
+					"name": "Qwen: Qwen3.5-Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.065,
+						"output": 0.26,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.5-plus-02-15",
+					"name": "Qwen: Qwen3.5 Plus 2026-02-15",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.26,
+						"output": 1.56,
+						"cacheRead": 0,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 256000,
+								"input": 0.325,
+								"output": 1.95,
+								"cacheRead": 0,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.5-plus-20260420",
+					"name": "Qwen: Qwen3.5 Plus 2026-04-20",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 1.8,
+						"cacheRead": 0,
+						"cacheWrite": 0.375,
+						"tiers": [
+							{
+								"inputTokensAbove": 256000,
+								"input": 0.375,
+								"output": 2.25,
+								"cacheRead": 0,
+								"cacheWrite": 0.46875
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.6-27b",
+					"name": "Qwen: Qwen3.6 27B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.45,
+						"output": 2.7,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.6-35b-a3b",
+					"name": "Qwen: Qwen3.6 35B A3B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.9,
+						"cacheRead": 0.025,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.6-flash",
+					"name": "Qwen: Qwen3.6 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1875,
+						"output": 1.125,
+						"cacheRead": 0,
+						"cacheWrite": 0.234375,
+						"tiers": [
+							{
+								"inputTokensAbove": 256000,
+								"input": 0.75,
+								"output": 3,
+								"cacheRead": 0,
+								"cacheWrite": 0.9375
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.6-plus",
+					"name": "Qwen: Qwen3.6 Plus",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.325,
+						"output": 1.95,
+						"cacheRead": 0,
+						"cacheWrite": 0.40625,
+						"tiers": [
+							{
+								"inputTokensAbove": 256000,
+								"input": 1.3,
+								"output": 3.9,
+								"cacheRead": 0,
+								"cacheWrite": 1.625
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.7-flash",
+					"name": "Qwen: Qwen3.7 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.03,
+						"output": 0.13,
+						"cacheRead": 0.006,
+						"cacheWrite": 0.038,
+						"tiers": [
+							{
+								"inputTokensAbove": 32000,
+								"input": 0.1,
+								"output": 0.4,
+								"cacheRead": 0.02,
+								"cacheWrite": 0.125
+							},
+							{
+								"inputTokensAbove": 256000,
+								"input": 0.2,
+								"output": 0.8,
+								"cacheRead": 0.04,
+								"cacheWrite": 0.25
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.7-max",
+					"name": "Qwen: Qwen3.7 Max",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 1.475,
+						"output": 4.425,
+						"cacheRead": 0.295,
+						"cacheWrite": 1.84375
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.7-plus",
+					"name": "Qwen: Qwen3.7 Plus",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.32,
+						"output": 1.28,
+						"cacheRead": 0.064,
+						"cacheWrite": 0.4,
+						"tiers": [
+							{
+								"inputTokensAbove": 256000,
+								"input": 0.96,
+								"output": 3.84,
+								"cacheRead": 0.192,
+								"cacheWrite": 1.2
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.7-plus:batch",
+					"name": "Qwen: Qwen3.7 Plus (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.23,
+						"output": 0.92,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.8-2.4t-a95b",
+					"name": "Qwen: Qwen3.8 2.4T A95B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.25,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.8-27b",
+					"name": "Qwen: Qwen3.8 27B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 1.875,
+						"cacheRead": 0.0375,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.8-flash",
+					"name": "Qwen: Qwen3.8 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.47,
+						"cacheRead": 0.016,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.8-max-0902",
+					"name": "Qwen: Qwen3.8 Max (0902)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.25,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.8-max-prime",
+					"name": "Qwen: Qwen3.8 Max Prime",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 4,
+						"output": 12,
+						"cacheRead": 0.5,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "qwen/qwen3.8-omni-flash",
+					"name": "Qwen: Qwen3.8 Omni Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.47,
+						"cacheRead": 0.016,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "recursive/flint-v1.0:free",
+					"name": "Recursive: Flint (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "reflection/beam-1.0-501b-a23b",
+					"name": "Reflection: Beam 1.0 501B A23B",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.25,
+						"output": 1,
+						"cacheRead": 0.05,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "rekaai/reka-edge",
+					"name": "Reka Edge",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.1,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 16384,
+					"maxTokens": 14745,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "relace/relace-search",
+					"name": "Relace: Relace Search",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 1,
+						"output": 3,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 256000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "sakana/fugu-max",
+					"name": "Sakana: Fugu Max",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.25,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "sakana/fugu-ultra",
+					"name": "Sakana: Fugu Ultra",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 30,
+						"cacheRead": 0.5,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 10,
+								"output": 45,
+								"cacheRead": 1,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "sakana/fugu-ultra-v2",
+					"name": "Sakana: Fugu Ultra v2",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 5,
+						"output": 30,
+						"cacheRead": 0.5,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 272000,
+								"input": 10,
+								"output": 45,
+								"cacheRead": 1,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "sakana/sakana-namazu",
+					"name": "Sakana: Sakana Namazu",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.95,
+						"output": 4,
+						"cacheRead": 0.15,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "stepfun/step-3.5-flash",
+					"name": "StepFun: Step 3.5 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.1,
+						"output": 0.3,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "stepfun/step-3.7-flash",
+					"name": "StepFun: Step 3.7 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.2,
+						"output": 1.15,
+						"cacheRead": 0.04,
+						"cacheWrite": 0
+					},
+					"contextWindow": 256000,
+					"maxTokens": 230400,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "stepfun/step-5-preview",
+					"name": "StepFun: Step 5 Preview",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 2.7,
+						"cacheRead": 0.1,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 64000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "tencent/hy3",
+					"name": "Tencent: Hy3",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.132,
+						"output": 0.528,
+						"cacheRead": 0.033,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 128000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "tencent/hy3-preview",
+					"name": "Tencent: Hy3 preview",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.18,
+						"output": 0.6,
+						"cacheRead": 0.06,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "tencent/hy4-preview",
+					"name": "Tencent: Hy4 preview",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.834,
+						"output": 2.501,
+						"cacheRead": 0.042,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 64000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "thinkingmachines/inkling",
+					"name": "Thinking Machines: Inkling",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 4.05,
+						"cacheRead": 0.17,
+						"cacheWrite": 0
+					},
+					"contextWindow": 524288,
+					"maxTokens": 471859,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "thinkingmachines/inkling-small",
+					"name": "Thinking Machines: Inkling Small",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.45,
+						"output": 1.2,
+						"cacheRead": 0.1,
+						"cacheWrite": 0
+					},
+					"contextWindow": 524288,
+					"maxTokens": 262144,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "thinkingmachines/inkling-small:free",
+					"name": "Thinking Machines: Inkling Small (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 262144,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "thinkingmachines/inkling:free",
+					"name": "Thinking Machines: Inkling (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 262144,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "typesafe/jev-router",
+					"name": "TypeSafe: Jev Router",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "unbiased/pareto-26.10",
+					"name": "Pareto 26.10",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.8,
+						"output": 3.2,
+						"cacheRead": 0.03,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "unbiased/pareto-26.9",
+					"name": "Pareto 26.9",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": false,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2.5,
+						"output": 7.5,
+						"cacheRead": 0.25,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "upstage/solar-mini4",
+					"name": "Upstage: Solar Mini 4",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.2,
+						"cacheRead": 0.005,
+						"cacheWrite": 0
+					},
+					"contextWindow": 524288,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "upstage/solar-pro4",
+					"name": "Upstage: Solar Pro 4",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.15,
+						"output": 0.6,
+						"cacheRead": 0.03,
+						"cacheWrite": 0
+					},
+					"contextWindow": 524288,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "x-ai/grok-4.20",
+					"name": "SpaceXAI: Grok 4.20",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 2.5,
+						"cacheRead": 0.2,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 2.5,
+								"output": 5,
+								"cacheRead": 0.4,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 2000000,
+					"maxTokens": 1800000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "x-ai/grok-4.3",
+					"name": "SpaceXAI: Grok 4.3",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.25,
+						"output": 2.5,
+						"cacheRead": 0.2,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 2.5,
+								"output": 5,
+								"cacheRead": 0.4,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 900000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "x-ai/grok-4.3:batch",
+					"name": "SpaceXAI: Grok 4.3 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 2,
+						"cacheRead": 0.16,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 2,
+								"output": 4,
+								"cacheRead": 0.32,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 900000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "x-ai/grok-4.5",
+					"name": "SpaceXAI: Grok 4.5",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.3,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 4,
+								"output": 12,
+								"cacheRead": 0.6,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 500000,
+					"maxTokens": 450000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "x-ai/grok-4.6",
+					"name": "SpaceXAI: Grok 4.6",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.5,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 4,
+								"output": 12,
+								"cacheRead": 1,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 500000,
+					"maxTokens": 450000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "x-ai/grok-4.7",
+					"name": "SpaceXAI: Grok 4.7",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 2,
+						"output": 6,
+						"cacheRead": 0.5,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 4,
+								"output": 12,
+								"cacheRead": 1,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 500000,
+					"maxTokens": 450000,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "x-ai/grok-build-0.1",
+					"name": "SpaceXAI: Grok Build 0.1",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1,
+						"output": 2,
+						"cacheRead": 0.2,
+						"cacheWrite": 0,
+						"tiers": [
+							{
+								"inputTokensAbove": 200000,
+								"input": 2,
+								"output": 4,
+								"cacheRead": 0.4,
+								"cacheWrite": 0
+							}
+						]
+					},
+					"contextWindow": 256000,
+					"maxTokens": 230400,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "xiaomi/mimo-v2.5",
+					"name": "Xiaomi: MiMo-V2.5",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.4,
+						"output": 2,
+						"cacheRead": 0.08,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 65536,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "xiaomi/mimo-v2.5-pro",
+					"name": "Xiaomi: MiMo-V2.5-Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.48,
+						"output": 1.8,
+						"cacheRead": 0.096,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "xiaomi/mimo-v2.6-flash",
+					"name": "Xiaomi: MiMo-V2.6-Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.14,
+						"output": 0.28,
+						"cacheRead": 0.0028,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "xiaomi/mimo-v2.6-pro",
+					"name": "Xiaomi: MiMo-V2.6-Pro",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.435,
+						"output": 0.87,
+						"cacheRead": 0.0036,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "xiaomi/mimo-v2.6-pro-ultraspeed",
+					"name": "Xiaomi: MiMo-V2.6-Pro-UltraSpeed",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 4.35,
+						"output": 8.7,
+						"cacheRead": 0.036,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "xingchen-agi/xing4.0-29b-a4b:free",
+					"name": "XingChen: Xing4.0 29B A4B (free)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0,
+						"output": 0,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 262144,
+					"maxTokens": 235929,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-4.5",
+					"name": "Z.ai: GLM 4.5",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.6,
+						"output": 2.2,
+						"cacheRead": 0.11,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 98304,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-4.5-air",
+					"name": "Z.ai: GLM 4.5 Air",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.13,
+						"output": 0.85,
+						"cacheRead": 0.025,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 98304,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-4.5v",
+					"name": "Z.ai: GLM 4.5V",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.6,
+						"output": 1.8,
+						"cacheRead": 0.11,
+						"cacheWrite": 0
+					},
+					"contextWindow": 65536,
+					"maxTokens": 16384,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-4.6",
+					"name": "Z.ai: GLM 4.6",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.5,
+						"output": 2,
+						"cacheRead": 0.1,
+						"cacheWrite": 0
+					},
+					"contextWindow": 202752,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-4.6v",
+					"name": "Z.ai: GLM 4.6V",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.3,
+						"output": 0.9,
+						"cacheRead": 0.055,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 32768,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-4.7",
+					"name": "Z.ai: GLM 4.7",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.6,
+						"output": 2.2,
+						"cacheRead": 0.11,
+						"cacheWrite": 0
+					},
+					"contextWindow": 202752,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-4.7-flash",
+					"name": "Z.ai: GLM 4.7 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.0605,
+						"output": 0.4,
+						"cacheRead": 0,
+						"cacheWrite": 0
+					},
+					"contextWindow": 131072,
+					"maxTokens": 117964,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-5",
+					"name": "Z.ai: GLM 5",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.6,
+						"output": 1.9,
+						"cacheRead": 0.119,
+						"cacheWrite": 0
+					},
+					"contextWindow": 202752,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-5-turbo",
+					"name": "Z.ai: GLM 5 Turbo",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 1.2,
+						"output": 4,
+						"cacheRead": 0.24,
+						"cacheWrite": 0
+					},
+					"contextWindow": 202752,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-5.1",
+					"name": "Z.ai: GLM 5.1",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 1.4,
+						"output": 4.4,
+						"cacheRead": 0.26,
+						"cacheWrite": 0
+					},
+					"contextWindow": 202752,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-5.2",
+					"name": "Z.ai: GLM 5.2",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.006,
+						"output": 6.8,
+						"cacheRead": 0.005,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-5.3",
+					"name": "Z.ai: GLM 5.3",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.08,
+						"output": 3.6,
+						"cacheRead": 0.076,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 943718,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-5.3-flash",
+					"name": "Z.ai: GLM 5.3 Flash",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.0285,
+						"output": 0.0923,
+						"cacheRead": 0.0285,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-5.3-flash:batch",
+					"name": "Z.ai: GLM 5.3 Flash (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.05,
+						"output": 0.18,
+						"cacheRead": 0.01,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-5.3-flashx",
+					"name": "Z.ai: GLM 5.3 FlashX",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 0.37,
+						"output": 1.25,
+						"cacheRead": 0.09,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-5.3-prime",
+					"name": "Z.ai: GLM 5.3 Prime",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 2.8,
+						"output": 8.8,
+						"cacheRead": 0.56,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1000000,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-5.3:batch",
+					"name": "Z.ai: GLM 5.3 (batch)",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text"
+					],
+					"cost": {
+						"input": 0.45,
+						"output": 2,
+						"cacheRead": 0.1,
+						"cacheWrite": 0
+					},
+					"contextWindow": 1048576,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				},
+				{
+					"id": "z-ai/glm-5v-turbo",
+					"name": "Z.ai: GLM 5V Turbo",
+					"api": "openai-completions",
+					"baseUrl": "https://openrouter.ai/api/v1",
+					"provider": "openrouter",
+					"reasoning": true,
+					"input": [
+						"text",
+						"image"
+					],
+					"cost": {
+						"input": 1.2,
+						"output": 4,
+						"cacheRead": 0.24,
+						"cacheWrite": 0
+					},
+					"contextWindow": 202752,
+					"maxTokens": 131072,
+					"compat": {
+						"supportsDeveloperRole": false,
+						"thinkingFormat": "openrouter",
+						"supportsStrictMode": true,
+						"sendSessionAffinityHeaders": true
+					}
+				}
+			]
 		},
 		{
 			"id": "qwen-token-plan",
 			"name": "Qwen Token Plan",
 			"baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Qwen Token Plan API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 21,
 			"models": [
 				{
 					"id": "deepseek-v3.2",
@@ -4725,9 +15253,15 @@ export const modelCatalogDocument = {
 			"name": "Qwen Token Plan CN",
 			"baseUrl": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Qwen Token Plan CN API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 21,
 			"models": [
 				{
 					"id": "deepseek-v3.2",
@@ -5292,9 +15826,15 @@ export const modelCatalogDocument = {
 			"name": "Qwen Token Plan Individual",
 			"baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Qwen Token Plan Individual API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 9,
 			"models": [
 				{
 					"id": "deepseek-v4-flash-0731",
@@ -5542,9 +16082,15 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"name": "Radius API key",
+				"oauth": true
+			},
 			"protocols": [
 				"pi-messages"
 			],
+			"catalogModelCount": 28,
 			"models": []
 		},
 		{
@@ -5552,9 +16098,15 @@ export const modelCatalogDocument = {
 			"name": "Together",
 			"baseUrl": "https://api.together.ai/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Together API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 15,
 			"models": [
 				{
 					"id": "deepseek-ai/DeepSeek-V4-Pro-0813",
@@ -5992,7 +16544,13 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "目录中暂无对话模型。",
+			"auth": {
+				"apiKey": true,
+				"name": "TypeSafe API key",
+				"oauth": false
+			},
 			"protocols": [],
+			"catalogModelCount": 0,
 			"models": []
 		},
 		{
@@ -6001,9 +16559,15 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://ai-gateway.vercel.sh",
 			"supported": false,
 			"reason": "该供应商使用 anthropic-messages 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"name": "Vercel AI Gateway API key",
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages"
 			],
+			"catalogModelCount": 303,
 			"models": []
 		},
 		{
@@ -6012,9 +16576,15 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.x.ai/v1",
 			"supported": false,
 			"reason": "该供应商使用 openai-responses 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"name": "xAI API key",
+				"oauth": true
+			},
 			"protocols": [
 				"openai-responses"
 			],
+			"catalogModelCount": 4,
 			"models": []
 		},
 		{
@@ -6022,9 +16592,15 @@ export const modelCatalogDocument = {
 			"name": "Xiaomi",
 			"baseUrl": "https://api.xiaomimimo.com/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Xiaomi API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 3,
 			"models": [
 				{
 					"id": "mimo-v2.6-flash",
@@ -6111,9 +16687,15 @@ export const modelCatalogDocument = {
 			"name": "Xiaomi Token Plan AMS",
 			"baseUrl": "https://token-plan-ams.xiaomimimo.com/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Xiaomi Token Plan AMS API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 2,
 			"models": [
 				{
 					"id": "mimo-v2.6-flash",
@@ -6174,9 +16756,15 @@ export const modelCatalogDocument = {
 			"name": "Xiaomi Token Plan CN",
 			"baseUrl": "https://token-plan-cn.xiaomimimo.com/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Xiaomi Token Plan CN API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 2,
 			"models": [
 				{
 					"id": "mimo-v2.6-flash",
@@ -6237,9 +16825,15 @@ export const modelCatalogDocument = {
 			"name": "Xiaomi Token Plan SGP",
 			"baseUrl": "https://token-plan-sgp.xiaomimimo.com/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Xiaomi Token Plan SGP API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 2,
 			"models": [
 				{
 					"id": "mimo-v2.6-flash",
@@ -6300,9 +16894,15 @@ export const modelCatalogDocument = {
 			"name": "Z.AI",
 			"baseUrl": "https://api.z.ai/api/coding/paas/v4",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Z.AI API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 7,
 			"models": [
 				{
 					"id": "glm-4.7",
@@ -6508,9 +17108,15 @@ export const modelCatalogDocument = {
 			"name": "Z.AI Coding CN",
 			"baseUrl": "https://open.bigmodel.cn/api/coding/paas/v4",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"name": "Z.AI Coding CN API key",
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
+			"catalogModelCount": 4,
 			"models": [
 				{
 					"id": "glm-4.6v",

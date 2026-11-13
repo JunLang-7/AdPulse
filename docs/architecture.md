@@ -74,6 +74,8 @@ version 是决策版本，每次成功处理选择都会递增，即使 changes 
 
 模型调用的出网层在 [model-egress.ts](../packages/runtime/src/model-egress.ts)：只允许 HTTPS，按全部 DNS 结果校验公网地址并把连接绑定到已校验地址，不跟随重定向，不读环境代理，限制响应大小与超时。自定义 API 仍属于个人连接，不允许绕开这层直接发请求。
 
+供应商覆盖、认证类型与差异清单由目录生成：[model-provider-coverage.md](model-provider-coverage.md)。其中“真实供应商验收”统一为未验收，不因目录存在或合成测试通过而改写。
+
 ## 任务与发送语义
 
 [Worker](../packages/core/src/worker.ts) 使用数据库抢占任务、60 秒租约、租约令牌回写保护、指数退避和失败状态；失败任务可由所属控制台用户手动重试。
