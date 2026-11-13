@@ -93,6 +93,34 @@ test("模型配置：保存后用于本次任务，密钥不回显且不修改�
 	assert.equal(screen.queryByDisplayValue("synthetic-personal-key"), null, "密钥不得回显");
 });
 
+test("模型配置：自定义 API 可获取模型列表并选用", async (t) => {
+	t.after(cleanup);
+	const bodies: unknown[] = [];
+	serve(baseRoutes, {
+		"POST /api/me/model-connections/models": async (request) => {
+			bodies.push(await request.json());
+			return json({ models: ["mimo-v2-flash", "mimo-v2-pro"] });
+		},
+	});
+	renderDialog();
+
+	fireEvent.click(await screen.findByRole("button", { name: "自定义 API" }));
+	fireEvent.change(await screen.findByPlaceholderText("例如：company-gateway"), { target: { value: "company-gateway" } });
+	fireEvent.change(screen.getByPlaceholderText("https://api.example.com/v1"), { target: { value: "https://gateway.example.com/v1" } });
+	fireEvent.change(screen.getByPlaceholderText("粘贴你的 API Key"), { target: { value: "synthetic-gateway-key" } });
+	fireEvent.click(screen.getByRole("button", { name: "获取模型列表" }));
+
+	await waitFor(() => assert.equal(bodies.length, 1));
+	assert.deepEqual(bodies[0], {
+		baseUrl: "https://gateway.example.com/v1",
+		protocol: "openai-completions",
+		apiKey: "synthetic-gateway-key",
+	});
+	const select = await screen.findByRole("combobox");
+	assert.equal((select as HTMLSelectElement).value, "mimo-v2-flash");
+	assert.deepEqual([...((select as HTMLSelectElement).options)].map((option) => option.value), ["mimo-v2-flash", "mimo-v2-pro"]);
+});
+
 test("模型配置：自定义 API 可填写并保存自定义地址", async (t) => {
 	t.after(cleanup);
 	const bodies: unknown[] = [];

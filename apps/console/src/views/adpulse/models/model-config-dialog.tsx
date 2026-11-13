@@ -62,6 +62,8 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 	const [working, setWorking] = useState(false);
 	const [needsVerification, setNeedsVerification] = useState(false);
 	const [custom, setCustom] = useState({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "" });
+	const [discovered, setDiscovered] = useState<string[]>([]);
+	const [discovering, setDiscovering] = useState(false);
 
 	const catalogQuery = useQuery({
 		queryKey: modelCatalogKey,
@@ -87,6 +89,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 	useEffect(() => {
 		setApiKey("");
 		setCustom({ providerId: "", displayName: "", baseUrl: "", modelId: "", apiKey: "" });
+		setDiscovered([]);
 		setNeedsVerification(false);
 		if (!open) return;
 		setMode("catalog");
@@ -95,7 +98,6 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 		setProviderId(undefined);
 		setConnectionId(undefined);
 		setSharedSelection(undefined);
-		setModel("");
 		if (choice && "connectionId" in choice) {
 			setConnectionId(choice.connectionId);
 			setModel(choice.model);
@@ -160,6 +162,35 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 		setNeedsVerification(true);
 		setStatus({ tone: "error", text: "请先用飞书确认身份，再继续操作。" });
 		return true;
+	}
+
+	async function discover() {
+		if (discovering) return;
+		if (!custom.baseUrl.trim() || custom.apiKey.trim().length < 8) return;
+		setDiscovering(true);
+		setStatus({ tone: "idle", text: "正在获取模型列表…" });
+		try {
+			const result = await consoleClient.POST("/api/me/model-connections/models", {
+				body: {
+					baseUrl: custom.baseUrl.trim(),
+					protocol: "openai-completions",
+					apiKey: custom.apiKey.trim(),
+				},
+			});
+			if (requireVerification(result.response.status, result.error)) return;
+			if (!result.data) throw new Error("模型列表不可用");
+			setDiscovered(result.data.models);
+			setStatus(result.data.models.length
+				? { tone: "ok", text: `获取到 ${result.data.models.length} 个模型` }
+				: { tone: "error", text: "供应商没有返回模型，可手动填写 Model ID。" });
+			if (result.data.models.length && !result.data.models.includes(custom.modelId)) {
+				setCustom((current) => ({ ...current, modelId: result.data.models[0] ?? current.modelId }));
+			}
+		} catch {
+			setStatus({ tone: "error", text: "无法获取模型列表，可手动填写 Model ID 后重试。" });
+		} finally {
+			setDiscovering(false);
+		}
 	}
 
 	async function create(input: ModelConnectionInput, modelId: string) {
@@ -421,7 +452,8 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 
 						<div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
 							{mode === "custom" ? (
-								<CustomForm custom={custom} working={working} onChange={setCustom} />
+								<CustomForm custom={custom} working={working} discovered={discovered} discovering={discovering}
+									onChange={setCustom} onDiscover={() => void discover()} onManual={() => setDiscovered([])} />
 							) : selectedConnection ? (
 								<ExistingConnectionPanel
 									connection={selectedConnection} model={model} connections={connections} catalog={catalogQuery.data}
@@ -679,10 +711,14 @@ function ExistingConnectionPanel({ connection, model, connections, catalog, apiK
 	);
 }
 
-function CustomForm({ custom, working, onChange }: {
+function CustomForm({ custom, working, discovered, discovering, onChange, onDiscover, onManual }: {
 	custom: { providerId: string; displayName: string; baseUrl: string; modelId: string; apiKey: string };
 	working: boolean;
+	discovered: string[];
+	discovering: boolean;
 	onChange: (value: { providerId: string; displayName: string; baseUrl: string; modelId: string; apiKey: string }) => void;
+	onDiscover: () => void;
+	onManual: () => void;
 }) {
 	return (
 		<div className="space-y-3">
@@ -701,9 +737,27 @@ function CustomForm({ custom, working, onChange }: {
 				<Input value={custom.baseUrl} maxLength={512} disabled={working} placeholder="https://api.example.com/v1"
 					onChange={(event) => onChange({ ...custom, baseUrl: event.target.value })} />
 			</Field>
-			<Field label="Model ID">
-				<Input value={custom.modelId} maxLength={160} disabled={working} placeholder="例如：mimo-v2-flash"
-					onChange={(event) => onChange({ ...custom, modelId: event.target.value })} />
+			<Field label="Model ID" hint={discovered.length ? "来自供应商列表；也可以改为手动输入。" : "可手动填写，或先用上面的地址与密钥获取列表。"}>
+				<div className="space-y-2">
+					{discovered.length ? (
+						<>
+							<select value={custom.modelId} onChange={(event) => onChange({ ...custom, modelId: event.target.value })} disabled={working}
+								className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm">
+								{discovered.map((id) => <option key={id} value={id}>{id}</option>)}
+							</select>
+							<Button type="button" size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onManual}>
+								改为手动输入
+							</Button>
+						</>
+					) : (
+						<Input value={custom.modelId} maxLength={160} disabled={working} placeholder="例如：mimo-v2-flash"
+							onChange={(event) => onChange({ ...custom, modelId: event.target.value })} />
+					)}
+					<Button type="button" size="sm" variant="outline" disabled={working || discovering || !custom.baseUrl.trim() || custom.apiKey.trim().length < 8}
+						onClick={onDiscover}>
+						{discovering ? "正在获取…" : "获取模型列表"}
+					</Button>
+				</div>
 			</Field>
 			<Field label="API Key" hint="只写字段，保存后不再显示。">
 				<Input type="password" autoComplete="new-password" maxLength={512} value={custom.apiKey} disabled={working}

@@ -113,6 +113,7 @@ MODEL_CREDENTIAL_ACTIVE_KEY=v1
 | `GET /api/me/model-connections` | 本人连接投影与默认选择，不含任何密文/密钥 |
 | `POST /api/me/model-connections` | 先用固定合成短句测试，通过后才写入连接与加密凭据 |
 | `POST /api/me/model-connections/test` | 只测不存，不发送任务材料 |
+| `POST /api/me/model-connections/models` | 显式点击时用候选密钥读取 `${baseUrl}/models`；失败不当作空列表，也不代表生成能力已验证 |
 | `PUT /api/me/model-connections/{id}` | `expectedVersion` + 元数据/模型/凭据动作（keep/replace/remove）；换目标地址或协议必须同时 replace |
 | `DELETE /api/me/model-connections/{id}` | 同一事务删除连接、密文与默认引用 |
 | `DELETE /api/me/model-connections/{id}/credential` | 删密钥、停用连接并清空默认选择 |

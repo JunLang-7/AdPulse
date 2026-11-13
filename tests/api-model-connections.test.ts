@@ -286,6 +286,58 @@ test("model connections API: preferences only accept owned active connections", 
 	);
 });
 
+test("model connections API: discovery lists models but never stores or guesses", async (t) => {
+	const seen: { url: string; auth: string | null }[] = [];
+	const storage = new MemoryStorage();
+	const modelConnections = createModelConnections(storage, cipherEnv(), async (request, init) => {
+		const sent = new Request(request, init);
+		seen.push({ url: sent.url, auth: sent.headers.get("authorization") });
+		return Response.json({ data: [{ id: "mimo-v2-flash" }, { id: "mimo-v2-pro" }, { id: "mimo-v2-flash" }] });
+	});
+	const server = await serve(t, { ...compose(storage, []), modelConnections });
+	const discovered = await call(server, "/api/me/model-connections/models", "POST", {
+		baseUrl: "https://api.mimotest.example/v1",
+		protocol: "openai-completions",
+		apiKey: "synthetic-personal-key",
+	});
+	assert.equal(discovered.status, 200);
+	assert.deepEqual(await discovered.json(), { models: ["mimo-v2-flash", "mimo-v2-pro"] });
+	assert.deepEqual(seen, [{
+		url: "https://api.mimotest.example/v1/models",
+		auth: "Bearer synthetic-personal-key",
+	}]);
+	// 发现不写库。
+	assert.deepEqual((await (await call(server, "/api/me/model-connections")).json() as { connections: unknown[] }).connections, []);
+
+	assert.equal(
+		(await call(server, "/api/me/model-connections/models", "POST", {
+			baseUrl: "https://api.mimotest.example/v1",
+			protocol: "anthropic-messages",
+			apiKey: "synthetic-personal-key",
+		})).status,
+		422,
+	);
+	assert.equal(
+		(await call(server, "/api/me/model-connections/models", "POST", {
+			baseUrl: "http://api.mimotest.example/v1",
+			protocol: "openai-completions",
+			apiKey: "synthetic-personal-key",
+		})).status,
+		400,
+	);
+});
+
+test("model connections API: discovery failure is reported, not treated as an empty list", async (t) => {
+	const failing = withModels({ reply: () => new Response("nope", { status: 500 }) });
+	const server = await serve(t, failing.runtime);
+	const response = await call(server, "/api/me/model-connections/models", "POST", {
+		baseUrl: "https://api.mimotest.example/v1",
+		protocol: "openai-completions",
+		apiKey: "synthetic-personal-key",
+	});
+	assert.equal(response.status, 503);
+});
+
 test("model connections API: extraction uses the owned connection and fails closed otherwise", async (t) => {
 	const { runtime, requests } = withModels();
 	const server = await serve(t, runtime);
