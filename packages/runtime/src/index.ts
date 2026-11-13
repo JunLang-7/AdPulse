@@ -25,6 +25,7 @@ import {
 } from "@adpluse/core";
 import { MemoryStorage, PostgresStorage } from "@adpluse/storage";
 import { createModelCredentialCipher } from "./model-credential-cipher.js";
+import { discoverModels } from "./model-discovery.js";
 import { createModelEgressFetch } from "./model-egress.js";
 import { HttpSourceFetcher } from "./source-fetch.js";
 import type { TaskDraftExtractor } from "./task-draft-extractor.js";
@@ -176,6 +177,11 @@ export function createModelConnections(
 		draftExtractor(input: ModelRouteInput): TaskDraftExtractor | undefined {
 			return createPersistedTaskDraftExtractor(input, fetchImpl, limit);
 		},
+		/** 只在显式点击时调用；失败返回 null，不代替用户猜模型。 */
+		discover(input: { baseUrl: string; protocol: ModelRouteInput["protocol"]; apiKey: string }) {
+			// 发现与测试/调用共用同一份限额，避免它成为绕过预算的通道。
+			return limit(() => discoverModels(input, fetchImpl));
+		},
 		protocolWired: isTaskDraftProtocolWired,
 	};
 }
@@ -194,6 +200,8 @@ export {
 } from "./source-fetch.js";
 export { runSources } from "./source-runner.js";
 export { discoverSource } from "./source-discovery.js";
+export { discoverModels, isDiscoveryProtocolWired, modelDiscoveryMaxModels } from "./model-discovery.js";
+export type { ModelDiscoveryInput } from "./model-discovery.js";
 export { createModelCredentialCipher, parseModelCredentialKeyring } from "./model-credential-cipher.js";
 export type { CredentialKeyring } from "./model-credential-cipher.js";
 

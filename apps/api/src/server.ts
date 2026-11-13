@@ -659,7 +659,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				if (
 					((req.method === "PUT" || req.method === "DELETE") && path === "/api/task-drafts/models") ||
 					(req.method === "POST" && path === "/api/task-drafts/models/test") ||
-					(req.method === "POST" && ["/api/me/model-connections", "/api/me/model-connections/test"].includes(path)) ||
+					(req.method === "POST" && ["/api/me/model-connections", "/api/me/model-connections/test", "/api/me/model-connections/models"].includes(path)) ||
 					((req.method === "PUT" || req.method === "DELETE") &&
 						(/^\/api\/me\/model-connections\/[0-9a-f-]{36}(?:\/credential)?$/.test(path) ||
 							path === "/api/me/model-preferences"))

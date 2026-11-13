@@ -336,7 +336,8 @@ function createRouteExtractor(
 export function createTaskDraftRequestLimit() {
 	let recentRequests: number[] = [];
 	let inFlight = 0;
-	return async (request: () => Promise<TaskDraftSuggestions | null>) => {
+	/** 与模型相关的网络动作共用同一份预算（测试、发现、抽取）。 */
+	return async <T,>(request: () => Promise<T | null>): Promise<T | null> => {
 		const now = performance.now();
 		recentRequests = recentRequests.filter((start) => now - start < requestWindowMs);
 		if (inFlight >= maxConcurrentRequests || recentRequests.length >= maxRequestsPerWindow) return null;

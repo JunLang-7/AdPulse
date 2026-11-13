@@ -46,7 +46,7 @@ function withModels(options: { env?: Record<string, string>; reply?: () => Respo
 	const requests: Fixture["requests"] = [];
 	const modelConnections = createModelConnections(storage, options.env ?? cipherEnv(), async (input, init) => {
 		const sent = new Request(input, init);
-		const body = await sent.json() as { model?: string };
+		const body = sent.method === "GET" ? {} : await sent.json() as { model?: string };
 		requests.push({ url: sent.url, auth: sent.headers.get("authorization"), model: body.model ?? "" });
 		return options.reply?.() ?? providerReply(JSON.stringify({ product: "产品" }));
 	});
@@ -286,6 +286,58 @@ test("model connections API: preferences only accept owned active connections", 
 	);
 });
 
+test("model connections API: discovery lists models but never stores or guesses", async (t) => {
+	const seen: { url: string; auth: string | null }[] = [];
+	const storage = new MemoryStorage();
+	const modelConnections = createModelConnections(storage, cipherEnv(), async (request, init) => {
+		const sent = new Request(request, init);
+		seen.push({ url: sent.url, auth: sent.headers.get("authorization") });
+		return Response.json({ data: [{ id: "mimo-v2-flash" }, { id: "mimo-v2-pro" }, { id: "mimo-v2-flash" }] });
+	});
+	const server = await serve(t, { ...compose(storage, []), modelConnections });
+	const discovered = await call(server, "/api/me/model-connections/models", "POST", {
+		baseUrl: "https://api.mimotest.example/v1",
+		protocol: "openai-completions",
+		apiKey: "synthetic-personal-key",
+	});
+	assert.equal(discovered.status, 200);
+	assert.deepEqual(await discovered.json(), { models: ["mimo-v2-flash", "mimo-v2-pro"] });
+	assert.deepEqual(seen, [{
+		url: "https://api.mimotest.example/v1/models",
+		auth: "Bearer synthetic-personal-key",
+	}]);
+	// 发现不写库。
+	assert.deepEqual((await (await call(server, "/api/me/model-connections")).json() as { connections: unknown[] }).connections, []);
+
+	assert.equal(
+		(await call(server, "/api/me/model-connections/models", "POST", {
+			baseUrl: "https://api.mimotest.example/v1",
+			protocol: "anthropic-messages",
+			apiKey: "synthetic-personal-key",
+		})).status,
+		422,
+	);
+	assert.equal(
+		(await call(server, "/api/me/model-connections/models", "POST", {
+			baseUrl: "http://api.mimotest.example/v1",
+			protocol: "openai-completions",
+			apiKey: "synthetic-personal-key",
+		})).status,
+		400,
+	);
+});
+
+test("model connections API: discovery failure is reported, not treated as an empty list", async (t) => {
+	const failing = withModels({ reply: () => new Response("nope", { status: 500 }) });
+	const server = await serve(t, failing.runtime);
+	const response = await call(server, "/api/me/model-connections/models", "POST", {
+		baseUrl: "https://api.mimotest.example/v1",
+		protocol: "openai-completions",
+		apiKey: "synthetic-personal-key",
+	});
+	assert.equal(response.status, 503);
+});
+
 test("model connections API: extraction uses the owned connection and fails closed otherwise", async (t) => {
 	const { runtime, requests } = withModels();
 	const server = await serve(t, runtime);
@@ -320,6 +372,7 @@ test("model connections API: stale authentication cannot send probes or change c
 	for (const [path, method, body] of [
 		["/api/me/model-connections", "POST", customInput()],
 		["/api/me/model-connections/test", "POST", customInput()],
+		["/api/me/model-connections/models", "POST", { baseUrl: "https://api.mimotest.example/v1", protocol: "openai-completions", apiKey: "synthetic-personal-key" }],
 		[`/api/me/model-connections/${id}`, "PUT", {}],
 		[`/api/me/model-connections/${id}`, "DELETE", undefined],
 		[`/api/me/model-connections/${id}/credential`, "DELETE", undefined],
@@ -332,6 +385,16 @@ test("model connections API: stale authentication cannot send probes or change c
 	}
 	assert.equal((await call(server, "/api/me/model-connections")).status, 200);
 	assert.equal(requests.length, 0);
+});
+
+test("model connections API: discovery shares the model request budget", async (t) => {
+	const { runtime, requests } = withModels({ reply: () => Response.json({ data: [{ id: "mimo-v2-flash" }] }) });
+	const server = await serve(t, runtime);
+	const body = { baseUrl: "https://api.mimotest.example/v1", protocol: "openai-completions", apiKey: "synthetic-personal-key" };
+	for (let attempt = 0; attempt < 8; attempt++)
+		assert.equal((await call(server, "/api/me/model-connections/models", "POST", body)).status, 200);
+	assert.equal((await call(server, "/api/me/model-connections/models", "POST", body)).status, 503);
+	assert.equal(requests.length, 8);
 });
 
 test("model connections API: default, legacy and explicit personal selection share the request budget", async (t) => {

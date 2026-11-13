@@ -37,6 +37,21 @@
         }
       }
     },
+    "/api/me/model-connections/models": {
+      "post": {
+        "operationId": "discoverModelConnectionModels",
+        "description": "List candidate models from the given base URL with a one-off key. Explicit user action only; success does not prove generation capability.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelDiscoveryInput" } } } },
+        "responses": {
+          "200": { "description": "Model ids reported by the provider", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelDiscoveryResult" } } } },
+          "400": { "description": "Invalid base URL or fields", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Same-origin request required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "422": { "description": "Protocol or security boundary not supported", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Discovery failed or credentials are not configured", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/api/me/model-connections/test": {
       "post": {
         "operationId": "testModelConnection",
@@ -1719,6 +1734,24 @@
         "required": ["ok"],
         "additionalProperties": false,
         "properties": { "ok": { "type": "boolean" } }
+      },
+      "ModelDiscoveryInput": {
+        "type": "object",
+        "required": ["baseUrl", "protocol", "apiKey"],
+        "additionalProperties": false,
+        "properties": {
+          "baseUrl": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "protocol": { "$ref": "#/components/schemas/ModelConnectionProtocol" },
+          "apiKey": { "type": "string", "minLength": 8, "maxLength": 512, "writeOnly": true, "format": "password" }
+        }
+      },
+      "ModelDiscoveryResult": {
+        "type": "object",
+        "required": ["models"],
+        "additionalProperties": false,
+        "properties": {
+          "models": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 160 } }
+        }
       },
       "TaskDraftExtractionInput": {
         "type": "object",

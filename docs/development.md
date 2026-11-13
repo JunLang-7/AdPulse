@@ -113,6 +113,7 @@ MODEL_CREDENTIAL_ACTIVE_KEY=v1
 | `GET /api/me/model-connections` | 本人连接投影与默认选择，不含任何密文/密钥 |
 | `POST /api/me/model-connections` | 先用固定合成短句测试，通过后才写入连接与加密凭据 |
 | `POST /api/me/model-connections/test` | 只测不存，不发送任务材料 |
+| `POST /api/me/model-connections/models` | 显式点击时用候选密钥读取 `${baseUrl}/models`；失败不当作空列表，也不代表生成能力已验证 |
 | `PUT /api/me/model-connections/{id}` | `expectedVersion` + 元数据/模型/凭据动作（keep/replace/remove）；换目标地址或协议必须同时 replace |
 | `DELETE /api/me/model-connections/{id}` | 同一事务删除连接、密文与默认引用 |
 | `DELETE /api/me/model-connections/{id}/credential` | 删密钥、停用连接并清空默认选择 |
@@ -120,6 +121,19 @@ MODEL_CREDENTIAL_ACTIVE_KEY=v1
 | `POST /api/task-drafts/extract` + `connectionId` | 用本人持久连接抽取；密钥只在服务端短暂解密，不回传 |
 
 模型调用统一走受控出网层：只允许 HTTPS，校验全部 DNS 结果并把连接绑定到已校验地址，禁止重定向并移除 `location`，不读取环境代理，限制 512 KiB 与 15 秒。未接通的协议（`openai-responses`、`anthropic-messages`、`google-generative-ai`）返回 422，不会降级成 Chat Completions；自定义连接需自行确认供应商支持 SSE 与 JSON 输出。
+
+轮换与恢复演练（先只读，再确认写入）：
+
+```bash
+# 1. 追加新 key，新旧并存；此时 active 仍可为旧 key。
+MODEL_CREDENTIAL_KEYRING="v1:...,v2:..." bun run models:rotate-keys --check
+# 2. 切 active 到新 key 并确认重加密；未加确认参数不会写库。
+MODEL_CREDENTIAL_KEYRING="v1:...,v2:..." MODEL_CREDENTIAL_ACTIVE_KEY=v2 \
+  MODEL_KEY_ROTATION_CONFIRM=1 bun run models:rotate-keys --rotate
+# 3. 确认 readable 等于总数、awaitingRotation 为 0 后，才从 keyring 中移除旧 key。
+```
+
+`--check` 只读：逐条解密并报告 `readable / failed / awaitingRotation`（不输出去向、owner 或密钥）；有失败时退出码非 0。正式库上先备份、后在可丢弃实例演练，再执行轮换。
 
 网关需支持 Chat Completions 的 SSE 和 JSON 输出，界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
 

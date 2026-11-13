@@ -22,6 +22,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/model-connections/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description List candidate models from the given base URL with a one-off key. Explicit user action only; success does not prove generation capability. */
+        post: operations["discoverModelConnectionModels"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/model-connections/test": {
         parameters: {
             query?: never;
@@ -965,6 +982,15 @@ export interface components {
         ModelConnectionCheck: {
             ok: boolean;
         };
+        ModelDiscoveryInput: {
+            baseUrl: string;
+            protocol: components["schemas"]["ModelConnectionProtocol"];
+            /** Format: password */
+            apiKey: string;
+        };
+        ModelDiscoveryResult: {
+            models: string[];
+        };
         TaskDraftExtractionInput: {
             brief: string;
             stage?: components["schemas"]["TaskDraftStage"];
@@ -1789,6 +1815,75 @@ export interface operations {
                 };
             };
             /** @description Verification failed or credentials are not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    discoverModelConnectionModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelDiscoveryInput"];
+            };
+        };
+        responses: {
+            /** @description Model ids reported by the provider */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDiscoveryResult"];
+                };
+            };
+            /** @description Invalid base URL or fields */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Same-origin request required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Protocol or security boundary not supported */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Discovery failed or credentials are not configured */
             503: {
                 headers: {
                     [name: string]: unknown;

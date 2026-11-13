@@ -175,6 +175,13 @@ const modelPreferenceInput = z
 		modelId: z.string().trim().min(1).max(160).nullable().optional(),
 	})
 	.strict();
+const modelDiscoveryInput = z
+	.object({
+		baseUrl: z.string().trim().min(1).max(512),
+		protocol: z.enum(modelConnectionProtocols as unknown as [string, ...string[]]),
+		apiKey: z.string().trim().min(8).max(512),
+	})
+	.strict();
 
 function modelConnectionErrorStatus(reason: ModelConnectionError["reason"]): number {
 	switch (reason) {
@@ -394,6 +401,20 @@ export async function handleAdmin(
 		if (!modelApi) throw new HttpError(503, "model connections unavailable");
 		if (path === "/api/me/model-connections" && req.method === "GET")
 			return json(res, 200, await modelApi.service.view(userId));
+		if (path === "/api/me/model-connections/models" && req.method === "POST") {
+			const input = modelDiscoveryInput.parse(await readJson(req));
+			if (!modelApi.protocolWired(input.protocol as ModelConnectionProtocol))
+				throw new HttpError(422, "protocol not wired");
+			const baseUrl = await withModelConnectionErrors(async () => normalizeModelBaseUrl(input.baseUrl));
+			const models = await modelApi.discover({
+				baseUrl,
+				protocol: input.protocol as ModelConnectionProtocol,
+				apiKey: input.apiKey,
+			});
+			// 失败不当作“没有模型”，也不猜一个默认模型。
+			if (models === null) throw new HttpError(503, "model discovery unavailable");
+			return json(res, 200, { models });
+		}
 		if (path === "/api/me/model-connections/test" && req.method === "POST") {
 			const parsed = modelConnectionInput.parse(await readJson(req));
 			const input = await withModelConnectionErrors(async () =>
