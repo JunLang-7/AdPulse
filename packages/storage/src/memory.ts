@@ -14,6 +14,7 @@ export const tableNames = [
 	"userModelConnections",
 	"userModelCredentials",
 	"userModelPreferences",
+	"userModelRevocations",
 	"tasks",
 	"taskVersions",
 	"taskOperations",

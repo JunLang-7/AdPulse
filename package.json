@@ -16,6 +16,7 @@
 		"sdk:generate": "openapi-typescript contracts/openapi.json -o apps/console/src/generated/api.d.ts",
 		"model-catalog:generate": "node packages/runtime/scripts/generate-model-catalog.mjs",
 		"models:rotate-keys": "node scripts/model-key-rotation.mjs",
+		"models:revocations": "node scripts/model-credential-revocation.mjs",
 		"model-coverage:generate": "node scripts/model-provider-coverage.mjs",
 		"sdk:check": "node scripts/check-sdk.mjs",
 		"start": "node --env-file=.env apps/api/dist/index.js",

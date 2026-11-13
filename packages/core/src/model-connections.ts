@@ -10,6 +10,7 @@ import type {
 	UserModelConnection,
 	UserModelCredential,
 	UserModelPreference,
+	UserModelRevocation,
 } from "./state/model.js";
 
 export const modelConnectionProtocols: readonly ModelConnectionProtocol[] = [
@@ -64,6 +65,16 @@ export class ModelConnectionError extends Error {
 		super(message);
 		this.name = "ModelConnectionError";
 	}
+}
+
+/** 恢复备份后的重放报告；不包含密钥或密文。 */
+export interface RevocationReplayReport {
+	/** 已记录但凭据版本更新的条目：不执行，避免误删轮换后的新密钥。 */
+	skipped: number;
+	/** 需要停用（或已停用）的连接数。 */
+	disabled: number;
+	/** 连接/密文已不存在，只补记墓碑。 */
+	tombstoned: number;
 }
 
 /** 对外投影：永远不含明文密钥、密文或可回读的凭据引用。 */
@@ -368,6 +379,7 @@ export class ModelConnectionService {
 			const connection = await this.requireOwned(tx, ownerId, connectionId);
 			this.requireVersion(connection, input.expectedVersion);
 			const credential = await tx.userModelCredentials.get(connectionId);
+			const revocation = await tx.userModelRevocations.get(connectionId);
 			const at = this.now();
 			const update = input.credential ?? { action: "keep" };
 			const models =
@@ -398,13 +410,19 @@ export class ModelConnectionService {
 				nextCredential = this.encryptCredential(
 					ownerId,
 					{ id: connection.id, baseUrl, protocol },
-					(credential?.credentialVersion ?? 0) + 1,
+					// 版本必须单调递增并越过墓碑，否则撤销后重设的密钥会被自己判为已撤销。
+					Math.max(credential?.credentialVersion ?? 0, revocation?.credentialVersion ?? 0) + 1,
 					validateApiKey(update.apiKey),
 					at,
 				);
 				status = "active";
 			}
 			if (update.action === "remove") {
+				await this.revoke(
+					tx, connection,
+					credential?.credentialVersion ?? connection.version,
+					at, "credential_removed",
+				);
 				nextCredential = null;
 				status = "disabled";
 			}
@@ -469,6 +487,9 @@ export class ModelConnectionService {
 			this.requireVersion(connection, expectedVersion);
 			const at = this.now();
 			await this.clearPreference(tx, ownerId, connection.id, at);
+			const credential = await tx.userModelCredentials.get(connection.id);
+			// 先写墓碑再删数据：即便后续恢复备份，重放时也知道这条连接已被删除。
+			await this.revoke(tx, connection, credential?.credentialVersion ?? connection.version, at, "connection_deleted");
 			await tx.userModelCredentials.delete(connection.id);
 			await tx.userModelConnections.delete(connection.id);
 			return this.viewIn(tx, ownerId);
@@ -533,6 +554,9 @@ export class ModelConnectionService {
 			const credential = await tx.userModelCredentials.get(connection.id);
 			if (!credential)
 				throw new ModelConnectionError("credential_missing", "connection has no credential");
+			// 恢复备份可能让旧密文重新出现；墓碑仍优先。
+			if (await this.isRevoked(tx, connection.id, credential.credentialVersion))
+				throw new ModelConnectionError("credential_unreadable", "credential was revoked");
 			const modelId = typeof input.modelId === "string" ? input.modelId.trim() : "";
 			if (!connection.models.some((model) => model.id === modelId))
 				invalid("modelId is not part of this connection");
@@ -565,6 +589,9 @@ export class ModelConnectionService {
 			const credential = await tx.userModelCredentials.get(connection.id);
 			if (!credential)
 				throw new ModelConnectionError("credential_missing", "connection has no credential");
+			// 已撤销的凭据即使被备份恢复回来也不可解密使用。
+			if (await this.isRevoked(tx, connection.id, credential.credentialVersion))
+				throw new ModelConnectionError("credential_unreadable", "credential was revoked");
 			const resolvedModel = modelId === undefined
 				? connection.models[0]?.id
 				: connection.models.find((model) => model.id === modelId)?.id;
@@ -674,6 +701,85 @@ export class ModelConnectionService {
 		};
 	}
 
+	/** 只保留该连接的最高撤销版本，且不覆盖更晚的撤销记录。 */
+	private async revoke(
+		tx: Transaction,
+		connection: Pick<UserModelConnection, "id" | "ownerId">,
+		credentialVersion: number,
+		at: string,
+		reason: UserModelRevocation["reason"],
+	): Promise<void> {
+		const existing = await tx.userModelRevocations.get(connection.id);
+		if (existing && existing.credentialVersion >= credentialVersion) return;
+		await tx.userModelRevocations.put({
+			id: connection.id,
+			ownerId: connection.ownerId,
+			connectionId: connection.id,
+			credentialVersion,
+			reason,
+			revokedAt: existing?.revokedAt ?? at,
+		});
+	}
+
+	private async isRevoked(tx: Transaction, connectionId: string, credentialVersion: number): Promise<boolean> {
+		const revocation = await tx.userModelRevocations.get(connectionId);
+		return revocation !== null && credentialVersion <= revocation.credentialVersion;
+	}
+
+	/** 运维用：导出撤销墓碑，供恢复备份后重放；不含密钥或密文。 */
+	async listRevocations(): Promise<UserModelRevocation[]> {
+		return (await this.storage.transaction((tx) => tx.userModelRevocations.all()))
+			.sort((left, right) => left.connectionId.localeCompare(right.connectionId));
+	}
+
+	/**
+	 * 恢复备份后重放撤销记录：默认只报告不写入（`apply: false`），
+	 * 确认后再执行。凭据版本高于墓碑时跳过，避免误删轮换后的新密钥。
+	 */
+	async replayRevocations(
+		entries: readonly UserModelRevocation[],
+		options: { apply?: boolean } = {},
+	): Promise<RevocationReplayReport> {
+		const apply = options.apply === true;
+		const report: RevocationReplayReport = { skipped: 0, disabled: 0, tombstoned: 0 };
+		for (const entry of entries) {
+			if (typeof entry?.connectionId !== "string" || typeof entry.ownerId !== "string" ||
+				!Number.isInteger(entry.credentialVersion) || entry.credentialVersion < 1) continue;
+			const outcome = await this.storage.transaction(async (tx) => {
+				const connection = await tx.userModelConnections.get(entry.connectionId);
+				const credential = await tx.userModelCredentials.get(entry.connectionId);
+				if (connection && connection.ownerId !== entry.ownerId)
+					throw new ModelConnectionError("connection_not_found", "revocation owner mismatch");
+				if (connection && (!credential || credential.credentialVersion <= entry.credentialVersion)) {
+					if (!apply) return "disabled" as const;
+					const at = this.now();
+					await this.revoke(tx, connection, entry.credentialVersion, at, entry.reason);
+					await tx.userModelCredentials.delete(connection.id);
+					const next: UserModelConnection = {
+						...connection,
+						status: "disabled",
+						version: connection.version + 1,
+						updatedAt: at,
+					};
+					delete next.verifiedAt;
+					delete next.verifiedVersion;
+					await tx.userModelConnections.put(next);
+					await this.clearPreference(tx, connection.ownerId, connection.id, at);
+					return "disabled" as const;
+				}
+				if (connection) return "skipped" as const;
+				if (!apply) return "tombstoned" as const;
+				await this.revoke(
+					tx, { id: entry.connectionId, ownerId: entry.ownerId },
+					entry.credentialVersion, this.now(), entry.reason,
+				);
+				return "tombstoned" as const;
+			});
+			report[outcome]++;
+		}
+		return report;
+	}
+
 	private async requireOwned(
 		tx: Transaction,
 		ownerId: string,
@@ -716,7 +822,9 @@ export class ModelConnectionService {
 		const items: ModelConnectionView[] = [];
 		for (const connection of connections) {
 			const credential = await tx.userModelCredentials.get(connection.id);
-			items.push(project(connection, credential !== null));
+			// 被撤销的连接在界面与接口上都表现为停用，不依赖是否已重放。
+			const revoked = credential !== null && await this.isRevoked(tx, connection.id, credential.credentialVersion);
+			items.push(project(revoked ? { ...connection, status: "disabled" } : connection, credential !== null && !revoked));
 		}
 		return {
 			connections: items,

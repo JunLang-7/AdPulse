@@ -70,7 +70,7 @@ version 是决策版本，每次成功处理选择都会递增，即使 changes 
 模型见 [model.ts](../packages/core/src/state/model.ts)，实际 DDL 与索引见 [postgres.ts](../packages/storage/src/postgres.ts)。
 当前为 25 张 id + jsonb 表，采用应用层引用关系；结构变更走 `initialize()` 内的版本化迁移（版本 1–11，顺序、加法式，在 advisory lock 下执行）。尚无分页，面向小规模验证。
 
-个人模型连接（#86 PR1）另有三张表：`userModelConnections`（非敏感投影、版本、验证结果）、`userModelCredentials`（每条连接一份 AES-256-GCM 密文，密文与 nonce/tag 分列）、`userModelPreferences`（本人默认 `(connectionId, modelId)`）。唯一索引分别约束 `(ownerId, providerId)`、`(ownerId, connectionId)` 与 `ownerId`。加密端口在 core，实现在 runtime；AAD 绑定 owner/连接/凭据版本/目标地址/协议，主密钥不在数据库里。服务只在主密钥配置有效时装配，否则整个能力失败关闭。
+个人模型连接（#86 PR1）另有四张表（第 12 版迁移新增撤销墓碑：`userModelRevocations`，只含 owner、连接 id、凭据版本、原因与时间，用于恢复备份后重新执行删除）：`userModelConnections`（非敏感投影、版本、验证结果）、`userModelCredentials`（每条连接一份 AES-256-GCM 密文，密文与 nonce/tag 分列）、`userModelPreferences`（本人默认 `(connectionId, modelId)`）。唯一索引分别约束 `(ownerId, providerId)`、`(ownerId, connectionId)` 与 `ownerId`。加密端口在 core，实现在 runtime；AAD 绑定 owner/连接/凭据版本/目标地址/协议，主密钥不在数据库里。服务只在主密钥配置有效时装配，否则整个能力失败关闭。恢复备份会回滚墓碑表，因此必须先用 `bun run models:revocations --replay` 重放删除记录再对外服务；墓碑版本不低于凭据版本时拒绝解密。
 
 模型额度分两层：按 owner（6 次/分钟、并发 1）与实例总量（8 次/分钟、并发 2），测试、发现与抽取共用计数，均在网络请求前判定；`createUserRequestBudgets()` 只约束单进程，不是分布式限流。
 

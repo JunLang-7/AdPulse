@@ -56,7 +56,13 @@ function withModels(options: { env?: Record<string, string>; reply?: () => Respo
 	return { runtime, storage, requests };
 }
 
-async function serve(t: TestContext, runtime: Runtime, verifiedAt = new Date().toISOString(), externalId = "ou-model-owner") {
+async function serve(
+	t: TestContext,
+	runtime: Runtime,
+	verifiedAt = new Date().toISOString(),
+	externalId = "ou-model-owner",
+	audit?: (event: { event: string; path: string; result: string; connectionId?: string; version?: number }) => void,
+) {
 	const service = new AuthenticationService(runtime.storage);
 	const publicOrigin = "http://localhost";
 	const token = randomBytes(32).toString("base64url");
@@ -74,6 +80,7 @@ async function serve(t: TestContext, runtime: Runtime, verifiedAt = new Date().t
 			authorizationUrl() { throw new Error("unexpected OAuth request"); },
 			async verifyAuthorizationCode() { throw new Error("unexpected OAuth callback"); },
 		},
+		...(audit ? { audit: audit as never } : {}),
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
@@ -202,6 +209,36 @@ test("model connections API: Anthropic Messages tests, persists and extracts wit
 		assert.ok(request.url.startsWith("https://claude.example/v1/messages"));
 		assert.equal(request.apiKey, "synthetic-personal-key");
 		assert.equal(request.authorization, null);
+	}
+});
+
+test("model connections API: minimal audit records actions without keys or bodies", async (t) => {
+	const events: { event: string; path: string; result: string; connectionId?: string; version?: number }[] = [];
+	const { runtime } = withModels();
+	const server = await serve(t, runtime, new Date().toISOString(), "ou-model-owner", (event) => events.push(event));
+	const created = await (await call(server, "/api/me/model-connections", "POST", customInput())).json() as { id: string; version: number };
+	await call(server, "/api/me/model-preferences", "PUT", { expectedVersion: 0, connectionId: created.id, modelId: "mimo-v2-flash" });
+	await call(server, "/api/me/model-connections/test", "POST", customInput());
+	await call(server, "/api/me/model-connections/models", "POST", {
+		baseUrl: "https://api.mimotest.example/v1", protocol: "openai-completions", apiKey: "synthetic-personal-key",
+	});
+	assert.equal((await call(server, `/api/me/model-connections/${created.id}/credential?expectedVersion=${created.version}`, "DELETE")).status, 200);
+	assert.equal((await call(server, `/api/me/model-connections/${created.id}?expectedVersion=${created.version + 1}`, "DELETE")).status, 200);
+
+	const names = events.map((event) => event.event);
+	for (const expected of [
+		"model.connection.created", "model.preference.updated", "model.connection.probed",
+		"model.discovery.requested", "model.credential.removed", "model.connection.deleted",
+	]) assert.ok(names.includes(expected), expected);
+	const createdEvent = events.find((event) => event.event === "model.connection.created");
+	assert.equal(createdEvent?.connectionId, created.id);
+	assert.equal(createdEvent?.version, created.version);
+	// 最小审计：不含密钥、密文、请求体或上游文本。
+	const serialized = JSON.stringify(events);
+	assert.doesNotMatch(serialized, /synthetic-personal-key|ciphertext|authTag|nonce|产品/u);
+	for (const event of events) {
+		assert.ok(["ok", "rejected", "unavailable"].includes(event.result), event.event);
+		assert.ok(event.path.startsWith("/api/me/"), event.path);
 	}
 });
 

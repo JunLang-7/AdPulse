@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
@@ -227,7 +227,7 @@ test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse
 	);
 	assert.deepEqual(
 		migrations.rows.map((row) => Number(row.version)),
-		[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+		[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
 	);
 	const indexes = await admin.query(
 		`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()
@@ -342,7 +342,7 @@ test("PostgreSQL: a failed auth migration rolls back atomically and can be retri
 		);
 		assert.deepEqual(
 			versions.rows.map((row) => Number(row.version)),
-			[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+			[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
 		);
 	} finally {
 		await check.end();
