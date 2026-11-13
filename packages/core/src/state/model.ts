@@ -751,6 +751,21 @@ export interface UserModelCredential {
 }
 
 /** 每人一份默认选择；即使清空也保留版本计数，便于检测并发。 */
+/**
+ * 凭据撤销墓碑：与连接/密文分开保存，恢复备份后用它重新执行删除，
+ * 避免旧连接或旧默认选择被“复活”。只记必要标识与版本，不含密钥或密文。
+ */
+export interface UserModelRevocation {
+	/** 与 connectionId 相同，一条连接只保留最高撤销版本。 */
+	id: string;
+	ownerId: string;
+	connectionId: string;
+	/** 被撤销的凭据版本；该版本及更早的密文都不可再用。 */
+	credentialVersion: number;
+	reason: "credential_removed" | "connection_deleted";
+	revokedAt: string;
+}
+
 export interface UserModelPreference {
 	id: string;
 	ownerId: string;
@@ -766,6 +781,7 @@ export interface Entities {
 	notificationDestinations: NotificationDestination;
 	notificationConsents: NotificationConsent;
 	userModelConnections: UserModelConnection;
+	userModelRevocations: UserModelRevocation;
 	userModelCredentials: UserModelCredential;
 	userModelPreferences: UserModelPreference;
 	subscriptionSettings: SubscriptionSettings;

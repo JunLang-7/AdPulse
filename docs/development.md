@@ -104,7 +104,8 @@ MODEL_CREDENTIAL_ACTIVE_KEY=v1
 - 加密：AES-256-GCM，每次随机 nonce；AAD 绑定 owner、连接、凭据版本、规范化目标地址与协议，搬运密文到其他用户/连接/地址会解密失败。
 - 失败关闭：主密钥缺失、格式错误、active key 不存在、解密失败都直接报错；不回退到部署共享密钥、其他用户密钥或明文。
 - 版本与归属：每次配置变更递增版本；他人连接 ID 与不存在同样返回 not found；配置（含目标地址/协议）变更必须重填密钥并让旧验证结果失效。
-- 删除：删密钥保留连接元数据并停用，同时清空默认选择；删连接在同一个事务里删除元数据、密文与默认引用，进行中的旧请求不会把旧密文写回。
+- 删除：删密钥保留连接元数据并停用，同时清空默认选择；删连接在同一个事务里删除元数据、密文与默认引用，进行中的旧请求不会把旧密文写回。两种删除都会写入**撤销墓碑**（`userModelRevocations`，只含 owner、连接 id、凭据版本、原因与时间）。
+- 恢复语义：恢复备份会把墓碑一起回滚，所以恢复后必须**先重放撤销记录再放流量**。墓碑版本不低于凭据版本时拒绝解密；重放会停用版本不高于墓碑的连接、删除密文、清空默认选择，已轮换（版本更新）的条目会跳过。
 - 轮换：`ModelConnectionService.rotateCredentials()` 只重加密旧 keyId 的记录，每条在同一事务内重读，避免与删除并发时复活旧凭据；主密钥丢失无法从密文库恢复，部署前需演练保管与恢复。
 - 边界：这是服务端加密存储，不是零知识加密；能同时控制服务器与主密钥的管理者理论上可解密。
 
@@ -138,6 +139,18 @@ MODEL_CREDENTIAL_KEYRING="v1:...,v2:..." MODEL_CREDENTIAL_ACTIVE_KEY=v2 \
 ```
 
 `--check` 只读：逐条解密并报告 `readable / failed / awaitingRotation`（不输出去向、owner 或密钥）；有失败时退出码非 0。正式库上先备份、后在可丢弃实例演练，再执行轮换。
+
+撤销记录导出与恢复重放（导出文件必须存在备份之外）：
+
+```bash
+# 删除后导出墓碑清单（不含密钥、密文）。
+bun run models:revocations -- --export revocations.json
+# 恢复备份后：先只读报告，再确认执行，最后才放流量。
+bun run models:revocations -- --replay revocations.json
+MODEL_REVOCATION_REPLAY_CONFIRM=1 bun run models:revocations -- --replay revocations.json --apply
+```
+
+只读模式在仍有需要停用的连接时退出码为 1，避免“报告完就当恢复完成”。重放只处理墓碑，不重建任何密钥；要继续使用的本人必须重新填写密钥。
 
 网关需支持所选原生协议的 SSE 和 JSON 输出：Chat Completions 请求 `${baseUrl}/chat/completions` 并使用 `response_format`；Responses 请求 `${baseUrl}/responses` 并使用 `text.format`、`store: false` 和 1024 输出 token 上限。Responses 不发送可能被推理模型拒绝的 temperature。Anthropic Messages 请求 `${baseUrl}/v1/messages`，使用 `x-api-key` 与 `anthropic-version`，没有 `response_format`，JSON 只靠提示词约束。发现均为显式 `GET ${baseUrl}/models`（Anthropic 为 `GET ${baseUrl}/v1/models` 并使用同名认证头），复用二次验证、受控出网和共享限额；发现成功不代表生成能力验证。三种协议均通过合成适配测试，未做真实供应商验收。界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
 

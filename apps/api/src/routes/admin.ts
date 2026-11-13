@@ -13,6 +13,7 @@ import { ModelConnectionError, modelConnectionProtocols, normalizeModelBaseUrl, 
 import { findCatalogModel, taskDraftBriefMaxLength, taskDraftStages, type Runtime, type TaskDraftSelection } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
+import type { AuditEvent, ModelAuditEvent } from "../server.js";
 
 const amount = z.number().finite().nonnegative();
 const strategy = z
@@ -387,6 +388,18 @@ async function sessionForJob(
 		: null;
 }
 
+/** 最小审计辅助：只带动作、内部对象 id、版本与结果代码。 */
+function auditModel(
+	audit: ((event: AuditEvent) => void) | undefined,
+	event: ModelAuditEvent["event"],
+	path: string,
+	result: ModelAuditEvent["result"],
+	extra: { connectionId?: string; version?: number } = {},
+): void {
+	if (!audit) return;
+	audit({ event, path, result, ...extra });
+}
+
 export async function handleAdmin(
 	req: IncomingMessage,
 	res: ServerResponse,
@@ -394,6 +407,7 @@ export async function handleAdmin(
 	userId: string,
 	path: string,
 	auth: AuthenticationService,
+	audit?: (event: AuditEvent) => void,
 ): Promise<void> {
 	if (path.startsWith("/api/me/model-connections") || path === "/api/me/model-preferences") {
 		res.setHeader("Cache-Control", "no-store");
@@ -412,6 +426,7 @@ export async function handleAdmin(
 				apiKey: input.apiKey,
 			});
 			// 失败不当作“没有模型”，也不猜一个默认模型。
+			auditModel(audit, "model.discovery.requested", path, models === null ? "unavailable" : "ok");
 			if (models === null) throw new HttpError(503, "model discovery unavailable");
 			return json(res, 200, { models });
 		}
@@ -430,6 +445,7 @@ export async function handleAdmin(
 				modelId: input.models[0]?.id ?? "",
 				apiKey: input.apiKey,
 			});
+			auditModel(audit, "model.connection.probed", path, ok ? "ok" : "rejected");
 			return json(res, 200, { ok });
 		}
 		if (path === "/api/me/model-connections" && req.method === "POST") {
@@ -448,9 +464,13 @@ export async function handleAdmin(
 				apiKey: input.apiKey,
 			});
 			// 未通过测试就不写库：不留下半个可用连接。
-			if (!ok) throw new HttpError(503, "model connection unavailable");
+			if (!ok) {
+				auditModel(audit, "model.connection.probed", path, "rejected", { version: 0 });
+				throw new HttpError(503, "model connection unavailable");
+			}
 			const created = await withModelConnectionErrors(() =>
 				modelApi.service.create(userId, input, { verified: true }));
+			auditModel(audit, "model.connection.created", path, "ok", { connectionId: created.id, version: created.version });
 			return json(res, 201, created);
 		}
 		const connectionPath = /^\/api\/me\/model-connections\/([0-9a-f-]{36})(\/credential)?$/.exec(path);
@@ -462,10 +482,12 @@ export async function handleAdmin(
 				if (connectionPath[2]) {
 					const view = await withModelConnectionErrors(() =>
 						modelApi.service.removeCredential(userId, connectionId, expectedVersion));
+					auditModel(audit, "model.credential.removed", path, "ok", { connectionId, version: view.version });
 					return json(res, 200, view);
 				}
 				const view = await withModelConnectionErrors(() =>
 					modelApi.service.delete(userId, connectionId, expectedVersion));
+				auditModel(audit, "model.connection.deleted", path, "ok", { connectionId, version: expectedVersion });
 				return json(res, 200, view);
 			}
 			if (!connectionPath[2] && req.method === "PUT") {
@@ -507,6 +529,9 @@ export async function handleAdmin(
 						...(body.protocol === undefined ? {} : { protocol: body.protocol }),
 						...(body.credential === undefined ? {} : { credential: body.credential }),
 					}, { verified: replace }));
+				auditModel(audit, "model.connection.updated", path, "ok", { connectionId, version: updated.version });
+				if (replace)
+					auditModel(audit, "model.credential.replaced", path, "ok", { connectionId, version: updated.version });
 				return json(res, 200, updated);
 			}
 		}
@@ -518,6 +543,8 @@ export async function handleAdmin(
 					...(body.connectionId === undefined ? {} : { connectionId: body.connectionId }),
 					...(body.modelId === undefined ? {} : { modelId: body.modelId }),
 				}));
+			auditModel(audit, "model.preference.updated", path, "ok",
+				preference.connectionId === null ? {} : { connectionId: preference.connectionId, version: preference.version });
 			return json(res, 200, preference);
 		}
 	}

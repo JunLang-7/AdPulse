@@ -219,6 +219,15 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (11)",
 				);
 			}
+			if (!current.has(12)) {
+				// 撤销墓碑与连接/密文分表：恢复备份后用它重新执行删除，防止旧凭据复活。
+				await this.createEntityTable(client, "userModelRevocations");
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_model_revocation_connection
+					ON adpulse_userModelRevocations ((data->>'ownerId'), (data->>'connectionId'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (12)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

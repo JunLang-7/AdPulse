@@ -58,7 +58,27 @@ export interface NotificationAuditEvent {
 	path: string;
 }
 
-export type AuditEvent = AuthAuditEvent | NotificationAuditEvent;
+/**
+ * 模型配置的最小审计：只记动作、内部对象、版本与结果代码。
+ * 不记密钥、密文、请求头、请求体、模型原文或上游错误文本。
+ */
+export interface ModelAuditEvent {
+	event:
+		| "model.connection.created"
+		| "model.connection.updated"
+		| "model.connection.deleted"
+		| "model.credential.replaced"
+		| "model.credential.removed"
+		| "model.preference.updated"
+		| "model.connection.probed"
+		| "model.discovery.requested";
+	path: string;
+	connectionId?: string;
+	version?: number;
+	result: "ok" | "rejected" | "unavailable";
+}
+
+export type AuditEvent = AuthAuditEvent | NotificationAuditEvent | ModelAuditEvent;
 
 export interface ApiAuthentication {
 	service: AuthenticationService;
@@ -676,7 +696,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						throw new HttpError(401, "reauth_required");
 					}
 				}
-				return await handleAdmin(req, res, runtime, session.userId, path, auth.service);
+				return await handleAdmin(req, res, runtime, session.userId, path, auth.service, audit);
 			}
 			throw new HttpError(404, "route not found");
 		} catch (error) {
