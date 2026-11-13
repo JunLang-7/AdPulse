@@ -431,3 +431,168 @@ curl -sS -X POST -H "Cookie: $COOKIE" -H "Origin: $ORIGIN" -H 'content-type: app
 | 任务类关注对象、他人任务被拒、双用户隔离 | 通过 | HTTP 与领域测试（真机账号无任务数据，未覆盖） |
 | 版本冲突 409、时段 422 | 通过 | 测试；真机走过 422 |
 | 关闭全部推送 / 重新开启不补旧队列 | **未覆盖**，队列行为属 #37 | — |
+
+> 队列行为已在第 16 节（#37）单独验收；本节历史结论不改写。
+
+## 16. 日汇总推送（#37）
+
+**边界**：本节验证「批次 → 调度 → 单聊投递 → 记录」这条管线在真实企业飞书单聊上的行为，
+以及关闭/退订取消、重开不补旧队列、免打扰顺延、收件人不可达的响应。内容用**带
+`【验收测试】` 标记的合成条目**，不代表真实经营内容或企业效果。
+
+本节**不验证订阅筛选**：`NotificationQueue.queue()` 目前没有生产调用方（#38/#39 的事件来源未接入），
+所以真实环境不会自己产生汇总条目。合成条目经受控脚本写入，证明的是投递与记录管线，
+不是「筛选规则已生效」。
+
+`sent` 只代表渠道接收，不代表用户已读；不承诺平台端 exactly-once。
+
+### 16.1 前置
+
+| 项 | 要求 | 是否就绪 |
+| --- | --- | --- |
+| 验证实例 | 专用/试点实例，release 与待验收 commit 一致；**禁止**在生产库写合成条目 | ☐ |
+| worker | `EMBED_WORKER=1` 或独立 worker 在跑（调度 tick 约 30s） | ☐ |
+| 地址 | `GET /api/me/notification-status` 的 `destination.status=verified` | ☐ |
+| 授权 | 同一接口 `consent.status=active`、`canSendProactive=true` | ☐ |
+| 订阅 | `GET /api/me/subscription` 的 `settings.proactiveEnabled=true`，且有 ≥1 个生效关注对象 | ☐ |
+| 记录入口 | 控制台 `/settings/notification-records` 可访问 | ☐ |
+| 工具 | `scripts/acceptance/digest.mjs`（`notify:acceptance`），只读 + 合成写入，不发消息 | ☐ |
+
+`DECISION_CARDS_ENABLED` 与本节无关，可保持关闭。
+
+### 16.2 写入受控合成条目
+
+```bash
+# 先看现状（不发消息）
+bun run notify:acceptance -- status --open-id ou_xxx
+# 写入一条带标记的合成条目（需显式确认）
+bun run notify:acceptance -- enqueue --open-id ou_xxx --scene initial --confirm-synthetic
+```
+
+脚本行为：`logicalKey` 为 `acceptance:<scene>|synthetic-a`，标题/摘要/相关性/来源都带
+`【验收测试】`；同一 `scene` + `revision` 重复执行返回 `duplicate`（不重复通知），`--revision 2` 视为实质更新。
+
+**场景（`--scene`）就是逻辑事件**，推荐固定名字，便于把记录对回步骤：
+
+| 步骤 | `--scene` | 说明 |
+| --- | --- | --- |
+| 16.2 首次送达 | `initial` | 主链路证据 |
+| 16.5 取消待发 | `cancel-me` | 会被取消，**之后不会复活** |
+| 16.6 重开后新内容 | `after-reopen` | 新场景 = 新逻辑事件 |
+| 16.8 不可达 | `unreachable` | 复现失败与重新确认 |
+
+取消是**终态**：同一 `scene` 的条目被取消后，`--revision 2` 仍返回 `cancelled` 且不排队。
+这是产品规则（重新开启不补旧队列），不是工具缺陷；要验证「重开后的新内容能发」必须换新 `scene`。
+
+判读：
+
+- `outcome=queued` 且条目标题带标记；批次 `localDate` 是**北京**当天。
+- 今天 09:30 已过 → worker 会在下一个 tick 按「当日补发」发送（记录里 `catchUp=true`）。
+  **这只证明管线和补发，不等于 09:30 准点。**
+- 当前处于 22:00–08:00 → 批次保持 `queued`、无投递回执，等 08:00 后的 tick。此时记「免打扰顺延」。
+
+### 16.3 真机收到（人工）
+
+1. 在飞书单聊检查是否收到「信息汇总 · <日期>」卡片：标题、intro、条目、页脚文案齐全。
+2. 记下收到时间、消息 ID 前缀（脱敏，如 `om_x10***`）、以及 `scheduledAt → 收到` 的间隔。
+3. 确认条目内容与标记只来自合成数据，不存在真实业务内容混入。
+
+未收到时不要推测原因：先跑 `status` 看 `status` / `statusReason`，再对照 16.9 判读。
+
+### 16.4 控制台记录核对
+
+打开 `/settings/notification-records`，逐项核对：
+
+| 核对点 | 期望 |
+| --- | --- |
+| 批次状态 | `已发送`；`catchUp` 时标题带「（当日补发）」 |
+| 条目来源 | 显示「以下为发送时实际发出的卡片内容」 |
+| 卡片与记录条目 | 标题/摘要/相关性/来源一致；条目数 ≤5（`MAX_INFO_ITEMS`） |
+| 页脚「另有 N 条」 | 与记录里顺延到后续批次的条目数一致 |
+| 投递回执 | 「平台已接收这条消息，但「已接收」不代表你已读」 |
+| 计划时刻 | 北京时间 09:30；与真机收到时间做差 |
+
+### 16.5 关闭推送取消待发
+
+前置：条目已入队但**尚未到计划时刻**，或当前在免打扰时段。
+
+1. 先写入一个待取消的条目：`enqueue --open-id ou_xxx --scene cancel-me --confirm-synthetic`，
+   确认是 `queued`（若当前已过 09:30 且不在免打扰，请在**下一次入队前**立刻执行第 2 步，
+   否则可能已在途发送；在途情形按下面的竞态说明如实记录）。
+2. 控制台 `/settings/subscriptions` 关闭全部主动推送。
+3. 等一个调度 tick（≤30s）后跑 `status`。
+4. 判读：批次 `cancelled` + `statusReason=push_disabled`，条目 `cancelled`，`delivery=null`（从未投递）。
+5. 真机**不得**收到这条消息。
+
+**在途竞态如实记录**：若 worker 已领取该批次并在发网络请求，消息仍可能送达。
+这不是「点关闭瞬间全部拦截」，记录里必须写明实际时序，不承诺撤回。
+
+### 16.6 重开不补旧队列
+
+1. 重新开启主动推送（`/settings/subscriptions`）。
+2. `status` 确认被取消的批次仍是 `cancelled/push_disabled`，没有复活、没有补发。
+3. 真机确认没有收到旧内容。
+4. 用**新的场景**写入新内容：`enqueue --open-id ou_xxx --scene after-reopen --confirm-synthetic`。
+   - 期望 `queued`；同场景重复执行返回 `duplicate`（幂等）。
+   - 反例（必须复现并记录）：用被取消的 `cancel-me` 场景加 `--revision 2` → 返回 `cancelled`，
+     不排队、不发消息。这正是「重新开启不自动恢复旧队列」的证据，不是失败。
+
+### 16.7 免打扰顺延（时间窗受限）
+
+- 真实的 22:00–08:00 只能在窗口内观察：窗口内入队 → 批次保持 `queued`、无投递回执；
+  08:00 后 tick 才发送，发送前重新检查开关/授权/地址，若期间失效则不发送。
+- 窗口外无法真机复现，用固定时钟的自动化用例（`tests/digest-dispatch.test.ts`、
+  `tests/notifications.test.ts`）作为 `local`（非真机）证据，不得勾选真机项。
+
+### 16.8 收件人不可达
+
+1. 让机器人从该用户单聊中离开（或使用一个平台明确判定不可达的地址）。
+2. `enqueue --open-id ou_xxx --scene unreachable --confirm-synthetic`，等 tick。
+3. 判读：投递 `failed`，`lastError=recipient unreachable`；批次 `failed` + 原因
+   `recipient_unreachable`；条目 `cancelled`；地址一次判定 `invalidated`。
+4. 控制台「通知设置」必须出现「重新确认地址」入口，不能静默失败；重新确认**不自动**恢复已撤销授权。
+5. 重新确认地址并开启推送后，用新场景再验一次送达：
+   `enqueue --open-id ou_xxx --scene recovered --confirm-synthetic`。
+
+### 16.9 判读表
+
+| 记录状态 | 原因代码 | 含义 | 用户是否收到 |
+| --- | --- | --- | --- |
+| `queued` | — | 未到时刻或在免打扰内 | 否（暂不发送） |
+| `sent` | — | 渠道接收 | 是（不代表已读） |
+| `cancelled` | `push_disabled` | 关闭全部推送 | 否 |
+| `cancelled` | `settings_changed` | 生成后配置改过 | 否（新内容进下一批） |
+| `cancelled` | `empty` | 无待发条目（可能已因实质更新进后续批次） | 否 |
+| `cancelled` | `merged_stale` | 跨日未发，并入之后汇总 | 否（旧日报不补） |
+| `suppressed` | `destination_missing` / `destination_invalidated` / `consent_missing` / `consent_revoked` / `identity_inactive` / `channel_unavailable` | 发送前重检不通过 | 否 |
+| `failed` | `recipient_unreachable` | 平台判定不可达 | 否；地址失效 |
+
+### 16.10 留证与结论模板
+
+```bash
+bun run notify:acceptance -- status --open-id ou_xxx --json   # 脱敏前不要直接粘贴原文
+```
+
+记录写入 `docs/acceptance/records/<UTC>-notification-digest.md`，只保留：release commit、
+状态与原因代码、时间戳与计划到发送间隔、脱敏消息 ID 前缀、条目数与来源类型、步骤与 `--scene` 的对应关系。
+**不要**写入 open_id 全值、会话 cookie、卡片全文或真实业务数据。
+
+结论表（逐项填写，未执行就写「未覆盖」，不勾选）：
+
+| 验收项 | 结论 | 来源 |
+| --- | --- | --- |
+| 受控合成条目入队（幂等） |  | 脚本输出 |
+| 真机单聊收到日汇总（含测试标记） |  | 真机 |
+| 控制台记录与卡片内容一致 |  | 真机 |
+| 关闭推送后待发取消、真机未收到 |  | 真机 + 脚本 |
+| 重开不补旧队列 |  | 真机 + 脚本 |
+| 免打扰顺延 |  | 时间窗内真机 / 否则 local |
+| 收件人不可达 → 地址失效 → 重新确认 |  | 真机 |
+| 平台端重复窗口外风险 | **不承诺** exactly-once | — |
+
+### 16.11 未覆盖与边界
+
+- 订阅筛选与来源接入（#38/#39）未实现：本节只证明投递管线，合成条目不能当真实筛选结果。
+- 09:30 准点、22:00/08:00 边界：除非执行时恰好在窗口内，否则只有固定时钟用例（`local`）。
+- 多用户隔离的真机验证：需第二个真机账号，本节不做；隔离由测试覆盖。
+- 平台端物理重复、已送达撤回、exactly-once：不承诺。
