@@ -10,6 +10,111 @@
     }
   ],
   "paths": {
+    "/api/me/model-connections": {
+      "get": {
+        "operationId": "listModelConnections",
+        "description": "Personal model connections without any secret material. Returns an empty list when the feature is unavailable.",
+        "responses": {
+          "200": { "description": "Owned connections and the default selection", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelConnectionList" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Personal model credentials are not configured", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "post": {
+        "operationId": "createModelConnection",
+        "description": "Verify the supplied key with one fixed synthetic message, then store the connection and encrypted credential. Nothing is stored when verification fails.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelConnectionInput" } } } },
+        "responses": {
+          "201": { "description": "Created connection without secrets", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelConnectionView" } } } },
+          "400": { "description": "Invalid connection fields", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Same-origin request required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Provider id already used", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "413": { "description": "Request too large", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "415": { "description": "JSON required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "422": { "description": "Protocol or security boundary not supported", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Verification failed or credentials are not configured", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/me/model-connections/test": {
+      "post": {
+        "operationId": "testModelConnection",
+        "description": "Send the fixed synthetic test message to a candidate connection. Stores nothing.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelConnectionInput" } } } },
+        "responses": {
+          "200": { "description": "Whether the candidate accepted the test", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelConnectionCheck" } } } },
+          "400": { "description": "Invalid connection fields", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Same-origin request required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "422": { "description": "Protocol or security boundary not supported", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Credentials are not configured", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/me/model-connections/{connectionId}": {
+      "put": {
+        "operationId": "updateModelConnection",
+        "description": "Update metadata, models or credential. Changing the target address or protocol requires a replacement key, which is verified before saving.",
+        "parameters": [{ "name": "connectionId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelConnectionUpdate" } } } },
+        "responses": {
+          "200": { "description": "Updated connection without secrets", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelConnectionView" } } } },
+          "400": { "description": "Invalid fields or key missing for a target change", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found for this owner", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Version conflict or connection disabled", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "422": { "description": "Protocol not supported yet", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Verification failed or the credential cannot be decrypted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "delete": {
+        "operationId": "deleteModelConnection",
+        "description": "Delete the connection together with its credential and default reference.",
+        "parameters": [
+          { "name": "connectionId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "expectedVersion", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "responses": {
+          "200": { "description": "Remaining connections and default", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelConnectionList" } } } },
+          "400": { "description": "Invalid version", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found for this owner", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Version conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/me/model-connections/{connectionId}/credential": {
+      "delete": {
+        "operationId": "deleteModelCredential",
+        "description": "Delete the stored credential, disable the connection and clear the default reference. Connection metadata stays.",
+        "parameters": [
+          { "name": "connectionId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "expectedVersion", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "responses": {
+          "200": { "description": "Connection after removal, without secrets", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelConnectionView" } } } },
+          "400": { "description": "Invalid version", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found for this owner", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Version conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/me/model-preferences": {
+      "put": {
+        "operationId": "setModelPreference",
+        "description": "Set or clear the personal default (connection, model). Only owned, active, credentialed connections are accepted.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelPreferenceInput" } } } },
+        "responses": {
+          "200": { "description": "Stored default", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelPreference" } } } },
+          "400": { "description": "Invalid selection or version", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Connection not found for this owner", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Version conflict, disabled connection or missing credential", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/api/task-drafts/models": {
       "get": {
         "operationId": "listTaskDraftModels",
@@ -1408,13 +1513,117 @@
         "required": [],
         "additionalProperties": false
       },
+      "ModelConnectionProtocol": { "type": "string", "enum": ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"] },
+      "ModelConnectionModel": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "label": { "type": "string", "minLength": 1, "maxLength": 160 }
+        }
+      },
+      "ModelConnectionView": {
+        "type": "object",
+        "required": ["id", "providerId", "kind", "displayName", "baseUrl", "protocol", "models", "status", "version", "createdAt", "updatedAt", "hasCredential"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "providerId": { "type": "string" },
+          "kind": { "type": "string", "enum": ["catalog", "custom"] },
+          "catalogId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "baseUrl": { "type": "string" },
+          "protocol": { "$ref": "#/components/schemas/ModelConnectionProtocol" },
+          "models": { "type": "array", "items": { "$ref": "#/components/schemas/ModelConnectionModel" } },
+          "status": { "type": "string", "enum": ["active", "disabled"] },
+          "version": { "type": "integer", "minimum": 1 },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "hasCredential": { "type": "boolean" },
+          "verifiedAt": { "type": "string", "format": "date-time" },
+          "verifiedVersion": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "ModelPreference": {
+        "type": "object",
+        "required": ["connectionId", "modelId", "version"],
+        "additionalProperties": false,
+        "properties": {
+          "connectionId": { "type": "string", "nullable": true },
+          "modelId": { "type": "string", "nullable": true },
+          "version": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "ModelConnectionList": {
+        "type": "object",
+        "required": ["connections", "preference"],
+        "additionalProperties": false,
+        "properties": {
+          "connections": { "type": "array", "items": { "$ref": "#/components/schemas/ModelConnectionView" } },
+          "preference": { "$ref": "#/components/schemas/ModelPreference" }
+        }
+      },
+      "ModelConnectionInput": {
+        "type": "object",
+        "required": ["providerId", "kind", "baseUrl", "protocol", "models", "apiKey"],
+        "additionalProperties": false,
+        "properties": {
+          "providerId": { "type": "string", "minLength": 1, "maxLength": 48 },
+          "kind": { "type": "string", "enum": ["catalog", "custom"] },
+          "catalogId": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "baseUrl": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "protocol": { "$ref": "#/components/schemas/ModelConnectionProtocol" },
+          "models": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "$ref": "#/components/schemas/ModelConnectionModel" } },
+          "apiKey": { "type": "string", "minLength": 8, "maxLength": 512, "writeOnly": true, "format": "password" }
+        }
+      },
+      "ModelCredentialUpdate": {
+        "oneOf": [
+          { "type": "object", "required": ["action"], "additionalProperties": false, "properties": { "action": { "type": "string", "enum": ["keep"] } } },
+          { "type": "object", "required": ["action", "apiKey"], "additionalProperties": false, "properties": { "action": { "type": "string", "enum": ["replace"] }, "apiKey": { "type": "string", "minLength": 8, "maxLength": 512, "writeOnly": true, "format": "password" } } },
+          { "type": "object", "required": ["action"], "additionalProperties": false, "properties": { "action": { "type": "string", "enum": ["remove"] } } }
+        ]
+      },
+      "ModelConnectionUpdate": {
+        "type": "object",
+        "required": ["expectedVersion"],
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": { "type": "integer", "minimum": 1 },
+          "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "models": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "$ref": "#/components/schemas/ModelConnectionModel" } },
+          "status": { "type": "string", "enum": ["active", "disabled"] },
+          "baseUrl": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "protocol": { "$ref": "#/components/schemas/ModelConnectionProtocol" },
+          "credential": { "$ref": "#/components/schemas/ModelCredentialUpdate" }
+        }
+      },
+      "ModelPreferenceInput": {
+        "type": "object",
+        "required": ["expectedVersion"],
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": { "type": "integer", "minimum": 0 },
+          "connectionId": { "type": "string", "nullable": true },
+          "modelId": { "type": "string", "nullable": true }
+        }
+      },
+      "ModelConnectionCheck": {
+        "type": "object",
+        "required": ["ok"],
+        "additionalProperties": false,
+        "properties": { "ok": { "type": "boolean" } }
+      },
       "TaskDraftExtractionInput": {
         "type": "object",
         "properties": {
           "brief": { "type": "string", "minLength": 1, "maxLength": 2500 },
           "stage": { "$ref": "#/components/schemas/TaskDraftStage" },
           "provider": { "$ref": "#/components/schemas/TaskDraftProvider" },
-          "model": { "$ref": "#/components/schemas/TaskDraftModelId" }
+          "model": { "$ref": "#/components/schemas/TaskDraftModelId" },
+          "connectionId": { "type": "string", "minLength": 1, "maxLength": 64, "description": "Use this personal connection instead of a temporary route." }
         },
         "required": ["brief"],
         "additionalProperties": false

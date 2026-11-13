@@ -1,4 +1,4 @@
-# 开发与验证
+﻿# 开发与验证
 
 ## 1. 环境
 
@@ -84,7 +84,44 @@ TASK_DRAFT_GATEWAY_API_KEY=
 
 需要允许已认证用户通过界面连接临时 API 密钥时，部署者可设置 `TASK_DRAFT_USER_KEYS_ENABLED=1`。连接会在保存前用固定合成短句测试所选模型，密钥只写、不回显，在服务端内存按用户 + 供应商 + 模型隔离，最多保留 8 小时，且可断开。服务重启会清空临时连接；这是临时连接，不是 #86 规划中的持久化加密凭据。部署时应通过受信任的 HTTPS 入口访问。
 
+<<<<<<< HEAD
 所选供应商需支持 Chat Completions 的 SSE 和 JSON 输出，界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
+=======
+### 持久化模型凭据（#86 PR1）
+
+持久化部分已完成存储、加密与领域规则，尚未接 HTTP 与界面（下一个 PR）。启用前必须配置主密钥，否则 `createModelConnections()` 返回 undefined，能力保持不可用，不会退回明文或内存连接：
+
+```dotenv
+# 逗号分隔 keyId:base64(32 字节)；默认最后一支为 active。
+MODEL_CREDENTIAL_KEYRING=v1:
+# 轮换时指定哪一支用于新写入，旧 key 先保留到旧密文全部重加密完成。
+MODEL_CREDENTIAL_ACTIVE_KEY=v1
+```
+
+- 加密：AES-256-GCM，每次随机 nonce；AAD 绑定 owner、连接、凭据版本、规范化目标地址与协议，搬运密文到其他用户/连接/地址会解密失败。
+- 失败关闭：主密钥缺失、格式错误、active key 不存在、解密失败都直接报错；不回退到部署共享密钥、其他用户密钥或明文。
+- 版本与归属：每次配置变更递增版本；他人连接 ID 与不存在同样返回 not found；配置（含目标地址/协议）变更必须重填密钥并让旧验证结果失效。
+- 删除：删密钥保留连接元数据并停用，同时清空默认选择；删连接在同一个事务里删除元数据、密文与默认引用，进行中的旧请求不会把旧密文写回。
+- 轮换：`ModelConnectionService.rotateCredentials()` 只重加密旧 keyId 的记录，每条在同一事务内重读，避免与删除并发时复活旧凭据；主密钥丢失无法从密文库恢复，部署前需演练保管与恢复。
+- 边界：这是服务端加密存储，不是零知识加密；能同时控制服务器与主密钥的管理者理论上可解密。
+
+同一组能力通过鉴权 API 提供（均已写入 OpenAPI 与生成 SDK）：
+
+| 方法 / 路径 | 语义 |
+| --- | --- |
+| `GET /api/me/model-connections` | 本人连接投影与默认选择，不含任何密文/密钥 |
+| `POST /api/me/model-connections` | 先用固定合成短句测试，通过后才写入连接与加密凭据 |
+| `POST /api/me/model-connections/test` | 只测不存，不发送任务材料 |
+| `PUT /api/me/model-connections/{id}` | `expectedVersion` + 元数据/模型/凭据动作（keep/replace/remove）；换目标地址或协议必须同时 replace |
+| `DELETE /api/me/model-connections/{id}` | 同一事务删除连接、密文与默认引用 |
+| `DELETE /api/me/model-connections/{id}/credential` | 删密钥、停用连接并清空默认选择 |
+| `PUT /api/me/model-preferences` | 本人默认 `(connectionId, modelId)`，只能指向本人可用连接 |
+| `POST /api/task-drafts/extract` + `connectionId` | 用本人持久连接抽取；密钥只在服务端短暂解密，不回传 |
+
+模型调用统一走受控出网层：只允许 HTTPS，校验全部 DNS 结果并把连接绑定到已校验地址，禁止重定向并移除 `location`，不读取环境代理，限制 512 KiB 与 15 秒。未接通的协议（`openai-responses`、`anthropic-messages`、`google-generative-ai`）返回 422，不会降级成 Chat Completions；自定义连接需自行确认供应商支持 SSE 与 JSON 输出。
+
+网关需支持 Chat Completions 的 SSE 和 JSON 输出，界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
+>>>>>>> 73766e4
 
 ## 3. 持久化与独立 worker
 

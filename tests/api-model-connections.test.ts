@@ -1,0 +1,313 @@
+// 个人模型连接的 HTTP 契约（#86 PR2）：鉴权、归属、密钥只写、版本冲突、
+// 测试通过才落库、缺少主密钥时失败关闭，以及抽取只走本人连接。
+
+import assert from "node:assert/strict";
+import { createHash, randomBytes } from "node:crypto";
+import test, { type TestContext } from "node:test";
+import { createApi } from "../apps/api/dist/server.js";
+import { AuthenticationService } from "../packages/core/dist/index.js";
+import { compose, createModelConnections, type Runtime } from "../packages/runtime/dist/index.js";
+import { MemoryStorage } from "../packages/storage/dist/index.js";
+
+const cipherEnv = () => ({
+	MODEL_CREDENTIAL_KEYRING: `v1:${randomBytes(32).toString("base64")}`,
+	MODEL_CREDENTIAL_ACTIVE_KEY: "v1",
+});
+
+function providerReply(content: string): Response {
+	const chunk = { id: "synthetic-completion", object: "chat.completion.chunk", created: 1, model: "synthetic" };
+	const frames = [
+		{ ...chunk, choices: [{ index: 0, delta: { role: "assistant", content }, finish_reason: null }] },
+		{ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+	];
+	const stream = frames.map((frame) => "data: " + JSON.stringify(frame) + "\n\n").join("") + "data: [DONE]\n\n";
+	return new Response(stream, { headers: { "content-type": "text/event-stream" } });
+}
+
+const customInput = (overrides: Record<string, unknown> = {}) => ({
+	providerId: "mimo",
+	kind: "custom" as const,
+	displayName: "MiMo",
+	baseUrl: "https://api.mimotest.example/v1",
+	protocol: "openai-completions" as const,
+	models: [{ id: "mimo-v2-flash", label: "MiMo Flash" }],
+	apiKey: "synthetic-personal-key",
+	...overrides,
+});
+
+type Fixture = {
+	runtime: Runtime;
+	storage: MemoryStorage;
+	requests: { url: string; auth: string | null; model: string }[];
+};
+
+function withModels(options: { env?: Record<string, string>; reply?: () => Response; storage?: MemoryStorage } = {}) {
+	const storage = options.storage ?? new MemoryStorage();
+	const requests: Fixture["requests"] = [];
+	const modelConnections = createModelConnections(storage, options.env ?? cipherEnv(), async (input, init) => {
+		const sent = new Request(input, init);
+		const body = await sent.json() as { model?: string };
+		requests.push({ url: sent.url, auth: sent.headers.get("authorization"), model: body.model ?? "" });
+		return options.reply?.() ?? providerReply(JSON.stringify({ product: "产品" }));
+	});
+	const runtime: Runtime = { ...compose(storage, []), modelConnections };
+	return { runtime, storage, requests };
+}
+
+async function serve(t: TestContext, runtime: Runtime) {
+	const service = new AuthenticationService(runtime.storage);
+	const publicOrigin = "http://localhost";
+	const token = randomBytes(32).toString("base64url");
+	const session = await service.createWebSession({
+		platform: "feishu",
+		applicationId: "cli_model_test",
+		tenantId: "tenant-model-test",
+		idType: "open_id",
+		externalId: "ou-model-owner",
+	}, createHash("sha256").update(token).digest("hex"), new Date().toISOString());
+	const server = createApi(runtime, {
+		service,
+		publicOrigin,
+		provider: {
+			authorizationUrl() { throw new Error("unexpected OAuth request"); },
+			async verifyAuthorizationCode() { throw new Error("unexpected OAuth callback"); },
+		},
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+	const address = server.address();
+	assert.ok(address && typeof address === "object");
+	return {
+		url: `http://127.0.0.1:${address.port}`,
+		userId: session.userId,
+		headers: {
+			cookie: `adpulse_session=${token}`,
+			origin: publicOrigin,
+			"content-type": "application/json",
+		},
+	};
+}
+
+const call = (server: Awaited<ReturnType<typeof serve>>, path: string, method = "GET", body?: unknown, headers: HeadersInit = server.headers) =>
+	fetch(server.url + path, {
+		method,
+		headers,
+		...(body === undefined ? {} : { body: JSON.stringify(body) }),
+	});
+
+test("model connections API: unavailable without a valid master keyring", async (t) => {
+	const storage = new MemoryStorage();
+	const runtime: Runtime = { ...compose(storage, []), modelConnections: createModelConnections(storage, {}) };
+	assert.equal(runtime.modelConnections, undefined);
+	const server = await serve(t, runtime);
+	assert.equal((await call(server, "/api/me/model-connections")).status, 503);
+	assert.equal((await call(server, "/api/me/model-connections", "POST", customInput())).status, 503);
+	assert.equal((await call(server, "/api/me/model-preferences", "PUT", { expectedVersion: 0 })).status, 503);
+});
+
+test("model connections API: authentication, origin and validation failures", async (t) => {
+	const { runtime } = withModels();
+	const server = await serve(t, runtime);
+	assert.equal((await call(server, "/api/me/model-connections", "GET", undefined, { "content-type": "application/json" })).status, 401);
+	assert.equal(
+		(await call(server, "/api/me/model-connections", "POST", customInput(), { ...server.headers, origin: "https://other.example" })).status,
+		403,
+	);
+	for (const invalid of [
+		{ ...customInput(), providerId: "__proto__" },
+		{ ...customInput(), baseUrl: "http://api.mimotest.example/v1" },
+		{ ...customInput(), baseUrl: "https://user:pass@api.mimotest.example/v1" },
+		{ ...customInput(), models: [] },
+		{ ...customInput(), apiKey: "short" },
+		{ ...customInput(), kind: "catalog" },
+		{ ...customInput(), extra: true },
+	]) {
+		assert.equal((await call(server, "/api/me/model-connections", "POST", invalid)).status, 400, JSON.stringify(invalid));
+	}
+	// 未接通的协议明确拒绝，不假装可用也不降级成 Chat Completions。
+	assert.equal(
+		(await call(server, "/api/me/model-connections", "POST", { ...customInput(), protocol: "anthropic-messages" })).status,
+		422,
+	);
+	assert.equal((await call(server, "/api/me/model-connections/test", "POST", { ...customInput(), protocol: "openai-responses" })).status, 422);
+});
+
+test("model connections API: verification gates storage and never echoes the key", async (t) => {
+	const failing = withModels({ reply: () => new Response("nope", { status: 500 }) });
+	const failingServer = await serve(t, failing.runtime);
+	assert.equal((await call(failingServer, "/api/me/model-connections/test", "POST", customInput())).status, 200);
+	const failureBody = await (await call(failingServer, "/api/me/model-connections/test", "POST", customInput())).json() as { ok: boolean };
+	assert.equal(failureBody.ok, false);
+	assert.equal((await call(failingServer, "/api/me/model-connections", "POST", customInput())).status, 503);
+	const failedView = await (await call(failingServer, "/api/me/model-connections")).json() as { connections: unknown[] };
+	assert.deepEqual(failedView.connections, [], "a failed test must not leave a connection behind");
+
+	const { runtime, requests } = withModels();
+	const server = await serve(t, runtime);
+	const created = await call(server, "/api/me/model-connections", "POST", customInput());
+	assert.equal(created.status, 201);
+	const createdText = await created.text();
+	assert.doesNotMatch(createdText, /synthetic-personal-key/);
+	assert.doesNotMatch(createdText, /ciphertext|authTag|nonce/);
+	const view = JSON.parse(createdText) as { id: string; hasCredential: boolean; status: string; version: number };
+	assert.equal(view.hasCredential, true);
+	assert.equal(view.status, "active");
+	assert.equal(requests[0]?.url, "https://api.mimotest.example/v1/chat/completions");
+	assert.equal(requests[0]?.auth, "Bearer synthetic-personal-key");
+	assert.equal(requests[0]?.model, "mimo-v2-flash");
+
+	const list = await (await call(server, "/api/me/model-connections")).json() as {
+		connections: { id: string; providerId: string }[];
+		preference: { version: number; connectionId: string | null };
+	};
+	assert.equal(list.connections.length, 1);
+	assert.equal(list.preference.version, 0);
+	assert.equal(list.preference.connectionId, null);
+
+	// 同一用户重复 Provider ID 冲突；目录连接的主机必须与目录一致。
+	assert.equal((await call(server, "/api/me/model-connections", "POST", customInput({ displayName: "重复" }))).status, 409);
+	assert.equal(
+		(await call(server, "/api/me/model-connections", "POST", {
+			providerId: "deepseek",
+			kind: "catalog",
+			catalogId: "deepseek",
+			baseUrl: "https://evil.example/v1",
+			protocol: "openai-completions",
+			models: [{ id: "deepseek-flash" }],
+			apiKey: "synthetic-personal-key",
+		})).status,
+		503,
+	);
+});
+
+test("model connections API: updates require versions and re-verify target changes", async (t) => {
+	const { runtime, requests } = withModels();
+	const server = await serve(t, runtime);
+	const created = await (await call(server, "/api/me/model-connections", "POST", customInput())).json() as { id: string };
+	requests.length = 0;
+
+	const renamed = await call(server, `/api/me/model-connections/${created.id}`, "PUT", { expectedVersion: 1, displayName: "改名" });
+	assert.equal(renamed.status, 200);
+	assert.equal(requests.length, 0, "metadata-only updates must not call the provider");
+	assert.equal(((await renamed.json()) as { version: number }).version, 2);
+
+	assert.equal(
+		(await call(server, `/api/me/model-connections/${created.id}`, "PUT", { expectedVersion: 99, displayName: "旧版本" })).status,
+		409,
+	);
+	assert.equal(
+		(await call(server, `/api/me/model-connections/${created.id}`, "PUT", {
+			expectedVersion: 2,
+			baseUrl: "https://api.other.example/v1",
+		})).status,
+		400,
+		"changing the target without a new key must be refused",
+	);
+	const moved = await call(server, `/api/me/model-connections/${created.id}`, "PUT", {
+		expectedVersion: 2,
+		baseUrl: "https://api.other.example/v1",
+		credential: { action: "replace", apiKey: "synthetic-other-key" },
+	});
+	assert.equal(moved.status, 200);
+	assert.equal(requests.at(-1)?.url, "https://api.other.example/v1/chat/completions");
+	assert.equal(requests.at(-1)?.auth, "Bearer synthetic-other-key");
+	const movedView = await moved.json() as { version: number; baseUrl: string; hasCredential: boolean };
+	assert.equal(movedView.version, 3);
+	assert.equal(movedView.baseUrl, "https://api.other.example/v1");
+	assert.equal(movedView.hasCredential, true);
+
+	// 删除密钥后停用、默认选择清空，也不能再激活。
+	assert.equal(
+		(await call(server, `/api/me/model-connections/${created.id}/credential?expectedVersion=${movedView.version}`, "DELETE")).status,
+		200,
+	);
+	const disabled = await (await call(server, "/api/me/model-connections")).json() as {
+		connections: { status: string; hasCredential: boolean; version: number }[];
+	};
+	assert.equal(disabled.connections[0]?.status, "disabled");
+	assert.equal(disabled.connections[0]?.hasCredential, false);
+	assert.equal(
+		(await call(server, `/api/me/model-connections/${created.id}`, "PUT", {
+			expectedVersion: disabled.connections[0]?.version,
+			status: "active",
+		})).status,
+		400,
+	);
+	assert.equal(
+		(await call(server, `/api/me/model-connections/${created.id}?expectedVersion=${disabled.connections[0]?.version}`, "DELETE")).status,
+		200,
+	);
+	assert.deepEqual((await (await call(server, "/api/me/model-connections")).json() as { connections: unknown[] }).connections, []);
+});
+
+test("model connections API: two users cannot see, use or default each other's connections", async (t) => {
+	const { runtime } = withModels();
+	const storage = runtime.storage as MemoryStorage;
+	const server = await serve(t, runtime);
+	const created = await (await call(server, "/api/me/model-connections", "POST", customInput())).json() as { id: string };
+
+	// 第二个用户：同一存储，另一个会话。
+	const service = new AuthenticationService(storage);
+	const token = randomBytes(32).toString("base64url");
+	await service.createWebSession({
+		platform: "feishu",
+		applicationId: "cli_model_other",
+		tenantId: "tenant-model-other",
+		idType: "open_id",
+		externalId: "ou-model-other",
+	}, createHash("sha256").update(token).digest("hex"), new Date().toISOString());
+	const other = { cookie: `adpulse_session=${token}`, origin: "http://localhost", "content-type": "application/json" };
+	assert.deepEqual((await (await call(server, "/api/me/model-connections", "GET", undefined, other)).json() as { connections: unknown[] }).connections, []);
+	assert.equal((await call(server, `/api/me/model-connections/${created.id}`, "PUT", { expectedVersion: 1, displayName: "偷" }, other)).status, 404);
+	assert.equal((await call(server, `/api/me/model-connections/${created.id}?expectedVersion=1`, "DELETE", undefined, other)).status, 404);
+	assert.equal((await call(server, "/api/me/model-preferences", "PUT", { expectedVersion: 0, connectionId: created.id, modelId: "mimo-v2-flash" }, other)).status, 404);
+	assert.equal((await call(server, "/api/task-drafts/extract", "POST", { brief: "产品", connectionId: created.id }, other)).status, 404);
+});
+
+test("model connections API: preferences only accept owned active connections", async (t) => {
+	const { runtime } = withModels();
+	const server = await serve(t, runtime);
+	const created = await (await call(server, "/api/me/model-connections", "POST", customInput())).json() as { id: string };
+	const set = await call(server, "/api/me/model-preferences", "PUT", {
+		expectedVersion: 0,
+		connectionId: created.id,
+		modelId: "mimo-v2-flash",
+	});
+	assert.equal(set.status, 200);
+	assert.deepEqual(await set.json(), { connectionId: created.id, modelId: "mimo-v2-flash", version: 1 });
+	assert.equal(
+		(await call(server, "/api/me/model-preferences", "PUT", { expectedVersion: 1, connectionId: created.id, modelId: "unknown" })).status,
+		400,
+	);
+	assert.deepEqual(
+		await (await call(server, "/api/me/model-preferences", "PUT", { expectedVersion: 1, connectionId: null })).json(),
+		{ connectionId: null, modelId: null, version: 2 },
+	);
+});
+
+test("model connections API: extraction uses the owned connection and fails closed otherwise", async (t) => {
+	const { runtime, requests } = withModels();
+	const server = await serve(t, runtime);
+	const created = await (await call(server, "/api/me/model-connections", "POST", customInput())).json() as { id: string; version: number };
+	requests.length = 0;
+
+	const extracted = await call(server, "/api/task-drafts/extract", "POST", {
+		brief: "产品：连接测试",
+		stage: "overview",
+		connectionId: created.id,
+	});
+	assert.equal(extracted.status, 200);
+	assert.deepEqual(await extracted.json(), { product: "产品" });
+	assert.equal(requests.length, 1);
+	assert.equal(requests[0]?.auth, "Bearer synthetic-personal-key");
+
+	// 删除密钥后同一连接不能再抽取。
+	await call(server, `/api/me/model-connections/${created.id}/credential?expectedVersion=${created.version}`, "DELETE");
+	assert.equal(
+		(await call(server, "/api/task-drafts/extract", "POST", { brief: "产品", connectionId: created.id })).status,
+		409,
+	);
+
+	// 不存在或未归属的连接同样 not found，不泄露存在性。
+	assert.equal((await call(server, "/api/task-drafts/extract", "POST", { brief: "产品", connectionId: crypto.randomUUID() })).status, 404);
+});
