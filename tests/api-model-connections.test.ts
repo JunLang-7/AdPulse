@@ -8,6 +8,7 @@ import { createApi } from "../apps/api/dist/server.js";
 import { AuthenticationService } from "../packages/core/dist/index.js";
 import { compose, createModelConnections, type Runtime } from "../packages/runtime/dist/index.js";
 import { MemoryStorage } from "../packages/storage/dist/index.js";
+import { responsesReply } from "./fixtures/openai-responses.ts";
 
 const cipherEnv = () => ({
 	MODEL_CREDENTIAL_KEYRING: `v1:${randomBytes(32).toString("base64")}`,
@@ -129,7 +130,7 @@ test("model connections API: authentication, origin and validation failures", as
 		(await call(server, "/api/me/model-connections", "POST", { ...customInput(), protocol: "anthropic-messages" })).status,
 		422,
 	);
-	assert.equal((await call(server, "/api/me/model-connections/test", "POST", { ...customInput(), protocol: "openai-responses" })).status, 422);
+	assert.equal((await call(server, "/api/me/model-connections/test", "POST", { ...customInput(), protocol: "google-generative-ai" })).status, 422);
 });
 
 test("model connections API: empty JSON cannot verify or save a connection", async (t) => {
@@ -137,6 +138,50 @@ test("model connections API: empty JSON cannot verify or save a connection", asy
 	const server = await serve(t, runtime);
 	assert.deepEqual(await (await call(server, "/api/me/model-connections/test", "POST", customInput())).json(), { ok: false });
 	assert.equal((await call(server, "/api/me/model-connections", "POST", customInput())).status, 503);
+	assert.deepEqual((await runtime.modelConnections?.service.view(server.userId))?.connections, []);
+});
+
+test("model connections API: Responses tests, persists and extracts through the native adapter", async (t) => {
+	const { runtime, requests } = withModels({ reply: () => responsesReply(JSON.stringify({ product: "连接测试" })) });
+	const server = await serve(t, runtime);
+	const input = { ...customInput(), protocol: "openai-responses" };
+	assert.deepEqual(await (await call(server, "/api/me/model-connections/test", "POST", input)).json(), { ok: true });
+	const created = await call(server, "/api/me/model-connections", "POST", input);
+	assert.equal(created.status, 201);
+	const connection = await created.json() as { id: string; protocol: string };
+	assert.equal(connection.protocol, "openai-responses");
+	const extraction = await call(server, "/api/task-drafts/extract", "POST", {
+		connectionId: connection.id, brief: "产品：连接测试", stage: "overview",
+	});
+	assert.equal(extraction.status, 200);
+	assert.deepEqual(await extraction.json(), { product: "连接测试" });
+	assert.equal(requests.length, 3);
+	for (const request of requests) {
+		assert.equal(request.url, "https://api.mimotest.example/v1/responses");
+		assert.equal(request.auth, "Bearer synthetic-personal-key");
+	}
+	const stale = await serve(t, runtime, new Date(Date.now() - 20 * 60_000).toISOString());
+	assert.equal((await call(stale, "/api/me/model-connections/test", "POST", input)).status, 401);
+	assert.equal(requests.length, 3);
+});
+
+test("model connections API: catalog Responses cannot be mislabeled as Chat Completions", async (t) => {
+	const { runtime, requests } = withModels({ reply: () => responsesReply(JSON.stringify({ product: "连接测试" })) });
+	const server = await serve(t, runtime);
+	const input = { ...customInput(), kind: "catalog", catalogId: "openai", providerId: "openai", baseUrl: "https://api.openai.com/v1", models: [{ id: "gpt-4" }] };
+	assert.equal((await call(server, "/api/me/model-connections", "POST", input)).status, 503);
+	assert.equal(requests.length, 0);
+	assert.equal((await call(server, "/api/me/model-connections", "POST", { ...input, protocol: "openai-responses" })).status, 201);
+	assert.equal(requests.length, 1);
+	assert.equal(requests[0]?.url, "https://api.openai.com/v1/responses");
+});
+
+test("model connections API: Responses failures are sanitized and never saved", async (t) => {
+	const { runtime } = withModels({ reply: () => responsesReply("not JSON containing synthetic-secret") });
+	const server = await serve(t, runtime);
+	const failed = await call(server, "/api/me/model-connections", "POST", { ...customInput(), protocol: "openai-responses" });
+	assert.equal(failed.status, 503);
+	assert.deepEqual(await failed.json(), { error: "model connection unavailable" });
 	assert.deepEqual((await runtime.modelConnections?.service.view(server.userId))?.connections, []);
 });
 

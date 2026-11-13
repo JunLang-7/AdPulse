@@ -1018,6 +1018,11 @@ export interface components {
         TaskDraftCatalogModel: {
             id: components["schemas"]["TaskDraftModelId"];
             name: string;
+            /**
+             * @description 已适配模型的原生协议；创建目录连接时必须匹配。
+             * @enum {string}
+             */
+            api: "openai-completions" | "openai-responses";
         };
         TaskDraftCatalogProvider: {
             id: components["schemas"]["TaskDraftProvider"];

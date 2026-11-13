@@ -116,7 +116,7 @@ test("模型配置：自定义 API 可获取模型列表并选用", async (t) =>
 		protocol: "openai-completions",
 		apiKey: "synthetic-gateway-key",
 	});
-	const select = await screen.findByRole("combobox");
+	const select = await screen.findByRole("combobox", { name: "发现的模型" });
 	assert.equal((select as HTMLSelectElement).value, "mimo-v2-flash");
 	assert.deepEqual([...((select as HTMLSelectElement).options)].map((option) => option.value), ["mimo-v2-flash", "mimo-v2-pro"]);
 });
@@ -140,6 +140,53 @@ test("模型配置：地址修改后忽略晚到的发现结果", async (t) => {
 	await waitFor(() => assert.equal((screen.getByRole("button", { name: "获取模型列表" }) as HTMLButtonElement).disabled, false));
 	assert.equal(screen.queryByRole("option", { name: "old-target-model" }), null);
 	assert.ok(screen.getByDisplayValue("manual-model"));
+});
+
+test("模型配置：Responses 协议用于发现与保存，显示原生请求路径", async (t) => {
+	t.after(cleanup);
+	const protocols: string[] = [];
+	serve(baseRoutes, {
+		"POST /api/me/model-connections/models": async (request) => {
+			protocols.push((await request.json() as { protocol: string }).protocol);
+			return json({ models: ["synthetic-model"] });
+		},
+		"POST /api/me/model-connections": async (request) => {
+			const body = await request.json() as { protocol: string };
+			protocols.push(body.protocol);
+			return json({ ...connectionList.connections[0], protocol: body.protocol }, 201);
+		},
+	});
+	renderDialog();
+	fireEvent.click(await screen.findByRole("button", { name: "自定义 API" }));
+	fireEvent.change(screen.getByRole("combobox", { name: "API 协议" }), { target: { value: "openai-responses" } });
+	assert.ok(screen.getByText(/会请求.*Base URL.*responses/));
+	fireEvent.change(screen.getByPlaceholderText("例如：company-gateway"), { target: { value: "gateway" } });
+	fireEvent.change(screen.getByPlaceholderText("https://api.example.com/v1"), { target: { value: "https://gateway.example/v1" } });
+	fireEvent.change(screen.getByPlaceholderText("粘贴你的 API Key"), { target: { value: "synthetic-personal-key" } });
+	fireEvent.click(screen.getByRole("button", { name: "获取模型列表" }));
+	await screen.findByRole("combobox", { name: "发现的模型" });
+	fireEvent.click(screen.getByRole("button", { name: "保存并使用" }));
+	await waitFor(() => assert.deepEqual(protocols, ["openai-responses", "openai-responses"]));
+});
+
+test("模型配置：目录模型按 Responses 原生协议保存", async (t) => {
+	t.after(cleanup);
+	const protocols: string[] = [];
+	serve(baseRoutes, {
+		"GET /api/task-drafts/models": () => json({ ...catalog, providers: [{
+			id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", supported: true,
+			models: [{ id: "gpt-4", name: "GPT-4", api: "openai-responses" }],
+		}] }),
+		"POST /api/me/model-connections": async (request) => {
+			protocols.push((await request.json() as { protocol: string }).protocol);
+			return json(connectionList.connections[0], 201);
+		},
+	});
+	renderDialog();
+	fireEvent.click(await screen.findByRole("button", { name: /OpenAI/ }));
+	fireEvent.change(screen.getByPlaceholderText("粘贴你的 API Key"), { target: { value: "synthetic-personal-key" } });
+	fireEvent.click(screen.getByRole("button", { name: "保存并使用" }));
+	await waitFor(() => assert.deepEqual(protocols, ["openai-responses"]));
 });
 
 test("模型配置：自定义 API 可填写并保存自定义地址", async (t) => {

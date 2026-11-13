@@ -12,8 +12,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const output = join(here, "..", "src", "model-catalog.generated.ts");
 
 // Only the fields AdPulse needs to (a) list a model and (b) rebuild an
-// OpenAI Chat Completions route. Unknown pricing/capability stays as the SDK
+// native Chat Completions / Responses route. Unknown pricing/capability stays as the SDK
 // reports it; nothing is invented here.
+const wiredProtocols = new Set(["openai-completions", "openai-responses"]);
 const modelFields = ["id", "name", "api", "baseUrl", "provider", "reasoning", "input", "cost", "contextWindow", "maxTokens", "compat"];
 
 function pickModel(model) {
@@ -21,6 +22,9 @@ function pickModel(model) {
 	for (const field of modelFields) {
 		if (model[field] !== undefined) picked[field] = model[field];
 	}
+	// Responses 必须保留 off:null；省略后 SDK 会误发 effort:none。
+	if (model.api === "openai-responses" && model.thinkingLevelMap !== undefined)
+		picked.thinkingLevelMap = model.thinkingLevelMap;
 	return picked;
 }
 
@@ -38,7 +42,7 @@ function reasonFor(provider, chatModels, protocols) {
 const providers = builtinProviders().map((provider) => {
 	const models = provider.getModels();
 	const protocols = [...new Set(models.map((model) => model.api))];
-	const chatModels = models.filter((model) => model.api === "openai-completions");
+	const chatModels = models.filter((model) => wiredProtocols.has(model.api));
 	const supported = chatModels.length > 0 && Boolean(provider.baseUrl) &&
 		provider.baseUrl.startsWith("https://") && Boolean(provider.auth?.apiKey);
 	return {

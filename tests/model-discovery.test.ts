@@ -30,6 +30,16 @@ test("discovery: reads /models with the personal key and de-duplicates ids", asy
 	});
 });
 
+test("discovery: Responses uses the same explicit bearer-authenticated /models route", async () => {
+	assert.deepEqual(await discoverModels({ ...input, protocol: "openai-responses" }, async (request, init) => {
+		const sent = new Request(request, init);
+		assert.equal(sent.url, input.baseUrl + "/models");
+		assert.equal(sent.method, "GET");
+		assert.equal(sent.headers.get("authorization"), "Bearer " + input.apiKey);
+		return reply({ data: [{ id: "synthetic-model" }] });
+	}), ["synthetic-model"]);
+});
+
 test("discovery: caps the list and refuses unwired protocols or empty keys", async () => {
 	const many = { data: Array.from({ length: 150 }, (_, index) => ({ id: `model-${index}` })) };
 	const models = await discoverModels(input, async () => reply(many));

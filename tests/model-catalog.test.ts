@@ -7,6 +7,7 @@ import { createCatalogTaskDraftExtractor } from "../packages/runtime/dist/task-d
 interface SdkModel {
 	id: string;
 	api: string;
+	thinkingLevelMap?: unknown;
 }
 
 interface SdkProvider {
@@ -49,17 +50,20 @@ test("generated catalog matches the locked pi-ai provider directory", () => {
 		assert.deepEqual(entry.auth, { apiKey: Boolean(provider.auth?.apiKey), name: provider.auth?.apiKey?.name ?? null, oauth: Boolean(provider.auth?.oauth) });
 		assert.equal(entry.baseUrl, provider.baseUrl ?? null);
 		const expectedModels = provider.getModels()
-			.filter((model) => model.api === "openai-completions")
+			.filter((model) => model.api === "openai-completions" || model.api === "openai-responses")
 			.map((model) => model.id);
 		const supported = expectedModels.length > 0 && Boolean(provider.baseUrl?.startsWith("https://")) && Boolean(provider.auth?.apiKey);
 		assert.equal(entry.supported, supported, `support flag drifted for ${provider.id}`);
 		assert.deepEqual(entry.models.map((model) => model.id), supported ? expectedModels : []);
+		for (const model of entry.models.filter((item) => item.api === "openai-responses")) {
+			assert.deepEqual(model.thinkingLevelMap, provider.getModels().find((item) => item.id === model.id)?.thinkingLevelMap, model.id);
+		}
 	}
 	assert.equal(modelCatalogDocument.generatedFrom.package, "@earendil-works/pi-ai");
 	assert.match(modelCatalogDocument.generatedFrom.version, /^\d+\.\d+\.\d+$/);
 });
 
-test("only API-key Chat Completions providers are offered as connectable", () => {
+test("only API-key providers with wired native protocols are offered as connectable", () => {
 	const supported = modelCatalogProviders.filter((provider) => provider.supported);
 	assert.ok(supported.length >= 10, "expected a multi-provider catalog, not a single vendor");
 	assert.ok(supported.some((provider) => provider.id === "deepseek"));
@@ -67,7 +71,7 @@ test("only API-key Chat Completions providers are offered as connectable", () =>
 		assert.match(provider.baseUrl ?? "", /^https:\/\//);
 		assert.equal(provider.reason, undefined);
 		assert.ok(provider.models.length > 0);
-		assert.ok(provider.models.every((model) => model.api === "openai-completions"));
+		assert.ok(provider.models.every((model) => model.api === "openai-completions" || model.api === "openai-responses"));
 	}
 	for (const provider of modelCatalogProviders.filter((candidate) => !candidate.supported)) {
 		assert.ok(provider.reason, `unsupported provider ${provider.id} needs a reason`);
@@ -76,8 +80,8 @@ test("only API-key Chat Completions providers are offered as connectable", () =>
 });
 
 test("every connectable catalog provider routes a synthetic Chat Completions response", async () => {
-	for (const provider of modelCatalogProviders.filter((entry) => entry.supported)) {
-		const model = provider.models[0];
+	for (const provider of modelCatalogProviders.filter((entry) => entry.models.some((model) => model.api === "openai-completions"))) {
+		const model = provider.models.find((model) => model.api === "openai-completions");
 		assert.ok(model, provider.id);
 		let calls = 0;
 		const extract = createCatalogTaskDraftExtractor(provider.id, model.id, "synthetic-personal-key", async (input, init) => {
@@ -95,7 +99,7 @@ test("every connectable catalog provider routes a synthetic Chat Completions res
 
 test("catalog extractor calls the vendor endpoint with the personal key and model id", async () => {
 	assert.ok(findCatalogModel("xiaomi", "mimo-v2.6-flash"));
-	assert.equal(findCatalogModel("openai", "gpt-4"), undefined);
+	assert.equal(findCatalogModel("openai", "gpt-4")?.api, "openai-responses");
 	const extract = createCatalogTaskDraftExtractor("xiaomi", "mimo-v2.6-flash", "synthetic-mimo-key", async (input, init) => {
 		const sent = new Request(input, init);
 		assert.equal(sent.url, "https://api.xiaomimimo.com/v1/chat/completions");
@@ -115,7 +119,7 @@ test("catalog extractor calls the vendor endpoint with the personal key and mode
 });
 
 test("catalog extractor never falls back to another provider, model or deployment key", async () => {
-	assert.equal(createCatalogTaskDraftExtractor("openai", "gpt-4", "synthetic-key"), undefined);
+	assert.equal(createCatalogTaskDraftExtractor("openai", "not-in-catalog", "synthetic-key"), undefined);
 	assert.equal(createCatalogTaskDraftExtractor("deepseek", "unknown-model", "synthetic-key"), undefined);
 	assert.equal(createCatalogTaskDraftExtractor("deepseek", "deepseek-flash", "   "), undefined);
 	let called = false;
