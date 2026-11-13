@@ -19,6 +19,7 @@
 		"worker": "node --env-file=.env apps/worker/dist/index.js",
 		"demo": "node --env-file=.env scripts/demo.mjs",
 		"feishu:acceptance": "node --env-file=.env scripts/feishu-acceptance.mjs",
+		"notify:acceptance": "node --env-file=.env scripts/acceptance/digest.mjs",
     "sources": "node --env-file-if-exists=.env scripts/sources.mjs"
 	},
 	"devDependencies": {

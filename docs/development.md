@@ -428,7 +428,11 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
 - 页面顶部复用订阅页的 `describeReadiness` 判断「现在会不会收到」，避免两套说法；空记录时说明
   「没有新内容不发空汇总」，不把空列表解释成已发送。
 - **尚无生产者**：`NotificationQueue.queue()` 目前只被测试调用，尚未接入订阅筛选与 #38/#39 来源，
-  因此真实环境不会自动生成汇总条目；本页只能看到已经存在的批次，真机投递验收仍未执行。
+  因此真实环境不会自动生成汇总条目；本页只能看到已经存在的批次。
+- 真机验收用受控工具 `scripts/acceptance/digest.mjs`（`bun run notify:acceptance -- ...`）：
+  `enqueue` 写入带 `【验收测试】` 标记的合成条目（固定逻辑键、按 revision 幂等、关闭推送时拒绝），
+  `status` 读取本人批次与投递回执；脚本不发消息、不改订阅。步骤与判读见
+  [验收 runbook §16](acceptance/feishu-e2e.md)。
 
 ## 6. PostgreSQL 集成测试
 
