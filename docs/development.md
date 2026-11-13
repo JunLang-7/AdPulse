@@ -92,6 +92,19 @@ MODEL_CREDENTIAL_ACTIVE_KEY=v1
 - 轮换：`ModelConnectionService.rotateCredentials()` 只重加密旧 keyId 的记录，每条在同一事务内重读，避免与删除并发时复活旧凭据；主密钥丢失无法从密文库恢复，部署前需演练保管与恢复。
 - 边界：这是服务端加密存储，不是零知识加密；能同时控制服务器与主密钥的管理者理论上可解密。
 
+轮换与恢复演练（先只读，再确认写入）：
+
+```bash
+# 1. 追加新 key，新旧并存；此时 active 仍可为旧 key。
+MODEL_CREDENTIAL_KEYRING="v1:...,v2:..." bun run models:rotate-keys --check
+# 2. 切 active 到新 key 并确认重加密；未加确认参数不会写库。
+MODEL_CREDENTIAL_KEYRING="v1:...,v2:..." MODEL_CREDENTIAL_ACTIVE_KEY=v2 \
+  MODEL_KEY_ROTATION_CONFIRM=1 bun run models:rotate-keys --rotate
+# 3. 确认 readable 等于总数、awaitingRotation 为 0 后，才从 keyring 中移除旧 key。
+```
+
+`--check` 只读：逐条解密并报告 `readable / failed / awaitingRotation`（不输出去向、owner 或密钥）；有失败时退出码非 0。正式库上先备份、后在可丢弃实例演练，再执行轮换。
+
 网关需支持 Chat Completions 的 SSE 和 JSON 输出，界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
 
 ## 3. 持久化与独立 worker
