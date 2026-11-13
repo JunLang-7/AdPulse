@@ -1,4 +1,4 @@
-# 开发与验证
+﻿# 开发与验证
 
 ## 1. 环境
 
@@ -61,7 +61,19 @@ demo 脚本直接调用同源 HTTP API，固定使用 demo 收件账户；控制
 
 “补充说明或文件”支持选择或拖放 UTF-8 的 TXT、Markdown、CSV，以及文字型 PDF、Word（DOCX）、Excel（XLSX）。解析在浏览器内进行，文件文字先转成可编辑预览。PDF 最多 40 页，Office 和 PDF 最多 8 MB。长文档可预览前 30,000 字并选留相关内容，中文 PDF 按需加载本机服务提供的 PDF.js 字符映射（[许可](../apps/console/public/licenses/pdfjs-cmaps.txt)）。没有可读取文字的页面会提示，扫描件需先识别文字。本阶段的选项和补充文字在点击“提交本阶段”或“AI 辅助填写”后才发送到模型服务，上限 2,500 字。阶段结果只用于本次待确认草稿，金额、日期和提醒条件由用户补充。整理服务不可用时，可选择按已填写内容继续。
 
-模型调用在服务端通过 pi-ai 统一适配。API 进程默认读取 `DEEPSEEK_API_KEY`。使用另一供应商的 HTTPS OpenAI-compatible 网关时，在 API 进程的本地 `.env` 中同时设置：
+模型调用在服务端通过 pi-ai 统一适配。供应商与模型目录由锁定的 `@earendil-works/pi-ai` 生成，不逐家手写：
+
+```bash
+bun run model-catalog:generate
+```
+
+该命令写出 `packages/runtime/src/model-catalog.generated.ts`（供应商、协议、模型 ID 与可调用模型元数据）。提交前 `tests/model-catalog.test.ts` 会重新读取 SDK 比对，目录漂移即失败；不要手改生成文件。目录里是否“可直连”只表示 AdPulse 已接通个人 API Key + OpenAI Chat Completions 这一条适配路径，不代表已对每家做过真实联调。
+
+右上角个人菜单 →“模型配置”打开统一窗口：左侧是本人连接、部署提供和目录分组，右侧是配置表单与“测试连接 / 保存并使用”。保存前会用固定合成短句测试所选模型；密钥只写、不回显，服务端加密保存，登出或重启后仍可用。需要 OAuth 账号授权、云凭据链或账号/区域/部署名等额外参数的供应商会显示原因（如 `openai-responses` 原生协议尚未接通），不给会失败或会误用凭据的假保存按钮。自定义 API 现在可保存：只接受 HTTPS 公网地址，校验全部 DNS 结果并绑定地址、禁止重定向，且只接通 OpenAI Chat Completions。
+
+同一窗口还负责默认模型与连接维护：`ModelConnectionService` 的增删改查、删密钥停用、验证结果绑定版本等规则由服务端执行，界面只展示非敏感投影。部署未配置主密钥时，窗口提示个人连接不可保存，但仍可选用“部署提供”的模型。
+
+API 进程仍可读取 `DEEPSEEK_API_KEY` 作为部署提供的默认路由。使用另一供应商的 HTTPS OpenAI-compatible 网关时，在 API 进程的本地 `.env` 中同时设置：
 
 ```dotenv
 TASK_DRAFT_PROVIDER=openai-compatible
@@ -70,11 +82,50 @@ TASK_DRAFT_GATEWAY_MODEL=your-model-id
 TASK_DRAFT_GATEWAY_API_KEY=
 ```
 
-部署配置决定默认提供方。任务页面的“模型设置”按提供方列出连接状态，可为本次任务切换后续请求使用的模型。阶段里的“AI 辅助填写”先展示建议，采用后写回表单。
+这些路由在窗口里显示为“部署提供”，只有用户显式选中才会使用；用户自填密钥失败时不会自动回退到部署密钥或其他人的连接。任务页只保留一个轻量模型入口，选择只作用于本次任务，不写全局默认，也不改已完成操作的历史记录。
+
+任务页的模型选择是本人连接 `connectionId` + `modelId`，抽取接口据此解密并调用；没有个人连接时仍可手填，部署未配置主密钥时也不会自动降级。旧的 `TASK_DRAFT_USER_KEYS_ENABLED` 内存连接仍保留给部署路由与兼容性，但界面不再用它保存个人密钥。
 
 需要允许已认证用户通过界面连接临时 API 密钥时，部署者可设置 `TASK_DRAFT_USER_KEYS_ENABLED=1`。连接用固定合成短句验证，密钥在服务端内存按用户隔离，最多保留 8 小时，且可断开。服务重启会清空临时连接。部署时应通过受信任的 HTTPS 入口访问。
 
+<<<<<<< HEAD
+所选供应商需支持 Chat Completions 的 SSE 和 JSON 输出，界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
+=======
+### 持久化模型凭据（#86 PR1）
+
+持久化部分已完成存储、加密与领域规则，尚未接 HTTP 与界面（下一个 PR）。启用前必须配置主密钥，否则 `createModelConnections()` 返回 undefined，能力保持不可用，不会退回明文或内存连接：
+
+```dotenv
+# 逗号分隔 keyId:base64(32 字节)；默认最后一支为 active。
+MODEL_CREDENTIAL_KEYRING=v1:
+# 轮换时指定哪一支用于新写入，旧 key 先保留到旧密文全部重加密完成。
+MODEL_CREDENTIAL_ACTIVE_KEY=v1
+```
+
+- 加密：AES-256-GCM，每次随机 nonce；AAD 绑定 owner、连接、凭据版本、规范化目标地址与协议，搬运密文到其他用户/连接/地址会解密失败。
+- 失败关闭：主密钥缺失、格式错误、active key 不存在、解密失败都直接报错；不回退到部署共享密钥、其他用户密钥或明文。
+- 版本与归属：每次配置变更递增版本；他人连接 ID 与不存在同样返回 not found；配置（含目标地址/协议）变更必须重填密钥并让旧验证结果失效。
+- 删除：删密钥保留连接元数据并停用，同时清空默认选择；删连接在同一个事务里删除元数据、密文与默认引用，进行中的旧请求不会把旧密文写回。
+- 轮换：`ModelConnectionService.rotateCredentials()` 只重加密旧 keyId 的记录，每条在同一事务内重读，避免与删除并发时复活旧凭据；主密钥丢失无法从密文库恢复，部署前需演练保管与恢复。
+- 边界：这是服务端加密存储，不是零知识加密；能同时控制服务器与主密钥的管理者理论上可解密。
+
+同一组能力通过鉴权 API 提供（均已写入 OpenAPI 与生成 SDK）：
+
+| 方法 / 路径 | 语义 |
+| --- | --- |
+| `GET /api/me/model-connections` | 本人连接投影与默认选择，不含任何密文/密钥 |
+| `POST /api/me/model-connections` | 先用固定合成短句测试，通过后才写入连接与加密凭据 |
+| `POST /api/me/model-connections/test` | 只测不存，不发送任务材料 |
+| `PUT /api/me/model-connections/{id}` | `expectedVersion` + 元数据/模型/凭据动作（keep/replace/remove）；换目标地址或协议必须同时 replace |
+| `DELETE /api/me/model-connections/{id}` | 同一事务删除连接、密文与默认引用 |
+| `DELETE /api/me/model-connections/{id}/credential` | 删密钥、停用连接并清空默认选择 |
+| `PUT /api/me/model-preferences` | 本人默认 `(connectionId, modelId)`，只能指向本人可用连接 |
+| `POST /api/task-drafts/extract` + `connectionId` | 用本人持久连接抽取；密钥只在服务端短暂解密，不回传 |
+
+模型调用统一走受控出网层：只允许 HTTPS，校验全部 DNS 结果并把连接绑定到已校验地址，禁止重定向并移除 `location`，不读取环境代理，限制 512 KiB 与 15 秒。未接通的协议（`openai-responses`、`anthropic-messages`、`google-generative-ai`）返回 422，不会降级成 Chat Completions；自定义连接需自行确认供应商支持 SSE 与 JSON 输出。
+
 网关需支持 Chat Completions 的 SSE 和 JSON 输出，界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
+>>>>>>> 73766e4
 
 ## 3. 持久化与独立 worker
 

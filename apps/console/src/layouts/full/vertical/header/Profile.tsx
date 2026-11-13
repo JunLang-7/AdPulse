@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Icon } from "@iconify/react";
-import { UserRound } from "lucide-react";
+import { Cpu, UserRound } from "lucide-react";
 import { consoleClient } from "src/adpulse-client";
 import {
 	DropdownMenu,
@@ -11,6 +11,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "src/components/ui/dropdown-menu";
+import { ModelConfigDialog } from "src/views/adpulse/models/model-config-dialog";
 import { announceSessionIdentity } from "src/views/auth/session-sync";
 import { platformLabel } from "src/views/auth/platform-label";
 import { profileDD } from "./data";
@@ -26,6 +27,7 @@ export default function ProfileMenu() {
 	const queryClient = useQueryClient();
 	const [logoutError, setLogoutError] = useState(false);
 	const [loggingOut, setLoggingOut] = useState(false);
+	const [modelsOpen, setModelsOpen] = useState(false);
 
 	// 只展示平台返回的显示名；取不到时用中性占位，不编造称呼。
 	const { data: me } = useQuery({
@@ -64,6 +66,7 @@ export default function ProfileMenu() {
 	};
 
 	return (
+		<>
 		<DropdownMenu>
 			<DropdownMenuTrigger>
 				<div className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-primary/5">
@@ -107,6 +110,13 @@ export default function ProfileMenu() {
 					);
 				})}
 				<DropdownMenuSeparator />
+				<DropdownMenuItem className="cursor-pointer" onClick={() => setModelsOpen(true)}>
+					<span className="flex items-center gap-3 text-sm">
+						<Cpu className="size-[18px]" aria-hidden="true" />
+						模型配置
+					</span>
+				</DropdownMenuItem>
+				<DropdownMenuSeparator />
 				{logoutError ? (
 					<p role="alert" className="px-3 py-1 text-xs text-destructive">
 						退出失败，请重试。
@@ -123,5 +133,7 @@ export default function ProfileMenu() {
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
+		<ModelConfigDialog open={modelsOpen} onOpenChange={setModelsOpen} />
+		</>
 	);
 }

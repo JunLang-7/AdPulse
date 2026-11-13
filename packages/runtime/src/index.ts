@@ -1,4 +1,4 @@
-import {
+﻿import {
 	type ChannelAccount,
 	ChannelRegistry,
 	createFeishuAccount,
@@ -11,6 +11,7 @@ import {
 	InvestigationAlertService,
 	NotificationQueue,
 	NotificationService,
+	ModelConnectionService,
 	Orchestrator,
 	SubscriptionService,
 	resolveActiveIdentity,
@@ -23,8 +24,16 @@ import {
 	Worker,
 } from "@adpluse/core";
 import { MemoryStorage, PostgresStorage } from "@adpluse/storage";
+import { createModelCredentialCipher } from "./model-credential-cipher.js";
+import { createModelEgressFetch } from "./model-egress.js";
 import { HttpSourceFetcher } from "./source-fetch.js";
 import type { TaskDraftExtractor } from "./task-draft-extractor.js";
+import {
+	createPersistedTaskDraftExtractor,
+	createTaskDraftRequestLimit,
+	isTaskDraftProtocolWired,
+	type ModelRouteInput,
+} from "./task-draft-extractor.js";
 import { createTaskDraftModels } from "./task-draft-models.js";
 
 export const reviewPolicy: PolicyEngine = {
@@ -136,10 +145,47 @@ export function compose(
 		),
 	};
 }
-export type Runtime = ReturnType<typeof compose> & { extractTaskDraft?: TaskDraftExtractor; taskDraftModels?: ReturnType<typeof createTaskDraftModels> };
+export type Runtime = ReturnType<typeof compose> & {
+	extractTaskDraft?: TaskDraftExtractor;
+	taskDraftModels?: ReturnType<typeof createTaskDraftModels>;
+	modelConnections?: ReturnType<typeof createModelConnections>;
+};
 
-export { taskDraftProviderIds } from "./task-draft-models.js";
+/**
+ * 个人模型连接的持久化基础。主密钥未配置/不合法时返回 undefined，
+ * 调用方据此返回不可用，而不是退回内存临时连接或明文。
+ * 探针与抽取器都走受控出网层（DNS 绑定、禁重定向、限大小/超时）。
+ */
+export function createModelConnections(
+	storage: Storage,
+	env: Record<string, string | undefined> = process.env,
+	fetchImpl: typeof fetch = createModelEgressFetch(),
+) {
+	const cipher = createModelCredentialCipher(env);
+	if (!cipher) return;
+	const service = new ModelConnectionService(storage, cipher);
+	// 探针也消耗同一份请求预算，避免测试接口成为绕过限额的通道。
+	const limit = createTaskDraftRequestLimit();
+	return {
+		service,
+		/** 用固定合成短句验证候选连接；不写入、不发送任务材料。 */
+		async probe(input: ModelRouteInput): Promise<boolean> {
+			const extract = createPersistedTaskDraftExtractor(input, fetchImpl, limit);
+			return extract ? await extract(modelConnectionTestBrief, "overview") !== null : false;
+		},
+		draftExtractor(input: ModelRouteInput): TaskDraftExtractor | undefined {
+			return createPersistedTaskDraftExtractor(input, fetchImpl);
+		},
+		protocolWired: isTaskDraftProtocolWired,
+	};
+}
+
+export const modelConnectionTestBrief = "产品：连接测试";
+
 export { taskDraftBriefMaxLength, taskDraftStages } from "./task-draft-extractor.js";
+export type { TaskDraftSelection } from "./task-draft-models.js";
+export { catalogForClient, findCatalogModel, findCatalogProvider, modelCatalogProviders } from "./model-catalog.js";
+export type { ModelCatalogModel, ModelCatalogProvider } from "./model-catalog.js";
 
 export {
 	HttpSourceFetcher,
@@ -148,6 +194,8 @@ export {
 } from "./source-fetch.js";
 export { runSources } from "./source-runner.js";
 export { discoverSource } from "./source-discovery.js";
+export { createModelCredentialCipher, parseModelCredentialKeyring } from "./model-credential-cipher.js";
+export type { CredentialKeyring } from "./model-credential-cipher.js";
 
 /** Derived from the allowlisted definitions so the two cannot drift. */
 const SOURCE_HOSTS = [
@@ -216,12 +264,15 @@ export async function fromEnvironment(
 			},
 		});
 	const taskDraftModels = createTaskDraftModels(env);
+	const storage = postgres ?? new MemoryStorage();
+	const modelConnections = createModelConnections(storage, env);
 	return {
 		...compose(postgres ?? new MemoryStorage(), accounts, reviewPolicy, {
 			decisionCardsEnabled: env.DECISION_CARDS_ENABLED === "1",
 			...(env.PUBLIC_ORIGIN ? { detailUrlBase: env.PUBLIC_ORIGIN } : {}),
 		}),
 		taskDraftModels,
+		modelConnections,
 		close: async () => {
 			await postgres?.close();
 		},

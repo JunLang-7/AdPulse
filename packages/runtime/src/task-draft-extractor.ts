@@ -1,6 +1,8 @@
 import { createModels, createProvider, envApiKeyAuth, type Model, type Provider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
+import type { ModelConnectionProtocol } from "@adpluse/core";
+import { findCatalogModel } from "./model-catalog.js";
 
 export const taskDraftBriefMaxLength = 2_500;
 export const taskDraftStages = ["overview", "audience", "channels"] as const;
@@ -124,7 +126,6 @@ type ProviderRoute = {
 	modelId: string;
 	key: string;
 };
-
 export function getTaskDraftGateway(env: Record<string, string | undefined>) {
 	const modelId = env.TASK_DRAFT_GATEWAY_MODEL?.trim();
 	const configuredUrl = env.TASK_DRAFT_GATEWAY_BASE_URL?.trim();
@@ -184,9 +185,120 @@ export function createTaskDraftExtractor(
 ): TaskDraftExtractor | undefined {
 	const route = configureProvider(env);
 	if (!route) return;
+	return createRouteExtractor(route.provider, route.modelId, route.key, fetchImpl, limit);
+}
+
+/** 构造路由所需的明文参数；来源是本人已解密的凭据。 */
+export interface ModelRouteInput {
+	providerId: string;
+	kind: "catalog" | "custom";
+	catalogId?: string;
+	baseUrl: string;
+	protocol: ModelConnectionProtocol;
+	modelId: string;
+	apiKey: string;
+}
+
+/** 已接通的协议。未接通的协议不得作为可用项，也不能降级成 Chat Completions。 */
+export function isTaskDraftProtocolWired(protocol: ModelConnectionProtocol): boolean {
+	return protocol === "openai-completions";
+}
+
+/**
+ * 按持久化连接构造抽取器。目录连接必须与目录端点一致（不允许改主机后沿用旧 Key）；
+ * 自定义连接用保守的模型元数据走同一条 Chat Completions 适配。
+ */
+export function createPersistedTaskDraftExtractor(
+	input: ModelRouteInput,
+	fetchImpl: typeof fetch = fetch,
+	limit = createTaskDraftRequestLimit(),
+): TaskDraftExtractor | undefined {
+	const key = input.apiKey.trim();
+	if (!key || !isTaskDraftProtocolWired(input.protocol)) return;
+	if (input.kind === "catalog") {
+		const entry = findCatalogModel(input.catalogId ?? input.providerId, input.modelId);
+		if (!entry || entry.baseUrl !== input.baseUrl) return;
+		return createCatalogTaskDraftExtractor(entry.provider, entry.id, key, fetchImpl, limit);
+	}
+	// 未知上下文/价格保持未知；这里只给传输层一个保守上限。
+	const model = {
+		id: input.modelId,
+		name: input.modelId,
+		api: "openai-completions",
+		provider: input.providerId,
+		baseUrl: input.baseUrl,
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 8_192,
+		maxTokens: maxOutputTokens,
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			supportsUsageInStreaming: false,
+			maxTokensField: "max_tokens",
+		},
+	} satisfies Model<"openai-completions">;
+	const provider = createProvider({
+		id: input.providerId,
+		name: input.providerId,
+		baseUrl: input.baseUrl,
+		auth: { apiKey: envApiKeyAuth(input.providerId, []) },
+		models: [model],
+		api: openAICompletionsApi(),
+	});
+	return createRouteExtractor(provider, input.modelId, key, fetchImpl, limit);
+}
+
+/**
+ * Personal API-key route for one catalog model. The provider id/model id must
+ * resolve to a supported entry of the generated directory; a missing entry is
+ * a hard failure, never a silent fallback to a deployment key.
+ */
+export function createCatalogTaskDraftExtractor(
+	providerId: string,
+	modelId: string,
+	apiKey: string,
+	fetchImpl: typeof fetch = fetch,
+	limit = createTaskDraftRequestLimit(),
+): TaskDraftExtractor | undefined {
+	const entry = findCatalogModel(providerId, modelId);
+	const key = apiKey.trim();
+	if (!entry || !key || entry.provider !== providerId) return;
+	const model = {
+		id: entry.id,
+		name: entry.name,
+		api: "openai-completions",
+		provider: providerId,
+		baseUrl: entry.baseUrl,
+		reasoning: entry.reasoning ?? false,
+		input: (entry.input ?? ["text"]) as Model<"openai-completions">["input"],
+		cost: entry.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: entry.contextWindow ?? 8_192,
+		maxTokens: entry.maxTokens ?? maxOutputTokens,
+		...(entry.compat ? { compat: entry.compat as NonNullable<Model<"openai-completions">["compat"]> } : {}),
+	} satisfies Model<"openai-completions">;
+	const provider = createProvider({
+		id: providerId,
+		name: entry.name,
+		baseUrl: entry.baseUrl,
+		auth: { apiKey: envApiKeyAuth(entry.name, []) },
+		models: [model],
+		api: openAICompletionsApi(),
+	});
+	return createRouteExtractor(provider, entry.id, key, fetchImpl, limit);
+}
+
+function createRouteExtractor(
+	provider: Provider<"openai-completions">,
+	modelId: string,
+	key: string,
+	fetchImpl: typeof fetch,
+	limit: ReturnType<typeof createTaskDraftRequestLimit>,
+): TaskDraftExtractor | undefined {
 	const models = createModels();
-	models.setProvider(route.provider);
-	const model = models.getModel(route.provider.id, route.modelId);
+	models.setProvider(provider);
+	const model = models.getModel(provider.id, modelId);
 	if (!model) return;
 	const guardedFetch = providerFetch(model.baseUrl + "/chat/completions", fetchImpl);
 	return async (brief, stage) => {
@@ -198,7 +310,7 @@ export function createTaskDraftExtractor(
 					systemPrompt: prompt(fields),
 					messages: [{ role: "user", content: brief, timestamp: Date.now() }],
 				}, {
-					apiKey: route.key,
+					apiKey: key,
 					fetch: guardedFetch,
 					signal: AbortSignal.timeout(requestTimeoutMs),
 					timeoutMs: requestTimeoutMs,

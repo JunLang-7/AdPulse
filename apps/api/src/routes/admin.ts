@@ -9,7 +9,8 @@ import type {
 	TaskInput,
 	Transaction,
 } from "@adpluse/core";
-import { taskDraftBriefMaxLength, taskDraftProviderIds, taskDraftStages, type Runtime } from "@adpluse/runtime";
+import { ModelConnectionError, modelConnectionProtocols, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
+import { findCatalogModel, taskDraftBriefMaxLength, taskDraftStages, type Runtime, type TaskDraftSelection } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
 
@@ -86,12 +87,121 @@ const sessionInput = z
 		expiresAt: z.iso.datetime(),
 	})
 	.strict();
+const taskDraftSelection = z
+	.object({
+		provider: z.string().trim().min(1).max(64),
+		model: z.string().trim().min(1).max(160),
+	})
+	.strict();
+const taskDraftConnectionInput = z
+	.object({
+		provider: z.string().trim().min(1).max(64),
+		model: z.string().trim().min(1).max(160),
+		apiKey: z.string().trim().min(8).max(512),
+	})
+	.strict();
 const taskDraftExtractionInput = z
 	.object({
 		brief: z.string().max(taskDraftBriefMaxLength).trim().min(1),
-		stage: z.enum(taskDraftStages).optional(), provider: z.enum(taskDraftProviderIds).optional(),
+		stage: z.enum(taskDraftStages).optional(),
+		provider: z.string().trim().min(1).max(64).optional(),
+		model: z.string().trim().min(1).max(160).optional(),
+		connectionId: z.string().trim().min(1).max(64).optional(),
+	})
+	.strict()
+	.refine(({ provider, model, connectionId }) => {
+		// 有 provider 就必须带 model；只给 model 时必须有 connectionId；两者不能混用。
+		if (connectionId !== undefined && provider !== undefined) return false;
+		if (provider !== undefined) return model !== undefined;
+		if (model !== undefined) return connectionId !== undefined;
+		return true;
+	}, { message: "invalid model selection" });
+/** Catalog membership is checked before any credential is stored or used. */
+function supportedSelection(input: TaskDraftSelection): TaskDraftSelection {
+	if (!findCatalogModel(input.provider, input.model)) throw new HttpError(400, "unsupported model selection");
+	return input;
+}
+const modelConnectionInput = z
+	.object({
+		providerId: z.string().trim().min(1).max(48),
+		kind: z.enum(["catalog", "custom"]),
+		catalogId: z.string().trim().min(1).max(64).optional(),
+		displayName: z.string().trim().min(1).max(80).optional(),
+		baseUrl: z.string().trim().min(1).max(512),
+		protocol: z.enum(modelConnectionProtocols as unknown as [string, ...string[]]),
+		models: z
+			.array(
+				z
+					.object({
+						id: z.string().trim().min(1).max(160),
+						label: z.string().trim().min(1).max(160).optional(),
+					})
+					.strict(),
+			)
+			.min(1)
+			.max(50),
+		apiKey: z.string().trim().min(8).max(512),
 	})
 	.strict();
+const modelConnectionUpdate = z
+	.object({
+		expectedVersion: z.number().int().min(1),
+		displayName: z.string().trim().min(1).max(80).optional(),
+		models: z
+			.array(
+				z
+					.object({
+						id: z.string().trim().min(1).max(160),
+						label: z.string().trim().min(1).max(160).optional(),
+					})
+					.strict(),
+			)
+			.min(1)
+			.max(50)
+			.optional(),
+		status: z.enum(["active", "disabled"]).optional(),
+		baseUrl: z.string().trim().min(1).max(512).optional(),
+		protocol: z.enum(modelConnectionProtocols as unknown as [string, ...string[]]).optional(),
+		credential: z
+			.discriminatedUnion("action", [
+				z.object({ action: z.literal("keep") }).strict(),
+				z.object({ action: z.literal("replace"), apiKey: z.string().trim().min(8).max(512) }).strict(),
+				z.object({ action: z.literal("remove") }).strict(),
+			])
+			.optional(),
+	})
+	.strict();
+const modelPreferenceInput = z
+	.object({
+		expectedVersion: z.number().int().min(0),
+		connectionId: z.string().trim().min(1).max(64).nullable().optional(),
+		modelId: z.string().trim().min(1).max(160).nullable().optional(),
+	})
+	.strict();
+
+function modelConnectionErrorStatus(reason: ModelConnectionError["reason"]): number {
+	switch (reason) {
+		case "connection_not_found":
+			return 404;
+		case "connection_conflict":
+		case "credential_missing":
+			return 409;
+		case "credential_unreadable":
+			return 503;
+		case "invalid_connection":
+			return 400;
+	}
+}
+
+async function withModelConnectionErrors<T>(work: () => Promise<T>): Promise<T> {
+	try {
+		return await work();
+	} catch (error) {
+		if (error instanceof ModelConnectionError)
+			throw new HttpError(modelConnectionErrorStatus(error.reason), error.reason);
+		throw error;
+	}
+}
 const taskInput = z
 	.object({
 		product: z.string().trim().min(1).max(200),
@@ -281,27 +391,169 @@ export async function handleAdmin(
 	path: string,
 	auth: AuthenticationService,
 ): Promise<void> {
+	if (path.startsWith("/api/me/model-connections") || path === "/api/me/model-preferences") {
+		res.setHeader("Cache-Control", "no-store");
+		const modelApi = runtime.modelConnections;
+		if (!modelApi) throw new HttpError(503, "model connections unavailable");
+		if (path === "/api/me/model-connections" && req.method === "GET")
+			return json(res, 200, await modelApi.service.view(userId));
+		if (path === "/api/me/model-connections/test" && req.method === "POST") {
+			const parsed = modelConnectionInput.parse(await readJson(req));
+			const input = await withModelConnectionErrors(async () =>
+				validateModelConnectionInput(parsed as ModelConnectionInput));
+			if (!modelApi.protocolWired(input.protocol))
+				throw new HttpError(422, "protocol not wired");
+			const ok = await modelApi.probe({
+				providerId: input.providerId,
+				kind: input.kind,
+				...(input.catalogId ? { catalogId: input.catalogId } : {}),
+				baseUrl: input.baseUrl,
+				protocol: input.protocol,
+				modelId: input.models[0]?.id ?? "",
+				apiKey: input.apiKey,
+			});
+			return json(res, 200, { ok });
+		}
+		if (path === "/api/me/model-connections" && req.method === "POST") {
+			const parsed = modelConnectionInput.parse(await readJson(req));
+			const input = await withModelConnectionErrors(async () =>
+				validateModelConnectionInput(parsed as ModelConnectionInput));
+			if (!modelApi.protocolWired(input.protocol))
+				throw new HttpError(422, "protocol not wired");
+			const ok = await modelApi.probe({
+				providerId: input.providerId,
+				kind: input.kind,
+				...(input.catalogId ? { catalogId: input.catalogId } : {}),
+				baseUrl: input.baseUrl,
+				protocol: input.protocol,
+				modelId: input.models[0]?.id ?? "",
+				apiKey: input.apiKey,
+			});
+			// 未通过测试就不写库：不留下半个可用连接。
+			if (!ok) throw new HttpError(503, "model connection unavailable");
+			const created = await withModelConnectionErrors(() =>
+				modelApi.service.create(userId, input));
+			return json(res, 201, created);
+		}
+		const connectionPath = /^\/api\/me\/model-connections\/([0-9a-f-]{36})(\/credential)?$/.exec(path);
+		if (connectionPath?.[1]) {
+			const connectionId = connectionPath[1];
+			if (req.method === "DELETE") {
+				const query = new URL(req.url ?? "", "http://localhost").searchParams;
+				const expectedVersion = z.coerce.number().int().min(1).parse(query.get("expectedVersion"));
+				if (connectionPath[2]) {
+					const view = await withModelConnectionErrors(() =>
+						modelApi.service.removeCredential(userId, connectionId, expectedVersion));
+					return json(res, 200, view);
+				}
+				const view = await withModelConnectionErrors(() =>
+					modelApi.service.delete(userId, connectionId, expectedVersion));
+				return json(res, 200, view);
+			}
+			if (!connectionPath[2] && req.method === "PUT") {
+				const body = modelConnectionUpdate.parse(await readJson(req));
+				const view = await modelApi.service.view(userId);
+				const existing = view.connections.find((item) => item.id === connectionId);
+				if (!existing) throw new HttpError(404, "connection_not_found");
+				const protocol = (body.protocol ?? existing.protocol) as ModelConnectionProtocol;
+				if (!modelApi.protocolWired(protocol)) throw new HttpError(422, "protocol not wired");
+				const baseUrl = body.baseUrl === undefined
+					? existing.baseUrl
+					: await withModelConnectionErrors(async () => normalizeModelBaseUrl(body.baseUrl));
+				const targetChanged = baseUrl !== existing.baseUrl || protocol !== existing.protocol;
+				const replace = body.credential?.action === "replace";
+				// 换目标地址/协议必须同时换密钥；不允许拿旧密钥探新主机。
+				if (targetChanged && !replace)
+					throw new HttpError(400, "changing the target requires a new API key");
+				if (replace) {
+					const models = body.models ?? existing.models;
+					const ok = await modelApi.probe({
+						providerId: existing.providerId,
+						kind: existing.kind,
+						...(existing.catalogId ? { catalogId: existing.catalogId } : {}),
+						baseUrl,
+						protocol,
+						modelId: models[0]?.id ?? "",
+						apiKey: body.credential?.action === "replace" ? body.credential.apiKey : "",
+					});
+					if (!ok) throw new HttpError(503, "model connection unavailable");
+				}
+				const updated = await withModelConnectionErrors(() =>
+					modelApi.service.update(userId, connectionId, {
+						expectedVersion: body.expectedVersion,
+						...(body.displayName === undefined ? {} : { displayName: body.displayName }),
+						...(body.models === undefined ? {} : { models: body.models }),
+						...(body.status === undefined ? {} : { status: body.status }),
+						...(body.baseUrl === undefined ? {} : { baseUrl: body.baseUrl }),
+						...(body.protocol === undefined ? {} : { protocol: body.protocol }),
+						...(body.credential === undefined ? {} : { credential: body.credential }),
+					}));
+				return json(res, 200, updated);
+			}
+		}
+		if (path === "/api/me/model-preferences" && req.method === "PUT") {
+			const body = modelPreferenceInput.parse(await readJson(req));
+			const preference = await withModelConnectionErrors(() =>
+				modelApi.service.setPreference(userId, {
+					expectedVersion: body.expectedVersion,
+					...(body.connectionId === undefined ? {} : { connectionId: body.connectionId }),
+					...(body.modelId === undefined ? {} : { modelId: body.modelId }),
+				}));
+			return json(res, 200, preference);
+		}
+	}
 	if (path === "/api/task-drafts/models") {
 		res.setHeader("Cache-Control", "no-store");
 		const models = runtime.taskDraftModels;
-		if (req.method === "GET") return json(res, 200, models?.list(userId) ?? { defaultProvider: null, canConnect: false, models: [] });
+		if (req.method === "GET") return json(res, 200, models?.list(userId) ?? { canConnect: false, defaultSelection: null, providers: [], shared: [], connections: [] });
 		if (req.method === "PUT" || req.method === "DELETE") {
 			if (!models?.list(userId).canConnect) throw new HttpError(403, "model connections disabled");
-			const provider = z.enum(taskDraftProviderIds);
 			if (req.method === "DELETE") {
-				const choice = provider.parse(new URL(req.url ?? "", "http://localhost").searchParams.get("provider"));
-				if (!models.disconnect(userId, choice)) throw new HttpError(409, "model connection busy");
+				const query = new URL(req.url ?? "", "http://localhost").searchParams;
+				const selection = supportedSelection(taskDraftSelection.parse({
+					provider: query.get("provider"),
+					model: query.get("model"),
+				}));
+				if (!models.disconnect(userId, selection)) throw new HttpError(409, "model connection busy");
 			} else {
-				const input = z.object({ provider, apiKey: z.string().trim().min(8).max(512) }).strict().parse(await readJson(req));
-				if (!await models.connect(userId, input.provider, input.apiKey)) throw new HttpError(503, "model connection unavailable");
+				const input = taskDraftConnectionInput.parse(await readJson(req));
+				const selection = supportedSelection(input);
+				if (!await models.connect(userId, selection, input.apiKey)) throw new HttpError(503, "model connection unavailable");
 			}
 			return json(res, 200, models.list(userId));
 		}
 	}
+	if (path === "/api/task-drafts/models/test" && req.method === "POST") {
+		res.setHeader("Cache-Control", "no-store");
+		const models = runtime.taskDraftModels;
+		if (!models?.list(userId).canConnect) throw new HttpError(403, "model connections disabled");
+		const input = taskDraftConnectionInput.parse(await readJson(req));
+		const selection = supportedSelection(input);
+		return json(res, 200, { ok: await models.test(selection, input.apiKey) });
+	}
 	if (path === "/api/task-drafts/extract" && req.method === "POST") {
-		const { brief, stage, provider } = taskDraftExtractionInput.parse(await readJson(req));
+		const { brief, stage, provider, model, connectionId } = taskDraftExtractionInput.parse(await readJson(req));
+		if (connectionId !== undefined) {
+			const modelApi = runtime.modelConnections;
+			if (!modelApi) throw new HttpError(503, "model connections unavailable");
+			const resolved = await withModelConnectionErrors(() =>
+				modelApi.service.resolveCredential(userId, connectionId, model));
+			const extract = modelApi.draftExtractor({
+				providerId: resolved.connection.providerId,
+				kind: resolved.connection.kind,
+				...(resolved.connection.catalogId ? { catalogId: resolved.connection.catalogId } : {}),
+				baseUrl: resolved.baseUrl,
+				protocol: resolved.protocol,
+				modelId: resolved.modelId,
+				apiKey: resolved.apiKey,
+			});
+			const suggestions = extract ? await extract(brief, stage) : null;
+			if (!suggestions) throw new HttpError(503, "task draft extraction unavailable");
+			return json(res, 200, suggestions);
+		}
+		const selection = provider === undefined || model === undefined ? undefined : supportedSelection({ provider, model });
 		const suggestions = runtime.taskDraftModels
-			? await runtime.taskDraftModels.extract(userId, provider, brief, stage)
+			? await runtime.taskDraftModels.extract(userId, selection, brief, stage)
 			: await runtime.extractTaskDraft?.(brief, stage);
 		if (!suggestions) throw new HttpError(503, "task draft extraction unavailable");
 		return json(res, 200, suggestions);
