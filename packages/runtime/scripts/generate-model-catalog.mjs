@@ -14,7 +14,7 @@ const output = join(here, "..", "src", "model-catalog.generated.ts");
 // Only the fields AdPulse needs to (a) list a model and (b) rebuild an
 // native Chat Completions / Responses route. Unknown pricing/capability stays as the SDK
 // reports it; nothing is invented here.
-const wiredProtocols = new Set(["openai-completions", "openai-responses"]);
+const wiredProtocols = new Set(["openai-completions", "openai-responses", "anthropic-messages"]);
 const modelFields = ["id", "name", "api", "baseUrl", "provider", "reasoning", "input", "cost", "contextWindow", "maxTokens", "compat"];
 
 function pickModel(model) {
@@ -23,7 +23,7 @@ function pickModel(model) {
 		if (model[field] !== undefined) picked[field] = model[field];
 	}
 	// Responses 必须保留 off:null；省略后 SDK 会误发 effort:none。
-	if (model.api === "openai-responses" && model.thinkingLevelMap !== undefined)
+	if (model.api !== "openai-completions" && model.thinkingLevelMap !== undefined)
 		picked.thinkingLevelMap = model.thinkingLevelMap;
 	return picked;
 }
@@ -31,26 +31,34 @@ function pickModel(model) {
 // Ordered by how actionable the reason is: protocol/endpoint gaps come before
 // the account-auth note, so e.g. OpenAI reads as a protocol gap rather than an
 // OAuth one.
-function reasonFor(provider, chatModels, protocols) {
+function reasonFor(provider, wiredModels, protocols) {
 	if (protocols.length === 0) return "目录中暂无对话模型。";
 	if (!provider.baseUrl) return "需要账号、区域或部署名等额外参数，本期未接入。";
-	if (chatModels.length === 0) return `该供应商使用 ${protocols.join(" / ")} 原生协议，尚未接通。`;
+	if (wiredModels.length === 0) return `该供应商只提供 ${protocols.join(" / ")} 等原生协议，尚未适配。`;
 	if (!provider.auth?.apiKey) return "该供应商没有声明个人 API Key 认证路径，当前不支持。";
 	return "该供应商需要额外参数，本期未接入。";
 }
 
+// 这些适配器内部对下列供应商走专用认证/动态请求头分支（见 dist/api/*.js 里的
+// `model.provider === "github-copilot"`），普通个人 API Key 不满足其握手要求，
+// 因此不进入可直连目录。名单取自 SDK 代码本身，不按品牌猜测。
+const providerSpecificAuthBranches = new Set(["github-copilot"]);
+
 const providers = builtinProviders().map((provider) => {
 	const models = provider.getModels();
 	const protocols = [...new Set(models.map((model) => model.api))];
-	const chatModels = models.filter((model) => wiredProtocols.has(model.api));
-	const supported = chatModels.length > 0 && Boolean(provider.baseUrl) &&
-		provider.baseUrl.startsWith("https://") && Boolean(provider.auth?.apiKey);
+	const wiredModels = models.filter((model) => wiredProtocols.has(model.api));
+	const supported = wiredModels.length > 0 && Boolean(provider.baseUrl) &&
+		provider.baseUrl.startsWith("https://") && Boolean(provider.auth?.apiKey) &&
+		!providerSpecificAuthBranches.has(provider.id);
 	return {
 		id: provider.id,
 		name: provider.name,
 		baseUrl: provider.baseUrl ?? null,
 		supported,
-		...(supported ? {} : { reason: reasonFor(provider, chatModels, protocols) }),
+		...(supported ? {} : { reason: providerSpecificAuthBranches.has(provider.id)
+			? "该供应商使用 SDK 的专用认证与动态请求头分支，个人 API Key 直连暂不适用。"
+			: reasonFor(provider, wiredModels, protocols) }),
 		// 认证方式只记录 SDK 声明，不从品牌名猜；云凭据类仍需看 reason。
 		auth: {
 			apiKey: Boolean(provider.auth?.apiKey),
@@ -59,7 +67,7 @@ const providers = builtinProviders().map((provider) => {
 		},
 		protocols,
 		catalogModelCount: models.length,
-		models: supported ? chatModels.map(pickModel) : [],
+		models: supported ? wiredModels.map(pickModel) : [],
 	};
 });
 

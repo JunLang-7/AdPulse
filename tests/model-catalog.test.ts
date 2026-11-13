@@ -21,6 +21,10 @@ interface SdkProvider {
 // The SDK is a dependency of the runtime workspace, so load it from there
 // instead of duplicating the pin in the root manifest. The direct dist path is
 // used because the package only exposes import-conditioned subpaths.
+const wiredApis = new Set(["openai-completions", "openai-responses", "anthropic-messages"]);
+// 适配器对 copilot 使用专用认证/动态头分支，个人 API Key 不适用。
+const providerSpecificAuth = new Set(["github-copilot"]);
+
 const sdk = await import(new URL(
 	"../packages/runtime/node_modules/@earendil-works/pi-ai/dist/providers/all.js",
 	import.meta.url,
@@ -50,9 +54,10 @@ test("generated catalog matches the locked pi-ai provider directory", () => {
 		assert.deepEqual(entry.auth, { apiKey: Boolean(provider.auth?.apiKey), name: provider.auth?.apiKey?.name ?? null, oauth: Boolean(provider.auth?.oauth) });
 		assert.equal(entry.baseUrl, provider.baseUrl ?? null);
 		const expectedModels = provider.getModels()
-			.filter((model) => model.api === "openai-completions" || model.api === "openai-responses")
+			.filter((model) => wiredApis.has(model.api))
 			.map((model) => model.id);
-		const supported = expectedModels.length > 0 && Boolean(provider.baseUrl?.startsWith("https://")) && Boolean(provider.auth?.apiKey);
+		const supported = expectedModels.length > 0 && Boolean(provider.baseUrl?.startsWith("https://")) &&
+			Boolean(provider.auth?.apiKey) && !providerSpecificAuth.has(provider.id);
 		assert.equal(entry.supported, supported, `support flag drifted for ${provider.id}`);
 		assert.deepEqual(entry.models.map((model) => model.id), supported ? expectedModels : []);
 		for (const model of entry.models.filter((item) => item.api === "openai-responses")) {
@@ -71,7 +76,7 @@ test("only API-key providers with wired native protocols are offered as connecta
 		assert.match(provider.baseUrl ?? "", /^https:\/\//);
 		assert.equal(provider.reason, undefined);
 		assert.ok(provider.models.length > 0);
-		assert.ok(provider.models.every((model) => model.api === "openai-completions" || model.api === "openai-responses"));
+		assert.ok(provider.models.every((model) => wiredApis.has(model.api)));
 	}
 	for (const provider of modelCatalogProviders.filter((candidate) => !candidate.supported)) {
 		assert.ok(provider.reason, `unsupported provider ${provider.id} needs a reason`);

@@ -1814,7 +1814,7 @@
         "properties": {
           "id": { "$ref": "#/components/schemas/TaskDraftModelId" },
           "name": { "type": "string" },
-          "api": { "type": "string", "enum": ["openai-completions", "openai-responses"], "description": "已适配模型的原生协议；创建目录连接时必须匹配。" }
+          "api": { "type": "string", "enum": ["openai-completions", "openai-responses", "anthropic-messages"], "description": "已适配模型的原生协议；创建目录连接时必须匹配。" }
         }
       },
       "TaskDraftCatalogProvider": {

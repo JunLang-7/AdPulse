@@ -30,12 +30,13 @@ export const modelConnectionsKey = ["model-connections"] as const;
 const keyPlaceholder = "粘贴你的 API Key";
 type CustomModelDraft = {
 	providerId: string; displayName: string; baseUrl: string; modelId: string; apiKey: string;
-	protocol: "openai-completions" | "openai-responses";
+	protocol: "openai-completions" | "openai-responses" | "anthropic-messages";
 };
 
 function protocolLabel(protocol: ModelConnectionInput["protocol"]) {
-	return protocol === "openai-responses" ? "OpenAI Responses" :
-		protocol === "openai-completions" ? "OpenAI Chat Completions" : protocol;
+	if (protocol === "openai-responses") return "OpenAI Responses";
+	if (protocol === "anthropic-messages") return "Anthropic Messages";
+	return protocol === "openai-completions" ? "OpenAI Chat Completions" : protocol;
 }
 
 export function selectionLabel(choice: TaskModelChoice | undefined, connections: ModelConnectionList | undefined, catalog: ModelCatalog | undefined): string {
@@ -761,13 +762,14 @@ function CustomForm({ custom, working, discovered, discovering, onChange, onDisc
 			</Field>
 			<Field label="API 协议" hint="选择供应商实际提供的协议；不会自动切换协议。">
 				<select aria-label="API 协议" value={custom.protocol} disabled={working}
-					onChange={(event) => onChange({ ...custom, protocol: event.target.value === "openai-responses" ? "openai-responses" : "openai-completions" })}
+					onChange={(event) => onChange({ ...custom, protocol: event.target.value === "openai-responses" || event.target.value === "anthropic-messages" ? event.target.value : "openai-completions" })}
 					className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm">
 					<option value="openai-completions">OpenAI Chat Completions</option>
 					<option value="openai-responses">OpenAI Responses</option>
+					<option value="anthropic-messages">Anthropic Messages</option>
 				</select>
 			</Field>
-			<Field label="API Base URL" hint={`不是完整的请求地址；会请求 {Base URL}/${custom.protocol === "openai-responses" ? "responses" : "chat/completions"}。`}>
+			<Field label="API Base URL" hint={`不是完整的请求地址；会请求 {Base URL}/${custom.protocol === "openai-responses" ? "responses" : custom.protocol === "anthropic-messages" ? "v1/messages" : "chat/completions"}。`}>
 				<Input value={custom.baseUrl} maxLength={512} disabled={working} placeholder="https://api.example.com/v1"
 					onChange={(event) => onChange({ ...custom, baseUrl: event.target.value })} />
 			</Field>

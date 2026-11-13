@@ -40,12 +40,23 @@ test("discovery: Responses uses the same explicit bearer-authenticated /models r
 	}), ["synthetic-model"]);
 });
 
+test("discovery: Anthropic uses /v1/models with header auth instead of Bearer", async () => {
+	assert.deepEqual(await discoverModels({ ...input, baseUrl: "https://claude.example", protocol: "anthropic-messages" }, async (request, init) => {
+		const sent = new Request(request, init);
+		assert.equal(sent.url, "https://claude.example/v1/models");
+		assert.equal(sent.headers.get("x-api-key"), input.apiKey);
+		assert.equal(sent.headers.get("anthropic-version"), "2023-06-01");
+		assert.equal(sent.headers.get("authorization"), null);
+		return reply({ data: [{ id: "synthetic-claude" }] });
+	}), ["synthetic-claude"]);
+});
+
 test("discovery: caps the list and refuses unwired protocols or empty keys", async () => {
 	const many = { data: Array.from({ length: 150 }, (_, index) => ({ id: `model-${index}` })) };
 	const models = await discoverModels(input, async () => reply(many));
 	assert.equal(models?.length, modelDiscoveryMaxModels);
 
-	assert.equal(await discoverModels({ ...input, protocol: "anthropic-messages" }, async () => reply(many)), null);
+	assert.equal(await discoverModels({ ...input, protocol: "google-generative-ai" }, async () => reply(many)), null);
 	assert.equal(await discoverModels({ ...input, apiKey: "   " }, async () => reply(many)), null);
 });
 

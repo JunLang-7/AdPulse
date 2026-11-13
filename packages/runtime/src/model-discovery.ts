@@ -18,7 +18,21 @@ export interface ModelDiscoveryInput {
 
 /** 发现与调用共用同一条路由能力；未接通的协议不得单独开放发现。 */
 export function isDiscoveryProtocolWired(protocol: ModelConnectionProtocol): boolean {
-	return protocol === "openai-completions" || protocol === "openai-responses";
+	return protocol === "openai-completions" || protocol === "openai-responses" ||
+		protocol === "anthropic-messages";
+}
+
+/**
+ * 各协议的模型列表端点与认证头不同：Anthropic 基础地址不含版本段，
+ * 使用 x-api-key + anthropic-version；OpenAI 风格用 Bearer。
+ */
+function discoveryRequest(baseUrl: string, protocol: ModelConnectionProtocol, key: string): { url: string; headers: Record<string, string> } {
+	if (protocol === "anthropic-messages")
+		return {
+			url: `${baseUrl}/v1/models`,
+			headers: { "x-api-key": key, "anthropic-version": "2023-06-01", accept: "application/json" },
+		};
+	return { url: `${baseUrl}/models`, headers: { authorization: `Bearer ${key}`, accept: "application/json" } };
 }
 
 /**
@@ -32,9 +46,10 @@ export async function discoverModels(
 	const key = input.apiKey.trim();
 	if (!key || !isDiscoveryProtocolWired(input.protocol)) return null;
 	try {
-		const response = await fetchImpl(`${input.baseUrl}/models`, {
+		const request = discoveryRequest(input.baseUrl, input.protocol, key);
+		const response = await fetchImpl(request.url, {
 			method: "GET",
-			headers: { authorization: `Bearer ${key}`, accept: "application/json" },
+			headers: request.headers,
 			signal: AbortSignal.timeout(discoveryTimeoutMs),
 		});
 		if (!response.ok) return null;

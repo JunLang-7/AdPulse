@@ -1,4 +1,5 @@
 import { createModels, createProvider, envApiKeyAuth, type Model, type Provider } from "@earendil-works/pi-ai";
+import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
@@ -100,11 +101,12 @@ function extractSuggestions(
 	return suggestions;
 }
 
-function providerFetch(endpoint: string, fetchImpl: typeof fetch): typeof fetch {
+function providerFetch(endpoint: string, fetchImpl: typeof fetch, allowedSuffixes: readonly string[] = []): typeof fetch {
 	return async (input, init) => {
 		const url = input instanceof Request ? input.url : String(input);
 		const method = init?.method ?? (input instanceof Request ? input.method : undefined);
-		if (url !== endpoint || method !== "POST") throw new Error("unexpected task draft request");
+		const allowed = url === endpoint || allowedSuffixes.some((suffix) => url === endpoint + suffix);
+		if (!allowed || method !== "POST") throw new Error("unexpected task draft request");
 		const response = await fetchImpl(input, { ...init, redirect: "error" });
 		if (!response.body) return response;
 		let bytes = 0;
@@ -201,10 +203,37 @@ export interface ModelRouteInput {
 }
 
 /** 已接通的协议。未接通的协议不得作为可用项，也不能降级成 Chat Completions。 */
-type TaskDraftProtocol = "openai-completions" | "openai-responses";
+type TaskDraftProtocol = "openai-completions" | "openai-responses" | "anthropic-messages";
 
 export function isTaskDraftProtocolWired(protocol: string): protocol is TaskDraftProtocol {
-	return protocol === "openai-completions" || protocol === "openai-responses";
+	return protocol === "openai-completions" || protocol === "openai-responses" ||
+		protocol === "anthropic-messages";
+}
+
+/** 各协议由锁定 SDK 适配器决定；这里只声明端点，不猜测供应商。 */
+function protocolEndpoint(protocol: TaskDraftProtocol): string {
+	if (protocol === "openai-responses") return "/responses";
+	// Anthropic 的基础地址不含版本段，SDK 自己拼 /v1。
+	if (protocol === "anthropic-messages") return "/v1/messages";
+	return "/chat/completions";
+}
+
+function protocolApi(protocol: TaskDraftProtocol) {
+	if (protocol === "openai-responses") return openAIResponsesApi();
+	if (protocol === "anthropic-messages") return anthropicMessagesApi();
+	return openAICompletionsApi();
+}
+
+/** 各协议的结构化输出能力不同；不能把 Chat Completions 的参数套到其他协议上。 */
+function samplingFor(protocol: TaskDraftProtocol, provider: string) {
+	// Responses：JSON 格式用原生 text.format，并显式关掉服务端存储。
+	if (protocol === "openai-responses") return { text: { format: { type: "json_object" } }, store: false };
+	// Anthropic Messages 没有 response_format，只靠提示词约束；不要传空白参数。
+	if (protocol === "anthropic-messages") return undefined;
+	return {
+		response_format: { type: "json_object" },
+		...(provider === "deepseek" ? { thinking: { type: "disabled" } } : {}),
+	};
 }
 
 /**
@@ -250,7 +279,7 @@ export function createPersistedTaskDraftExtractor(
 		baseUrl: input.baseUrl,
 		auth: { apiKey: envApiKeyAuth(input.providerId, []) },
 		models: [model],
-		api: input.protocol === "openai-responses" ? openAIResponsesApi() : openAICompletionsApi(),
+		api: protocolApi(input.protocol),
 	});
 	return createRouteExtractor(provider, input.modelId, key, fetchImpl, limit);
 }
@@ -290,7 +319,7 @@ export function createCatalogTaskDraftExtractor(
 		baseUrl: entry.baseUrl,
 		auth: { apiKey: envApiKeyAuth(entry.name, []) },
 		models: [model],
-		api: entry.api === "openai-responses" ? openAIResponsesApi() : openAICompletionsApi(),
+		api: protocolApi(entry.api),
 	});
 	return createRouteExtractor(provider, entry.id, key, fetchImpl, limit);
 }
@@ -306,8 +335,16 @@ function createRouteExtractor(
 	models.setProvider(provider);
 	const model = models.getModel(provider.id, modelId);
 	if (!model || !isTaskDraftProtocolWired(model.api)) return;
-	const responses = model.api === "openai-responses";
-	const guardedFetch = providerFetch(model.baseUrl + (responses ? "/responses" : "/chat/completions"), fetchImpl);
+	const protocol = model.api as TaskDraftProtocol;
+	const responses = protocol === "openai-responses";
+	const anthropic = protocol === "anthropic-messages";
+	const sampling = samplingFor(protocol, model.provider);
+	// Anthropic SDK 会在端点上带 ?beta=true，只放过这个已知变体。
+	const guardedFetch = providerFetch(
+		model.baseUrl + protocolEndpoint(protocol),
+		fetchImpl,
+		anthropic ? ["?beta=true"] : [],
+	);
 	return async (brief, stage) => {
 		if (!brief.trim() || brief.length > taskDraftBriefMaxLength) return null;
 		return limit(async () => {
@@ -325,15 +362,9 @@ function createRouteExtractor(
 					cacheRetention: "none",
 					maxTokens: maxOutputTokens,
 					// Responses 的推理模型可能拒绝 temperature；JSON 格式使用原生 text.format。
+					// Anthropic 无 response_format，只能靠提示词约束，温度 0 合法。
 					...(responses ? {} : { temperature: 0 }),
-					samplingParams: responses ? {
-						text: { format: { type: "json_object" } },
-						store: false,
-						max_output_tokens: maxOutputTokens,
-					} : {
-						response_format: { type: "json_object" },
-						...(model.provider === "deepseek" ? { thinking: { type: "disabled" } } : {}),
-					},
+					...(sampling ? { samplingParams: sampling } : {}),
 				});
 				if (response.stopReason !== "stop") return null;
 				const text = response.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("");
