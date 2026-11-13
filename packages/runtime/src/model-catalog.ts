@@ -28,6 +28,8 @@ export interface ModelCatalogProvider {
 	supported: boolean;
 	/** Present only when `supported` is false. */
 	reason?: string;
+	/** SDK 声明的认证方式；用于覆盖清单，不参与运行时分发。 */
+	auth?: { apiKey: boolean; oauth: boolean };
 	protocols: readonly string[];
 	models: readonly ModelCatalogModel[];
 }

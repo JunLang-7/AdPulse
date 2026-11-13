@@ -12,6 +12,10 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"bedrock-converse-stream"
 			],
@@ -22,6 +26,10 @@ export const modelCatalogDocument = {
 			"name": "Ant Ling",
 			"baseUrl": "https://api.ant-ling.com/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -118,6 +126,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.anthropic.com",
 			"supported": false,
 			"reason": "该供应商使用 anthropic-messages 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"oauth": true
+			},
 			"protocols": [
 				"anthropic-messages"
 			],
@@ -129,6 +141,10 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"azure-openai-responses",
 				"openai-completions"
@@ -140,6 +156,10 @@ export const modelCatalogDocument = {
 			"name": "Baseten",
 			"baseUrl": "https://inference.baseten.co/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -589,6 +609,10 @@ export const modelCatalogDocument = {
 			"name": "Cerebras",
 			"baseUrl": "https://api.cerebras.ai/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -648,6 +672,10 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages",
 				"openai-completions",
@@ -661,6 +689,10 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -671,6 +703,10 @@ export const modelCatalogDocument = {
 			"name": "DeepSeek",
 			"baseUrl": "https://api.deepseek.com",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -738,6 +774,10 @@ export const modelCatalogDocument = {
 			"name": "Fireworks",
 			"baseUrl": "https://api.fireworks.ai/inference",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages",
 				"openai-completions"
@@ -1028,6 +1068,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.individual.githubcopilot.com",
 			"supported": false,
 			"reason": "该供应商还依赖账号授权（OAuth），本期只支持个人 API Key 直连。",
+			"auth": {
+				"apiKey": true,
+				"oauth": true
+			},
 			"protocols": [
 				"anthropic-messages",
 				"openai-completions",
@@ -1041,6 +1085,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://generativelanguage.googleapis.com/v1beta",
 			"supported": false,
 			"reason": "该供应商使用 google-generative-ai 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"google-generative-ai"
 			],
@@ -1052,6 +1100,10 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"google-vertex"
 			],
@@ -1062,6 +1114,10 @@ export const modelCatalogDocument = {
 			"name": "Groq",
 			"baseUrl": "https://api.groq.com/openai/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -1229,6 +1285,10 @@ export const modelCatalogDocument = {
 			"name": "Hugging Face",
 			"baseUrl": "https://router.huggingface.co/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -3066,6 +3126,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.kimi.com/coding/v1",
 			"supported": false,
 			"reason": "该供应商还依赖账号授权（OAuth），本期只支持个人 API Key 直连。",
+			"auth": {
+				"apiKey": true,
+				"oauth": true
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -3077,6 +3141,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.meta.ai/v1",
 			"supported": false,
 			"reason": "该供应商使用 openai-responses 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"oauth": true
+			},
 			"protocols": [
 				"openai-responses"
 			],
@@ -3088,6 +3156,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.minimax.io/anthropic",
 			"supported": false,
 			"reason": "该供应商使用 anthropic-messages 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages"
 			],
@@ -3099,6 +3171,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.minimaxi.com/anthropic",
 			"supported": false,
 			"reason": "该供应商使用 anthropic-messages 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages"
 			],
@@ -3110,6 +3186,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.mistral.ai",
 			"supported": false,
 			"reason": "该供应商使用 mistral-conversations 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"mistral-conversations"
 			],
@@ -3120,6 +3200,10 @@ export const modelCatalogDocument = {
 			"name": "Moonshot AI",
 			"baseUrl": "https://api.moonshot.ai/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -3311,6 +3395,10 @@ export const modelCatalogDocument = {
 			"name": "Moonshot AI CN",
 			"baseUrl": "https://api.moonshot.cn/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -3502,6 +3590,10 @@ export const modelCatalogDocument = {
 			"name": "NVIDIA",
 			"baseUrl": "https://integrate.api.nvidia.com/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -4097,6 +4189,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.openai.com/v1",
 			"supported": false,
 			"reason": "该供应商使用 openai-responses 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"oauth": true
+			},
 			"protocols": [
 				"openai-responses"
 			],
@@ -4108,6 +4204,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://chatgpt.com/backend-api",
 			"supported": false,
 			"reason": "该供应商使用 openai-codex-responses 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": false,
+				"oauth": true
+			},
 			"protocols": [
 				"openai-codex-responses"
 			],
@@ -4119,6 +4219,10 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages",
 				"google-generative-ai",
@@ -4133,6 +4237,10 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages",
 				"google-generative-ai",
@@ -4147,6 +4255,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://openrouter.ai/api/v1",
 			"supported": false,
 			"reason": "该供应商还依赖账号授权（OAuth），本期只支持个人 API Key 直连。",
+			"auth": {
+				"apiKey": true,
+				"oauth": true
+			},
 			"protocols": [
 				"anthropic-messages",
 				"openai-completions"
@@ -4158,6 +4270,10 @@ export const modelCatalogDocument = {
 			"name": "Qwen Token Plan",
 			"baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -4725,6 +4841,10 @@ export const modelCatalogDocument = {
 			"name": "Qwen Token Plan CN",
 			"baseUrl": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -5292,6 +5412,10 @@ export const modelCatalogDocument = {
 			"name": "Qwen Token Plan Individual",
 			"baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -5542,6 +5666,10 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "需要账号、区域或部署名等额外参数，本期未接入。",
+			"auth": {
+				"apiKey": true,
+				"oauth": true
+			},
 			"protocols": [
 				"pi-messages"
 			],
@@ -5552,6 +5680,10 @@ export const modelCatalogDocument = {
 			"name": "Together",
 			"baseUrl": "https://api.together.ai/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -5992,6 +6124,10 @@ export const modelCatalogDocument = {
 			"baseUrl": null,
 			"supported": false,
 			"reason": "目录中暂无对话模型。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [],
 			"models": []
 		},
@@ -6001,6 +6137,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://ai-gateway.vercel.sh",
 			"supported": false,
 			"reason": "该供应商使用 anthropic-messages 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"anthropic-messages"
 			],
@@ -6012,6 +6152,10 @@ export const modelCatalogDocument = {
 			"baseUrl": "https://api.x.ai/v1",
 			"supported": false,
 			"reason": "该供应商使用 openai-responses 原生协议，尚未接通。",
+			"auth": {
+				"apiKey": true,
+				"oauth": true
+			},
 			"protocols": [
 				"openai-responses"
 			],
@@ -6022,6 +6166,10 @@ export const modelCatalogDocument = {
 			"name": "Xiaomi",
 			"baseUrl": "https://api.xiaomimimo.com/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -6111,6 +6259,10 @@ export const modelCatalogDocument = {
 			"name": "Xiaomi Token Plan AMS",
 			"baseUrl": "https://token-plan-ams.xiaomimimo.com/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -6174,6 +6326,10 @@ export const modelCatalogDocument = {
 			"name": "Xiaomi Token Plan CN",
 			"baseUrl": "https://token-plan-cn.xiaomimimo.com/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -6237,6 +6393,10 @@ export const modelCatalogDocument = {
 			"name": "Xiaomi Token Plan SGP",
 			"baseUrl": "https://token-plan-sgp.xiaomimimo.com/v1",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -6300,6 +6460,10 @@ export const modelCatalogDocument = {
 			"name": "Z.AI",
 			"baseUrl": "https://api.z.ai/api/coding/paas/v4",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],
@@ -6508,6 +6672,10 @@ export const modelCatalogDocument = {
 			"name": "Z.AI Coding CN",
 			"baseUrl": "https://open.bigmodel.cn/api/coding/paas/v4",
 			"supported": true,
+			"auth": {
+				"apiKey": true,
+				"oauth": false
+			},
 			"protocols": [
 				"openai-completions"
 			],

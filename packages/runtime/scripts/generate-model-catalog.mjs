@@ -47,6 +47,11 @@ const providers = builtinProviders().map((provider) => {
 		baseUrl: provider.baseUrl ?? null,
 		supported,
 		...(supported ? {} : { reason: reasonFor(provider, chatModels, protocols) }),
+		// 认证方式只记录 SDK 声明，不从品牌名猜；云凭据类仍需看 reason。
+		auth: {
+			apiKey: Boolean(provider.auth?.apiKey),
+			oauth: Boolean(provider.auth?.oauth),
+		},
 		protocols,
 		models: supported ? chatModels.map(pickModel) : [],
 	};
