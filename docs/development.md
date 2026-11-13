@@ -1,4 +1,4 @@
-# 开发与验证
+﻿# 开发与验证
 
 ## 1. 环境
 
@@ -73,6 +73,37 @@ TASK_DRAFT_GATEWAY_API_KEY=
 部署配置决定默认提供方。任务页面的“模型设置”按提供方列出连接状态，可为本次任务切换后续请求使用的模型。阶段里的“AI 辅助填写”先展示建议，采用后写回表单。
 
 需要允许已认证用户通过界面连接临时 API 密钥时，部署者可设置 `TASK_DRAFT_USER_KEYS_ENABLED=1`。连接用固定合成短句验证，密钥在服务端内存按用户隔离，最多保留 8 小时，且可断开。服务重启会清空临时连接。部署时应通过受信任的 HTTPS 入口访问。
+
+### 持久化模型凭据（#86 PR1）
+
+持久化部分已完成存储、加密与领域规则，尚未接 HTTP 与界面（下一个 PR）。启用前必须配置主密钥，否则 `createModelConnections()` 返回 undefined，能力保持不可用，不会退回明文或内存连接：
+
+```dotenv
+# 逗号分隔 keyId:base64(32 字节)；默认最后一支为 active。
+MODEL_CREDENTIAL_KEYRING=v1:
+# 轮换时指定哪一支用于新写入，旧 key 先保留到旧密文全部重加密完成。
+MODEL_CREDENTIAL_ACTIVE_KEY=v1
+```
+
+- 加密：AES-256-GCM，每次随机 nonce；AAD 绑定 owner、连接、凭据版本、规范化目标地址与协议，搬运密文到其他用户/连接/地址会解密失败。
+- 失败关闭：主密钥缺失、格式错误、active key 不存在、解密失败都直接报错；不回退到部署共享密钥、其他用户密钥或明文。
+- 版本与归属：每次配置变更递增版本；他人连接 ID 与不存在同样返回 not found；配置（含目标地址/协议）变更必须重填密钥并让旧验证结果失效。
+- 删除：删密钥保留连接元数据并停用，同时清空默认选择；删连接在同一个事务里删除元数据、密文与默认引用，进行中的旧请求不会把旧密文写回。
+- 轮换：`ModelConnectionService.rotateCredentials()` 只重加密旧 keyId 的记录，每条在同一事务内重读，避免与删除并发时复活旧凭据；主密钥丢失无法从密文库恢复，部署前需演练保管与恢复。
+- 边界：这是服务端加密存储，不是零知识加密；能同时控制服务器与主密钥的管理者理论上可解密。
+
+轮换与恢复演练（先只读，再确认写入）：
+
+```bash
+# 1. 追加新 key，新旧并存；此时 active 仍可为旧 key。
+MODEL_CREDENTIAL_KEYRING="v1:...,v2:..." bun run models:rotate-keys --check
+# 2. 切 active 到新 key 并确认重加密；未加确认参数不会写库。
+MODEL_CREDENTIAL_KEYRING="v1:...,v2:..." MODEL_CREDENTIAL_ACTIVE_KEY=v2 \
+  MODEL_KEY_ROTATION_CONFIRM=1 bun run models:rotate-keys --rotate
+# 3. 确认 readable 等于总数、awaitingRotation 为 0 后，才从 keyring 中移除旧 key。
+```
+
+`--check` 只读：逐条解密并报告 `readable / failed / awaitingRotation`（不输出去向、owner 或密钥）；有失败时退出码非 0。正式库上先备份、后在可丢弃实例演练，再执行轮换。
 
 网关需支持 Chat Completions 的 SSE 和 JSON 输出，界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
 
