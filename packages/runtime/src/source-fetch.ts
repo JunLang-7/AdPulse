@@ -43,7 +43,7 @@ export function isPublicAddress(address: string): boolean {
 	return true;
 }
 
-async function resolvePublic(hostname: string): Promise<string> {
+export async function resolvePublicAddress(hostname: string): Promise<string> {
 	const results = await lookup(hostname, { all: true });
 	if (results.length === 0) throw new SourceFetchError("network", "no address");
 	for (const entry of results)
@@ -152,7 +152,7 @@ export class HttpSourceFetcher implements SourceFetcher {
 				throw new SourceFetchError("blocked", "https required");
 			if (!this.allowedHosts.includes(url.hostname.toLowerCase()))
 				throw new SourceFetchError("blocked", "host not allowlisted");
-			const address = await resolvePublic(url.hostname);
+			const address = await resolvePublicAddress(url.hostname);
 			const result = await once(url, address, limits);
 			if (result.location && result.status && REDIRECT_STATUS.has(result.status)) {
 				if (hop === MAX_REDIRECTS)

@@ -4,6 +4,93 @@
  */
 
 export interface paths {
+    "/api/me/model-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Personal model connections without any secret material. Returns an empty list when the feature is unavailable. */
+        get: operations["listModelConnections"];
+        put?: never;
+        /** @description Verify the supplied key with one fixed synthetic message, then store the connection and encrypted credential. Nothing is stored when verification fails. */
+        post: operations["createModelConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/model-connections/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Send the fixed synthetic test message to a candidate connection. Stores nothing. */
+        post: operations["testModelConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/model-connections/{connectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Update metadata, models or credential. Changing the target address or protocol requires a replacement key, which is verified before saving. */
+        put: operations["updateModelConnection"];
+        post?: never;
+        /** @description Delete the connection together with its credential and default reference. */
+        delete: operations["deleteModelConnection"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/model-connections/{connectionId}/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Delete the stored credential, disable the connection and clear the default reference. Connection metadata stays. */
+        delete: operations["deleteModelCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/model-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Set or clear the personal default (connection, model). Only owned, active, credentialed connections are accepted. */
+        put: operations["setModelPreference"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/task-drafts/models": {
         parameters: {
             query?: never;
@@ -691,11 +778,92 @@ export interface components {
             handlingDeadlineHours?: number;
             maxPushRounds?: number;
         };
+        /** @enum {string} */
+        ModelConnectionProtocol: "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai";
+        ModelConnectionModel: {
+            id: string;
+            label?: string;
+        };
+        ModelConnectionView: {
+            id: string;
+            providerId: string;
+            /** @enum {string} */
+            kind: "catalog" | "custom";
+            catalogId?: string;
+            displayName: string;
+            baseUrl: string;
+            protocol: components["schemas"]["ModelConnectionProtocol"];
+            models: components["schemas"]["ModelConnectionModel"][];
+            /** @enum {string} */
+            status: "active" | "disabled";
+            version: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            hasCredential: boolean;
+            /** Format: date-time */
+            verifiedAt?: string;
+            verifiedVersion?: number;
+        };
+        ModelPreference: {
+            connectionId: string | null;
+            modelId: string | null;
+            version: number;
+        };
+        ModelConnectionList: {
+            connections: components["schemas"]["ModelConnectionView"][];
+            preference: components["schemas"]["ModelPreference"];
+        };
+        ModelConnectionInput: {
+            providerId: string;
+            /** @enum {string} */
+            kind: "catalog" | "custom";
+            catalogId?: string;
+            displayName?: string;
+            baseUrl: string;
+            protocol: components["schemas"]["ModelConnectionProtocol"];
+            models: components["schemas"]["ModelConnectionModel"][];
+            /** Format: password */
+            apiKey: string;
+        };
+        ModelCredentialUpdate: {
+            /** @enum {string} */
+            action: "keep";
+        } | {
+            /** @enum {string} */
+            action: "replace";
+            /** Format: password */
+            apiKey: string;
+        } | {
+            /** @enum {string} */
+            action: "remove";
+        };
+        ModelConnectionUpdate: {
+            expectedVersion: number;
+            displayName?: string;
+            models?: components["schemas"]["ModelConnectionModel"][];
+            /** @enum {string} */
+            status?: "active" | "disabled";
+            baseUrl?: string;
+            protocol?: components["schemas"]["ModelConnectionProtocol"];
+            credential?: components["schemas"]["ModelCredentialUpdate"];
+        };
+        ModelPreferenceInput: {
+            expectedVersion: number;
+            connectionId?: string | null;
+            modelId?: string | null;
+        };
+        ModelConnectionCheck: {
+            ok: boolean;
+        };
         TaskDraftExtractionInput: {
             brief: string;
             stage?: components["schemas"]["TaskDraftStage"];
             provider?: components["schemas"]["TaskDraftProvider"];
             model?: components["schemas"]["TaskDraftModelId"];
+            /** @description Use this personal connection instead of a temporary route. */
+            connectionId?: string;
         };
         /** @description Provider id from the generated pi-ai catalog. A deployed route uses its own id (deepseek or openai-compatible). */
         TaskDraftProvider: string;
@@ -1389,6 +1557,469 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listModelConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Owned connections and the default selection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConnectionList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Personal model credentials are not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createModelConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelConnectionInput"];
+            };
+        };
+        responses: {
+            /** @description Created connection without secrets */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConnectionView"];
+                };
+            };
+            /** @description Invalid connection fields */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Same-origin request required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Provider id already used */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description JSON required */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Protocol or security boundary not supported */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Verification failed or credentials are not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    testModelConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelConnectionInput"];
+            };
+        };
+        responses: {
+            /** @description Whether the candidate accepted the test */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConnectionCheck"];
+                };
+            };
+            /** @description Invalid connection fields */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Same-origin request required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Protocol or security boundary not supported */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Credentials are not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateModelConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelConnectionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated connection without secrets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConnectionView"];
+                };
+            };
+            /** @description Invalid fields or key missing for a target change */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found for this owner */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version conflict or connection disabled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Protocol not supported yet */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Verification failed or the credential cannot be decrypted */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteModelConnection: {
+        parameters: {
+            query: {
+                expectedVersion: number;
+            };
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Remaining connections and default */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConnectionList"];
+                };
+            };
+            /** @description Invalid version */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found for this owner */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteModelCredential: {
+        parameters: {
+            query: {
+                expectedVersion: number;
+            };
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection after removal, without secrets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConnectionView"];
+                };
+            };
+            /** @description Invalid version */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found for this owner */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setModelPreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelPreferenceInput"];
+            };
+        };
+        responses: {
+            /** @description Stored default */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelPreference"];
+                };
+            };
+            /** @description Invalid selection or version */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Connection not found for this owner */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version conflict, disabled connection or missing credential */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     listTaskDraftModels: {
         parameters: {
             query?: never;
