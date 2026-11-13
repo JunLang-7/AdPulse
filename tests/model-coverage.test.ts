@@ -35,6 +35,7 @@ test("coverage doc never marks an unreviewed provider as accepted", () => {
 
 test("coverage keeps SDK cloud-auth labels and full directory model counts", () => {
 	assert.equal(authLabel({ apiKey: true, oauth: false, name: "AWS credentials or bearer token" }), "AWS credentials or bearer token");
+	assert.match(doc(), /Anthropic Messages/);
 	const text = doc();
 	for (const provider of modelCatalogDocument.providers) {
 		const row = text.split("\n").find((line) => line.includes(`| \`${provider.id}\` |`));

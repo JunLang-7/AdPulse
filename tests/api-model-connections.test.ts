@@ -9,6 +9,7 @@ import { AuthenticationService } from "../packages/core/dist/index.js";
 import { compose, createModelConnections, type Runtime } from "../packages/runtime/dist/index.js";
 import { MemoryStorage } from "../packages/storage/dist/index.js";
 import { responsesReply } from "./fixtures/openai-responses.ts";
+import { anthropicReply } from "./fixtures/anthropic-messages.ts";
 
 const cipherEnv = () => ({
 	MODEL_CREDENTIAL_KEYRING: `v1:${randomBytes(32).toString("base64")}`,
@@ -127,7 +128,7 @@ test("model connections API: authentication, origin and validation failures", as
 	}
 	// 未接通的协议明确拒绝，不假装可用也不降级成 Chat Completions。
 	assert.equal(
-		(await call(server, "/api/me/model-connections", "POST", { ...customInput(), protocol: "anthropic-messages" })).status,
+		(await call(server, "/api/me/model-connections", "POST", { ...customInput(), protocol: "google-generative-ai" })).status,
 		422,
 	);
 	assert.equal((await call(server, "/api/me/model-connections/test", "POST", { ...customInput(), protocol: "google-generative-ai" })).status, 422);
@@ -174,6 +175,34 @@ test("model connections API: catalog Responses cannot be mislabeled as Chat Comp
 	assert.equal((await call(server, "/api/me/model-connections", "POST", { ...input, protocol: "openai-responses" })).status, 201);
 	assert.equal(requests.length, 1);
 	assert.equal(requests[0]?.url, "https://api.openai.com/v1/responses");
+});
+
+test("model connections API: Anthropic Messages tests, persists and extracts with header auth", async (t) => {
+	const seen: { url: string; apiKey: string | null; authorization: string | null }[] = [];
+	const storage = new MemoryStorage();
+	const modelConnections = createModelConnections(storage, cipherEnv(), async (input, init) => {
+		const sent = new Request(input, init);
+		if (sent.method !== "GET") seen.push({ url: sent.url, apiKey: sent.headers.get("x-api-key"), authorization: sent.headers.get("authorization") });
+		return anthropicReply(JSON.stringify({ product: "连接测试" }));
+	});
+	const server = await serve(t, { ...compose(storage, []), modelConnections });
+	const input = { ...customInput(), providerId: "claude-gateway", baseUrl: "https://claude.example", protocol: "anthropic-messages" };
+	assert.deepEqual(await (await call(server, "/api/me/model-connections/test", "POST", input)).json(), { ok: true });
+	const created = await call(server, "/api/me/model-connections", "POST", input);
+	assert.equal(created.status, 201);
+	const connection = await created.json() as { id: string; protocol: string };
+	assert.equal(connection.protocol, "anthropic-messages");
+	const extraction = await call(server, "/api/task-drafts/extract", "POST", {
+		connectionId: connection.id, brief: "产品：连接测试", stage: "overview",
+	});
+	assert.equal(extraction.status, 200);
+	assert.deepEqual(await extraction.json(), { product: "连接测试" });
+	assert.equal(seen.length, 3);
+	for (const request of seen) {
+		assert.ok(request.url.startsWith("https://claude.example/v1/messages"));
+		assert.equal(request.apiKey, "synthetic-personal-key");
+		assert.equal(request.authorization, null);
+	}
 });
 
 test("model connections API: Responses failures are sanitized and never saved", async (t) => {
@@ -365,7 +394,7 @@ test("model connections API: discovery lists models but never stores or guesses"
 	assert.equal(
 		(await call(server, "/api/me/model-connections/models", "POST", {
 			baseUrl: "https://api.mimotest.example/v1",
-			protocol: "anthropic-messages",
+			protocol: "google-generative-ai",
 			apiKey: "synthetic-personal-key",
 		})).status,
 		422,
