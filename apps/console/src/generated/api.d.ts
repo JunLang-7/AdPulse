@@ -1022,7 +1022,7 @@ export interface components {
              * @description 已适配模型的原生协议；创建目录连接时必须匹配。
              * @enum {string}
              */
-            api: "openai-completions" | "openai-responses" | "anthropic-messages";
+            api: "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai";
         };
         TaskDraftCatalogProvider: {
             id: components["schemas"]["TaskDraftProvider"];

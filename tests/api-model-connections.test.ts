@@ -10,6 +10,7 @@ import { compose, createModelConnections, type Runtime } from "../packages/runti
 import { MemoryStorage } from "../packages/storage/dist/index.js";
 import { responsesReply } from "./fixtures/openai-responses.ts";
 import { anthropicReply } from "./fixtures/anthropic-messages.ts";
+import { geminiReply, geminiText } from "./fixtures/google-generative-ai.ts";
 
 const cipherEnv = () => ({
 	MODEL_CREDENTIAL_KEYRING: `v1:${randomBytes(32).toString("base64")}`,
@@ -133,12 +134,20 @@ test("model connections API: authentication, origin and validation failures", as
 	]) {
 		assert.equal((await call(server, "/api/me/model-connections", "POST", invalid)).status, 400, JSON.stringify(invalid));
 	}
-	// 未接通的协议明确拒绝，不假装可用也不降级成 Chat Completions。
+	// 四种枚举协议都已接通；不在枚举里的协议必须在边界被拒（400），
+	// 既不会当成 Chat Completions，也不会走到 422。
 	assert.equal(
-		(await call(server, "/api/me/model-connections", "POST", { ...customInput(), protocol: "google-generative-ai" })).status,
-		422,
+		(await call(server, "/api/me/model-connections", "POST", { ...customInput(), protocol: "mistral-conversations" })).status,
+		400,
 	);
-	assert.equal((await call(server, "/api/me/model-connections/test", "POST", { ...customInput(), protocol: "google-generative-ai" })).status, 422);
+	assert.equal(
+		(await call(server, "/api/me/model-connections/test", "POST", { ...customInput(), protocol: "bedrock-converse-stream" })).status,
+		400,
+	);
+	assert.equal(
+		(await call(server, "/api/me/model-connections/models", "POST", { ...customInput(), protocol: "mistral-conversations" })).status,
+		400,
+	);
 });
 
 test("model connections API: empty JSON cannot verify or save a connection", async (t) => {
@@ -257,6 +266,48 @@ test("model connections API: minimal audit records actions without keys or bodie
 		assert.ok(["ok", "rejected", "unavailable"].includes(event.result), event.event);
 		assert.ok(event.path.startsWith("/api/me/"), event.path);
 	}
+});
+
+test("model connections API: Gemini saves and extracts through the self-built transport", async (t) => {
+	const seen: { url: string; apiKey: string | null; authorization: string | null }[] = [];
+	const storage = new MemoryStorage();
+	const modelConnections = createModelConnections(storage, cipherEnv(), async (input, init) => {
+		const sent = new Request(input, init);
+		if (sent.method !== "GET") seen.push({ url: sent.url, apiKey: sent.headers.get("x-goog-api-key"), authorization: sent.headers.get("authorization") });
+		return geminiText(JSON.stringify({ product: "连接测试" }));
+	});
+	const server = await serve(t, { ...compose(storage, []), modelConnections });
+	const input = { ...customInput(), providerId: "gemini-gateway", baseUrl: "https://generativelanguage.googleapis.com/v1beta", protocol: "google-generative-ai" };
+	assert.deepEqual(await (await call(server, "/api/me/model-connections/test", "POST", input)).json(), { ok: true });
+	const created = await call(server, "/api/me/model-connections", "POST", input);
+	assert.equal(created.status, 201);
+	const connection = await created.json() as { id: string; protocol: string };
+	assert.equal(connection.protocol, "google-generative-ai");
+	const extraction = await call(server, "/api/task-drafts/extract", "POST", {
+		connectionId: connection.id, brief: "产品：连接测试", stage: "overview",
+	});
+	assert.equal(extraction.status, 200);
+	assert.deepEqual(await extraction.json(), { product: "连接测试" });
+	assert.equal(seen.length, 3);
+	for (const request of seen) {
+		assert.equal(request.url, "https://generativelanguage.googleapis.com/v1beta/models/mimo-v2-flash:streamGenerateContent?alt=sse");
+		assert.equal(request.apiKey, "synthetic-personal-key");
+		assert.equal(request.authorization, null);
+	}
+});
+
+test("model connections API: Gemini discovery lists models without storing them", async (t) => {
+	const storage = new MemoryStorage();
+	const modelConnections = createModelConnections(storage, cipherEnv(), async () =>
+		Response.json({ models: [{ name: "models/gemini-2.5-flash" }, { name: "models/gemini-2.5-pro" }] }));
+	const server = await serve(t, { ...compose(storage, []), modelConnections });
+	const result = await call(server, "/api/me/model-connections/models", "POST", {
+		baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+		protocol: "google-generative-ai",
+		apiKey: "synthetic-personal-key",
+	});
+	assert.deepEqual(await result.json(), { models: ["gemini-2.5-flash", "gemini-2.5-pro"] });
+	assert.deepEqual((await modelConnections!.service.view(server.userId)).connections, []);
 });
 
 test("model connections API: Responses failures are sanitized and never saved", async (t) => {
@@ -448,10 +499,10 @@ test("model connections API: discovery lists models but never stores or guesses"
 	assert.equal(
 		(await call(server, "/api/me/model-connections/models", "POST", {
 			baseUrl: "https://api.mimotest.example/v1",
-			protocol: "google-generative-ai",
+			protocol: "mistral-conversations",
 			apiKey: "synthetic-personal-key",
 		})).status,
-		422,
+		400,
 	);
 	assert.equal(
 		(await call(server, "/api/me/model-connections/models", "POST", {

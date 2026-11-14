@@ -21,7 +21,12 @@ interface SdkProvider {
 // The SDK is a dependency of the runtime workspace, so load it from there
 // instead of duplicating the pin in the root manifest. The direct dist path is
 // used because the package only exposes import-conditioned subpaths.
-const wiredApis = new Set(["openai-completions", "openai-responses", "anthropic-messages"]);
+const wiredApis = new Set([
+	"openai-completions",
+	"openai-responses",
+	"anthropic-messages",
+	"google-generative-ai",
+]);
 // 适配器对 copilot 使用专用认证/动态头分支，个人 API Key 不适用。
 const providerSpecificAuth = new Set(["github-copilot"]);
 

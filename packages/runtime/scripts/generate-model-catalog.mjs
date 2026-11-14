@@ -14,7 +14,12 @@ const output = join(here, "..", "src", "model-catalog.generated.ts");
 // Only the fields AdPulse needs to (a) list a model and (b) rebuild an
 // native Chat Completions / Responses route. Unknown pricing/capability stays as the SDK
 // reports it; nothing is invented here.
-const wiredProtocols = new Set(["openai-completions", "openai-responses", "anthropic-messages"]);
+const wiredProtocols = new Set([
+	"openai-completions",
+	"openai-responses",
+	"anthropic-messages",
+	"google-generative-ai",
+]);
 const modelFields = ["id", "name", "api", "baseUrl", "provider", "reasoning", "input", "cost", "contextWindow", "maxTokens", "compat"];
 
 function pickModel(model) {

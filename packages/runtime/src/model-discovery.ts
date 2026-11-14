@@ -28,6 +28,12 @@ export function isDiscoveryProtocolWired(protocol: ModelConnectionProtocol): boo
  * 使用 x-api-key + anthropic-version；OpenAI 风格用 Bearer。
  */
 function discoveryRequest(baseUrl: string, protocol: ModelConnectionProtocol, key: string): { url: string; headers: Record<string, string> } {
+	// Gemini 的模型列表是 { models: [{ name: "models/xxx" }] }，认证用同名头。
+	if (protocol === "google-generative-ai")
+		return {
+			url: `${baseUrl}/models`,
+			headers: { "x-goog-api-key": key, accept: "application/json" },
+		};
 	if (protocol === "anthropic-messages")
 		return {
 			url: `${baseUrl}/v1/models`,
@@ -57,15 +63,29 @@ export async function discoverModels(
 		const text = await response.text();
 		if (text.length > maxDiscoveryBytes) return null;
 		const body: unknown = JSON.parse(text);
-		if (typeof body !== "object" || body === null || !("data" in body)) return null;
-		const data = (body as { data: unknown }).data;
-		if (!Array.isArray(data)) return null;
+		if (typeof body !== "object" || body === null) return null;
+		// OpenAI 风格 data[].id 与 Gemini 的 models[].name 都接受；其他形状视为失败。
+		const openAiStyle = (body as { data?: unknown }).data;
+		const geminiStyle = (body as { models?: unknown }).models;
+		const gemini = !Array.isArray(openAiStyle) && Array.isArray(geminiStyle);
+		const list = Array.isArray(openAiStyle) ? openAiStyle : gemini ? geminiStyle as unknown[] : undefined;
+		if (!list) return null;
 		const models = new Set<string>();
-		for (const item of data) {
-			if (typeof item !== "object" || item === null) continue;
-			const id = (item as { id?: unknown }).id;
-			if (typeof id !== "string") continue;
-			const trimmed = id.trim();
+		for (const item of list) {
+			if (typeof item !== "object" || item === null) {
+				// Gemini 的条目必须是对象；字符串数组属于另一种形状，不做猜测。
+				if (gemini) return null;
+				continue;
+			}
+			const raw = gemini
+				? (item as { name?: unknown }).name
+				: (item as { id?: unknown }).id;
+			if (typeof raw !== "string") {
+				if (gemini) return null;
+				continue;
+			}
+			// Gemini 返回 models/<id>；只保留裸 id，避免拼出 /models/models/x。
+			const trimmed = raw.trim().replace(/^models\//u, "");
 			if (!modelIdPattern.test(trimmed)) continue;
 			models.add(trimmed);
 			if (models.size >= modelDiscoveryMaxModels) break;

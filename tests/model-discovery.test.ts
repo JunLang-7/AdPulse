@@ -18,9 +18,13 @@ function reply(body: unknown, status = 200): Response {
 }
 
 test("discovery and extraction share exactly one wired-protocol whitelist", () => {
-	for (const protocol of modelConnectionProtocols)
+	for (const protocol of modelConnectionProtocols) {
 		assert.equal(isDiscoveryProtocolWired(protocol), isTaskDraftProtocolWired(protocol), protocol);
-	assert.ok(modelConnectionProtocols.some((protocol) => !isDiscoveryProtocolWired(protocol)));
+		assert.equal(isDiscoveryProtocolWired(protocol), true, `${protocol} should be wired`);
+	}
+	assert.deepEqual([...modelConnectionProtocols].sort(), [
+		"anthropic-messages", "google-generative-ai", "openai-completions", "openai-responses",
+	]);
 });
 
 test("discovery: reads /models with the personal key and de-duplicates ids", async () => {
@@ -59,12 +63,28 @@ test("discovery: Anthropic uses /v1/models with header auth instead of Bearer", 
 	}), ["synthetic-claude"]);
 });
 
+test("discovery: Gemini lists models with a header key and strips the models/ prefix", async () => {
+	assert.deepEqual(await discoverModels({ ...input, baseUrl: "https://generativelanguage.googleapis.com/v1beta", protocol: "google-generative-ai" }, async (request, init) => {
+		const sent = new Request(request, init);
+		assert.equal(sent.url, "https://generativelanguage.googleapis.com/v1beta/models");
+		assert.equal(sent.headers.get("x-goog-api-key"), input.apiKey);
+		assert.equal(sent.headers.get("authorization"), null);
+		return reply({ models: [
+			{ name: "models/gemini-2.5-flash" },
+			{ name: "models/gemini-2.5-pro" },
+			{ name: "gemini-without-prefix" },
+			{ name: "models/gemini-2.5-flash" },
+		] });
+	}), ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-without-prefix"]);
+});
+
 test("discovery: caps the list and refuses unwired protocols or empty keys", async () => {
 	const many = { data: Array.from({ length: 150 }, (_, index) => ({ id: `model-${index}` })) };
 	const models = await discoverModels(input, async () => reply(many));
 	assert.equal(models?.length, modelDiscoveryMaxModels);
 
-	assert.equal(await discoverModels({ ...input, protocol: "google-generative-ai" }, async () => reply(many)), null);
+	// 所有枚举协议都已接通，因此这里只验证空密钥被拒。
+	assert.equal(await discoverModels({ ...input, apiKey: "  " }, async () => reply(many)), null);
 	assert.equal(await discoverModels({ ...input, apiKey: "   " }, async () => reply(many)), null);
 });
 

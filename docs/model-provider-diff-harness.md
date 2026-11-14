@@ -10,8 +10,8 @@
 
 - 供应商集合一致：双方各 42 家，仅 Harness 有 0 家，仅 AdPulse 有 0 家。
 - **版本不同**：参考提交用 `^1.3.0`，本仓库锁 1.5.0，因此模型清单与个别端点差异来自 SDK 版本，不能直接按本表推算对方模型数。
-- AdPulse 可直连 29 家、1030 个模型（个人 API Key + `openai-completions` / `openai-responses` / `anthropic-messages`）；其余家保留在目录里并写明原因，不隐藏。
-- 自定义协议：已接通 3 种；Harness 表单里的 `google-generative-ai` 仍未接通（pi-ai 适配器拒绝自定义 fetch，要纳入受控出网需自研传输）。
+- AdPulse 可直连 30 家、1053 个模型（个人 API Key + `openai-completions` / `openai-responses` / `anthropic-messages` / `google-generative-ai`）；其余家保留在目录里并写明原因，不隐藏。
+- 自定义协议：Harness 表单里的四种（Chat Completions / Responses / Messages / Gemini）已全部接通；Gemini 由本仓库自研受控传输，因为 pi-ai 适配器拒绝自定义 fetch。
 - 认证范围不同：Harness 接受账号登录、云凭据链与多环境变量；AdPulse 本期只接受**个人 API Key**，不读取部署环境凭据或其他人的密钥。
 - 真实供应商验收：双方在本表中都**没有**验收证据；本表只说明目录覆盖与适配状态。
 
@@ -30,7 +30,7 @@
 | `deepseek` | 1 | 个人 Key 或更多 | `https://api.deepseek.com` | `https://api.deepseek.com` | 可直连（个人 API Key · Chat Completions） |
 | `fireworks` | 1 | 个人 Key 或更多 | `https://api.fireworks.ai/inference` | `https://api.fireworks.ai/inference` | 可直连（个人 API Key · Anthropic Messages / Chat Completions） |
 | `github-copilot` | 1 | 个人 Key 或更多 | `https://api.individual.githubcopilot.com` | `https://api.individual.githubcopilot.com` | 未接通：该供应商使用 SDK 的专用认证与动态请求头分支，个人 API Key 直连暂不适用。 |
-| `google` | 1 | 个人 Key 或更多 | `https://generativelanguage.googleapis.com/v1beta` | `https://generativelanguage.googleapis.com/v1beta` | 未接通：该供应商只提供 google-generative-ai 等原生协议，尚未适配。 |
+| `google` | 1 | 个人 Key 或更多 | `https://generativelanguage.googleapis.com/v1beta` | `https://generativelanguage.googleapis.com/v1beta` | 可直连（个人 API Key · Gemini） |
 | `google-vertex` | 5 | 个人 Key 或更多 | `—` | `—` | 未接通：需要账号、区域或部署名等额外参数，本期未接入。 |
 | `groq` | 1 | 个人 Key 或更多 | `https://api.groq.com/openai/v1` | `https://api.groq.com/openai/v1` | 可直连（个人 API Key · Chat Completions） |
 | `huggingface` | 1 | 个人 Key 或更多 | `https://router.huggingface.co/v1` | `https://router.huggingface.co/v1` | 可直连（个人 API Key · Chat Completions） |
