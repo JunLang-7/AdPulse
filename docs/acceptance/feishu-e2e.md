@@ -514,15 +514,20 @@ bun run notify:acceptance -- enqueue --open-id ou_xxx --scene initial --confirm-
 
 ### 16.5 关闭推送取消待发
 
-前置：条目已入队但**尚未到计划时刻**，或当前在免打扰时段。
+前置：先写入一个待取消的条目
+`enqueue --open-id ou_xxx --scene cancel-me --confirm-synthetic`，确认是 `queued`。
 
-1. 先写入一个待取消的条目：`enqueue --open-id ou_xxx --scene cancel-me --confirm-synthetic`，
-   确认是 `queued`（若当前已过 09:30 且不在免打扰，请在**下一次入队前**立刻执行第 2 步，
-   否则可能已在途发送；在途情形按下面的竞态说明如实记录）。
-2. 控制台 `/settings/subscriptions` 关闭全部主动推送。
-3. 等一个调度 tick（≤30s）后跑 `status`。
-4. 判读：批次 `cancelled` + `statusReason=push_disabled`，条目 `cancelled`，`delivery=null`（从未投递）。
-5. 真机**不得**收到这条消息。
+**时序要分清**（调度只扫描 `scheduledAt <= now` 的批次）：
+
+| 关闭推送的时刻 | 期望的取消证据 |
+| --- | --- |
+| 批次**已到**计划时刻（含免打扰窗口内） | 下一个 tick（≤30s）即 `cancelled/push_disabled` |
+| 批次**未到**计划时刻（如今天入队、明天 09:30 才发） | 关闭后状态仍是 `queued`（不会立刻取消，也**不会发送**）；直到计划时刻的那个 tick 才记 `cancelled` |
+
+1. 控制台 `/settings/subscriptions` 关闭全部主动推送（可在计划时刻之前任意时间做）。
+2. 到计划时刻后跑 `status`（未到时刻时先记录「仍 queued 且未发送」作为中间证据）。
+3. 判读：批次 `cancelled` + `statusReason=push_disabled`，条目 `cancelled`，`delivery=null`（从未投递）。
+4. 真机**不得**收到这条消息。
 
 **在途竞态如实记录**：若 worker 已领取该批次并在发网络请求，消息仍可能送达。
 这不是「点关闭瞬间全部拦截」，记录里必须写明实际时序，不承诺撤回。
