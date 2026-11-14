@@ -208,6 +208,7 @@ export {
 export { runSources } from "./source-runner.js";
 export { discoverSource } from "./source-discovery.js";
 export { discoverModels, isDiscoveryProtocolWired, modelDiscoveryMaxModels } from "./model-discovery.js";
+export { geminiEndpoint, isGeminiModelId, requestGeminiText } from "./model-gemini.js";
 export type { ModelDiscoveryInput } from "./model-discovery.js";
 export { createModelCredentialCipher, parseModelCredentialKeyring } from "./model-credential-cipher.js";
 export type { CredentialKeyring } from "./model-credential-cipher.js";

@@ -53,6 +53,6 @@ test("diff doc never claims live acceptance and keeps unwired protocols visible"
 	const text = doc();
 	assert.doesNotMatch(text, /已验收|真实验收通过/u);
 	for (const protocol of wiredProtocols) assert.ok(text.includes(protocol), protocol);
-	for (const protocol of unwiredCustomProtocols) assert.ok(text.includes(protocol), protocol);
-	assert.equal(unwiredCustomProtocols.length, 1, "只有 Gemini 仍未接通；改这里必须同时改说明");
+	assert.equal(unwiredCustomProtocols.length, 0, "Harness 表单的四种协议已全部接通");
+	assert.match(text, /已全部接通/u);
 });

@@ -13,9 +13,9 @@ export const harnessSnapshotPath = join(root, "docs", "reference", "harness-prov
 export const diffDocPath = join(root, "docs", "model-provider-diff-harness.md");
 
 /** 我们实际接通的原生协议；其余协议一律 422，不降级。 */
-export const wiredProtocols = ["openai-completions", "openai-responses", "anthropic-messages"];
-/** 自定义 API 表单里 Harness 提供、我们尚未接通的协议。 */
-export const unwiredCustomProtocols = ["google-generative-ai"];
+export const wiredProtocols = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"];
+/** Harness 自定义表单里的四种协议已全部接通；清单保留给后续新增协议时使用。 */
+export const unwiredCustomProtocols = [];
 
 export function loadHarnessSnapshot() {
 	return JSON.parse(readFileSync(harnessSnapshotPath, "utf8"));
@@ -32,7 +32,8 @@ function adaptation(provider) {
 	if (!provider.supported) return `未接通：${provider.reason ?? "未说明"}`;
 	const protocols = [...new Set(provider.models.map((model) => model.api))]
 		.map((api) => api === "anthropic-messages" ? "Anthropic Messages"
-			: api === "openai-responses" ? "Responses" : "Chat Completions");
+			: api === "openai-responses" ? "Responses"
+				: api === "google-generative-ai" ? "Gemini" : "Chat Completions");
 	return `可直连（个人 API Key · ${protocols.join(" / ")}）`;
 }
 
@@ -63,7 +64,7 @@ export function renderDiff(catalog, snapshot) {
 		`- 供应商集合一致：双方各 ${theirs.size} 家，仅 Harness 有 ${onlyHarness.length} 家，仅 AdPulse 有 ${onlyAdPulse.length} 家。`,
 		`- **版本不同**：参考提交用 \`${snapshot.source.piAiRange}\`，本仓库锁 1.5.0，因此模型清单与个别端点差异来自 SDK 版本，不能直接按本表推算对方模型数。`,
 		`- AdPulse 可直连 ${supported.length} 家、${models} 个模型（个人 API Key + ${wiredProtocols.map((item) => `\`${item}\``).join(" / ")}）；其余家保留在目录里并写明原因，不隐藏。`,
-		`- 自定义协议：已接通 3 种；Harness 表单里的 \`${unwiredCustomProtocols.join("`, `")}\` 仍未接通（pi-ai 适配器拒绝自定义 fetch，要纳入受控出网需自研传输）。`,
+		`- 自定义协议：Harness 表单里的四种（Chat Completions / Responses / Messages / Gemini）已全部接通；Gemini 由本仓库自研受控传输，因为 pi-ai 适配器拒绝自定义 fetch。`,
 		"- 认证范围不同：Harness 接受账号登录、云凭据链与多环境变量；AdPulse 本期只接受**个人 API Key**，不读取部署环境凭据或其他人的密钥。",
 		"- 真实供应商验收：双方在本表中都**没有**验收证据；本表只说明目录覆盖与适配状态。",
 		"",

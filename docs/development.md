@@ -67,7 +67,7 @@ demo 脚本直接调用同源 HTTP API，固定使用 demo 收件账户；控制
 bun run model-catalog:generate
 ```
 
-该命令写出 `packages/runtime/src/model-catalog.generated.ts`（供应商、协议、模型 ID 与可调用模型元数据）。提交前 `tests/model-catalog.test.ts` 会重新读取 SDK 比对，目录漂移即失败；不要手改生成文件。目录里是否“可直连”只表示 AdPulse 已接通个人 API Key + OpenAI Chat Completions / Responses / Anthropic Messages 原生适配路径，不代表已对每家做过真实联调。
+该命令写出 `packages/runtime/src/model-catalog.generated.ts`（供应商、协议、模型 ID 与可调用模型元数据）。提交前 `tests/model-catalog.test.ts` 会重新读取 SDK 比对，目录漂移即失败；不要手改生成文件。目录里是否“可直连”只表示 AdPulse 已接通个人 API Key + OpenAI Chat Completions / Responses / Anthropic Messages / Gemini 原生适配路径，不代表已对每家做过真实联调。
 
 逐家覆盖与差异清单见 [model-provider-coverage.md](model-provider-coverage.md)，由 `bun run model-coverage:generate` 从同一目录生成并由测试守住。它把“目录存在 / 适配可用 / 本人已配置 / 真实供应商验收”分开记录，当前真实供应商验收为 0。
 
@@ -75,7 +75,7 @@ bun run model-catalog:generate
 
 与 Harness 参考提交的逐家差异见 [model-provider-diff-harness.md](model-provider-diff-harness.md)，由 `bun run model-diff:generate` 从 `docs/reference/harness-provider-data.json` 与同一目录渲染。参考快照固定提交 `e8f7b93`（其 pi-ai 依赖为 `^1.3.0`，本仓库锁 1.5.0），结论是供应商集合一致（各 42 家），差异在认证范围、协议接通与模型清单；参考快照不含模型清单，因此不做模型级比对。
 
-右上角个人菜单 →“模型配置”打开统一窗口：左侧是本人连接、部署提供和目录分组，右侧是配置表单与“测试连接 / 保存并使用”。保存前会用固定合成短句测试所选模型；密钥只写、不回显，服务端加密保存，登出或重启后仍可用。未适配的原生协议、仅账号授权、云凭据链或账号/区域/部署名等额外参数的供应商会显示原因；提供可选 OAuth 不妨碍单独使用其个人 API Key 路径。自定义 API 只接受 HTTPS 公网地址，校验全部 DNS 结果并绑定地址、禁止重定向；可显式选择 OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages；Anthropic 基础地址不含版本段，SDK 会请求 `${baseUrl}/v1/messages`。
+右上角个人菜单 →“模型配置”打开统一窗口：左侧是本人连接、部署提供和目录分组，右侧是配置表单与“测试连接 / 保存并使用”。保存前会用固定合成短句测试所选模型；密钥只写、不回显，服务端加密保存，登出或重启后仍可用。未适配的原生协议、仅账号授权、云凭据链或账号/区域/部署名等额外参数的供应商会显示原因；提供可选 OAuth 不妨碍单独使用其个人 API Key 路径。自定义 API 只接受 HTTPS 公网地址，校验全部 DNS 结果并绑定地址、禁止重定向；可显式选择 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 或 Gemini API；Anthropic 基础地址不含版本段，SDK 会请求 `${baseUrl}/v1/messages`；Gemini 基础地址含 `/v1beta`，请求 `${baseUrl}/models/{Model ID}:streamGenerateContent?alt=sse`。
 
 同一窗口还负责默认模型与连接维护：`ModelConnectionService` 的增删改查、删密钥停用、验证结果绑定版本等规则由服务端执行，界面只展示非敏感投影。部署未配置主密钥时，窗口提示个人连接不可保存，但仍可选用“部署提供”的模型。
 
@@ -129,7 +129,7 @@ MODEL_CREDENTIAL_ACTIVE_KEY=v1
 
 模型调用统一走受控出网层：只允许 HTTPS，校验全部 DNS 结果并把连接绑定到已校验地址，禁止重定向并移除 `location`，不读取环境代理，限制 512 KiB 与 15 秒。
 
-额度分两层，都在发起请求前判定；部署提供的共享路由（`extractShared`）也按 owner 计入，不能靠共享 Key 绕过。**按用户 6 次/分钟、并发 1**；**实例总量 8 次/分钟、并发 2**。两者共用同一计数器口径（连接测试、显式模型发现、任务抽取、旧兼容路由都算），因此单用户无法耗尽全站额度，两个用户同时满额仍会被实例上限拦住。这是单进程内存限流，不是跨实例共享配额；多实例部署时总量会随实例数放大，需要网关或数据库层另行控制。未接通的协议（`google-generative-ai`）返回 422，不会降级成 Chat Completions；自定义连接需自行确认供应商支持 SSE 与 JSON 输出。
+额度分两层，都在发起请求前判定；部署提供的共享路由（`extractShared`）也按 owner 计入，不能靠共享 Key 绕过。**按用户 6 次/分钟、并发 1**；**实例总量 8 次/分钟、并发 2**。两者共用同一计数器口径（连接测试、显式模型发现、任务抽取、旧兼容路由都算），因此单用户无法耗尽全站额度，两个用户同时满额仍会被实例上限拦住。这是单进程内存限流，不是跨实例共享配额；多实例部署时总量会随实例数放大，需要网关或数据库层另行控制。不在枚举内的协议在边界返回 400；当前四种枚举协议均已接通，422 分支保留给以后新增但尚未适配的协议，不会降级成 Chat Completions；自定义连接需自行确认供应商支持 SSE 与 JSON 输出。
 
 轮换与恢复演练（先只读，再确认写入）：
 
@@ -156,7 +156,7 @@ MODEL_REVOCATION_REPLAY_CONFIRM=1 bun run models:revocations -- --replay revocat
 
 只读模式在仍有需要停用的连接时退出码为 1，避免“报告完就当恢复完成”。凭据版本高于墓碑时不停用，但仍会补记墓碑，保证更旧的恢复也能被识别；重放只处理墓碑，不重建任何密钥。墓碑覆盖当前凭据时，不允许保留旧密钥做元数据更新或重新验证，只有替换密钥或明确删除才可执行。视图不会把指向已撤销连接的旧默认选择展示成可用。
 
-网关需支持所选原生协议的 SSE 和 JSON 输出：Chat Completions 请求 `${baseUrl}/chat/completions` 并使用 `response_format`；Responses 请求 `${baseUrl}/responses` 并使用 `text.format`、`store: false` 和 1024 输出 token 上限。Responses 不发送可能被推理模型拒绝的 temperature。Anthropic Messages 请求 `${baseUrl}/v1/messages`，使用 `x-api-key` 与 `anthropic-version`，没有 `response_format`，JSON 只靠提示词约束；基础地址**不能**以 `/v1` 结尾，否则 SDK 会拼出 `/v1/v1/messages`，保存前会被拒绝。发现均为显式 `GET ${baseUrl}/models`（Anthropic 为 `GET ${baseUrl}/v1/models` 并使用同名认证头），复用二次验证、受控出网和共享限额；发现成功不代表生成能力验证。三种协议均通过合成适配测试，未做真实供应商验收。界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
+网关需支持所选原生协议的 SSE 和 JSON 输出：Chat Completions 请求 `${baseUrl}/chat/completions` 并使用 `response_format`；Responses 请求 `${baseUrl}/responses` 并使用 `text.format`、`store: false` 和 1024 输出 token 上限。Responses 不发送可能被推理模型拒绝的 temperature。Anthropic Messages 请求 `${baseUrl}/v1/messages`，使用 `x-api-key` 与 `anthropic-version`，没有 `response_format`，JSON 只靠提示词约束；基础地址**不能**以 `/v1` 结尾，否则 SDK 会拼出 `/v1/v1/messages`，保存前会被拒绝。发现均为显式 `GET ${baseUrl}/models`（Anthropic 为 `GET ${baseUrl}/v1/models` 并使用同名认证头），复用二次验证、受控出网和共享限额；发现成功不代表生成能力验证。Gemini 由本仓库自研受控传输（`packages/runtime/src/model-gemini.ts`）：pi-ai 1.5.0 的 Google 适配器拒绝自定义 fetch，无法纳入受控出网。请求把密钥放在 `x-goog-api-key` 头（不进 URL），固定 `alt=sse` 流式端点，复用同一份超时、512 KiB 线缆上限、16 KiB 文本上限与共享请求预算；`promptFeedback.blockReason`、`MAX_TOKENS`、非法 JSON、超长与上游错误一律失败关闭。四种协议均通过合成适配测试，未做真实供应商验收。界面只显示任务流程。密钥留在服务端。正式使用前，部署者须核对所选服务对提交内容的处理与保留条款。
 
 ## 3. 持久化与独立 worker
 

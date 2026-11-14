@@ -76,7 +76,7 @@ version 是决策版本，每次成功处理选择都会递增，即使 changes 
 
 模型调用的出网层在 [model-egress.ts](../packages/runtime/src/model-egress.ts)：只允许 HTTPS，按全部 DNS 结果校验公网地址并把连接绑定到已校验地址，不跟随重定向，不读环境代理，限制响应大小与超时。自定义 API 仍属于个人连接，不允许绕开这层直接发请求。
 
-已适配的原生协议为 `openai-completions`、`openai-responses`、`anthropic-messages`；其余协议返回 422，不降级。供应商覆盖、认证类型与差异清单由目录生成：[model-provider-coverage.md](model-provider-coverage.md)。其中“真实供应商验收”统一为未验收，不因目录存在或合成测试通过而改写。
+已适配的原生协议为 `openai-completions`、`openai-responses`、`anthropic-messages`、`google-generative-ai`；枚举之外的协议在边界返回 400，不降级。前三种走锁定 pi-ai 适配器，Gemini 因适配器拒绝自定义 fetch 而由 [model-gemini.ts](../packages/runtime/src/model-gemini.ts) 自研受控传输。供应商覆盖、认证类型与差异清单由目录生成：[model-provider-coverage.md](model-provider-coverage.md)。其中“真实供应商验收”统一为未验收，不因目录存在或合成测试通过而改写。
 
 ## 任务与发送语义
 

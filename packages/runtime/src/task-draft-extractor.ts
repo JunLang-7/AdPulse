@@ -5,6 +5,7 @@ import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.l
 import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
 import type { ModelConnectionProtocol } from "@adpluse/core";
 import { findCatalogModel } from "./model-catalog.js";
+import { requestGeminiText } from "./model-gemini.js";
 
 export const taskDraftBriefMaxLength = 2_500;
 export const taskDraftStages = ["overview", "audience", "channels"] as const;
@@ -210,11 +211,16 @@ export interface ModelRouteInput {
 }
 
 /** 已接通的协议。未接通的协议不得作为可用项，也不能降级成 Chat Completions。 */
-type TaskDraftProtocol = "openai-completions" | "openai-responses" | "anthropic-messages";
+type TaskDraftProtocol = "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai";
 
 export function isTaskDraftProtocolWired(protocol: string): protocol is TaskDraftProtocol {
 	return protocol === "openai-completions" || protocol === "openai-responses" ||
-		protocol === "anthropic-messages";
+		protocol === "anthropic-messages" || protocol === "google-generative-ai";
+}
+
+/** Gemini 走自研受控传输：pi-ai 的 Google 适配器拒绝自定义 fetch。 */
+function isGeminiProtocol(protocol: TaskDraftProtocol): boolean {
+	return protocol === "google-generative-ai";
 }
 
 /** 各协议由锁定 SDK 适配器决定；这里只声明端点，不猜测供应商。 */
@@ -254,6 +260,11 @@ export function createPersistedTaskDraftExtractor(
 ): TaskDraftExtractor | undefined {
 	const key = input.apiKey.trim();
 	if (!key || !isTaskDraftProtocolWired(input.protocol)) return;
+	if (isGeminiProtocol(input.protocol))
+		return createGeminiExtractor(
+			{ baseUrl: input.baseUrl, modelId: input.modelId, apiKey: key },
+			fetchImpl, limit,
+		);
 	if (input.kind === "catalog") {
 		const entry = findCatalogModel(input.catalogId ?? input.providerId, input.modelId);
 		if (!entry || entry.baseUrl !== input.baseUrl || entry.api !== input.protocol) return;
@@ -306,6 +317,8 @@ export function createCatalogTaskDraftExtractor(
 	const entry = findCatalogModel(providerId, modelId);
 	const key = apiKey.trim();
 	if (!entry || !key || entry.provider !== providerId || !isTaskDraftProtocolWired(entry.api)) return;
+	if (isGeminiProtocol(entry.api))
+		return createGeminiExtractor({ baseUrl: entry.baseUrl, modelId: entry.id, apiKey: key }, fetchImpl, limit);
 	const model = {
 		id: entry.id,
 		name: entry.name,
@@ -329,6 +342,35 @@ export function createCatalogTaskDraftExtractor(
 		api: protocolApi(entry.api),
 	});
 	return createRouteExtractor(provider, entry.id, key, fetchImpl, limit);
+}
+
+/** Gemini 的自研传输路径：与 pi-ai 路径共用提示词、字段筛选、预算与结果校验。 */
+function createGeminiExtractor(
+	route: { baseUrl: string; modelId: string; apiKey: string },
+	fetchImpl: typeof fetch,
+	limit: ReturnType<typeof createTaskDraftRequestLimit>,
+): TaskDraftExtractor {
+	return async (brief, stage) => {
+		if (!brief.trim() || brief.length > taskDraftBriefMaxLength) return null;
+		return limit(async () => {
+			try {
+				const fields = stage ? suggestionFields.filter((entry) => entry.stage === stage) : suggestionFields;
+				const result = await requestGeminiText({
+					...route,
+					systemPrompt: prompt(fields),
+					brief,
+					maxOutputTokens: maxOutputTokens,
+					fetchImpl,
+					timeoutMs: requestTimeoutMs,
+					maxWireBytes: maxWireResponseBytes,
+				});
+				if (!result || result.stopReason !== "stop") return null;
+				return extractSuggestions(result.text, brief, fields);
+			} catch {
+				return null;
+			}
+		});
+	};
 }
 
 function createRouteExtractor(

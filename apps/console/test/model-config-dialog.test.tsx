@@ -211,6 +211,28 @@ test("模型配置：Anthropic Messages 用于保存与请求路径提示", asyn
 	await waitFor(() => assert.deepEqual(bodies.map((body) => body.protocol), ["anthropic-messages"]));
 });
 
+test("模型配置：Gemini 协议用于保存并显示原生请求路径", async (t) => {
+	t.after(cleanup);
+	const bodies: { protocol: string }[] = [];
+	serve(baseRoutes, {
+		"POST /api/me/model-connections": async (request) => {
+			const body = await request.json() as { protocol: string };
+			bodies.push(body);
+			return json({ ...connectionList.connections[0], protocol: body.protocol }, 201);
+		},
+	});
+	renderDialog();
+	fireEvent.click(await screen.findByRole("button", { name: "自定义 API" }));
+	fireEvent.change(screen.getByRole("combobox", { name: "API 协议" }), { target: { value: "google-generative-ai" } });
+	assert.ok(screen.getByText(/models\/\{Model ID\}:streamGenerateContent/));
+	fireEvent.change(screen.getByPlaceholderText("例如：company-gateway"), { target: { value: "gemini-gateway" } });
+	fireEvent.change(screen.getByPlaceholderText("https://api.example.com/v1"), { target: { value: "https://generativelanguage.googleapis.com/v1beta" } });
+	fireEvent.change(screen.getByPlaceholderText("例如：mimo-v2-flash"), { target: { value: "gemini-2.5-flash" } });
+	fireEvent.change(screen.getByPlaceholderText("粘贴你的 API Key"), { target: { value: "synthetic-personal-key" } });
+	fireEvent.click(screen.getByRole("button", { name: "保存并使用" }));
+	await waitFor(() => assert.deepEqual(bodies.map((body) => body.protocol), ["google-generative-ai"]));
+});
+
 test("模型配置：自定义 API 可填写并保存自定义地址", async (t) => {
 	t.after(cleanup);
 	const bodies: unknown[] = [];
