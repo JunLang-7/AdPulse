@@ -541,6 +541,8 @@ bun run notify:acceptance -- enqueue --open-id ou_xxx --scene initial --confirm-
    - 期望 `queued`；同场景重复执行返回 `duplicate`（幂等）。
    - 反例（必须复现并记录）：用被取消的 `cancel-me` 场景加 `--revision 2` → 返回 `cancelled`，
      不排队、不发消息。这正是「重新开启不自动恢复旧队列」的证据，不是失败。
+5. 新场景的批次落在**下一次计划日**：`status` 应显示 `queued` 且 `scheduledAt` 是下一个北京日期的 09:30。
+   它**不会**立刻补发，送达要等到那个计划时刻；不要把「重开后没立刻收到」判成失败。
 
 ### 16.7 免打扰顺延（时间窗受限）
 
