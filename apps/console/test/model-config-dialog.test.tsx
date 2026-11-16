@@ -47,6 +47,24 @@ const baseRoutes = {
 	"GET /api/me/model-connections": () => json(connectionList),
 };
 
+test("模型配置：常用供应商直接展示，支持用中文搜深度求索", async (t) => {
+	t.after(cleanup);
+	const { calls } = serve(baseRoutes);
+	renderDialog();
+
+	await screen.findByText("常用供应商");
+	const deepseek = await screen.findByRole("button", { name: /DeepSeek 深度求索/ });
+	fireEvent.change(screen.getByRole("textbox", { name: "搜索供应商或模型" }), { target: { value: "深度求索" } });
+	assert.equal(screen.getByRole("button", { name: /DeepSeek 深度求索/ }), deepseek);
+	assert.equal(screen.queryByRole("button", { name: /Xiaomi/ }), null);
+
+	fireEvent.click(deepseek);
+	assert.ok(await screen.findByPlaceholderText("粘贴你的 API Key"));
+	assert.ok(screen.getByDisplayValue("https://api.deepseek.com"));
+	assert.ok(screen.getByRole("option", { name: /deepseek-flash/ }));
+	assert.ok(calls.every((call) => call.startsWith("GET ")));
+});
+
 test("模型配置：未接通供应商只给原因不给保存", async (t) => {
 	t.after(cleanup);
 	serve(baseRoutes);

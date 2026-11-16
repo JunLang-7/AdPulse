@@ -28,6 +28,20 @@ export const modelCatalogKey = ["task-draft-models"] as const;
 export const modelConnectionsKey = ["model-connections"] as const;
 
 const keyPlaceholder = "粘贴你的 API Key";
+const popularProviders = new Map([
+	["deepseek", "DeepSeek 深度求索"],
+	["moonshotai-cn", "Kimi 月之暗面"],
+	["qwen-token-plan-cn", "通义千问（中国区 Token Plan）"],
+	["zai", "智谱 Z.AI"],
+	["openai", "OpenAI"],
+	["anthropic", "Anthropic Claude"],
+	["google", "Google Gemini"],
+]);
+
+function providerName(provider: ModelCatalogProvider) {
+	return popularProviders.get(provider.id) ?? provider.name;
+}
+
 type CustomModelDraft = {
 	providerId: string; displayName: string; baseUrl: string; modelId: string; apiKey: string;
 	protocol: "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai";
@@ -133,6 +147,19 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 	const matches = (name: string, models: readonly { id: string; name: string }[]) =>
 		!keyword || name.toLowerCase().includes(keyword) ||
 		models.some((item) => item.id.toLowerCase().includes(keyword) || item.name.toLowerCase().includes(keyword));
+	const availableProviders = supported.filter((item) =>
+		matches(`${providerName(item)} ${item.name} ${item.id}`, item.models));
+	const providerGroups = [
+		{
+			title: "常用供应商",
+			providers: Array.from(popularProviders.keys(), (id) =>
+				availableProviders.find((item) => item.id === id)).filter((item) => item !== undefined),
+		},
+		{
+			title: "更多可直连供应商",
+			providers: availableProviders.filter((item) => !popularProviders.has(item.id)),
+		},
+	];
 	const defaultsUnavailable = connectionsQuery.data === null;
 
 	function resetDraft() {
@@ -376,7 +403,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 			providerId: provider.id,
 			kind: "catalog",
 			catalogId: provider.id,
-			displayName: provider.name,
+			displayName: providerName(provider),
 			baseUrl: provider.baseUrl,
 			protocol: provider.models.find((item) => item.id === model)?.api ?? "openai-completions",
 			models: [{ id: model }],
@@ -444,13 +471,15 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 								</ProviderGroup>
 							) : null}
 
-							<ProviderGroup title="可直连供应商">
-								{supported.filter((item) => matches(item.name, item.models)).map((item) => (
-									<ProviderButton key={item.id} title={item.name}
-										subtitle={item.models.length + " 个模型"} active={providerId === item.id}
-										onClick={() => pickCatalogProvider(item)} />
-								))}
-							</ProviderGroup>
+							{providerGroups.filter((group) => group.providers.length).map((group) => (
+								<ProviderGroup key={group.title} title={group.title}>
+									{group.providers.map((item) => (
+										<ProviderButton key={item.id} title={providerName(item)}
+											subtitle={item.models.length + " 个模型"} active={providerId === item.id}
+											onClick={() => pickCatalogProvider(item)} />
+									))}
+								</ProviderGroup>
+							))}
 
 							{unsupported.length ? (
 								<ProviderGroup title="其他供应商">
@@ -503,7 +532,7 @@ export function ModelConfigDialog({ open, onOpenChange, choice, onUse }: {
 								provider.supported ? (
 									<div className="space-y-3">
 										<Field label="供应商名称">
-											<Input value={provider.name} readOnly disabled />
+											<Input value={providerName(provider)} readOnly disabled />
 										</Field>
 										<Field label="API Key" hint="只写字段，保存后不再显示。">
 											<Input type="password" autoComplete="new-password" maxLength={512} value={apiKey} disabled={working}

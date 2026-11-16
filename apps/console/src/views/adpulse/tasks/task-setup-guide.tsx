@@ -126,6 +126,11 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 					setError("请先选择一个模型，或按已填写的内容继续。");
 					return;
 				}
+				if (result.response.status === 503) {
+					setFailed(true);
+					setError("当前模型暂时无法整理资料。请检查模型配置、换一个模型重试，或按已填写的内容继续。");
+					return;
+				}
 				if (!result.data) throw new Error("整理服务不可用");
 				if (preview) {
 					setSuggestion({ brief, data: result.data });
@@ -160,6 +165,9 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 					<TaskModelSettings selected={provider} disabled={busy} onSelect={(choice) => {
 						setProvider(choice);
 						setSuggestion(undefined);
+						setError("");
+						setFailed(false);
+						setUseEnteredValues(false);
 					}} />
 				</div>
 				<ol aria-label="填写进度" className="grid grid-cols-2 gap-2 border-b pb-4 sm:grid-cols-4">
