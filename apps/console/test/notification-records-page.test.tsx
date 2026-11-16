@@ -96,6 +96,7 @@ test("筛选记录页：展示任务名称和当时原因，保留筛选、翻�
 	assert.equal(searches[1].get("before"), "cursor-a");
 	await screen.findByRole("option", { name: "本人任务 A" });
 	fireEvent.change(screen.getByLabelText("筛选任务"), { target: { value: "task-a" } });
+	fireEvent.click(screen.getByText("按日期或结果筛选"));
 	fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-11-15" } });
 	fireEvent.change(screen.getByLabelText("结束日期"), { target: { value: "2026-11-16" } });
 	fireEvent.change(screen.getByLabelText("筛选结果"), { target: { value: "not_queued" } });

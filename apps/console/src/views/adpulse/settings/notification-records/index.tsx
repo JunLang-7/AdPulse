@@ -71,7 +71,7 @@ export default function NotificationRecordsPage() {
 
 	return (
 		<div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
-			<Card role="region" aria-labelledby="notice-title">
+			<Card role="region" aria-labelledby="notice-title" className="gap-3 border border-border">
 				<CardHeader>
 					<div className="flex flex-wrap items-start justify-between gap-3">
 						<div className="space-y-1">
@@ -85,9 +85,9 @@ export default function NotificationRecordsPage() {
 					</div>
 				</CardHeader>
 				<div id="notification-lookup" hidden={!lookupOpen}>
-					{lookupOpen ? <><Separator /><SelectionRecords /></> : null}
+					{lookupOpen ? <><Separator className="h-px w-full" /><SelectionRecords /></> : null}
 				</div>
-				<Separator />
+				<Separator className="h-px w-full" />
 				<CardContent className="space-y-3">
 					<h2 className="font-semibold">下一次汇总</h2>
 					{records.isPending ? <p className="text-sm text-muted-foreground">正在读取汇总…</p>
@@ -101,7 +101,7 @@ export default function NotificationRecordsPage() {
 						</div>
 					) : null}
 				</CardContent>
-				<Separator />
+				<Separator className="h-px w-full" />
 				<CardContent className="space-y-3">
 					<div className="flex flex-wrap items-center justify-between gap-2">
 						<h2 className="font-semibold">发送历史</h2>

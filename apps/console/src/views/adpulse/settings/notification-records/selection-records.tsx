@@ -88,17 +88,43 @@ export default function SelectionRecords() {
 			<h2 className="font-semibold">没收到通知？</h2>
 			<p className="text-sm text-muted-foreground">查找还在等汇总、没有安排或发送失败的提醒。</p>
 		</div>
-		<form className="flex flex-wrap gap-3 items-end" onSubmit={(event) => { event.preventDefault(); setFilters({ ...draft }); }}>
-			<label className="space-y-1 text-sm"><span>按任务查找</span><select aria-label="筛选任务" className="block h-8 rounded-md border border-input bg-background px-2" value={draft.taskId} onChange={(event) => setDraft({ ...draft, taskId: event.target.value })}>
-				<option value="">全部本人任务</option>
-				{tasks.data?.map((task) => <option key={task.taskId} value={task.taskId}>{task.product}</option>)}
-			</select></label>
-			{(["dateFrom", "dateTo"] as const).map((key) => <label key={key} className="space-y-1 text-sm"><span>{key === "dateFrom" ? "开始日期（北京时间）" : "结束日期（北京时间）"}</span><Input className="block" aria-label={key === "dateFrom" ? "开始日期" : "结束日期"} type="date" value={draft[key]} onChange={(event) => setDraft({ ...draft, [key]: event.target.value })} /></label>)}
-			<label className="space-y-1 text-sm"><span>结果</span><select className="block h-8 rounded-md border border-input bg-background px-2" aria-label="筛选结果" value={draft.outcome} onChange={(event) => {
-				const value = event.target.value;
-				if (value === "" || value === "queued" || value === "not_queued" || value === "duplicate" || value === "cancelled") setDraft({ ...draft, outcome: value });
-			}}><option value="">全部结果</option>{Object.entries(outcomeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-			<Button type="submit" variant="outline" size="sm">查询</Button>
+		<form className="space-y-2" onSubmit={(event) => { event.preventDefault(); setFilters({ ...draft }); }}>
+			<div className="flex flex-wrap items-end gap-2">
+				<label className="space-y-1 text-sm">
+					<span>按任务查找</span>
+					<select aria-label="筛选任务" className="block h-8 rounded-md border border-input bg-background px-2"
+						value={draft.taskId} onChange={(event) => setDraft({ ...draft, taskId: event.target.value })}>
+						<option value="">全部本人任务</option>
+						{tasks.data?.map((task) => <option key={task.taskId} value={task.taskId}>{task.product}</option>)}
+					</select>
+				</label>
+				<Button type="submit" variant="outline" size="sm">查询</Button>
+			</div>
+			<details className="text-sm">
+				<summary className="cursor-pointer text-muted-foreground">按日期或结果筛选</summary>
+				<div className="mt-2 flex flex-wrap items-end gap-2">
+					{(["dateFrom", "dateTo"] as const).map((key) => {
+						const label = key === "dateFrom" ? "开始日期" : "结束日期";
+						return <label key={key} className="space-y-1 text-sm">
+							<span>{label}（北京时间）</span>
+							<Input className="block" aria-label={label} type="date" value={draft[key]}
+								onChange={(event) => setDraft({ ...draft, [key]: event.target.value })} />
+						</label>;
+					})}
+					<label className="space-y-1 text-sm">
+						<span>结果</span>
+						<select className="block h-8 rounded-md border border-input bg-background px-2" aria-label="筛选结果"
+							value={draft.outcome} onChange={(event) => {
+								const value = event.target.value;
+								if (value === "" || value === "queued" || value === "not_queued" || value === "duplicate" || value === "cancelled")
+									setDraft({ ...draft, outcome: value });
+							}}>
+							<option value="">全部结果</option>
+							{Object.entries(outcomeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+						</select>
+					</label>
+				</div>
+			</details>
 		</form>
 		{tasks.isError ? <p role="alert">无法读取本人任务，请刷新重试。</p> : null}
 		{records.isLoading ? <p className="text-sm text-muted-foreground">正在查询提醒…</p>
