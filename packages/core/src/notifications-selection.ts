@@ -7,6 +7,7 @@ import type { MarketEventVersion } from "./market-events.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
 	InvestigationAlert,
+	NotificationBatch,
 	NotificationItem,
 	NotificationSelection,
 	SubscriptionTarget,
@@ -66,7 +67,8 @@ function fitRelevance(assemble: (names: string[]) => string, names: string[]): s
 	return text.length > RELEVANCE_LIMIT ? text.slice(0, RELEVANCE_LIMIT) : text;
 }
 
-export type SelectionRecord = Omit<NotificationSelection, "ownerId">;
+type SelectionDeliveryResult = Pick<NotificationBatch, "status" | "statusReason" | "scheduledAt" | "sentAt">;
+export type SelectionRecord = Omit<NotificationSelection, "ownerId"> & { deliveryResult?: SelectionDeliveryResult };
 export interface SelectionPage { records: SelectionRecord[]; nextBefore: string | null }
 export interface SelectionQuery {
 	limit?: number;
@@ -316,10 +318,33 @@ export class NotificationSelectionService {
 				.sort((a, b) => cursor(b).localeCompare(cursor(a)));
 			const page = records.slice(0, limit);
 			// 早于第二阶段写入的历史记录没有 input 字段，按效果告警返回，保持契约必填。
-			return { records: page.map(({ ownerId: _owner, ...record }) => ({ ...record, input: record.input ?? "effect" })),
+			const visible = await Promise.all(page.map(async ({ ownerId: _owner, ...record }): Promise<SelectionRecord> => {
+				const deliveryResult = await selectionDeliveryIn(tx, ownerId, record);
+				return { ...record, input: record.input ?? "effect", ...(deliveryResult ? { deliveryResult } : {}) };
+			}));
+			return { records: visible,
 				nextBefore: records.length > limit && page.length ? cursor(page[page.length - 1]!) : null };
 		});
 	}
+}
+
+/** 待发条目会被后续修订复用，旧记录只能与同一修订的条目关联。 */
+async function selectionDeliveryIn(tx: Transaction, ownerId: string, record: SelectionRecord): Promise<SelectionDeliveryResult | undefined> {
+	if (record.outcome !== "queued" || !record.itemId) return;
+	const item = await tx.notificationItems.get(record.itemId);
+	if (!item || item.ownerId !== ownerId || item.revision !== record.revision) return;
+	const batch = await tx.notificationBatches.get(item.batchId);
+	if (!batch || batch.ownerId !== ownerId) return;
+	if (batch.status === "sent" && item.status === "queued") return;
+	if (item.status === "sent" && batch.status !== "sent") return;
+	// 同批次有其他内容发送成功时，取消的条目仍显示自己的状态。
+	const status = batch.status === "sent" || batch.status === "queued" ? item.status : batch.status;
+	return {
+		status,
+		scheduledAt: batch.scheduledAt,
+		...(status === batch.status && batch.statusReason ? { statusReason: batch.statusReason } : {}),
+		...(status === "sent" && batch.sentAt ? { sentAt: batch.sentAt } : {}),
+	};
 }
 
 /** 在发送前重检生产引用；不把已处理/删除/修订的旧信息重新包装。 */

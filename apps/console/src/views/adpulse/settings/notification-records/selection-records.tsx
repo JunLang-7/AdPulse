@@ -3,11 +3,12 @@ import { useState } from "react";
 import { consoleClient, type components } from "../../../../adpulse-client";
 import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card";
-import { formatBeijing } from "./record-view";
+import { CardContent } from "../../../../components/ui/card";
+import { Input } from "../../../../components/ui/input";
+import { formatBeijing, knownNotificationReason, needsNotificationSettings } from "./record-view";
 
-type Record = components["schemas"]["NotificationSelectionRecord"];
-const reasons: { [K in Record["reason"]]: string } = {
+type Selection = components["schemas"]["NotificationSelectionRecord"];
+const reasons: { [K in Selection["reason"]]: string } = {
 	matched: "符合你当时的关注和通知设置。",
 	push_disabled: "当时未开启通知。",
 	before_enabled: "这条提醒产生于你开启通知之前。",
@@ -25,10 +26,30 @@ const reasons: { [K in Record["reason"]]: string } = {
 	scope_excluded: "你当时选择了「只看任务」，这条事件超出订阅范围。",
 };
 const outcomeLabels = { queued: "已安排汇总", not_queued: "未安排发送", duplicate: "已去重", cancelled: "已取消" };
-type Filters = { taskId: string; dateFrom: string; dateTo: string; outcome: Record["outcome"] | "" };
+type Filters = { taskId: string; dateFrom: string; dateTo: string; outcome: Selection["outcome"] | "" };
 const empty: Filters = { taskId: "", dateFrom: "", dateTo: "", outcome: "" };
 
-export default function SelectionRecords({ onViewDelivery }: { onViewDelivery: () => void }) {
+function explainSelection(record: Selection): { label: string; reason: string } {
+	const delivery = record.deliveryResult;
+	if (record.outcome !== "queued") return { label: outcomeLabels[record.outcome], reason: reasons[record.reason] };
+	switch (delivery?.status) {
+		case "queued":
+			return { label: "待汇总", reason: `计划 ${formatBeijing(delivery.scheduledAt)} 汇总（北京时间）。` };
+		case "failed":
+			return { label: "发送失败", reason: knownNotificationReason(delivery.statusReason)?.label ?? "这条提醒发送失败，未记录具体原因。" };
+		case "cancelled":
+		case "expired":
+		case "suppressed":
+			return {
+				label: delivery.status === "cancelled" ? "已取消" : delivery.status === "expired" ? "已过期" : "未发送",
+				reason: knownNotificationReason(delivery.statusReason)?.label ?? "没有记录具体原因。",
+			};
+		default:
+			return { label: "已安排过汇总", reason: "当时符合发送条件。暂无可核实的发送结果。" };
+	}
+}
+
+export default function SelectionRecords() {
 	const [draft, setDraft] = useState(empty);
 	const [filters, setFilters] = useState(empty);
 	const tasks = useQuery({ queryKey: ["tasks"], queryFn: async () => {
@@ -50,7 +71,8 @@ export default function SelectionRecords({ onViewDelivery }: { onViewDelivery: (
 			return result.data;
 		}, getNextPageParam: (page) => page.nextBefore ?? undefined,
 	});
-	const all = records.data?.pages.flatMap((page) => page.records) ?? [];
+	const all = (records.data?.pages.flatMap((page) => page.records) ?? [])
+		.filter((record) => record.deliveryResult?.status !== "sent");
 	const events = useQuery({
 		queryKey: ["market-events"], enabled: all.some((record) => record.marketEventRef),
 		queryFn: async () => {
@@ -61,52 +83,52 @@ export default function SelectionRecords({ onViewDelivery }: { onViewDelivery: (
 	});
 	const taskNames = new Map(tasks.data?.map((task) => [task.taskId, task.product]));
 	const eventNames = new Map(events.data?.map((event) => [event.eventId, event.input.title]));
-	return <div className="p-6 space-y-4 max-w-4xl">
-		<div className="flex flex-wrap items-start justify-between gap-3">
-			<div className="space-y-1">
-				<h1 className="text-2xl font-bold">筛选记录</h1>
-				<p className="text-sm text-muted-foreground">查看每条提醒当时为何被安排进汇总，或为何没有安排发送。</p>
-			</div>
-			<Button type="button" variant="outline" onClick={onViewDelivery}>查看实际发送结果</Button>
+	return <CardContent className="space-y-3">
+		<div className="space-y-1">
+			<h2 className="font-semibold">没收到通知？</h2>
+			<p className="text-sm text-muted-foreground">查找还在等汇总、没有安排或发送失败的提醒。</p>
 		</div>
 		<form className="flex flex-wrap gap-3 items-end" onSubmit={(event) => { event.preventDefault(); setFilters({ ...draft }); }}>
-			<label className="text-sm">任务<select aria-label="筛选任务" className="block rounded-md border p-2" value={draft.taskId} onChange={(event) => setDraft({ ...draft, taskId: event.target.value })}>
+			<label className="space-y-1 text-sm"><span>按任务查找</span><select aria-label="筛选任务" className="block h-8 rounded-md border border-input bg-background px-2" value={draft.taskId} onChange={(event) => setDraft({ ...draft, taskId: event.target.value })}>
 				<option value="">全部本人任务</option>
 				{tasks.data?.map((task) => <option key={task.taskId} value={task.taskId}>{task.product}</option>)}
 			</select></label>
-			{(["dateFrom", "dateTo"] as const).map((key) => <label key={key} className="text-sm">{key === "dateFrom" ? "开始日期（北京时间）" : "结束日期（北京时间）"}<input className="block rounded-md border p-2" aria-label={key === "dateFrom" ? "开始日期" : "结束日期"} type="date" value={draft[key]} onChange={(event) => setDraft({ ...draft, [key]: event.target.value })} /></label>)}
-			<label className="text-sm">结果<select className="block rounded-md border p-2" aria-label="筛选结果" value={draft.outcome} onChange={(event) => {
+			{(["dateFrom", "dateTo"] as const).map((key) => <label key={key} className="space-y-1 text-sm"><span>{key === "dateFrom" ? "开始日期（北京时间）" : "结束日期（北京时间）"}</span><Input className="block" aria-label={key === "dateFrom" ? "开始日期" : "结束日期"} type="date" value={draft[key]} onChange={(event) => setDraft({ ...draft, [key]: event.target.value })} /></label>)}
+			<label className="space-y-1 text-sm"><span>结果</span><select className="block h-8 rounded-md border border-input bg-background px-2" aria-label="筛选结果" value={draft.outcome} onChange={(event) => {
 				const value = event.target.value;
 				if (value === "" || value === "queued" || value === "not_queued" || value === "duplicate" || value === "cancelled") setDraft({ ...draft, outcome: value });
 			}}><option value="">全部结果</option>{Object.entries(outcomeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-			<button type="submit" className="rounded-md border px-3 py-2 text-sm">查询筛选记录</button>
+			<Button type="submit" variant="outline" size="sm">查询</Button>
 		</form>
 		{tasks.isError ? <p role="alert">无法读取本人任务，请刷新重试。</p> : null}
-		{records.isLoading ? <p>正在读取筛选记录…</p> : records.isError ? <div role="alert"><p>{records.error.message}</p><button type="button" className="underline" onClick={() => void records.refetch()}>重试读取筛选记录</button></div> : all.length === 0 ? <p>暂无筛选记录。新评估的效果提醒和市场事件会在这里显示筛选结果。</p> : all.map((record) => {
+		{records.isLoading ? <p className="text-sm text-muted-foreground">正在查询提醒…</p>
+			: records.isError ? <div role="alert" className="space-y-2 text-sm"><p>{records.error.message}</p><Button type="button" variant="outline" size="sm" onClick={() => void records.refetch()}>重试查询</Button></div>
+			: all.length === 0 ? <p className="text-sm text-muted-foreground">{records.hasNextPage ? "已查询的记录里没有符合条件的提醒。" : "没有可查的未发送提醒。"}</p>
+			: <div className="divide-y divide-border">{all.map((record) => {
 			const isEvent = record.input === "event";
 			const eventId = record.marketEventRef?.eventId;
 			const taskName = record.taskId ? taskNames.get(record.taskId) : undefined;
 			const category = isEvent ? "市场与竞品事件" : "推广效果提醒";
 			const name = isEvent ? (eventId ? eventNames.get(eventId) : undefined) : taskName;
-			return <Card key={record.id}>
-				<CardHeader>
+			const result = explainSelection(record);
+			return <article key={record.id} className="space-y-2 py-3">
 					<div className="flex flex-wrap items-start justify-between gap-2">
-						<CardTitle className="break-words">{name || category}</CardTitle>
-						<Badge variant="secondary">{outcomeLabels[record.outcome]}</Badge>
+						<h3 className="break-words text-sm font-medium">{name || category}</h3>
+						<Badge variant={record.deliveryResult?.status === "failed" ? "destructive" : "outline"}>{result.label}</Badge>
 					</div>
 					<p className="text-xs text-muted-foreground">{name ? category + " · " : ""}{formatBeijing(record.evaluatedAt)}</p>
-				</CardHeader>
-				<CardContent className="space-y-2 text-sm">
-					<p>{reasons[record.reason]}</p>
-					<div className="flex flex-wrap gap-x-4 gap-y-2">
+					<p className="text-sm">{result.reason}</p>
+					<div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+						{needsNotificationSettings(record.deliveryResult?.statusReason ?? record.reason) ? (
+							<a className="underline" href="/settings/notifications">检查飞书连接和通知设置</a>
+						) : null}
 						{eventId ? <a className="underline" href={`/market-events/${encodeURIComponent(eventId)}`}>查看事件</a> : null}
 						{record.taskId ? <a className="underline" href={`/tasks/${encodeURIComponent(record.taskId)}/review`}>
 							{isEvent && taskName ? `查看关联任务「${taskName}」` : "查看推广效果"}
 						</a> : null}
 					</div>
-				</CardContent>
-			</Card>;
-		})}
-		{records.hasNextPage ? <button type="button" className="underline text-sm" disabled={records.isFetchingNextPage} onClick={() => void records.fetchNextPage()}>加载更早的筛选记录</button> : null}
-	</div>;
+			</article>;
+		})}</div>}
+		{records.hasNextPage ? <Button type="button" variant="outline" size="sm" disabled={records.isFetchingNextPage} onClick={() => void records.fetchNextPage()}>加载更早的排查记录</Button> : null}
+	</CardContent>;
 }

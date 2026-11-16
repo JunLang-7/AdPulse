@@ -13,6 +13,7 @@ test("筛选生产者：领域告警原子入队，重复操作不改写历史�
 	assert.equal(page.records.length, 1);
 	assert.equal(page.records[0].outcome, "queued");
 	const original = structuredClone(page.records[0]);
+	assert.equal(original.deliveryResult?.status, "queued");
 	let items = await new NotificationQueue(f.storage).pending(f.owner);
 	assert.equal(items.length, 1);
 	assert.match(items[0].title, /模拟/);
@@ -31,6 +32,7 @@ test("筛选生产者：领域告警原子入队，重复操作不改写历史�
 	// 早于事件阶段写入的历史记录没有 input 字段：查询时按效果告警返回，不伪造其他类别。
 	const legacy = structuredClone(original) as unknown as Record<string, unknown>;
 	legacy.id = "legacy-effect-record"; legacy.ownerId = f.owner; delete legacy.input;
+	delete legacy.deliveryResult;
 	await f.storage.transaction(async (tx) => {
 		await tx.notificationSelections.put(legacy as unknown as Parameters<typeof tx.notificationSelections.put>[0]);
 	});
@@ -45,7 +47,38 @@ test("筛选生产者：领域告警原子入队，重复操作不改写历史�
 	items = await new NotificationQueue(f.storage).pending(f.owner);
 	assert.equal(items.length, 1); assert.equal(items[0].revision, 2);
 	assert.match(items[0].summary, /新增或修订证据/);
-	assert.deepEqual((await service.list(f.owner)).records.find((r) => r.id === original.id), original);
+	const { deliveryResult: _oldResult, ...originalSelection } = original;
+	assert.deepEqual((await service.list(f.owner)).records.find((r) => r.id === original.id), originalSelection);
+});
+
+test("排查结果仅关联本人的同一提醒版本，并区分同批已发送与已取消的条目", async () => {
+	const f = await selectionFixture(new MemoryStorage());
+	await f.evaluate();
+	const service = new NotificationSelectionService(f.storage);
+	const update = async (status: "sent" | "cancelled" | "failed" | "queued", sameOwner = true) => {
+		await f.storage.transaction(async (tx) => {
+			const [item] = await tx.notificationItems.all();
+			assert.ok(item);
+			const batch = await tx.notificationBatches.get(item.batchId);
+			assert.ok(batch);
+			await tx.notificationItems.put({ ...item, status: status === "failed" ? "cancelled" : status });
+			await tx.notificationBatches.put({
+				...batch, ownerId: sameOwner ? f.owner : "other", status: status === "failed" ? "failed" : "sent",
+				...(status === "failed" ? { statusReason: "recipient_unreachable" } : { sentAt: "2026-11-16T01:30:00.000Z" }),
+			});
+		});
+	};
+
+	await update("sent");
+	assert.equal((await service.list(f.owner)).records[0]?.deliveryResult?.sentAt, "2026-11-16T01:30:00.000Z");
+	await update("cancelled");
+	assert.equal((await service.list(f.owner)).records[0]?.deliveryResult?.status, "cancelled");
+	await update("failed");
+	assert.equal((await service.list(f.owner)).records[0]?.deliveryResult?.statusReason, "recipient_unreachable");
+	await update("queued");
+	assert.equal((await service.list(f.owner)).records[0]?.deliveryResult, undefined);
+	await update("sent", false);
+	assert.equal((await service.list(f.owner)).records[0]?.deliveryResult, undefined);
 });
 
 test("筛选：显式任务关联才命中，名称/域名不能替代；关闭、退订、类别和授权有历史原因", async () => {

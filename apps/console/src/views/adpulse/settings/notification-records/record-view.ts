@@ -175,6 +175,15 @@ const REASONS: Record<string, { label: string; detail: string }> = {
 	},
 };
 
+export function knownNotificationReason(code: string | undefined): { label: string; detail: string } | undefined {
+	return code && Object.prototype.hasOwnProperty.call(REASONS, code) ? REASONS[code] : undefined;
+}
+
+const settingsReasons = new Set(["destination_missing", "destination_invalidated", "consent_missing", "consent_revoked", "identity_inactive", "recipient_unreachable", "not_authorized"]);
+export function needsNotificationSettings(reason: string | undefined): boolean {
+	return reason !== undefined && settingsReasons.has(reason);
+}
+
 const monthDay = (localDate: string): string => {
 	const [, month, day] = localDate.split("-");
 	return `${Number(month)}月${Number(day)}日`;
@@ -204,7 +213,7 @@ function describeReason(record: RecordLike): RecordView["reason"] {
 	if (record.status === "sent") return null;
 	if (record.statusReason)
 		return (
-			REASONS[record.statusReason] ?? {
+			knownNotificationReason(record.statusReason) ?? {
 				label: `已取消（${record.statusReason}）`,
 				detail: "服务端记录了原因代码，但界面还没有对应文案；不推测具体含义。",
 			}
