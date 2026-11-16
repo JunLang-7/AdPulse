@@ -2,6 +2,7 @@ import type { components } from "../../../generated/api.js";
 import { emptyChannel, type FormState } from "./task-form.ts";
 
 type TaskDraftSuggestions = components["schemas"]["TaskDraftSuggestions"];
+type DraftField = Exclude<keyof TaskDraftSuggestions, "recommendations">;
 export type TaskDraftStage = components["schemas"]["TaskDraftStage"];
 
 export const taskStages = [
@@ -25,10 +26,9 @@ export const taskStages = [
 	title: string;
 	description: string;
 	placeholder: string;
-	fields: readonly (keyof TaskDraftSuggestions)[];
+	fields: readonly DraftField[];
 }[];
 
-type DraftField = keyof TaskDraftSuggestions;
 export type ChoiceField = Exclude<DraftField, "product">;
 export type ExcludedChoices = Partial<Record<ChoiceField, readonly string[]>>;
 

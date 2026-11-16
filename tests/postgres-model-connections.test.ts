@@ -36,11 +36,64 @@ async function cleanup(storage: PostgresStorage, ownerId: string): Promise<void>
 			await tx.userModelConnections.delete(connection.id);
 		for (const credential of (await tx.userModelCredentials.all()).filter((item) => item.ownerId === ownerId))
 			await tx.userModelCredentials.delete(credential.id);
+		for (const revocation of (await tx.userModelRevocations.all()).filter((item) => item.ownerId === ownerId))
+			await tx.userModelRevocations.delete(revocation.id);
 		await tx.userModelPreferences.delete(ownerId);
 	});
 }
 
-test("PostgreSQL: migration 13 preserves market events and notification selections from version 12", { skip }, async () => {
+test("PostgreSQL: revocations persist, replay after restore, and survive reconnect", { skip }, async (t) => {
+	const ownerId = `owner-${crypto.randomUUID()}`;
+	const first = PostgresStorage.connect(process.env.TEST_DATABASE_URL!);
+	t.after(async () => {
+		await cleanup(first, ownerId);
+		await first.close();
+	});
+	await first.initialize();
+	const created = await service(first).create(ownerId, inputFor(ownerId), { verified: true });
+	await service(first).setPreference(ownerId, { expectedVersion: 0, connectionId: created.id, modelId: "mimo-v2.6-flash" });
+	await service(first).removeCredential(ownerId, created.id, created.version);
+	const exported = await service(first).listRevocations();
+	assert.equal(exported.length, 1);
+	assert.doesNotMatch(JSON.stringify(exported), /synthetic-key|ciphertext|authTag|nonce/);
+
+	// 模拟“恢复到删除前”：清掉墓碑并把旧连接、旧密文、旧默认写回。
+	const cipher = createModelCredentialCipher({
+		MODEL_CREDENTIAL_KEYRING: `test:${crypto.randomBytes(32).toString("base64")}`,
+	});
+	assert.ok(cipher);
+	await first.transaction(async (tx) => {
+		await tx.userModelRevocations.delete(created.id);
+		await tx.userModelConnections.put({
+			id: created.id, ownerId, providerId: created.providerId, kind: "custom", displayName: created.displayName,
+			baseUrl: created.baseUrl, protocol: created.protocol, models: created.models, status: "active",
+			version: created.version, verifiedAt: new Date().toISOString(), verifiedVersion: created.version,
+			createdAt: created.createdAt, updatedAt: created.updatedAt,
+		});
+		await tx.userModelCredentials.put({
+			id: created.id, ownerId, connectionId: created.id, credentialVersion: 1, keyId: "test",
+			algorithm: "aes-256-gcm", nonce: "restored", ciphertext: "restored", authTag: "restored",
+			createdAt: created.createdAt, updatedAt: created.updatedAt,
+		});
+		await tx.userModelPreferences.put({
+			id: ownerId, ownerId, connectionId: created.id, modelId: "mimo-v2.6-flash",
+			version: 3, updatedAt: created.updatedAt,
+		});
+	});
+
+	// 新连接（模拟重启后的实例）看到的是同一个墓碑表，重放结果一致。
+	const second = PostgresStorage.connect(process.env.TEST_DATABASE_URL!);
+	t.after(() => second.close());
+	await second.initialize();
+	const replay = await service(second).replayRevocations(exported, { apply: true });
+	assert.deepEqual(replay, { skipped: 0, disabled: 1, tombstoned: 0 });
+	await assert.rejects(service(second).resolveCredential(ownerId, created.id), /disabled|revoked/u);
+	const view = await service(second).view(ownerId);
+	assert.equal(view.preference.connectionId, null);
+	assert.equal(view.connections[0]?.status, "disabled");
+});
+
+test("PostgreSQL: migrations 13 and 14 preserve market events and notification selections from version 12", { skip }, async () => {
 	const { Pool } = createRequire(new URL("../packages/storage/package.json", import.meta.url))("pg") as {
 		Pool: new (options: { connectionString: string }) => ConstructorParameters<typeof PostgresStorage>[0];
 	};
@@ -55,8 +108,8 @@ test("PostgreSQL: migration 13 preserves market events and notification selectio
 		await admin.query(`CREATE SCHEMA ${schema}`);
 		await storage.initialize();
 		// Reconstruct the main branch's version 12 in this disposable schema.
-		await pool.query("DROP TABLE adpulse_userModelConnections, adpulse_userModelCredentials, adpulse_userModelPreferences");
-		await pool.query("DELETE FROM adpulse_schema_migrations WHERE version = 13");
+		await pool.query("DROP TABLE adpulse_userModelConnections, adpulse_userModelCredentials, adpulse_userModelPreferences, adpulse_userModelRevocations");
+		await pool.query("DELETE FROM adpulse_schema_migrations WHERE version IN (13, 14)");
 		const fixture = await eventSelectionFixture(storage);
 		await fixture.create();
 		const mainRows = () => storage.transaction(async (tx) => ({
@@ -71,7 +124,7 @@ test("PostgreSQL: migration 13 preserves market events and notification selectio
 		await storage.initialize();
 		assert.deepEqual(await mainRows(), before);
 		const migrations = await pool.query("SELECT version FROM adpulse_schema_migrations WHERE version >= 11 ORDER BY version");
-		assert.deepEqual(migrations.rows.map((row) => row.version), [11, 12, 13]);
+		assert.deepEqual(migrations.rows.map((row) => row.version), [11, 12, 13, 14]);
 		const created = await service(storage).create(fixture.owner, inputFor(fixture.owner));
 		const credential = await storage.transaction((tx) => tx.userModelCredentials.get(created.id));
 		assert.ok(credential?.ciphertext);

@@ -1,0 +1,107 @@
+// 模型发现（#86 §4.4 便利项）：只在显式点击时读取供应商模型列表。
+// 成功只代表“能列出模型”，不代表生成能力已验证；失败不猜默认模型。
+
+import assert from "node:assert/strict";
+import test from "node:test";
+import { modelConnectionProtocols } from "../packages/core/dist/index.js";
+import { discoverModels, isDiscoveryProtocolWired, modelDiscoveryMaxModels } from "../packages/runtime/dist/model-discovery.js";
+import { isTaskDraftProtocolWired } from "../packages/runtime/dist/task-draft-extractor.js";
+
+const input = {
+	baseUrl: "https://api.example.com/v1",
+	protocol: "openai-completions" as const,
+	apiKey: "synthetic-personal-key",
+};
+
+function reply(body: unknown, status = 200): Response {
+	return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
+test("discovery and extraction share exactly one wired-protocol whitelist", () => {
+	for (const protocol of modelConnectionProtocols) {
+		assert.equal(isDiscoveryProtocolWired(protocol), isTaskDraftProtocolWired(protocol), protocol);
+		assert.equal(isDiscoveryProtocolWired(protocol), true, `${protocol} should be wired`);
+	}
+	assert.deepEqual([...modelConnectionProtocols].sort(), [
+		"anthropic-messages", "google-generative-ai", "openai-completions", "openai-responses",
+	]);
+});
+
+test("discovery: reads /models with the personal key and de-duplicates ids", async () => {
+	let seen: { url: string; method: string; auth: string | null } | undefined;
+	const models = await discoverModels(input, async (request, init) => {
+		const sent = new Request(request, init);
+		seen = { url: sent.url, method: sent.method, auth: sent.headers.get("authorization") };
+		return reply({ data: [{ id: "mimo-v2-flash" }, { id: " mimo-v2-flash " }, { id: "mimo-pro" }, { id: 42 }, null] });
+	});
+	assert.deepEqual(models, ["mimo-v2-flash", "mimo-pro"]);
+	assert.deepEqual(seen, {
+		url: "https://api.example.com/v1/models",
+		method: "GET",
+		auth: "Bearer synthetic-personal-key",
+	});
+});
+
+test("discovery: Responses uses the same explicit bearer-authenticated /models route", async () => {
+	assert.deepEqual(await discoverModels({ ...input, protocol: "openai-responses" }, async (request, init) => {
+		const sent = new Request(request, init);
+		assert.equal(sent.url, input.baseUrl + "/models");
+		assert.equal(sent.method, "GET");
+		assert.equal(sent.headers.get("authorization"), "Bearer " + input.apiKey);
+		return reply({ data: [{ id: "synthetic-model" }] });
+	}), ["synthetic-model"]);
+});
+
+test("discovery: Anthropic uses /v1/models with header auth instead of Bearer", async () => {
+	assert.deepEqual(await discoverModels({ ...input, baseUrl: "https://claude.example", protocol: "anthropic-messages" }, async (request, init) => {
+		const sent = new Request(request, init);
+		assert.equal(sent.url, "https://claude.example/v1/models");
+		assert.equal(sent.headers.get("x-api-key"), input.apiKey);
+		assert.equal(sent.headers.get("anthropic-version"), "2023-06-01");
+		assert.equal(sent.headers.get("authorization"), null);
+		return reply({ data: [{ id: "synthetic-claude" }] });
+	}), ["synthetic-claude"]);
+});
+
+test("discovery: Gemini lists models with a header key and strips the models/ prefix", async () => {
+	assert.deepEqual(await discoverModels({ ...input, baseUrl: "https://generativelanguage.googleapis.com/v1beta", protocol: "google-generative-ai" }, async (request, init) => {
+		const sent = new Request(request, init);
+		assert.equal(sent.url, "https://generativelanguage.googleapis.com/v1beta/models");
+		assert.equal(sent.headers.get("x-goog-api-key"), input.apiKey);
+		assert.equal(sent.headers.get("authorization"), null);
+		return reply({ models: [
+			{ name: "models/gemini-2.5-flash" },
+			{ name: "models/gemini-2.5-pro" },
+			{ name: "gemini-without-prefix" },
+			{ name: "models/gemini-2.5-flash" },
+		] });
+	}), ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-without-prefix"]);
+});
+
+test("discovery: caps the list and refuses unwired protocols or empty keys", async () => {
+	const many = { data: Array.from({ length: 150 }, (_, index) => ({ id: `model-${index}` })) };
+	const models = await discoverModels(input, async () => reply(many));
+	assert.equal(models?.length, modelDiscoveryMaxModels);
+
+	// 所有枚举协议都已接通，因此这里只验证空密钥被拒。
+	assert.equal(await discoverModels({ ...input, apiKey: "  " }, async () => reply(many)), null);
+	assert.equal(await discoverModels({ ...input, apiKey: "   " }, async () => reply(many)), null);
+});
+
+test("discovery: non-2xx, invalid JSON, oversized or unexpected bodies return null", async () => {
+	const cases: Array<() => Response> = [
+		() => reply({ data: [] }, 401),
+		() => new Response("not json", { status: 200 }),
+		() => reply({ models: ["mimo"] }),
+		() => reply({ data: "mimo" }),
+		() => { throw new Error("synthetic transport failure"); },
+	];
+	for (const make of cases) {
+		assert.equal(await discoverModels(input, async () => make()), null);
+	}
+	// 结构合法但没有可用 id：是空列表而不是错误，用户可改为手动填写。
+	assert.deepEqual(await discoverModels(input, async () => reply({ data: [{ id: "x".repeat(200) }] })), []);
+	// 上游返回的超限内容由受控传输层拦截；这里再兜一层长度检查。
+	const huge = { data: [{ id: "mimo" }], padding: "x".repeat(300 * 1024) };
+	assert.equal(await discoverModels(input, async () => reply(huge)), null);
+});

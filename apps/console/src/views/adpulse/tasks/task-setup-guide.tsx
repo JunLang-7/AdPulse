@@ -21,7 +21,8 @@ import { TASK_SETUP_BRIEF_LIMIT } from "./task-setup-file.js";
 import { readTaskSetupAttachment, TASK_SETUP_ATTACHMENT_ACCEPT, TASK_SETUP_PREVIEW_LIMIT } from "./task-setup-attachment.js";
 import type { FormState } from "./task-form.js";
 
-import { TaskModelSettings, type TaskDraftProvider } from "./task-model-settings.js";
+import { TaskModelSettings } from "./task-model-settings.js";
+import type { TaskModelChoice } from "../models/model-config-dialog.js";
 
 type Suggestions = components["schemas"]["TaskDraftSuggestions"];
 
@@ -38,8 +39,10 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	saving: boolean;
 }) {
 	const [step, setStep] = useState(0);
-	const [provider, setProvider] = useState<TaskDraftProvider>();
+	const [provider, setProvider] = useState<TaskModelChoice>();
 	const [suggestion, setSuggestion] = useState<{ brief: string; data?: Suggestions }>();
+	const [useSuggestedProduct, setUseSuggestedProduct] = useState(true);
+	const [chosenGoals, setChosenGoals] = useState<string[]>([]);
 	const [returnToReview, setReturnToReview] = useState(false);
 	const [notes, setNotes] = useState(emptyNotes);
 	const [excluded, setExcluded] = useState<ExcludedChoices>({});
@@ -53,6 +56,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const [localStages, setLocalStages] = useState<Partial<Record<TaskDraftStage, boolean>>>({});
 	const busyRef = useRef(false);
 	const fileInput = useRef<HTMLInputElement>(null);
+	const assistId = useId();
 	const fileHelpId = useId();
 	const [dragging, setDragging] = useState(false);
 	const stage = taskStages[step];
@@ -60,9 +64,26 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const brief = stage ? stageBrief(form, stage, notes[stage.id]) : "";
 	const remaining = TASK_SETUP_BRIEF_LIMIT - brief.length;
 	const attachment = stage ? attached[stage.id] : undefined;
+	const canUseFileStart = remaining < 0 && Boolean(attachment);
 	const suggestionCurrent = suggestion?.brief === brief ? suggestion : undefined;
-	const draft = stage && suggestionCurrent?.data ? applyStageSuggestions(form, stage.id, suggestionCurrent.data, excluded) : undefined;
+	const recommendations = stage?.id === "overview" ? suggestionCurrent?.data?.recommendations : undefined;
+	const productIdea = recommendations?.product?.value !== form.product.trim() ? recommendations?.product : undefined;
+	const goalIdeas = form.objective.trim() ? [] : recommendations?.objectives ?? [];
+	const excerpts = stage && suggestionCurrent?.data ? applyStageSuggestions(form, stage.id, suggestionCurrent.data, excluded) : undefined;
+	const draft = excerpts && productIdea ? { ...excerpts, product: form.product } : excerpts;
 	const additions = stage?.fields.filter((field) => draft && stageValue(draft, field) !== stageValue(form, field)) ?? [];
+
+	function applySuggestions() {
+		if (!stage || !draft) return;
+		const selectedGoals = goalIdeas.filter((item) => chosenGoals.includes(item));
+		const next = {
+			...draft,
+			product: useSuggestedProduct && productIdea ? productIdea.value : draft.product,
+			objective: selectedGoals.length ? selectedGoals.join("\n") : draft.objective,
+		};
+		onChange(next);
+		setSuggestion({ brief: stageBrief(next, stage, notes[stage.id]) });
+	}
 
 	function go(index: number, fromReview = false) {
 		setStep(index);
@@ -82,11 +103,17 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 		setFileError("");
 		try {
 			const { text, clipped, pagesWithoutText } = await readTaskSetupAttachment(file);
-			const combined = [notes[stage.id].trim(), text].filter(Boolean).join("\n");
-			if (combined.length > TASK_SETUP_PREVIEW_LIMIT)
-				throw new Error("合并后超过预览上限。请先精简现有资料，再选择文件。");
+			const existing = notes[stage.id].trim();
+			const prefix = existing ? existing + "\n" : "";
+			const available = Math.max(0, TASK_SETUP_PREVIEW_LIMIT - prefix.length);
+			const excerpt = text.slice(0, available).replace(/[\uD800-\uDBFF]$/, "");
+			if (!excerpt)
+				throw new Error("预览区已满。请删减现有资料后再选择文件。");
+			const combined = prefix + excerpt;
 			setNotes((previous) => ({ ...previous, [stage.id]: combined }));
-			setAttached((previous) => ({ ...previous, [stage.id]: { name: file.name, clipped, pagesWithoutText } }));
+			setAttached((previous) => ({
+				...previous, [stage.id]: { name: file.name, clipped: clipped || excerpt.length < text.length, pagesWithoutText },
+			}));
 		} catch (problem) {
 			setFileError(problem instanceof Error ? problem.message : "无法读取这个文件。");
 		} finally {
@@ -99,22 +126,52 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	async function submitStage(preview = false) {
 		if (!stage || busyRef.current || saving) return;
 		setError("");
-		if (remaining < 0 && !useEnteredValues) {
-			setError("说明和选项共超过 2,500 字，请先精简资料。");
+		const hasNotes = Boolean(notes[stage.id].trim());
+		const needsExtraction = Boolean(brief) && (preview || (hasNotes && !useEnteredValues && !suggestionCurrent));
+		const useFileStart = preview && canUseFileStart;
+		if (needsExtraction && remaining < 0 && !useFileStart) {
+			setError(canUseFileStart
+				? "资料超过 2,500 字。请先在上方用前 2,500 字生成建议，或编辑预览后提交。"
+				: "说明和选项共超过 2,500 字，请先精简资料。");
 			return;
 		}
 		let nextForm = form;
-		if (brief && (preview || (!useEnteredValues && !suggestionCurrent))) {
+		if (needsExtraction) {
 			busyRef.current = true;
 			setProcessing(true);
 			onBusyChange(true);
 			try {
 				const result = await consoleClient.POST("/api/task-drafts/extract", {
-					body: { brief, stage: stage.id, ...(provider ? { provider } : {}) },
+					body: {
+						brief: useFileStart ? brief.slice(0, TASK_SETUP_BRIEF_LIMIT).replace(/[\uD800-\uDBFF]$/, "") : brief,
+						stage: stage.id,
+						...(provider
+							? "connectionId" in provider
+								? { connectionId: provider.connectionId, model: provider.model }
+								: { provider: provider.provider, model: provider.model }
+							: {}),
+					},
 				});
+				if (result.response.status === 409 && result.error?.error === "model_selection_required") {
+					setFailed(true);
+					setError("请先选择一个模型，或按已填写的内容继续。");
+					return;
+				}
+				if (result.response.status === 503) {
+					setFailed(true);
+					setError("当前模型暂时无法整理资料。请检查模型配置、换一个模型重试，或按已填写的内容继续。");
+					return;
+				}
 				if (!result.data) throw new Error("整理服务不可用");
-				if (preview) {
+				const ideas = result.data.recommendations;
+				const hasIdeas = stage.id === "overview" && (
+					(ideas?.product && ideas.product.value !== form.product.trim()) ||
+					(ideas?.objectives?.length && !form.objective.trim())
+				);
+				if (preview || hasIdeas) {
 					setSuggestion({ brief, data: result.data });
+					setUseSuggestedProduct(true);
+					setChosenGoals([]);
 					setFailed(false);
 					setUseEnteredValues(false);
 					return;
@@ -146,6 +203,9 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 					<TaskModelSettings selected={provider} disabled={busy} onSelect={(choice) => {
 						setProvider(choice);
 						setSuggestion(undefined);
+						setError("");
+						setFailed(false);
+						setUseEnteredValues(false);
 					}} />
 				</div>
 				<ol aria-label="填写进度" className="grid grid-cols-2 gap-2 border-b pb-4 sm:grid-cols-4">
@@ -168,30 +228,14 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 							<h2 className="text-lg font-semibold">{stage.title}</h2>
 							<p className="text-sm text-muted-foreground">{stage.description}</p>
 						</div>
-						{stage.fields.map((field) => field === "product" ? (
-							<label key={field} className="block space-y-1 text-sm font-medium">
-								<span>产品或服务名称</span>
-								<Input value={form.product} maxLength={200} disabled={busy} placeholder="例如：新品试用装"
-									onChange={(event) => onChange({ ...form, product: event.target.value })} />
-								<span className="block text-xs font-normal text-muted-foreground">任务唯一必填项。也可从下方资料整理出来。</span>
-							</label>
-						) : (
-							<StageChoices key={field} field={field} form={form} disabled={busy} onSelect={(value, chosen) => {
-								setExcluded((previous) => {
-									const omitted = previous[field] ?? [];
-									return { ...previous, [field]: chosen ? [...omitted, value] : omitted.filter((item) => item !== value) };
-								});
-								onChange(withSelectedValue(form, field, value));
-							}} />
-						))}
-
-						<details key={stage.id} className="rounded-lg border px-3 py-2">
-							<summary className="cursor-pointer text-sm font-medium">
-								补充说明或文件（选填）{notes[stage.id] ? " · 已填写" : ""}
-							</summary>
-							<div className="mt-3 space-y-3">
+						<section key={stage.id} aria-labelledby={assistId} className="space-y-3 rounded-lg border border-primary/25 bg-muted/25 p-4">
+							<div className="space-y-1">
+								<h3 id={assistId} className="text-sm font-semibold">AI 辅助填写</h3>
+								<p className="text-sm text-muted-foreground">写一句话或上传已有资料，生成建议后再核对。</p>
+							</div>
+							<div className="space-y-3">
 								<div className="space-y-1 text-sm">
-									<label htmlFor={"task-setup-notes-" + stage.id}>补充资料</label>
+									<label className="sr-only" htmlFor={"task-setup-notes-" + stage.id}>本阶段说明</label>
 									<textarea id={"task-setup-notes-" + stage.id} className="min-h-24 w-full rounded-md border bg-background p-3 text-sm"
 										value={notes[stage.id]} maxLength={TASK_SETUP_PREVIEW_LIMIT} disabled={busy}
 										placeholder={stage.placeholder} onChange={(event) => {
@@ -206,7 +250,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 										if (file) void loadFile(file);
 									}} />
 								<button type="button" disabled={busy} aria-label="选择资料文件" aria-describedby={fileHelpId}
-									className={"flex w-full cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 " +
+									className={"flex w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border-2 border-dashed px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 " +
 										(dragging ? "border-primary bg-primary/10" : "border-primary/40 bg-muted/55 hover:border-primary hover:bg-muted")}
 									onClick={() => fileInput.current?.click()}
 									onDragOver={(event) => {
@@ -225,51 +269,91 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 										const file = files[0];
 										if (file) void loadFile(file);
 									}}>
-									<Upload aria-hidden="true" className="size-5" />
-									<span className="rounded-md bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground">{reading ? "正在读取文件…" : "选择文件"}</span>
-									<span className="text-xs text-muted-foreground">也可以把文件拖到这里</span>
+									<Upload aria-hidden="true" className="size-4 shrink-0" />
+									<span className="text-sm font-semibold">{reading ? "正在读取文件…" : "选择文件"}</span>
+									<span className="text-xs text-muted-foreground">也可以拖到这里</span>
 								</button>
-								<p id={fileHelpId} className="text-xs text-muted-foreground">支持 PDF、Word、Excel、TXT、Markdown、CSV，单份文件最多 8 MB。</p>
+								<p id={fileHelpId} className="text-xs text-muted-foreground">支持 PDF、Word（.docx）、Excel（.xlsx）、TXT、Markdown、CSV，每份最多 8 MB。</p>
 								{attachment ? (
 									<div role="status" className="space-y-1 break-words text-sm">
-										<p>已读入 {attachment.name}。{attachment.clipped ? "仅预览前 30,000 字，请核对并保留相关内容。" : "可在上方核对和修改文字。"}</p>
+										<p>已读入 {attachment.name}。{attachment.clipped ? "仅展示部分文字，可在上方保留相关内容。" : "可在上方核对和修改文字。"}</p>
 										{attachment.pagesWithoutText ? <p>已检查的页面中有 {attachment.pagesWithoutText} 页没有可读取文字。如有需要，请识别文字后补充。</p> : null}
 									</div>
 								) : null}
 								{fileError ? <p role="alert" className="text-sm text-red-600">{fileError}</p> : null}
-								<p className={remaining >= 0 ? "text-xs text-muted-foreground" : "text-sm text-red-600"}>
-									{remaining >= 0 ? "先在本机预览，提交前可编辑。本阶段还可输入 " + remaining + " 字。" : "超过本阶段 2,500 字上限，请在上方删减 " + (-remaining) + " 字后提交。"}
+								<p className={remaining >= 0 || canUseFileStart ? "text-xs text-muted-foreground" : "text-sm text-red-600"}>
+									{canUseFileStart ? "生成建议时使用本阶段资料的前 2,500 字。你也可以先编辑预览，保留想用的段落。"
+										: remaining >= 0 ? "先在本机预览，提交前可编辑。本阶段还可输入 " + remaining + " 字。" : "超过本阶段 2,500 字上限，请在上方删减 " + (-remaining) + " 字后提交。"}
 								</p>
 							</div>
-						</details>
-
-						<div className="space-y-2 rounded-lg border p-3">
-							<div className="flex flex-wrap items-center justify-between gap-2">
-								<p className="text-sm text-muted-foreground">根据本阶段填写的内容和资料，先生成建议供你核对。</p>
-								<Button type="button" variant="outline" disabled={busy || !brief || remaining < 0}
-									onClick={() => void submitStage(true)}>AI 辅助填写</Button>
-							</div>
-							{draft && additions.length ? (
+							<Button type="button" disabled={busy || !brief || (remaining < 0 && !canUseFileStart)}
+								onClick={() => void submitStage(true)}>{processing ? "正在整理…" : canUseFileStart ? "用前 2,500 字生成建议" : "生成建议"}</Button>
+							{draft && (additions.length > 0 || productIdea || goalIdeas.length > 0) ? (
 								<div className="space-y-2 rounded-md bg-muted/40 p-2 text-sm">
 									<p className="font-medium">待核对建议</p>
 									{additions.map((field) => <p key={field}>{fieldLabels[field]} · {stageValue(draft, field)}</p>)}
-									<Button type="button" size="sm" disabled={busy} onClick={() => {
-										onChange(draft);
-										setSuggestion({ brief: stageBrief(draft, stage, notes[stage.id]) });
-									}}>应用建议</Button>
+									{productIdea ? (
+										<div className="space-y-1">
+											<label className="flex items-center gap-2">
+												<input type="checkbox" checked={useSuggestedProduct} disabled={busy}
+													onChange={(event) => setUseSuggestedProduct(event.target.checked)} />
+												<span>建议名称 · {productIdea.value}</span>
+											</label>
+											<p className="text-xs text-muted-foreground">根据原文「{productIdea.evidence}」整理</p>
+										</div>
+									) : null}
+									{goalIdeas.length ? (
+										<fieldset className="space-y-1">
+											<legend className="font-medium">推广目标建议（可多选或跳过）</legend>
+											{goalIdeas.map((goal) => (
+												<label key={goal} className="flex items-center gap-2">
+													<input type="checkbox" checked={chosenGoals.includes(goal)} disabled={busy} onChange={(event) => {
+														const selected = event.target.checked;
+														setChosenGoals((current) => selected ? [...current, goal] : current.filter((item) => item !== goal));
+													}} />
+													<span>{goal}</span>
+												</label>
+											))}
+										</fieldset>
+									) : null}
+									<Button type="button" size="sm"
+										disabled={busy || !(additions.length || (productIdea && useSuggestedProduct) || goalIdeas.some((goal) => chosenGoals.includes(goal)))}
+										onClick={applySuggestions}>
+										{productIdea || goalIdeas.length ? "应用所选建议" : "应用建议"}
+									</Button>
 								</div>
 							) : draft ? <p role="status" className="text-sm">没有可补充的建议，可以继续手填。</p> : null}
-						</div>
-						{error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
-						{failed ? (
-							<label className="flex items-center gap-2 text-sm">
-								<input type="checkbox" checked={useEnteredValues} disabled={busy}
-									onChange={(event) => setUseEnteredValues(event.target.checked)} />
-								本阶段按已填写的内容继续
+							{failed ? (
+								<div className="space-y-2">
+									{error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
+									<label className="flex items-center gap-2 text-sm">
+										<input type="checkbox" checked={useEnteredValues} disabled={busy}
+											onChange={(event) => setUseEnteredValues(event.target.checked)} />
+										本阶段按已填写的内容继续
+									</label>
+								</div>
+							) : null}
+						</section>
+
+						{stage.fields.map((field) => field === "product" ? (
+							<label key={field} className="block space-y-1 text-sm font-medium">
+								<span>产品或服务名称</span>
+								<Input value={form.product} maxLength={200} disabled={busy} placeholder="例如：新品试用装"
+									onChange={(event) => onChange({ ...form, product: event.target.value })} />
+								<span className="block text-xs font-normal text-muted-foreground">任务唯一必填项，可直接填写或应用上方建议。</span>
 							</label>
-						) : null}
+						) : (
+							<StageChoices key={field} field={field} form={form} disabled={busy} onSelect={(value, chosen) => {
+								setExcluded((previous) => {
+									const omitted = previous[field] ?? [];
+									return { ...previous, [field]: chosen ? [...omitted, value] : omitted.filter((item) => item !== value) };
+								});
+								onChange(withSelectedValue(form, field, value));
+							}} />
+						))}
+						{!failed && error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
 						<p className="text-xs text-muted-foreground">
-							提交会发送本阶段选择和填写的资料用于整理。选填项未确定时，可以留空提交。
+							补充说明会在生成建议或提交本阶段时用于整理。还没确定的信息可以暂时留空。
 						</p>
 						<div className="flex flex-wrap gap-2">
 							<Button type="button" variant="outline" disabled={step === 0 || busy} onClick={() => go(step - 1, returnToReview)}>上一步</Button>
@@ -328,7 +412,7 @@ function StageChoices({ field, form, disabled, onSelect }: {
 	const choices = [...new Set([...presets, ...selected])];
 	return (
 		<fieldset className="space-y-2" disabled={disabled}>
-			<legend className="text-sm font-medium">{fieldLabels[field]} <span className="font-normal text-muted-foreground">（选填，可多选）</span></legend>
+			<legend className="text-sm font-medium">{fieldLabels[field]} <span className="font-normal text-muted-foreground">（可多选）</span></legend>
 			<div className="flex flex-wrap gap-2">
 				{choices.map((value) => {
 					const chosen = selected.includes(value);

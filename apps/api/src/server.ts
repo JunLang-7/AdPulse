@@ -60,7 +60,29 @@ export interface NotificationAuditEvent {
 	path: string;
 }
 
-export type AuditEvent = AuthAuditEvent | NotificationAuditEvent;
+/**
+ * 模型配置的最小审计：只记动作、内部对象、版本与结果代码。
+ * 不记密钥、密文、请求头、请求体、模型原文或上游错误文本。
+ */
+export interface ModelAuditEvent {
+	event:
+		| "model.connection.created"
+		| "model.connection.updated"
+		| "model.connection.deleted"
+		| "model.credential.replaced"
+		| "model.credential.removed"
+		| "model.preference.updated"
+		| "model.connection.probed"
+		| "model.discovery.requested"
+		| "model.request.rejected";
+	path: string;
+	connectionId?: string;
+	version?: number;
+	status?: number;
+	result: "ok" | "rejected" | "unavailable";
+}
+
+export type AuditEvent = AuthAuditEvent | NotificationAuditEvent | ModelAuditEvent;
 
 export interface ApiAuthentication {
 	service: AuthenticationService;
@@ -679,8 +701,12 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					return json(res, 200, { ok: true });
 				}
 				if (
-					path === "/api/task-drafts/models" &&
-					(req.method === "PUT" || req.method === "DELETE")
+					((req.method === "PUT" || req.method === "DELETE") && path === "/api/task-drafts/models") ||
+					(req.method === "POST" && path === "/api/task-drafts/models/test") ||
+					(req.method === "POST" && ["/api/me/model-connections", "/api/me/model-connections/test", "/api/me/model-connections/models"].includes(path)) ||
+					((req.method === "PUT" || req.method === "DELETE") &&
+						(/^\/api\/me\/model-connections\/[0-9a-f-]{36}(?:\/credential)?$/.test(path) ||
+							path === "/api/me/model-preferences"))
 				) {
 					const verifiedAt = Date.parse(
 						session.recentlyVerifiedAt ?? session.authenticatedAt ?? session.createdAt,
@@ -690,13 +716,25 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						now().getTime() - verifiedAt > 15 * 60 * 1000
 					) {
 						reject("session_invalid", req, path);
+						res.setHeader("Cache-Control", "no-store");
 						throw new HttpError(401, "reauth_required");
 					}
 				}
-				return await handleAdmin(req, res, runtime, session.userId, path, auth.service);
+				return await handleAdmin(req, res, runtime, session.userId, path, auth.service, audit);
 			}
 			throw new HttpError(404, "route not found");
 		} catch (error) {
+			// 模型配置的失败也要有最小审计：只记不含查询串的路径与状态码，
+			// 不记错误正文、上游文本或任何一次性凭据。
+			const rejectedPath = (req.url ?? "/").split("?")[0] ?? "/";
+			if (rejectedPath.startsWith("/api/me/model-connections") ||
+				rejectedPath === "/api/me/model-preferences")
+				audit({
+					event: "model.request.rejected",
+					path: rejectedPath,
+					result: "rejected",
+					status: error instanceof HttpError ? error.status : 500,
+				});
 			if (res.headersSent) {
 				res.destroy();
 				return;

@@ -4,7 +4,7 @@ import test, { type TestContext } from "node:test";
 import { createApi } from "../apps/api/dist/server.js";
 import { AuthenticationService } from "../packages/core/dist/index.js";
 import { compose, type Runtime } from "../packages/runtime/dist/index.js";
-import { createTaskDraftExtractor, type TaskDraftStage } from "../packages/runtime/dist/task-draft-extractor.js";
+import { createTaskDraftExtractor, createTaskDraftRequestLimit, createUserRequestBudgets, type TaskDraftStage } from "../packages/runtime/dist/task-draft-extractor.js";
 import { createTaskDraftModels } from "../packages/runtime/dist/task-draft-models.js";
 import { MemoryStorage } from "../packages/storage/dist/index.js";
 
@@ -19,6 +19,77 @@ function providerReply(content: string, finishReason = "stop"): Response {
 	const stream = frames.map((frame) => "data: " + JSON.stringify(frame) + "\n\n").join("") + "data: [DONE]\n\n";
 	return new Response(stream, { headers: { "content-type": "text/event-stream" } });
 }
+
+test("shared deployment routes are also limited per owner", async () => {
+	let calls = 0;
+	const models = createTaskDraftModels({
+		TASK_DRAFT_PROVIDER: "openai-compatible",
+		TASK_DRAFT_GATEWAY_BASE_URL: "https://gateway.example/v1",
+		TASK_DRAFT_GATEWAY_MODEL: "synthetic-model",
+		TASK_DRAFT_GATEWAY_API_KEY: "synthetic-key",
+	}, async () => {
+		calls++;
+		return providerReply(JSON.stringify({ product: "产品" }));
+	});
+	const selection = { provider: "openai-compatible", model: "synthetic-model" };
+	for (let attempt = 0; attempt < 6; attempt++)
+		assert.deepEqual(await models.extractShared("owner-a", selection, "产品", "overview"), { product: "产品" });
+	// 同一个 owner 的按用户预算耗尽，但另一个 owner 仍可使用。
+	assert.equal(await models.extractShared("owner-a", selection, "产品", "overview"), null);
+	assert.deepEqual(await models.extractShared("owner-b", selection, "产品", "overview"), { product: "产品" });
+	assert.equal(calls, 7);
+});
+
+test("legacy/deployment model routes use controlled egress by default", async (t) => {
+	let ambientCalls = 0;
+	t.mock.method(globalThis, "fetch", async () => {
+		ambientCalls++;
+		return providerReply(JSON.stringify({ product: "产品" }));
+	});
+	const models = createTaskDraftModels({
+		TASK_DRAFT_GATEWAY_BASE_URL: "https://127.0.0.1/v1",
+		TASK_DRAFT_GATEWAY_MODEL: "synthetic-model",
+		TASK_DRAFT_GATEWAY_API_KEY: "synthetic-key",
+	});
+	assert.equal(await models.extractShared("owner-a", { provider: "openai-compatible", model: "synthetic-model" }, "产品"), null);
+	assert.equal(ambientCalls, 0);
+});
+
+test("per-user budgets are isolated but still bounded by the instance budget", async () => {
+	const instance = createTaskDraftRequestLimit();
+	const userLimitFor = createUserRequestBudgets();
+	const run = (owner: string) => userLimitFor(owner)(() => instance(async () => ({ ok: true })));
+	for (let attempt = 0; attempt < 6; attempt++)
+		assert.deepEqual(await run("owner-a"), { ok: true }, `owner-a attempt ${attempt}`);
+	// 同一用户耗尽自己的窗口，但不影响另一个用户。
+	assert.equal(await run("owner-a"), null);
+	assert.deepEqual(await run("owner-b"), { ok: true });
+	assert.deepEqual(await run("owner-b"), { ok: true });
+	// 总量到这里刚好 8 次：实例预算耗尽，第三个人也拿不到。
+	assert.equal(await run("owner-c"), null);
+});
+
+test("per-user budgets cap a single user below the instance budget", async () => {
+	const userLimitFor = createUserRequestBudgets();
+	const limit = userLimitFor("owner-solo");
+	for (let attempt = 0; attempt < 6; attempt++)
+		assert.deepEqual(await limit(async () => ({ ok: true })), { ok: true });
+	assert.equal(await limit(async () => ({ ok: true })), null);
+});
+
+test("per-user budget table evicts the oldest owner instead of growing forever", async () => {
+	let created = 0;
+	const userLimitFor = createUserRequestBudgets(() => {
+		created++;
+		return async <T,>(request: () => Promise<T | null>) => request();
+	}, 2);
+	await userLimitFor("first")(async () => ({ ok: true }));
+	await userLimitFor("second")(async () => ({ ok: true }));
+	await userLimitFor("third")(async () => ({ ok: true }));
+	assert.equal(created, 3, "eviction should drop one entry, not keep growing");
+	await userLimitFor("first")(async () => ({ ok: true }));
+	assert.equal(created, 4);
+});
 
 test("task draft extracts only bounded, distinct excerpts from the submitted brief", async () => {
 	const names = Array.from({ length: 9 }, (_, index) => `人群${index + 1}`);
@@ -85,6 +156,31 @@ test("task draft ignores unsupported field values and keeps valid empty results"
 		providerReply(JSON.stringify({ product: ["产品"], objective: 100, channels: "小红书" })));
 	assert.ok(extract);
 	assert.deepEqual(await extract("产品，发在小红书"), {});
+});
+
+test("overview separates normalized product names and optional goals from facts", async () => {
+	const evidence = "云南普洱，熟普";
+	const product = { value: "云南普洱熟茶", evidence };
+	const goals = ["带动茶友首次购买", "增加关于熟普口感和冲泡方式的咨询", "鼓励已有顾客复购"];
+	let reply: unknown = {
+		product: "云南普洱熟茶",
+		objective: goals[0],
+		recommendations: { product, objectives: [null, ...goals, goals[0], "额外一项"], budget: 500 },
+	};
+	const extract = createTaskDraftExtractor(deepseekEnv, async () => providerReply(JSON.stringify(reply)));
+	assert.ok(extract);
+	const brief = `我想推广茶叶，是那种${evidence}`;
+	assert.deepEqual(await extract(brief, "overview"), { recommendations: { product, objectives: goals } });
+	assert.deepEqual(await extract(brief, "audience"), {});
+	assert.deepEqual(await extract(brief), {});
+
+	reply = { objective: "吸引顾客到店", recommendations: { product, objectives: goals } };
+	assert.deepEqual(await extract(`${brief}，我想吸引顾客到店`, "overview"), {
+		objective: "吸引顾客到店", recommendations: { product },
+	});
+
+	reply = { recommendations: { product: { ...product, evidence: "不存在的原文" }, objectives: goals } };
+	assert.deepEqual(await extract(brief, "overview"), {});
 });
 
 test("task draft uses an instance-local provider call limit", async () => {
@@ -288,10 +384,10 @@ test("configured model selection routes only to the chosen provider", async () =
 		urls.push(sent.url);
 		return providerReply("{}");
 	});
-	assert.deepEqual(models.list("owner").models.map(({ id, status }) => [id, status]), [
-		["deepseek", "configured"], ["openai-compatible", "configured"],
+	assert.deepEqual(models.list("owner").shared.map(({ provider, model }) => [provider, model]), [
+		["deepseek", "deepseek-flash"], ["openai-compatible", "synthetic-alt"],
 	]);
-	assert.deepEqual(await models.extract("owner", "openai-compatible", "产品", "overview"), {});
+	assert.deepEqual(await models.extract("owner", { provider: "openai-compatible", model: "synthetic-alt" }, "产品", "overview"), {});
 	assert.deepEqual(await models.extract("owner", undefined, "产品", "overview"), {});
 	assert.deepEqual(urls, ["https://gateway.example/v1/chat/completions", "https://api.deepseek.com/chat/completions"]);
 });
@@ -305,26 +401,27 @@ test("temporary model credentials are verified, isolated, redacted, removable an
 		requests.push({ auth: sent.headers.get("authorization"), brief: body.messages[1].content });
 		return providerReply("{}");
 	}, () => now);
+	const selection = { provider: "deepseek", model: "deepseek-flash" };
 	const base = await serve(t, { ...compose(new MemoryStorage(), []), taskDraftModels: models });
 	const url = base.url + "/api/task-drafts/models";
 	assert.equal((await fetch(url)).status, 401);
 	const headers = base.headers;
-	const connect = () => fetch(url, { method: "PUT", headers, body: JSON.stringify({ provider: "deepseek", apiKey: "synthetic-personal-key" }) });
+	const connect = () => fetch(url, { method: "PUT", headers, body: JSON.stringify({ ...selection, apiKey: "synthetic-personal-key" }) });
 	const connected = await connect();
 	assert.equal(connected.status, 200);
 	assert.equal(connected.headers.get("cache-control"), "no-store");
 	const result = await connected.text();
-	assert.match(result, /connected/);
+	assert.match(result, /DeepSeek/);
 	assert.doesNotMatch(result, /synthetic-personal-key/);
-	assert.equal(models.list("other-owner").models[0]?.status, "unconfigured");
-	assert.equal(await models.extract("other-owner", "deepseek", "其他用户资料"), null);
+	assert.deepEqual(models.list("other-owner").connections, []);
+	assert.equal(await models.extract("other-owner", selection, "其他用户资料"), null);
 	assert.deepEqual(requests, [{ auth: "Bearer synthetic-personal-key", brief: "产品：连接测试" }]);
-	assert.equal((await request(base, { provider: "deepseek", stage: "overview", brief: "本用户资料" })).status, 200);
-	assert.equal((await fetch(url + "?provider=deepseek", { method: "DELETE", headers })).status, 200);
-	assert.equal((await request(base, { provider: "deepseek", brief: "不能再调用" })).status, 503);
+	assert.equal((await request(base, { ...selection, stage: "overview", brief: "本用户资料" })).status, 200);
+	assert.equal((await fetch(url + "?provider=deepseek&model=deepseek-flash", { method: "DELETE", headers })).status, 200);
+	assert.equal((await request(base, { ...selection, brief: "不能再调用" })).status, 503);
 	assert.equal((await connect()).status, 200);
 	now = 8 * 60 * 60 * 1000;
-	assert.equal(models.list(base.userId).models[0]?.status, "unconfigured");
+	assert.deepEqual(models.list(base.userId).connections, []);
 });
 
 test("connection changes are disabled unless enabled by deployment", async (t) => {
@@ -333,7 +430,7 @@ test("connection changes are disabled unless enabled by deployment", async (t) =
 	const response = await fetch(base.url + "/api/task-drafts/models", {
 		method: "PUT",
 		headers: base.headers,
-		body: JSON.stringify({ provider: "deepseek", apiKey: "synthetic-personal-key" }),
+		body: JSON.stringify({ provider: "deepseek", model: "deepseek-flash", apiKey: "synthetic-personal-key" }),
 	});
 	assert.equal(response.status, 403);
 });

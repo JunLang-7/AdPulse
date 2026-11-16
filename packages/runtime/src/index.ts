@@ -26,8 +26,17 @@ import {
 } from "@adpluse/core";
 import { MemoryStorage, PostgresStorage } from "@adpluse/storage";
 import { createModelCredentialCipher } from "./model-credential-cipher.js";
+import { discoverModels } from "./model-discovery.js";
+import { createModelEgressFetch } from "./model-egress.js";
 import { HttpSourceFetcher } from "./source-fetch.js";
 import type { TaskDraftExtractor } from "./task-draft-extractor.js";
+import {
+	createPersistedTaskDraftExtractor,
+	createTaskDraftRequestLimit,
+	createUserRequestBudgets,
+	isTaskDraftProtocolWired,
+	type ModelRouteInput,
+} from "./task-draft-extractor.js";
 import { createTaskDraftModels } from "./task-draft-models.js";
 
 export const reviewPolicy: PolicyEngine = {
@@ -140,22 +149,58 @@ export function compose(
 		),
 	};
 }
-export type Runtime = ReturnType<typeof compose> & { extractTaskDraft?: TaskDraftExtractor; taskDraftModels?: ReturnType<typeof createTaskDraftModels> };
+export type Runtime = ReturnType<typeof compose> & {
+	extractTaskDraft?: TaskDraftExtractor;
+	taskDraftModels?: ReturnType<typeof createTaskDraftModels>;
+	modelConnections?: ReturnType<typeof createModelConnections>;
+};
 
 /**
  * 个人模型连接的持久化基础。主密钥未配置/不合法时返回 undefined，
  * 调用方据此返回不可用，而不是退回内存临时连接或明文。
+ * 探针与抽取器都走受控出网层（DNS 绑定、禁重定向、限大小/超时）。
  */
 export function createModelConnections(
 	storage: Storage,
 	env: Record<string, string | undefined> = process.env,
-): ModelConnectionService | undefined {
+	fetchImpl: typeof fetch = createModelEgressFetch(),
+) {
 	const cipher = createModelCredentialCipher(env);
-	return cipher ? new ModelConnectionService(storage, cipher) : undefined;
+	if (!cipher) return;
+	const service = new ModelConnectionService(storage, cipher);
+	// 探针、发现与抽取共用同一份实例预算；再叠一层按 owner 的预算，
+	// 避免单个用户耗尽全站额度。两者都在发起请求前判定。
+	const instanceLimit = createTaskDraftRequestLimit();
+	const userLimitFor = createUserRequestBudgets();
+	function budgeted<T>(ownerId: string, request: () => Promise<T | null>): Promise<T | null> {
+		return userLimitFor(ownerId)(() => instanceLimit(request));
+	}
+	return {
+		service,
+		/** 用固定合成短句验证候选连接；不写入、不发送任务材料。 */
+		async probe(ownerId: string, input: ModelRouteInput): Promise<boolean> {
+			const extract = createPersistedTaskDraftExtractor(input, fetchImpl, (request) => budgeted(ownerId, request));
+			const suggestions = extract ? await extract(modelConnectionTestBrief, "overview") : null;
+			return Boolean(suggestions?.product || suggestions?.objective);
+		},
+		draftExtractor(ownerId: string, input: ModelRouteInput): TaskDraftExtractor | undefined {
+			return createPersistedTaskDraftExtractor(input, fetchImpl, (request) => budgeted(ownerId, request));
+		},
+		/** 只在显式点击时调用；失败返回 null，不代替用户猜模型。 */
+		discover(ownerId: string, input: { baseUrl: string; protocol: ModelRouteInput["protocol"]; apiKey: string }) {
+			// 发现与测试/调用共用同一份限额，避免它成为绕过预算的通道。
+			return budgeted(ownerId, () => discoverModels(input, fetchImpl));
+		},
+		protocolWired: isTaskDraftProtocolWired,
+	};
 }
 
-export { taskDraftProviderIds } from "./task-draft-models.js";
+export const modelConnectionTestBrief = "产品：连接测试";
+
 export { taskDraftBriefMaxLength, taskDraftStages } from "./task-draft-extractor.js";
+export type { TaskDraftSelection } from "./task-draft-models.js";
+export { catalogForClient, findCatalogModel, findCatalogProvider, modelCatalogProviders } from "./model-catalog.js";
+export type { ModelCatalogModel, ModelCatalogProvider } from "./model-catalog.js";
 
 export {
 	HttpSourceFetcher,
@@ -164,6 +209,9 @@ export {
 } from "./source-fetch.js";
 export { runSources } from "./source-runner.js";
 export { discoverSource } from "./source-discovery.js";
+export { discoverModels, isDiscoveryProtocolWired, modelDiscoveryMaxModels } from "./model-discovery.js";
+export { geminiEndpoint, isGeminiModelId, requestGeminiText } from "./model-gemini.js";
+export type { ModelDiscoveryInput } from "./model-discovery.js";
 export { createModelCredentialCipher, parseModelCredentialKeyring } from "./model-credential-cipher.js";
 export type { CredentialKeyring } from "./model-credential-cipher.js";
 
@@ -237,7 +285,7 @@ export async function fromEnvironment(
 	const storage = postgres ?? new MemoryStorage();
 	const modelConnections = createModelConnections(storage, env);
 	return {
-		...compose(postgres ?? new MemoryStorage(), accounts, reviewPolicy, {
+		...compose(storage, accounts, reviewPolicy, {
 			decisionCardsEnabled: env.DECISION_CARDS_ENABLED === "1",
 			...(env.PUBLIC_ORIGIN ? { detailUrlBase: env.PUBLIC_ORIGIN } : {}),
 		}),

@@ -1,12 +1,11 @@
 /// <reference types="vite/client" />
 
-import { readTaskSetupFile, TASK_SETUP_FILE_ACCEPT } from "./task-setup-file.ts";
+import { readTaskSetupFile, TASK_SETUP_ATTACHMENT_MAX_BYTES, TASK_SETUP_FILE_ACCEPT } from "./task-setup-file.ts";
 
 const documentExtensions = [".pdf", ".docx", ".xlsx"];
 export const TASK_SETUP_ATTACHMENT_ACCEPT = [TASK_SETUP_FILE_ACCEPT, ...documentExtensions].join(",");
 export const TASK_SETUP_PREVIEW_LIMIT = 30_000;
 
-const maxDocumentBytes = 8 * 1024 * 1024;
 const maxArchiveBytes = 32 * 1024 * 1024;
 const maxArchiveEntries = 1_000;
 const maxPdfPages = 40;
@@ -120,7 +119,7 @@ async function readWorkbookRows<ParsedNumber = number>(
 export async function readReviewWorkbook(file: File) {
 	if (!file.name.toLowerCase().endsWith(".xlsx"))
 		throw new AttachmentError("请选择 Excel（.xlsx）文件。");
-	if (file.size > maxDocumentBytes)
+	if (file.size > TASK_SETUP_ATTACHMENT_MAX_BYTES)
 		throw new AttachmentError("文件超过 8 MB，请把所需工作表另存后重试。");
 	try {
 		return await readWorkbookRows(await file.arrayBuffer(), (value) => value);
@@ -156,10 +155,10 @@ async function readDocument(bytes: ArrayBuffer, extension: string): Promise<Docu
 export async function readTaskSetupAttachment(file: File): Promise<DocumentText & { clipped: boolean }> {
 	const extension = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
 	if (TASK_SETUP_FILE_ACCEPT.split(",").includes(extension))
-		return { text: await readTaskSetupFile(file), clipped: false };
+		return limitPreview({ text: await readTaskSetupFile(file) });
 	if (!documentExtensions.includes(extension))
 		throw new AttachmentError("请选择 PDF、Word（.docx）、Excel（.xlsx）、TXT、Markdown 或 CSV。");
-	if (file.size > maxDocumentBytes) throw new AttachmentError("文档超过 8 MB，请另存所需部分后重试。");
+	if (file.size > TASK_SETUP_ATTACHMENT_MAX_BYTES) throw new AttachmentError("文档超过 8 MB，请另存所需部分后重试。");
 	let raw: DocumentText;
 	try {
 		raw = await readDocument(await file.arrayBuffer(), extension);
@@ -169,6 +168,11 @@ export async function readTaskSetupAttachment(file: File): Promise<DocumentText 
 	}
 	const text = raw.text.trim();
 	if (!text) throw new AttachmentError("这个文档没有可读取的文字。");
+	return limitPreview({ ...raw, text });
+}
+
+function limitPreview(raw: DocumentText): DocumentText & { clipped: boolean } {
+	const { text } = raw;
 	if (text.length <= TASK_SETUP_PREVIEW_LIMIT) return { ...raw, text, clipped: false };
 	return { ...raw, text: text.slice(0, TASK_SETUP_PREVIEW_LIMIT).replace(/[\uD800-\uDBFF]$/, ""), clipped: true };
 }

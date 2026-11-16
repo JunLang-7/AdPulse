@@ -71,9 +71,17 @@ PostgreSQL 使用 SERIALIZABLE、行锁、唯一索引与冲突重试。
 version 是决策版本，每次成功处理选择都会递增，即使 changes 为空；快照版本增加不等于预算或其他策略字段发生变化。
 
 模型见 [model.ts](../packages/core/src/state/model.ts)，实际 DDL 与索引见 [postgres.ts](../packages/storage/src/postgres.ts)。
-当前为 40 张 id + jsonb 表，采用应用层引用关系。结构变更走 `initialize()` 内的版本化迁移（版本 1–13，顺序、加法式，在 advisory lock 下执行）。存储端口仍采用全表读取，通知记录与筛选记录接口提供分页，面向小规模验证。
+当前为 41 张 id + jsonb 表，采用应用层引用关系。结构变更走 `initialize()` 内的版本化迁移（版本 1–14，顺序、加法式，在 advisory lock 下执行）。存储端口仍采用全表读取，通知记录与筛选记录接口提供分页，面向小规模验证。
 
-个人模型连接（#86 PR1）的三张表由迁移 13 新增。`userModelConnections` 保存连接信息、版本和验证结果，`userModelCredentials` 按连接保存 AES-256-GCM 密文、nonce 与 tag，`userModelPreferences` 保存本人默认 `(connectionId, modelId)`。唯一索引分别约束 `(ownerId, providerId)`、`(ownerId, connectionId)` 与 `ownerId`。加密端口在 core，实现在 runtime。AAD 绑定 owner、连接、凭据版本、目标地址和协议。服务只在主密钥配置有效时装配，主密钥由部署侧配置。
+迁移 13 由 #86 PR1 新增 `userModelConnections`、`userModelCredentials` 与 `userModelPreferences`，分别保存连接信息、AES-256-GCM 密文和默认模型。唯一索引分别约束 `(ownerId, providerId)`、`(ownerId, connectionId)` 与 `ownerId`。加密端口在 core，实现在 runtime。AAD 绑定 owner、连接、凭据版本、目标地址和协议。服务只在主密钥配置有效时装配，主密钥由部署侧配置。
+
+迁移 14 新增 `userModelRevocations`，记录 owner、连接 ID、凭据版本、原因与时间。恢复备份后先用 `bun run models:revocations --replay` 重放删除记录再对外服务。撤销记录版本不低于凭据版本时拒绝解密。
+
+模型额度分两层：按 owner（6 次/分钟、并发 1）与实例总量（8 次/分钟、并发 2），测试、发现与抽取共用计数，均在网络请求前判定；`createUserRequestBudgets()` 只约束单进程，不是分布式限流。
+
+模型调用的出网层在 [model-egress.ts](../packages/runtime/src/model-egress.ts)：只允许 HTTPS，按全部 DNS 结果校验公网地址并把连接绑定到已校验地址，不跟随重定向，不读环境代理，限制响应大小与超时。自定义 API 仍属于个人连接，不允许绕开这层直接发请求。
+
+已适配的原生协议为 `openai-completions`、`openai-responses`、`anthropic-messages`、`google-generative-ai`；枚举之外的协议在边界返回 400，不降级。前三种走锁定 pi-ai 适配器，Gemini 因适配器拒绝自定义 fetch 而由 [model-gemini.ts](../packages/runtime/src/model-gemini.ts) 自研受控传输。供应商覆盖、认证类型与差异清单由目录生成：[model-provider-coverage.md](model-provider-coverage.md)。其中“真实供应商验收”统一为未验收，不因目录存在或合成测试通过而改写。
 
 ## 任务与发送语义
 
