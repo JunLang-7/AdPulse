@@ -533,6 +533,11 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
   事件时间或适用条件未知时保持未知，不补造。
 - **发送前复检**：`marketEventNotificationCurrentIn()` 要求事件仍是当前版本、`evidenceRevision` 未变、
   候选仍为 `evidence_ready`；否则取消该待发（`input_unavailable`），不把旧版本冒充最新事实。
+- **普通修订刷新待发**：改标题/任务关联不推进 `evidenceRevision`，因此不重复通知，但会刷新尚未发送的那条
+  待发内容的标题、摘要、关联理由、来源与事件引用（不新增条目、不改写筛选历史判断）；已发送/已取消的条目
+  不刷新、不复活。否则版本前进会让旧引用整条失效而无法补发。
+- **卡片长度预算**：`item.relevance` 上限 120（与 `domain/infoCard.ts` 校验一致）。主体与任务名称同时命中时
+  按总长度裁剪，避免拼接超限让整批汇总抛 `item relevance too long`。
 - 筛选记录查询接口无新增参数：事件记录按事件归属校验（本人），有任务关联时仍可按 `taskId` 过滤；
   事件被删除/不再属于本人时不返回其历史引用。
 - 未接入：`evidence` 补证类别、#39 的自动来源采集、事件→决策卡；也**未**新增数据库迁移

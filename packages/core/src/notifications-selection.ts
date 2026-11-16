@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { canSendProactiveIn } from "./notifications.js";
-import { digestInstant, localDate, NotificationQueue } from "./notifications-queue.js";
+import { digestInstant, itemId, localDate, NotificationQueue } from "./notifications-queue.js";
 import { NotificationRecordError } from "./notifications-records.js";
 import { normalizeName } from "./subscriptions.js";
 import type { MarketEventVersion } from "./market-events.js";
@@ -42,6 +42,28 @@ export function matchEventTargets(
 	const scopeExcluded = matched.length === 0 && associated.some((target) => target.status === "active"
 		&& target.categories.includes("event") && target.kind !== "task" && target.scope === "task_only");
 	return { matched, associated, scopeExcluded };
+}
+
+/** 与 `domain/infoCard.ts` 的卡片校验一致：超限会让整批汇总发送失败。 */
+const RELEVANCE_LIMIT = 120;
+
+const cleanText = (value: string, max: number): string =>
+	value.replace(/[\u0000-\u001f]/g, " ").slice(0, max);
+
+/** 按总长度预算裁剪名称：只按单个字段截断仍可能拼接超限。 */
+function fitRelevance(assemble: (names: string[]) => string, names: string[]): string {
+	const budget = names.map((name) => name.length);
+	let text = assemble(names.map((name, index) => name.slice(0, budget[index])));
+	while (text.length > RELEVANCE_LIMIT) {
+		const widest = budget.reduce(
+			(best, size, index) => (size > budget[best]! ? index : best),
+			0,
+		);
+		if (budget[widest]! === 0) break;
+		budget[widest] = budget[widest]! - 1;
+		text = assemble(names.map((name, index) => name.slice(0, budget[index])));
+	}
+	return text.length > RELEVANCE_LIMIT ? text.slice(0, RELEVANCE_LIMIT) : text;
 }
 
 export type SelectionRecord = Omit<NotificationSelection, "ownerId">;
@@ -136,7 +158,13 @@ export class NotificationSelectionService {
 		const head = await tx.marketEvents.get(version.eventId);
 		if (!head || head.ownerId !== ownerId || head.currentVersion !== version.version) return;
 		const id = createHash("sha256").update(JSON.stringify([ownerId, version.eventId, version.evidenceRevision])).digest("hex");
-		if (await tx.notificationSelections.get(id)) return; // 同一证据版本不重算、不改写历史判断。
+		const previous = await tx.notificationSelections.get(id);
+		if (previous) {
+			// 同一证据版本不重算、不改写历史判断；但普通修订（改标题/任务关联）仍要刷新尚未发送的条目，
+			// 否则发送前复检会因版本不一致取消它，而不会再有替代条目。
+			await this.refreshPendingEventIn(tx, version, previous);
+			return;
+		}
 		const settings = await tx.subscriptionSettings.get(ownerId);
 		const { matched, associated, scopeExcluded } = matchEventTargets(
 			await tx.subscriptionTargets.all(), ownerId, version);
@@ -154,57 +182,108 @@ export class NotificationSelectionService {
 		else if (matched.length === 0) reason = "category_excluded";
 		else if (!(await canSendProactiveIn(tx, ownerId))) reason = "not_authorized";
 
+		const ref = { eventId: version.eventId, version: version.version, evidenceRevision: version.evidenceRevision };
 		const record: NotificationSelection = {
 			id, ownerId, input: "event",
 			...(taskIds.length === 1 ? { taskId: taskIds[0]! } : {}),
-			marketEventRef: { eventId: version.eventId, version: version.version, evidenceRevision: version.evidenceRevision },
+			marketEventRef: ref,
 			revision: version.evidenceRevision, settingsVersion: settings?.version ?? 0,
 			matchedTargetIds: matched.map((target) => target.id).sort(),
 			outcome: "not_queued", reason, evaluatedAt: this.now(),
 		};
 		if (reason === "matched" && settings) {
-			const input = version.input;
-			const typeLabel = input.type === "announcement" ? "公告" : input.type === "campaign" ? "活动" : "产品发布";
-			const subjectLabel = input.subject.kind === "brand" ? "品牌" : "竞品";
+			const content = await this.eventItemIn(tx, version, {
+				subject: matched.some((target) => target.kind !== "task"),
+				taskIds: matched.filter((target) => target.kind === "task").map((target) => target.refId),
+			});
 			const scheduled = digestInstant(localDate(new Date(version.createdAt)));
+			// 发送时刻之后才产生的新输入进下一次日报；服务恢复处理旧输入仍可当日补发。
 			const notBefore = version.createdAt > scheduled ? new Date(Date.parse(scheduled) + 86_400_000) : undefined;
-			// 命中原因逐项列出实际命中的关注项，不把未订阅的对象写进理由。
-			const subjectMatched = matched.some((target) => target.kind !== "task");
-			const taskMatchedIds = new Set(matched.filter((target) => target.kind === "task").map((target) => target.refId));
-			const matchedTaskProducts = (await Promise.all([...taskMatchedIds].map(async (taskId) => {
-				const task = await tx.tasks.get(taskId);
-				return task && task.ownerId === ownerId
-					? (await tx.taskVersions.get(`${task.id}:${task.currentVersion}`))?.product : null;
-			}))).filter((product): product is string => Boolean(product));
-			const clean = (value: string, max: number) => value.replace(/[\u0000-\u001f]/g, " ").slice(0, max);
-			const relevance = [
-				subjectMatched ? `该事件明确标注的主体是你关注的${subjectLabel}「${clean(input.subject.name, 40)}」` : null,
-				matchedTaskProducts.length ? `并显式关联你的任务「${clean(matchedTaskProducts.join("、"), 40)}」` : null,
-				"名称、标题、摘要与域名不单独构成关联依据。",
-			].filter(Boolean).join("；");
-			// 事件时间、适用条件未知时保持未知，不补造；正文不复制进卡片。
-			const timeLine = input.eventTime ? `事件时间 ${input.eventTime}` : "事件时间未知（未补造）";
-			const conditionLine = input.conditions ? "适用条件见事件详情。" : "适用条件未提供。";
 			const queued = await this.queue.queueIn(tx, ownerId, {
 				logicalKey: `event:${version.eventId}`, kind: "market_event",
-				...(taskIds.length === 1 ? { taskId: taskIds[0]! } : {}),
-				marketEventRef: record.marketEventRef,
-				title: `${clean(input.title, 50)}`,
-				summary: `${typeLabel}：${clean(input.subject.name, 40)}。${timeLine}。${conditionLine}以上仅为你录入的明确事件与原文引用，未经独立来源核验；本信息不执行广告操作。`,
-				relevance,
-				sources: input.sources.slice(0, 5).map((source, index) => ({
-					label: `${source.publisher || `来源 ${index + 1}`}（${source.scope === "title_only" ? "仅标题" : source.scope === "link_only" ? "仅链接" : source.scope === "search_snippet" ? "搜索摘要" : source.scope === "excerpt" ? "节选" : "全文"}）`,
-					...(source.url ? { url: source.url } : {}),
-					publishedAt: source.publishedAt,
-					observedAt: source.acquiredAt,
-				})),
+				marketEventRef: ref,
 				revision: record.revision,
+				...content,
 			}, { settingsVersion: settings.version, enabled: true, ...(notBefore ? { notBefore } : {}) });
 			record.outcome = queued.outcome;
 			record.reason = queued.outcome === "queued" ? "matched" : queued.outcome === "duplicate" ? "duplicate" : "previously_cancelled";
 			if (queued.item) record.itemId = queued.item.id;
 		}
 		await tx.notificationSelections.put(record);
+	}
+
+	/**
+	 * 事件卡片内容：标题、摘要、为什么相关与来源引用。
+	 * 事件时间/适用条件未知时保持未知；正文与原文引用不复制进卡片。
+	 */
+	private async eventItemIn(
+		tx: Transaction,
+		version: MarketEventVersion,
+		matched: { subject: boolean; taskIds: string[] },
+	): Promise<{ title: string; summary: string; relevance: string; sources: NotificationItem["sources"]; taskId?: string }> {
+		const input = version.input;
+		const typeLabel = input.type === "announcement" ? "公告" : input.type === "campaign" ? "活动" : "产品发布";
+		const subjectLabel = input.subject.kind === "brand" ? "品牌" : "竞品";
+		const products = (await Promise.all([...new Set(matched.taskIds)].map(async (taskId) => {
+			const task = await tx.tasks.get(taskId);
+			if (!task || task.ownerId !== version.ownerId) return null;
+			return (await tx.taskVersions.get(`${task.id}:${task.currentVersion}`))?.product ?? null;
+		}))).filter((product): product is string => Boolean(product));
+		// 命中原因逐项列出实际命中的关注项，不把未订阅的对象写进理由。
+		const relevance = fitRelevance(
+			(names) => [
+				matched.subject && names[0] ? `该事件明确标注的主体是你关注的${subjectLabel}「${names[0]}」` : null,
+				names[1] ? `并显式关联你的任务「${names[1]}」` : null,
+				"名称、标题、摘要与域名不单独构成关联依据。",
+			].filter(Boolean).join("；"),
+			[
+				matched.subject ? cleanText(input.subject.name, 40) : "",
+				cleanText(products.join("、"), 40),
+			],
+		);
+		const timeLine = input.eventTime ? `事件时间 ${cleanText(input.eventTime, 60)}` : "事件时间未知（未补造）";
+		const conditionLine = input.conditions ? "适用条件见事件详情。" : "适用条件未提供。";
+		const taskIds = [...new Set(input.taskRefs.map((ref) => ref.taskId))].sort();
+		return {
+			title: cleanText(input.title, 50),
+			summary: `${typeLabel}：${cleanText(input.subject.name, 40)}。${timeLine}。${conditionLine}以上仅为你录入的明确事件与原文引用，未经独立来源核验；本信息不执行广告操作。`,
+			relevance,
+			sources: input.sources.slice(0, 5).map((source, index) => ({
+				label: `${cleanText(source.publisher, 40) || `来源 ${index + 1}`}（${source.scope === "title_only" ? "仅标题" : source.scope === "link_only" ? "仅链接" : source.scope === "search_snippet" ? "搜索摘要" : source.scope === "excerpt" ? "节选" : "全文"}）`,
+				...(source.url ? { url: source.url } : {}),
+				publishedAt: source.publishedAt,
+				observedAt: source.acquiredAt,
+			})),
+			...(taskIds.length === 1 ? { taskId: taskIds[0]! } : {}),
+		};
+	}
+
+	/** 同一证据版本的普通修订：只刷新尚未发送的条目，已发送/已取消不复活也不改写。 */
+	private async refreshPendingEventIn(
+		tx: Transaction,
+		version: MarketEventVersion,
+		record: NotificationSelection,
+	): Promise<void> {
+		const item = await tx.notificationItems.get(itemId(version.ownerId, `event:${version.eventId}`));
+		if (!item || item.status !== "queued" || item.revision !== version.evidenceRevision) return;
+		if (item.marketEventRef?.version === version.version) return;
+		const targets = (await tx.subscriptionTargets.all())
+			.filter((target) => record.matchedTargetIds.includes(target.id));
+		const content = await this.eventItemIn(tx, version, {
+			subject: targets.some((target) => target.kind !== "task"),
+			taskIds: targets.filter((target) => target.kind === "task").map((target) => target.refId),
+		});
+		const { taskId: _previousTaskId, ...rest } = item;
+		await tx.notificationItems.put({
+			...rest,
+			...(content.taskId ? { taskId: content.taskId } : {}),
+			title: content.title,
+			summary: content.summary,
+			relevance: content.relevance,
+			sources: content.sources,
+			marketEventRef: { eventId: version.eventId, version: version.version, evidenceRevision: version.evidenceRevision },
+			updatedAt: this.now(),
+		});
 	}
 
 	async list(ownerId: string, query: SelectionQuery = {}): Promise<SelectionPage> {

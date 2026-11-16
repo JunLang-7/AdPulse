@@ -5,6 +5,7 @@ import test from "node:test";
 import {
 	NotificationQueue,
 	NotificationSelectionService,
+	buildDigestCard,
 	notificationInputsStillCurrentIn,
 	matchEventTargets,
 } from "../packages/core/dist/index.js";
@@ -163,19 +164,105 @@ test("事件筛选：任务关联命中 task_only，跨用户不共享关注项�
 	assert.equal((await new NotificationSelectionService(f.storage, f.clock).list(other.owner)).records.length, 1);
 });
 
-test("事件筛选：发送前复检当前证据版本，失效条目在投递前被取消", async () => {
+test("事件筛选：标题等普通修订刷新待发条目，不丢通知也不重复", async () => {
 	const f = await eventSelectionFixture(new MemoryStorage());
 	const created = await f.create();
-	const item = (await new NotificationQueue(f.storage).pending(f.owner))[0]!;
-	assert.equal(await f.storage.transaction((tx) => notificationInputsStillCurrentIn(tx, item)), true);
+	const before = (await new NotificationQueue(f.storage).pending(f.owner))[0]!;
+	assert.equal(before.marketEventRef?.version, 1);
 	f.setTime("2026-11-16T00:05:00.000Z");
-	await f.revise(created.version.eventId, 1, { title: "测试品牌新品发布（更正标题）" });
-	const stale = await f.storage.transaction(async (tx) => {
-		const current = (await tx.notificationItems.all()).find((row) => row.id === item.id);
-		assert.ok(current);
-		return notificationInputsStillCurrentIn(tx, current);
+	const revision = await f.revise(created.version.eventId, 1, { title: "测试品牌新品发布（更正标题）" });
+	assert.equal(revision.version.evidenceRevision, 1);
+	const items = await new NotificationQueue(f.storage, () => new Date(f.clock())).pending(f.owner);
+	assert.equal(items.length, 1, "同一证据版本仍只有一条待发通知");
+	const item = items[0]!;
+	assert.equal(item.revision, 1, "标题修订不推进通知版本");
+	assert.equal(item.marketEventRef?.version, 2, "待发条目引用刷新到当前事件版本");
+	assert.match(item.title, /更正标题/, "待发内容随修订更新");
+	assert.equal(
+		await f.storage.transaction((tx) => notificationInputsStillCurrentIn(tx, item)),
+		true, "刷新后的条目必须能通过发送前复检",
+	);
+
+	// 已发送的条目不被后续普通修订改写，也不重新通知。
+	f.setTime("2026-11-16T09:31:00.000Z");
+	await f.storage.transaction((tx) => tx.notificationItems.put({ ...item, status: "sent", updatedAt: f.clock() }));
+	f.setTime("2026-11-16T09:40:00.000Z");
+	await f.revise(created.version.eventId, 2, { title: "再次更正标题" });
+	const sent = (await f.storage.transaction(async (tx) => {
+		const rows = await tx.notificationItems.all();
+		return rows.find((row) => row.id === item.id);
+	}))!;
+	assert.equal(sent.status, "sent");
+	assert.match(sent.title, /更正标题/);
+	assert.ok(!sent.title.includes("再次更正"), "已发送条目不被普通修订改写");
+	assert.equal((await new NotificationQueue(f.storage).pending(f.owner)).length, 0, "已发送后不因标题修订重新入队");
+});
+
+test("事件筛选：发送前复检拒绝旧证据版本与不再齐备的候选", async () => {
+	const f = await eventSelectionFixture(new MemoryStorage());
+	const created = await f.create();
+	const stale = (await new NotificationQueue(f.storage).pending(f.owner))[0]!;
+	const source = (quote: string) => ({
+		url: "https://example.com/releases/1", publisher: "测试官网", content: `测试品牌于2026-11-16发布新品，${quote}。`,
+		scope: "full_text" as const, origin: "official" as const, publishedAt: "2026-11-16",
+		acquiredAt: "2026-11-16T03:00:00Z", limitations: "人造 fixture；官方性质由录入者声明",
 	});
-	assert.equal(stale, false, "事件已进入新版本时不发送旧版本的卡片");
+	f.setTime("2026-11-16T00:05:00.000Z");
+	await f.revise(created.version.eventId, 1, {
+		conditions: "仅限华东试点地区",
+		sources: [source("仅限华东试点地区")],
+		citations: {
+			subject: { sourceIndex: 0, quote: "测试品牌" },
+			eventTime: { sourceIndex: 0, quote: "2026-11-16" },
+			conditions: { sourceIndex: 0, quote: "仅限华东试点地区" },
+		},
+	});
+	assert.equal(
+		await f.storage.transaction((tx) => notificationInputsStillCurrentIn(tx, stale)),
+		false, "旧证据版本的快照不再通过复检",
+	);
+	const current = (await new NotificationQueue(f.storage, () => new Date(f.clock())).pending(f.owner))[0]!;
+	assert.equal(current.revision, 2);
+	assert.equal(await f.storage.transaction((tx) => notificationInputsStillCurrentIn(tx, current)), true);
+
+	// 候选回到不齐备（事件时间缺失）时，发送前复检同样拒绝旧的待发条目。
+	f.setTime("2026-11-16T00:10:00.000Z");
+	await f.revise(created.version.eventId, 2, {
+		eventTime: null,
+		sources: [source("仅限华东试点地区")],
+		citations: {
+			subject: { sourceIndex: 0, quote: "测试品牌" },
+			eventTime: null,
+			conditions: { sourceIndex: 0, quote: "仅限华东试点地区" },
+		},
+	});
+	assert.equal(await f.storage.transaction((tx) => notificationInputsStillCurrentIn(tx, current)), false);
+});
+
+test("事件卡片：主体与任务名称同时到上限时，关联理由仍满足卡片长度上限", async () => {
+	const f = await eventSelectionFixture(new MemoryStorage());
+	const longBrand = "【模拟】超长品牌名称与系列产品线联合发布说明第壹号".padEnd(40, "甲");
+	const longProduct = "本人超长任务产品名称与投放目标说明第贰号".padEnd(40, "乙");
+	await f.storage.transaction(async (tx) => {
+		const task = await tx.tasks.get(f.task.taskId); assert.ok(task);
+		const version = await tx.taskVersions.get(`${task.id}:${task.currentVersion}`); assert.ok(version);
+		await tx.taskVersions.put({ ...version, product: longProduct });
+	});
+	await f.addTarget({ kind: "brand", label: longBrand, categories: ["event"], scope: "include_general" });
+	await f.addTarget({ kind: "task", refId: f.task.taskId, categories: ["event"], scope: "task_only" });
+	await f.storage.transaction(async (tx) => {
+		const targets = (await tx.subscriptionTargets.all()).filter((target) => target.userId === f.owner);
+		const brand = targets.find((target) => target.kind === "brand" && target.refId === longBrand);
+		const task = targets.find((target) => target.kind === "task");
+		assert.ok(brand); assert.ok(task);
+	});
+	const created = await f.create({ subject: { kind: "brand", name: longBrand }, taskRefs: [{ taskId: f.task.taskId, taskVersion: 1, reason: "同类产品" }] });
+	assert.equal(created.status, "created");
+	const item = (await new NotificationQueue(f.storage).pending(f.owner))[0]!;
+	assert.ok(item.relevance.length <= 120, `关联理由 ${item.relevance.length} 字超限`);
+	assert.ok(item.relevance.includes("「"), "裁剪后仍保留可理解的理由");
+	// 真实卡片构建不再抛「item relevance too long」，整批汇总可发送。
+	buildDigestCard([item], { date: "2026-11-16" });
 });
 
 test("事件筛选：匹配只认显式主体或任务关联，名称标准化后比较", async () => {
