@@ -166,6 +166,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/notification-selections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listNotificationSelections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/notifications": {
         parameters: {
             query?: never;
@@ -786,6 +802,27 @@ export interface components {
         SubscriptionView: {
             settings: components["schemas"]["SubscriptionSettings"];
             targets: components["schemas"]["SubscriptionTarget"][];
+        };
+        NotificationSelectionRecord: {
+            id: string;
+            alertId: string;
+            taskId: string;
+            comparisonResultId: string;
+            evidenceRef: components["schemas"]["EvidenceRef"];
+            revision: number;
+            settingsVersion: number;
+            matchedTargetIds: string[];
+            /** @enum {string} */
+            outcome: "queued" | "not_queued" | "duplicate" | "cancelled";
+            /** @enum {string} */
+            reason: "matched" | "push_disabled" | "before_enabled" | "no_target" | "target_muted" | "category_excluded" | "not_authorized" | "duplicate" | "previously_cancelled" | "historical_input" | "alert_inactive";
+            itemId?: string;
+            /** Format: date-time */
+            evaluatedAt: string;
+        };
+        NotificationSelectionPage: {
+            records: components["schemas"]["NotificationSelectionRecord"][];
+            nextBefore: string | null;
         };
         NotificationRecordPage: {
             records: components["schemas"]["NotificationRecord"][];
@@ -2272,6 +2309,47 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["NotificationStatus"];
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listNotificationSelections: {
+        parameters: {
+            query?: {
+                limit?: number;
+                before?: string;
+                taskId?: string;
+                dateFrom?: string;
+                dateTo?: string;
+                outcome?: "queued" | "not_queued" | "duplicate" | "cancelled";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own historical selection facts, subject to current input access; queued does not mean sent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationSelectionPage"];
+                };
+            };
+            /** @description Invalid query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {

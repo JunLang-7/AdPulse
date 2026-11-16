@@ -124,6 +124,10 @@ const DELIVERY_STATUS: Record<RecordDeliveryStatus, string> = {
  * 这里只做翻译；新增代码没翻译时显示原码，不编造原因。
  */
 const REASONS: Record<string, { label: string; detail: string }> = {
+	input_unavailable: {
+		label: "关联告警或证据已不可用于推送",
+		detail: "发送前发现告警已处理、失效或任务/证据已变更，待发条目已取消。历史筛选结果仍表示当时的判断。",
+	},
 	push_disabled: {
 		label: "当时关闭了主动提醒",
 		detail: "关闭期间不生成也不发送汇总；重新开启不会补发这一批。",

@@ -172,11 +172,32 @@ export interface NotificationItem {
 	}>;
 	/** 实质更新序号：新增证据或纠正才 +1，并据此再次通知。 */
 	revision: number;
+	/** 生产入队的效果告警引用，用于发送前重检；受控合成条目可缺省。 */
+	effectRef?: { alertId: string; evidenceId: string; evidenceVersion: number; taskVersion: number };
 	status: NotificationItemStatus;
 	/** 复用 Delivery：不另建投递状态机。 */
 	deliveryId?: string;
 	createdAt: string;
 	updatedAt: string;
+}
+
+/** 筛选当时的最小事实，不复制业务原文；与后续投递状态分开。 */
+export interface NotificationSelection {
+	id: string;
+	ownerId: string;
+	alertId: string;
+	taskId: string;
+	comparisonResultId: string;
+	evidenceRef: EvidenceRef;
+	revision: number;
+	settingsVersion: number;
+	matchedTargetIds: string[];
+	outcome: "queued" | "not_queued" | "duplicate" | "cancelled";
+	reason: "matched" | "push_disabled" | "before_enabled" | "no_target"
+		| "target_muted" | "category_excluded" | "not_authorized"
+		| "duplicate" | "previously_cancelled" | "historical_input" | "alert_inactive";
+	itemId?: string;
+	evaluatedAt: string;
 }
 
 export interface WebSession {
@@ -531,6 +552,8 @@ export interface InvestigationAlert {
 	ownerId: string;
 	taskId: string;
 	logicalKey: string;
+	/** 信息通知的实质证据版本；历史告警缺省，不因重试补发。 */
+	notificationRevision?: number;
 	sessionId: string;
 	status: InvestigationAlertStatus;
 	statusReason?: string;
@@ -709,6 +732,7 @@ export interface Entities {
 	subscriptionSettings: SubscriptionSettings;
 	notificationBatches: NotificationBatch;
 	notificationItems: NotificationItem;
+	notificationSelections: NotificationSelection;
 	subscriptionTargets: SubscriptionTarget;
 	webSessions: WebSession;
 	loginTransactions: LoginTransaction;

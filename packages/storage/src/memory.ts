@@ -15,6 +15,7 @@ export const tableNames = [
 	"subscriptionTargets",
 	"notificationBatches",
 	"notificationItems",
+	"notificationSelections",
 	"tasks",
 	"taskVersions",
 	"taskOperations",

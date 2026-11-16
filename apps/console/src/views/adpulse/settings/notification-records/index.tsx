@@ -1,4 +1,6 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import SelectionRecords from "./selection-records";
 import { consoleClient } from "../../../../adpulse-client";
 import { Badge } from "../../../../components/ui/badge";
 import {
@@ -30,6 +32,17 @@ const errorText = (status: number, error: unknown): string => {
 };
 
 export default function NotificationRecordsPage() {
+	const [selection, setSelection] = useState(false);
+	return <>
+		<div className="px-6 pt-6 flex gap-4" role="group" aria-label="通知记录类型">
+			<button type="button" className="text-sm underline" aria-pressed={!selection} onClick={() => setSelection(false)}>汇总与投递</button>
+			<button type="button" className="text-sm underline" aria-pressed={selection} onClick={() => setSelection(true)}>筛选记录</button>
+		</div>
+		{selection ? <SelectionRecords /> : <DigestRecords />}
+	</>;
+}
+
+function DigestRecords() {
 	// 记录只读：页面不提供发送、重试、删除入口，也不创建会话。
 	const records = useInfiniteQuery({
 		queryKey: ["notification-records"],
