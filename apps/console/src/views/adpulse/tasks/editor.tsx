@@ -196,7 +196,7 @@ export default function TaskEditorPage() {
 					) : null}
 				</div>
 				<p className="text-sm text-muted-foreground">
-					{creating ? "填一个产品或服务名称就能创建任务。投放细节可以随时补充。" : "记录当前推广计划。查看报表或对比成效时，打开推广效果。"}
+					{creating ? "两种方式都只需填写产品或服务名称。目标、人群、卖点和渠道，知道多少就填多少。" : "记录当前推广计划。查看报表或对比成效时，打开推广效果。"}
 				</p>
 			</header>
 
@@ -219,40 +219,41 @@ export default function TaskEditorPage() {
 				<div hidden={guided} className="space-y-4">
 					<Card>
 						<CardContent className="grid gap-4 sm:grid-cols-2">
-							<Field label="推广什么？" hint="必填">
+							<Field label="产品或服务名称" hint="必填">
 								<Input required maxLength={200} placeholder="例如：新品试用装" value={form.product} onChange={(e) => set("product", e.target.value)} />
 							</Field>
-							<Field label="想达成什么？" hint="选填 · 多个目标可换行">
+							<Field label="推广目标" hint="多个目标可换行">
 								<textarea className={textAreaClass} rows={2} maxLength={2000} placeholder="例如：让更多客户来咨询" value={form.objective} onChange={(e) => set("objective", e.target.value)} />
 							</Field>
 						</CardContent>
 					</Card>
 
 					<div className="divide-y rounded-xl border bg-card">
-						<OptionalSection title="目标人群和卖点" summary={form.audience || form.sellingPoints ? "已填写" : "选填"}>
+						<OptionalSection title="人群与卖点" expanded={creating} summary={form.audience || form.sellingPoints ? "已填写" : ""}>
 							<div className="grid gap-4 sm:grid-cols-2">
-								<Field label="想触达谁？" hint="每行一项">
+								<Field label="目标人群" hint="每行一项">
 									<textarea className={textAreaClass} placeholder="例如：准备装修的新房业主" value={form.audience} onChange={(e) => set("audience", e.target.value)} />
 								</Field>
-								<Field label="客户为什么会感兴趣？" hint="每行一项">
+								<Field label="主要卖点" hint="每行一项">
 									<textarea className={textAreaClass} placeholder="例如：可以先领取免费样品" value={form.sellingPoints} onChange={(e) => set("sellingPoints", e.target.value)} />
 								</Field>
 							</div>
 						</OptionalSection>
 
-						<OptionalSection title="投放渠道" summary={form.channels.length ? `${form.channels.length} 个渠道` : "选填"}>
+						<OptionalSection title="投放渠道" expanded={creating} summary={form.channels.length ? `${form.channels.length} 个渠道` : ""}>
 							<div className="space-y-3">
-								<p className="text-sm text-muted-foreground">知道投放平台时，填渠道名称就够了，例如小红书。预算和出价请按后台已确认的数字填写。</p>
+								<p className="text-sm text-muted-foreground">{creating ? "已经确定在哪个平台推广时，可以添加渠道，例如小红书。" : "知道投放平台时，填渠道名称就够了。预算和出价请按后台已确认的数字填写。"}</p>
 								{form.channels.map((channel, index) => (
 									<div key={index} className="space-y-3 rounded-lg border p-3">
 										<div className="flex items-center justify-between gap-2">
 											<p className="text-sm font-medium">渠道 {index + 1}</p>
 											<Button type="button" variant="ghost" size="sm" aria-label={`移除渠道 ${index + 1}`} onClick={() => set("channels", form.channels.filter((_, position) => position !== index))}>移除</Button>
 										</div>
-										<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+										<div className={creating ? "max-w-sm" : "grid gap-3 sm:grid-cols-2 lg:grid-cols-4"}>
 											<Field label="渠道名称">
 												<Input maxLength={128} placeholder="例如：小红书" value={channel.name} onChange={(e) => editChannel(index, { name: e.target.value })} />
 											</Field>
+											{creating ? null : <>
 											<OptionalField label="预算金额" inputMode="decimal" value={channel.budget} onChange={(value) => editChannel(index, { budget: value })} />
 											<OptionalField label="每次点击出价" inputMode="decimal" value={channel.bidCpc} onChange={(value) => editChannel(index, { bidCpc: value })} />
 											<Field label="投放状态">
@@ -264,6 +265,7 @@ export default function TaskEditorPage() {
 													<option value="paused">已暂停</option>
 												</select>
 											</Field>
+											</>}
 										</div>
 									</div>
 								))}
@@ -271,6 +273,7 @@ export default function TaskEditorPage() {
 							</div>
 						</OptionalSection>
 
+						{creating ? null : <>
 						<OptionalSection title="观察范围与时间" summary={form.startsAt || form.endsAt || form.scope ? "已填写 · 北京时间" : "选填 · 北京时间"}>
 							<div className="grid gap-4 sm:grid-cols-2">
 								<p className="text-sm text-muted-foreground sm:col-span-2">想限定看哪次活动或哪段时间时再填。活动日期还没定，可以先创建任务。</p>
@@ -327,7 +330,9 @@ export default function TaskEditorPage() {
 								</details>
 							</div>
 						</OptionalSection>
+						</>}
 					</div>
+					{creating ? <p className="text-xs text-muted-foreground">预算、观察时间和成本提醒可在创建后设置。</p> : null}
 
 				</div>
 
@@ -360,13 +365,15 @@ export default function TaskEditorPage() {
 const selectClass = "h-9 w-full rounded-md border bg-background px-2 text-sm";
 const textAreaClass = "min-h-20 w-full rounded-md border bg-background p-2 text-sm";
 
-function OptionalSection({ title, summary, children }: { title: string; summary: string; children: React.ReactNode }) {
+function OptionalSection({ title, summary, expanded = false, children }: {
+	title: string; summary: string; expanded?: boolean; children: React.ReactNode;
+}) {
 	return (
-		<details className="group">
+		<details className="group" open={expanded || undefined}>
 			<summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm marker:hidden">
 				<ChevronRight aria-hidden="true" className="size-4 shrink-0 group-open:rotate-90" />
 				<span className="font-medium">{title}</span>
-				<span className="ml-auto text-right text-xs text-muted-foreground">{summary}</span>
+				{summary ? <span className="ml-auto text-right text-xs text-muted-foreground">{summary}</span> : null}
 			</summary>
 			<div className="px-4 pb-4">{children}</div>
 		</details>

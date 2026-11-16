@@ -126,7 +126,8 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	async function submitStage(preview = false) {
 		if (!stage || busyRef.current || saving) return;
 		setError("");
-		const needsExtraction = Boolean(brief) && (preview || (!useEnteredValues && !suggestionCurrent));
+		const hasNotes = Boolean(notes[stage.id].trim());
+		const needsExtraction = Boolean(brief) && (preview || (hasNotes && !useEnteredValues && !suggestionCurrent));
 		const useFileStart = preview && canUseFileStart;
 		if (needsExtraction && remaining < 0 && !useFileStart) {
 			setError(canUseFileStart
@@ -352,7 +353,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 						))}
 						{!failed && error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
 						<p className="text-xs text-muted-foreground">
-							提交会发送本阶段选择和填写的资料用于整理。选填项未确定时，可以留空提交。
+							补充说明会在生成建议或提交本阶段时用于整理。还没确定的信息可以暂时留空。
 						</p>
 						<div className="flex flex-wrap gap-2">
 							<Button type="button" variant="outline" disabled={step === 0 || busy} onClick={() => go(step - 1, returnToReview)}>上一步</Button>
@@ -411,7 +412,7 @@ function StageChoices({ field, form, disabled, onSelect }: {
 	const choices = [...new Set([...presets, ...selected])];
 	return (
 		<fieldset className="space-y-2" disabled={disabled}>
-			<legend className="text-sm font-medium">{fieldLabels[field]} <span className="font-normal text-muted-foreground">（选填，可多选）</span></legend>
+			<legend className="text-sm font-medium">{fieldLabels[field]} <span className="font-normal text-muted-foreground">（可多选）</span></legend>
 			<div className="flex flex-wrap gap-2">
 				{choices.map((value) => {
 					const chosen = selected.includes(value);
