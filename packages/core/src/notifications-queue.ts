@@ -64,6 +64,7 @@ const validText = (value: unknown, max: number): value is string =>
 
 export interface QueueItemInput {
 	effectRef?: NotificationItem["effectRef"];
+	marketEventRef?: NotificationItem["marketEventRef"];
 	logicalKey: string;
 	kind: NotificationItemKind;
 	taskId?: string;
@@ -216,6 +217,7 @@ export class NotificationQueue {
 					sources: input.sources,
 					revision: input.revision,
 					...(input.effectRef ? { effectRef: input.effectRef } : {}),
+					...(input.marketEventRef ? { marketEventRef: input.marketEventRef } : {}),
 					status: "queued",
 					updatedAt: at,
 					...(existing.deliveryId ? { deliveryId: existing.deliveryId } : {}),
@@ -236,6 +238,7 @@ export class NotificationQueue {
 				sources: input.sources,
 				revision: input.revision,
 				...(input.effectRef ? { effectRef: input.effectRef } : {}),
+				...(input.marketEventRef ? { marketEventRef: input.marketEventRef } : {}),
 				status: "queued",
 				createdAt: at,
 				updatedAt: at,

@@ -145,7 +145,8 @@ function validateScope(value: unknown): SubscriptionScope {
 	return value as SubscriptionScope;
 }
 
-const normalizeName = (value: string): string =>
+/** 关注对象名称 key：NFKC、去首尾空白、折叠空白、小写。#112 筛选与写入必须共用同一规则。 */
+export const normalizeName = (value: string): string =>
 	value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 
 const validName = (value: unknown): value is string =>

@@ -17,6 +17,10 @@ const reasons: { [K in Record["reason"]]: string } = {
 	previously_cancelled: "该逻辑通知已取消或过期，不恢复旧队列",
 	historical_input: "历史告警仅被重新评估，不补发",
 	alert_inactive: "告警已处理、失效或达到轮次上限",
+	insufficient_evidence: "事件证据不齐备（缺官方原文引用、事件时间或适用条件），不作为可推送信息",
+	simulated_input: "合成样例只用于测试，不进入真实推送",
+	no_association: "事件没有明确标注你关注的主体或关联任务",
+	scope_excluded: "事件只标注了关注对象、没有关联任务，而你的范围设置为「只看任务」",
 };
 const outcomeLabels = { queued: "已入队", not_queued: "未入队", duplicate: "重复抑制", cancelled: "取消终态" };
 type Filters = { taskId: string; dateFrom: string; dateTo: string; outcome: Record["outcome"] | "" };
@@ -47,7 +51,7 @@ export default function SelectionRecords() {
 	const all = records.data?.pages.flatMap((page) => page.records) ?? [];
 	return <div className="p-6 space-y-4 max-w-4xl">
 		<h1 className="text-2xl font-bold">筛选记录</h1>
-		<p className="text-sm text-muted-foreground">仅记录效果告警当时的筛选判断；之后修改订阅不会改写历史。已入队不等于已发送，发送结果请查看「汇总与投递」。</p>
+		<p className="text-sm text-muted-foreground">记录效果告警与市场/竞品事件当时的筛选判断；之后修改订阅不会改写历史。已入队不等于已发送，发送结果请查看「汇总与投递」。</p>
 		<form className="flex flex-wrap gap-3 items-end" onSubmit={(event) => { event.preventDefault(); setFilters({ ...draft }); }}>
 			<label className="text-sm">任务<select aria-label="筛选任务" className="block rounded-md border p-2" value={draft.taskId} onChange={(event) => setDraft({ ...draft, taskId: event.target.value })}>
 				<option value="">全部本人任务</option>
@@ -61,14 +65,18 @@ export default function SelectionRecords() {
 			<button type="submit" className="rounded-md border px-3 py-2 text-sm">查询筛选记录</button>
 		</form>
 		{tasks.isError ? <p role="alert">无法读取本人任务，请刷新重试。</p> : null}
-		{records.isLoading ? <p>正在读取筛选记录…</p> : records.isError ? <div role="alert"><p>{records.error.message}</p><button type="button" className="underline" onClick={() => void records.refetch()}>重试读取筛选记录</button></div> : all.length === 0 ? <p>暂无筛选记录。仅接入后新评估的效果告警会留痕；未记录的历史原因无法还原。</p> : all.map((record) => <Card key={record.id}>
-			<CardHeader><CardTitle>{outcomeLabels[record.outcome]} · 效果告警</CardTitle><p className="text-xs text-muted-foreground">{formatBeijing(record.evaluatedAt)} · 当时设置 v{record.settingsVersion} · 通知版本 {record.revision}</p></CardHeader>
+		{records.isLoading ? <p>正在读取筛选记录…</p> : records.isError ? <div role="alert"><p>{records.error.message}</p><button type="button" className="underline" onClick={() => void records.refetch()}>重试读取筛选记录</button></div> : all.length === 0 ? <p>暂无筛选记录。仅接入后新评估的效果告警与市场/竞品事件会留痕；未记录的历史原因无法还原。</p> : all.map((record) => <Card key={record.id}>
+			<CardHeader><CardTitle>{outcomeLabels[record.outcome]} · {record.input === "event" ? "市场/竞品事件" : "效果告警"}</CardTitle><p className="text-xs text-muted-foreground">{formatBeijing(record.evaluatedAt)} · 当时设置 v{record.settingsVersion} · 通知版本 {record.revision}</p></CardHeader>
 			<CardContent className="text-sm space-y-2">
 				<p>{reasons[record.reason]}</p>
 				<details><summary className="cursor-pointer">查看当时依据</summary><div className="mt-2 space-y-1 break-all">
-					<p>关联本人任务：<a className="underline" href={`/tasks/${encodeURIComponent(record.taskId)}`}>{record.taskId}</a></p>
-					<p>告警引用：{record.alertId}</p><p>比较引用：{record.comparisonResultId}</p>
-					<p>证据引用：{record.evidenceRef.evidenceId} v{record.evidenceRef.version}</p>
+					{record.input === "event"
+						? <p>事件引用：{record.marketEventRef ? <a className="underline" href={`/market-events/${encodeURIComponent(record.marketEventRef.eventId)}`}>{record.marketEventRef.eventId}</a> : "未记录"} v{record.marketEventRef?.version}（证据版本 {record.marketEventRef?.evidenceRevision}）</p>
+						: <p>告警引用：{record.alertId}</p>}
+					{record.taskId ? <p>关联本人任务：<a className="underline" href={`/tasks/${encodeURIComponent(record.taskId)}`}>{record.taskId}</a></p> : null}
+					{record.input === "effect"
+						? <><p>比较引用：{record.comparisonResultId}</p><p>证据引用：{record.evidenceRef?.evidenceId} v{record.evidenceRef?.version}</p></>
+						: null}
 					<p>当时命中的关注项：{record.matchedTargetIds.join("、") || "无"}</p>
 				</div></details>
 			</CardContent>

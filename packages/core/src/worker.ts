@@ -19,7 +19,7 @@ import {
 	type NotificationQueue,
 } from "./notifications-queue.js";
 import type { SubscriptionService } from "./subscriptions.js";
-import { effectNotificationCurrentIn } from "./notifications-selection.js";
+import { notificationInputsStillCurrentIn } from "./notifications-selection.js";
 import { RecipientUnreachableError, type OutboundChannel } from "./ports/channel.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type { Job } from "./state/model.js";
@@ -248,7 +248,7 @@ export class Worker {
 			let count = 0;
 			for (const item of await tx.notificationItems.all()) {
 				if (item.ownerId === view.ownerId && item.batchId === batchId && item.status === "queued"
-					&& !(await effectNotificationCurrentIn(tx, item))) {
+					&& !(await notificationInputsStillCurrentIn(tx, item))) {
 					await tx.notificationItems.put({ ...item, status: "cancelled", updatedAt: this.now() });
 					count++;
 				}

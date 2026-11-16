@@ -479,7 +479,7 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
 测试：`tests/market-events*.test.ts` 覆盖领域/API/专用 PostgreSQL；
 `apps/console/test/market-events-page.test.tsx` 验证保存禁用、失败保留与幂等重试、第二来源引用、
 模拟修订/冲突及无权详情。它们使用合成输入，不连接真实平台。
-### 5.7 效果告警订阅筛选与历史原因（#112 第一阶段）
+### 5.7 订阅筛选与历史原因（#112 第一阶段：效果告警；第二阶段：市场/竞品事件）
 
 - `InvestigationAlertService.evaluateComparison()` 在新告警或实质新证据评估时，通过
   `NotificationSelectionService.selectIn()` 在同一数据库事务内完成筛选、最小记录与入队。
@@ -508,6 +508,40 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
   切换回「汇总与投递」查看后续状态。订阅页对仅品牌/竞品或未接入类别不会显示可投递。
 - 本阶段只做本地合成输入、专用 PostgreSQL 和组件行为验证；未部署、未做该生产路径的真实 IM 验收。
   这些记录属于业务派生数据；完整保留期、物理清理与备份防复活仍由 #40 联验，本阶段不宣称完成。
+
+#### 5.7.1 事件输入（#112 第二阶段，接 #38）
+
+- `MarketEventService` 在事件写入事务内调用 `NotificationSelectionService.selectEventIn()`：筛选、
+  历史记录与该事件入队同事务提交，不另起扫描任务，不在事务内发网络请求。
+- **准入**：事件的候选必须为 `evidence_ready`（三项官方原文引用齐备）、至少一条来源带 URL、
+  `provenance.simulated=false`，且事件已显式标注本人关注的主体或关联任务。
+  `insufficient` 候选与合成样例一律不入队，只留原因；`evidence_ready` 仍只是「引用齐备的候选」，
+  不等于事实核实或 #39 的来源准入结论。
+- **关联与范围**：`brand`/`competitor` 关注按 `subscriptionNameKey`（NFKC + 去首尾空白 + 折叠空白 + 小写）
+  与事件 `subject.name` 比较，且仅 `include_general` 接收这类「对象一般事件」；
+  `task` 关注按事件 `taskRefs` 的显式任务 id 比较，`task_only` 与 `include_general` 均接受。
+  标题/摘要包含名称、来源域名、品牌官网归属均不作为关联依据。
+- **去重与版本**：通知键为 `event:{eventId}`；筛选记录幂等键为「本人 + 事件 + 证据版本」。
+  只改标题或任务关联只增加事件版本、不推进 `evidenceRevision`，因此不重复通知；
+  来源原文/主体/事件时间/条件变化推进 `evidenceRevision` 并再次通知（同一条目 revision 提升）。
+  取消/过期仍是终态，重开不回放。
+- **原因代码**：除共用 `matched`/`push_disabled`/`before_enabled`/`target_muted`/`category_excluded`/
+  `not_authorized`/`previously_cancelled` 外，事件路径新增 `insufficient_evidence`、`simulated_input`、
+  `no_association`、`scope_excluded`，未命中同样写筛选记录（只存引用，不复制标题、摘要或正文）。
+- **卡片**：标题取事件标题，摘要写「事件类型 + 主体 + 事件时间/未知 + 适用条件/未提供」，
+  并明确「仅为你录入的明确事件与原文引用，未经独立来源核验」；来源只存 label/URL/发布时间/获取时间。
+  事件时间或适用条件未知时保持未知，不补造。
+- **发送前复检**：`marketEventNotificationCurrentIn()` 要求事件仍是当前版本、`evidenceRevision` 未变、
+  候选仍为 `evidence_ready`；否则取消该待发（`input_unavailable`），不把旧版本冒充最新事实。
+- **普通修订刷新待发**：改标题/任务关联不推进 `evidenceRevision`，因此不重复通知，但会刷新尚未发送的那条
+  待发内容的标题、摘要、关联理由、来源与事件引用（不新增条目、不改写筛选历史判断）；已发送/已取消的条目
+  不刷新、不复活。否则版本前进会让旧引用整条失效而无法补发。
+- **卡片长度预算**：`item.relevance` 上限 120（与 `domain/infoCard.ts` 校验一致）。主体与任务名称同时命中时
+  按总长度裁剪，避免拼接超限让整批汇总抛 `item relevance too long`。
+- 筛选记录查询接口无新增参数：事件记录按事件归属校验（本人），有任务关联时仍可按 `taskId` 过滤；
+  事件被删除/不再属于本人时不返回其历史引用。
+- 未接入：`evidence` 补证类别、#39 的自动来源采集、事件→决策卡；也**未**新增数据库迁移
+  （筛选表沿用 v12 的 JSONB 记录，新增字段为可选，事件路径用确定性 id + 存在性判定去重）。
 
 ## 6. PostgreSQL 集成测试
 

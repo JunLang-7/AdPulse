@@ -2197,6 +2197,11 @@
           "id": {
             "type": "string"
           },
+          "input": {
+            "type": "string",
+            "enum": ["effect", "event"],
+            "description": "筛选输入类别：effect = 效果告警，event = 市场/竞品事件"
+          },
           "alertId": {
             "type": "string"
           },
@@ -2208,6 +2213,16 @@
           },
           "evidenceRef": {
             "$ref": "#/components/schemas/EvidenceRef"
+          },
+          "marketEventRef": {
+            "type": "object",
+            "properties": {
+              "eventId": { "type": "string" },
+              "version": { "type": "integer", "minimum": 1 },
+              "evidenceRevision": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["eventId", "version", "evidenceRevision"],
+            "additionalProperties": false
           },
           "revision": {
             "type": "integer",
@@ -2245,7 +2260,11 @@
               "duplicate",
               "previously_cancelled",
               "historical_input",
-              "alert_inactive"
+              "alert_inactive",
+              "insufficient_evidence",
+              "simulated_input",
+              "no_association",
+              "scope_excluded"
             ]
           },
           "itemId": {
@@ -2258,10 +2277,7 @@
         },
         "required": [
           "id",
-          "alertId",
-          "taskId",
-          "comparisonResultId",
-          "evidenceRef",
+          "input",
           "revision",
           "settingsVersion",
           "matchedTargetIds",
