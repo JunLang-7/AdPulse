@@ -56,6 +56,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const [localStages, setLocalStages] = useState<Partial<Record<TaskDraftStage, boolean>>>({});
 	const busyRef = useRef(false);
 	const fileInput = useRef<HTMLInputElement>(null);
+	const assistId = useId();
 	const fileHelpId = useId();
 	const [dragging, setDragging] = useState(false);
 	const stage = taskStages[step];
@@ -215,30 +216,14 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 							<h2 className="text-lg font-semibold">{stage.title}</h2>
 							<p className="text-sm text-muted-foreground">{stage.description}</p>
 						</div>
-						{stage.fields.map((field) => field === "product" ? (
-							<label key={field} className="block space-y-1 text-sm font-medium">
-								<span>产品或服务名称</span>
-								<Input value={form.product} maxLength={200} disabled={busy} placeholder="例如：新品试用装"
-									onChange={(event) => onChange({ ...form, product: event.target.value })} />
-								<span className="block text-xs font-normal text-muted-foreground">任务唯一必填项。也可从下方资料整理出来。</span>
-							</label>
-						) : (
-							<StageChoices key={field} field={field} form={form} disabled={busy} onSelect={(value, chosen) => {
-								setExcluded((previous) => {
-									const omitted = previous[field] ?? [];
-									return { ...previous, [field]: chosen ? [...omitted, value] : omitted.filter((item) => item !== value) };
-								});
-								onChange(withSelectedValue(form, field, value));
-							}} />
-						))}
-
-						<details key={stage.id} className="rounded-lg border px-3 py-2">
-							<summary className="cursor-pointer text-sm font-medium">
-								补充说明或文件（选填）{notes[stage.id] ? " · 已填写" : ""}
-							</summary>
-							<div className="mt-3 space-y-3">
+						<section key={stage.id} aria-labelledby={assistId} className="space-y-3 rounded-lg border border-primary/25 bg-muted/25 p-4">
+							<div className="space-y-1">
+								<h3 id={assistId} className="text-sm font-semibold">AI 辅助填写</h3>
+								<p className="text-sm text-muted-foreground">写一句话或上传已有资料，生成建议后再核对。</p>
+							</div>
+							<div className="space-y-3">
 								<div className="space-y-1 text-sm">
-									<label htmlFor={"task-setup-notes-" + stage.id}>补充资料</label>
+									<label className="sr-only" htmlFor={"task-setup-notes-" + stage.id}>本阶段说明</label>
 									<textarea id={"task-setup-notes-" + stage.id} className="min-h-24 w-full rounded-md border bg-background p-3 text-sm"
 										value={notes[stage.id]} maxLength={TASK_SETUP_PREVIEW_LIMIT} disabled={busy}
 										placeholder={stage.placeholder} onChange={(event) => {
@@ -253,7 +238,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 										if (file) void loadFile(file);
 									}} />
 								<button type="button" disabled={busy} aria-label="选择资料文件" aria-describedby={fileHelpId}
-									className={"flex w-full cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 " +
+									className={"flex w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border-2 border-dashed px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 " +
 										(dragging ? "border-primary bg-primary/10" : "border-primary/40 bg-muted/55 hover:border-primary hover:bg-muted")}
 									onClick={() => fileInput.current?.click()}
 									onDragOver={(event) => {
@@ -272,9 +257,9 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 										const file = files[0];
 										if (file) void loadFile(file);
 									}}>
-									<Upload aria-hidden="true" className="size-5" />
-									<span className="rounded-md bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground">{reading ? "正在读取文件…" : "选择文件"}</span>
-									<span className="text-xs text-muted-foreground">也可以把文件拖到这里</span>
+									<Upload aria-hidden="true" className="size-4 shrink-0" />
+									<span className="text-sm font-semibold">{reading ? "正在读取文件…" : "选择文件"}</span>
+									<span className="text-xs text-muted-foreground">也可以拖到这里</span>
 								</button>
 								<p id={fileHelpId} className="text-xs text-muted-foreground">支持 PDF、Word、Excel、TXT、Markdown、CSV，单份文件最多 8 MB。</p>
 								{attachment ? (
@@ -288,14 +273,8 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 									{remaining >= 0 ? "先在本机预览，提交前可编辑。本阶段还可输入 " + remaining + " 字。" : "超过本阶段 2,500 字上限，请在上方删减 " + (-remaining) + " 字后提交。"}
 								</p>
 							</div>
-						</details>
-
-						<div className="space-y-2 rounded-lg border p-3">
-							<div className="flex flex-wrap items-center justify-between gap-2">
-								<p className="text-sm text-muted-foreground">根据本阶段填写的内容和资料，先生成建议供你核对。</p>
-								<Button type="button" variant="outline" disabled={busy || !brief || remaining < 0}
-									onClick={() => void submitStage(true)}>AI 辅助填写</Button>
-							</div>
+							<Button type="button" disabled={busy || !brief || remaining < 0}
+								onClick={() => void submitStage(true)}>{processing ? "正在整理…" : "生成建议"}</Button>
 							{draft && (additions.length > 0 || productIdea || goalIdeas.length > 0) ? (
 								<div className="space-y-2 rounded-md bg-muted/40 p-2 text-sm">
 									<p className="font-medium">待核对建议</p>
@@ -331,15 +310,35 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 									</Button>
 								</div>
 							) : draft ? <p role="status" className="text-sm">没有可补充的建议，可以继续手填。</p> : null}
-						</div>
-						{error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
-						{failed ? (
-							<label className="flex items-center gap-2 text-sm">
-								<input type="checkbox" checked={useEnteredValues} disabled={busy}
-									onChange={(event) => setUseEnteredValues(event.target.checked)} />
-								本阶段按已填写的内容继续
+							{failed ? (
+								<div className="space-y-2">
+									{error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
+									<label className="flex items-center gap-2 text-sm">
+										<input type="checkbox" checked={useEnteredValues} disabled={busy}
+											onChange={(event) => setUseEnteredValues(event.target.checked)} />
+										本阶段按已填写的内容继续
+									</label>
+								</div>
+							) : null}
+						</section>
+
+						{stage.fields.map((field) => field === "product" ? (
+							<label key={field} className="block space-y-1 text-sm font-medium">
+								<span>产品或服务名称</span>
+								<Input value={form.product} maxLength={200} disabled={busy} placeholder="例如：新品试用装"
+									onChange={(event) => onChange({ ...form, product: event.target.value })} />
+								<span className="block text-xs font-normal text-muted-foreground">任务唯一必填项，可直接填写或应用上方建议。</span>
 							</label>
-						) : null}
+						) : (
+							<StageChoices key={field} field={field} form={form} disabled={busy} onSelect={(value, chosen) => {
+								setExcluded((previous) => {
+									const omitted = previous[field] ?? [];
+									return { ...previous, [field]: chosen ? [...omitted, value] : omitted.filter((item) => item !== value) };
+								});
+								onChange(withSelectedValue(form, field, value));
+							}} />
+						))}
+						{!failed && error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
 						<p className="text-xs text-muted-foreground">
 							提交会发送本阶段选择和填写的资料用于整理。选填项未确定时，可以留空提交。
 						</p>
