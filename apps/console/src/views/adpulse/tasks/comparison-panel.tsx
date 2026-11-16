@@ -1,60 +1,70 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+import { Link } from "react-router";
 import { type components, consoleClient } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
-import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-} from "../../../components/ui/card";
-import { Input } from "../../../components/ui/input";
-import { formatBeijingPeriod } from "./task-form";
+import { formatReviewAmount, formatReviewCost, reportChoiceLabel, reviewReasonLabels } from "./review-display";
+import { ReviewSection } from "./review-section";
+import { formatBeijingPeriod, formatBeijingTime } from "./task-form";
 
 type EvidenceVersion = components["schemas"]["EvidenceVersion"];
 type EvidenceRef = components["schemas"]["EvidenceRef"];
 type ComparisonResult = components["schemas"]["ComparisonResult"];
 type ComparisonFollowUp = components["schemas"]["ComparisonFollowUp"];
+type TaskVersion = components["schemas"]["TaskVersion"];
 
 const statusLabels: Record<ComparisonResult["status"], string> = {
-	comparable: "可比较",
-	incomparable: "不可比较",
-	awaiting_supplementation: "等待补充",
-	missing_baseline: "未选择历史基线",
-	temporarily_uncomputable: "暂不可计算",
+	comparable: "两期表现对比",
+	incomparable: "两份报表暂时无法对比",
+	awaiting_supplementation: "有数据待补充",
+	missing_baseline: "本期成本检查",
+	temporarily_uncomputable: "本期成本暂时算不出来",
 };
 const thresholdLabels: Record<
 	ComparisonResult["thresholdEvaluation"]["status"],
 	string
 > = {
-	exceeded: "超过阈值",
-	not_exceeded: "未超过阈值",
-	not_evaluated: "未评估",
+	exceeded: "超过提醒线",
+	not_exceeded: "未超过提醒线",
+	not_evaluated: "暂时无法判断是否超出提醒线",
 };
 const actionLabels: Record<
 	ComparisonFollowUp["remediation"]["action"],
 	string
 > = {
-	provide_evidence: "补充或修订证据",
-	revise_task_rules: "创建完整的任务规则版本",
-	verify_source: "核实来源数值",
-	none: "需人工审查",
+	provide_evidence: "请补充或更正报表",
+	revise_task_rules: "请检查任务里的成本提醒设置",
+	verify_source: "请回到投放平台核对数据",
+	none: "请核对两份报表的统计方式",
 };
-const completionLabels: Record<
-	ComparisonFollowUp["remediation"]["completionCriteria"],
-	string
-> = {
-	matching_complete_evidence_version: "关联满足口径与区间要求的完整证据版本",
-	complete_task_rule_version: "关联在本事项创建后新建且规则完整的任务版本",
-	source_confirms_zero: "关联来源确认的真实零值证据",
-	manual_review: "人工审查后处理",
+const directionLabels = {
+	increased: "上升",
+	decreased: "下降",
+	unchanged: "持平",
 };
+
+function useReportDetails(evidenceId: string | undefined) {
+	return useQuery({
+		queryKey: ["evidence", evidenceId],
+		enabled: Boolean(evidenceId),
+		queryFn: async () => {
+			if (!evidenceId) throw new Error("请选择报表。");
+			const result = await consoleClient.GET("/api/evidence/{evidenceId}", {
+				params: { path: { evidenceId } },
+			});
+			if (!result.data) throw new Error("暂时无法读取这份报表。");
+			return result.data;
+		},
+	});
+}
 
 function EvidenceSelector({
 	label,
 	items,
 	evidenceId,
 	version,
+	createdAfter,
+	disabled,
 	onEvidenceChange,
 	onVersionChange,
 }: {
@@ -62,21 +72,13 @@ function EvidenceSelector({
 	items: EvidenceVersion[];
 	evidenceId: string;
 	version: string;
+	createdAfter?: string;
+	disabled?: boolean;
 	onEvidenceChange: (item: EvidenceVersion | undefined) => void;
 	onVersionChange: (value: string) => void;
 }) {
-	const detail = useQuery({
-		queryKey: ["evidence", evidenceId],
-		enabled: Boolean(evidenceId),
-		queryFn: async () => {
-			const result = await consoleClient.GET("/api/evidence/{evidenceId}", {
-				params: { path: { evidenceId } },
-			});
-			if (!result.data) throw new Error(JSON.stringify(result.error));
-			return result.data;
-		},
-	});
-	const options = detail.data?.versions ?? [];
+	const detail = useReportDetails(evidenceId || undefined);
+	const options = (detail.data?.versions ?? []).filter((item) => !createdAfter || item.createdAt > createdAfter);
 	return (
 		<div className="space-y-2">
 			<label className="block space-y-1 text-sm">
@@ -84,12 +86,13 @@ function EvidenceSelector({
 				<select
 					className="w-full rounded-md border bg-background p-2"
 					value={evidenceId}
+					disabled={disabled}
 					onChange={(event) => onEvidenceChange(items.find((item) => item.evidenceId === event.target.value))}
 				>
 					<option value="">请选择报表</option>
 					{items.map((item) => (
 						<option key={item.evidenceId} value={item.evidenceId}>
-							{formatBeijingPeriod(item.period)} · {item.scope.planRef} · 第 {item.version} 版
+							{reportChoiceLabel(item)}
 						</option>
 					))}
 				</select>
@@ -99,12 +102,12 @@ function EvidenceSelector({
 				<select
 					className="w-full rounded-md border bg-background p-2"
 					value={version}
-					disabled={!evidenceId || detail.isLoading}
+					disabled={disabled}
 					onChange={(event) => onVersionChange(event.target.value)}
 				>
 					{options.map((item) => (
 						<option key={item.id} value={String(item.version)}>
-							第 {item.version} 版{item.version === detail.data?.current.version ? "（最新）" : ""}
+							第 {item.version} 版 · {formatBeijingTime(item.createdAt)}{item.version === detail.data?.current.version ? " · 最新" : ""}
 						</option>
 					))}
 				</select>
@@ -119,14 +122,16 @@ function EvidenceSelector({
 export function ComparisonPanel({
 	taskId,
 	items,
+	mode,
 }: {
 	taskId: string;
 	items: EvidenceVersion[];
+	mode: "cost" | "comparison";
 }) {
+	const comparing = mode === "comparison";
 	const queryClient = useQueryClient();
 	const [currentId, setCurrentId] = useState("");
 	const [currentVersion, setCurrentVersion] = useState("");
-	const [baselineChoice, setBaselineChoice] = useState("");
 	const [baselineId, setBaselineId] = useState("");
 	const [baselineVersion, setBaselineVersion] = useState("");
 	const [error, setError] = useState("");
@@ -137,33 +142,21 @@ export function ComparisonPanel({
 			const result = await consoleClient.GET("/api/tasks/{taskId}/comparisons", {
 				params: { path: { taskId } },
 			});
-			if (!result.data) throw new Error(JSON.stringify(result.error));
-			return result.data.items;
-		},
-	});
-	const followUps = useQuery({
-		queryKey: ["task-comparison-follow-ups", taskId],
-		queryFn: async () => {
-			const result = await consoleClient.GET(
-				"/api/tasks/{taskId}/comparison-follow-ups",
-				{ params: { path: { taskId } } },
-			);
-			if (!result.data) throw new Error(JSON.stringify(result.error));
+			if (!result.data) throw new Error("检查结果暂时无法读取。");
 			return result.data.items;
 		},
 	});
 	const evaluate = useMutation({
 		mutationFn: async () => {
-			if (!currentId || !currentVersion || !baselineChoice)
-				throw new Error("请选择本期报表和查看方式。");
-			if (baselineChoice === "selected" && (!baselineId || !baselineVersion))
+			if (!currentId || !currentVersion) throw new Error("请选择本期报表。");
+			if (comparing && (!baselineId || !baselineVersion))
 				throw new Error("请选择要对比的报表。");
 			const current: EvidenceRef = {
 				evidenceId: currentId,
 				version: Number(currentVersion),
 			};
 			const baseline: EvidenceRef | undefined =
-				baselineChoice === "selected"
+				comparing
 					? { evidenceId: baselineId, version: Number(baselineVersion) }
 					: undefined;
 			const key = operationKey.current ?? crypto.randomUUID();
@@ -172,7 +165,7 @@ export function ComparisonPanel({
 				body: { current, ...(baseline ? { baseline } : {}) },
 				params: { header: { "Idempotency-Key": key } },
 			});
-			if (!result.data) throw new Error(JSON.stringify(result.error));
+			if (!result.data) throw new Error("暂时无法读取结果，请确认所选报表后重试。");
 			return result.data;
 		},
 		onSuccess: async () => {
@@ -185,200 +178,187 @@ export function ComparisonPanel({
 				}),
 			]);
 		},
-		onError: (cause) => setError(String(cause)),
+		onError: (cause) => setError(cause.message),
 	});
 	const resetKey = () => {
 		operationKey.current = null;
 		setError("");
 	};
+	const results = comparisons.data?.filter((item) => Boolean(item.baseline) === comparing);
+	const canSelectReports = !comparing || items.length > 1;
 
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle>检查投放效果</CardTitle>
-				<p className="text-sm text-muted-foreground">
-					时间均为北京时间。选两期报表后，系统会先核对两期数据的统计方式是否一致。
-				</p>
-			</CardHeader>
-			<CardContent className="space-y-4">
-				<div className="grid gap-4 md:grid-cols-2">
-					<EvidenceSelector
-						label="本期报表"
-						items={items}
-						evidenceId={currentId}
-						version={currentVersion}
-						onEvidenceChange={(item) => {
-							resetKey();
-							setCurrentId(item?.evidenceId ?? "");
-							setCurrentVersion(item ? String(item.version) : "");
-						}}
-						onVersionChange={(value) => {
-							resetKey();
-							setCurrentVersion(value);
-						}}
-					/>
-					<div className="space-y-2">
-						<label className="block space-y-1 text-sm">
-							<span>想看什么</span>
-							<select
-								className="w-full rounded-md border bg-background p-2"
-								value={baselineChoice}
-								onChange={(event) => {
-									resetKey();
-									setBaselineChoice(event.target.value);
-									setBaselineId("");
-									setBaselineVersion("");
-								}}
-							>
-								<option value="">请选择</option>
-								<option value="none">只检查本期成本</option>
-								<option value="selected">对比两个时段</option>
-							</select>
-						</label>
-						{baselineChoice === "selected" ? (
+		<ReviewSection
+			title={comparing ? "对比两期表现" : "检查本期成本"}
+			description={comparing ? "查看两期的花费、咨询次数和每次咨询成本怎么变了。" : "查看一份报表的每次咨询成本是否超过提醒线。"}
+		>
+			<div className="space-y-4">
+				{canSelectReports ? (
+					<div className="space-y-3">
+						<div className={comparing ? "grid gap-4 md:grid-cols-2" : "max-w-xl"}>
 							<EvidenceSelector
-								label="对照报表"
+								label="本期报表"
 								items={items}
-								evidenceId={baselineId}
-								version={baselineVersion}
+								evidenceId={currentId}
+								version={currentVersion}
+								disabled={evaluate.isPending}
 								onEvidenceChange={(item) => {
 									resetKey();
-									setBaselineId(item?.evidenceId ?? "");
-									setBaselineVersion(item ? String(item.version) : "");
+									setCurrentId(item?.evidenceId ?? "");
+									setCurrentVersion(item ? String(item.version) : "");
+									if (item?.evidenceId === baselineId) {
+										setBaselineId("");
+										setBaselineVersion("");
+									}
 								}}
 								onVersionChange={(value) => {
 									resetKey();
-									setBaselineVersion(value);
+									setCurrentVersion(value);
 								}}
 							/>
-						) : null}
+							{comparing && (
+								<EvidenceSelector
+									label="对照报表"
+									items={items.filter((item) => item.evidenceId !== currentId)}
+									evidenceId={baselineId}
+									version={baselineVersion}
+									disabled={evaluate.isPending}
+									onEvidenceChange={(item) => {
+										resetKey();
+										setBaselineId(item?.evidenceId ?? "");
+										setBaselineVersion(item ? String(item.version) : "");
+									}}
+									onVersionChange={(value) => {
+										resetKey();
+										setBaselineVersion(value);
+									}}
+								/>
+							)}
+						</div>
+						{comparing && <p className="text-xs text-muted-foreground">系统会先核对两期数据的统计方式是否一致。</p>}
+						{error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+						<Button
+							type="button"
+							disabled={
+								evaluate.isPending ||
+								!currentId ||
+								!currentVersion ||
+								(comparing && (!baselineId || !baselineVersion))
+							}
+							onClick={() => evaluate.mutate()}
+						>
+							{evaluate.isPending ? "正在计算…" : comparing ? "对比两期报表" : "检查成本"}
+						</Button>
 					</div>
-				</div>
-				{error ? (
-					<p role="alert" className="text-sm text-red-600">
-						比较失败：{error}
-					</p>
-				) : null}
-				<Button
-					type="button"
-					disabled={
-						evaluate.isPending ||
-						!currentId ||
-						!currentVersion ||
-						!baselineChoice ||
-						(baselineChoice === "selected" &&
-							(!baselineId || !baselineVersion))
-					}
-					onClick={() => evaluate.mutate()}
-				>
-					{evaluate.isPending ? "检查中…" : "检查并保存结果"}
-				</Button>
+				) : (
+					<p className="text-sm text-muted-foreground">再导入一份其他时段的报表，就可以对比两期表现。</p>
+				)}
 
 				<section className="space-y-3 border-t pt-4">
-					<h3 className="font-semibold">检查结果</h3>
+					<h3 className="text-sm font-semibold">{comparing ? "对比结果" : "成本检查结果"}</h3>
 					{comparisons.isLoading ? <p className="text-sm">正在加载…</p> : null}
 					{comparisons.error ? (
 						<p role="alert" className="text-sm text-red-600">
-							读取失败：{String(comparisons.error)}
+							{comparisons.error.message}
 						</p>
 					) : null}
-					{comparisons.data?.length ? (
+					{results?.length ? (
 						<ol className="space-y-3">
-							{comparisons.data.map((item) => (
-								<ComparisonHistoryItem key={item.id} item={item} />
+							{results.map((item) => (
+								<ComparisonHistoryItem key={item.id} item={item} reports={items} />
 							))}
 						</ol>
-					) : !comparisons.isLoading ? (
-						<p className="text-sm text-muted-foreground">完成检查后，结果会显示在这里。</p>
+					) : !comparisons.isLoading && !comparisons.error && canSelectReports ? (
+						<p className="text-sm text-muted-foreground">{comparing ? "对比完成后，结果会保存在这里。" : "检查完成后，结果会保存在这里。"}</p>
 					) : null}
 				</section>
 
-				<section className="space-y-3 border-t pt-4">
-					<h3 className="font-semibold">待跟进事项</h3>
-					{followUps.isLoading ? <p className="text-sm">正在加载…</p> : null}
-					{followUps.error ? (
-						<p role="alert" className="text-sm text-red-600">
-							读取失败：{String(followUps.error)}
-						</p>
-					) : null}
-					{followUps.data?.length ? (
-						<ul className="space-y-3">
-							{followUps.data.map((item) => (
-								<FollowUpItem key={item.id} item={item} taskId={taskId} />
-							))}
-						</ul>
-					) : !followUps.isLoading ? (
-						<p className="text-sm text-muted-foreground">尚无跟进事项。</p>
-					) : null}
-				</section>
-			</CardContent>
-		</Card>
+			</div>
+		</ReviewSection>
 	);
 }
 
-function ComparisonHistoryItem({ item }: { item: ComparisonResult }) {
+export function ReviewFollowUps({ taskId, items, taskVersions }: {
+	taskId: string;
+	items: EvidenceVersion[];
+	taskVersions: TaskVersion[];
+}) {
+	const followUps = useQuery({
+		queryKey: ["task-comparison-follow-ups", taskId],
+		queryFn: async () => {
+			const result = await consoleClient.GET(
+				"/api/tasks/{taskId}/comparison-follow-ups",
+				{ params: { path: { taskId } } },
+			);
+			if (!result.data) throw new Error("跟进事项暂时无法读取。");
+			return result.data.items;
+		},
+	});
+	if (!followUps.data?.length && !followUps.error) return null;
+
 	return (
-		<li className="rounded border p-3 text-sm">
+		<ReviewSection title="复盘跟进" description="查看还可以补充哪些报表或提醒设置。">
+			{followUps.error && <p role="alert" className="text-sm text-destructive">{followUps.error.message}</p>}
+			<ul className="space-y-3">
+				{followUps.data?.map((item) => (
+					<FollowUpItem key={item.id} item={item} taskId={taskId} reports={items} taskVersions={taskVersions} />
+				))}
+			</ul>
+		</ReviewSection>
+	);
+}
+
+function useComparedReport(ref: EvidenceRef | undefined, reports: EvidenceVersion[]) {
+	const report = reports.find((item) => item.evidenceId === ref?.evidenceId && item.version === ref.version);
+	const details = useReportDetails(report ? undefined : ref?.evidenceId);
+	return report ?? details.data?.versions.find((item) => item.version === ref?.version);
+}
+
+function ComparisonHistoryItem({ item, reports }: { item: ComparisonResult; reports: EvidenceVersion[] }) {
+	const current = useComparedReport(item.current, reports);
+	const baseline = useComparedReport(item.baseline, reports);
+	const comparing = Boolean(item.baseline);
+	const currency = current?.currency;
+	const { spendMinor, consultations, costPerConsultation } = item.comparisons;
+	const threshold = item.thresholdEvaluation;
+	const reasons = [...new Set(item.reasons
+		.filter((reason) => reason.axis === "both" || reason.axis === (comparing ? "period_comparison" : "current_threshold"))
+		.map((reason) => reviewReasonLabels[reason.code]))];
+
+	return (
+		<li className="space-y-2 rounded border p-3 text-sm">
 			<div className="flex flex-wrap items-center justify-between gap-2">
 				<strong>{statusLabels[item.status]}</strong>
-				<span className="text-xs text-muted-foreground">
-					{new Date(item.createdAt).toLocaleString()} · 规则 v{item.rulesRef.version} ·
-					评估器 v{item.evaluatorVersion}
-				</span>
+				<span className="text-xs text-muted-foreground">{formatBeijingTime(item.createdAt)}</span>
 			</div>
-			<p className="mt-1 text-muted-foreground">
-				当前 {item.current.evidenceId} v{item.current.version}
-				{item.baseline
-					? ` · 历史 ${item.baseline.evidenceId} v${item.baseline.version}`
-					: " · 未选择历史基线"}
-			</p>
-			<p>
-				区间比较：{item.canComparePeriods ? "可比较" : "未形成可比较结论"} · 当前阈值：
-				{thresholdLabels[item.thresholdEvaluation.status]}
-			</p>
-			{item.comparisons.spendMinor ? (
+			{current && <p className="text-muted-foreground">本期报表 · {formatBeijingPeriod(current.period)}</p>}
+			{baseline && <p className="text-muted-foreground">对照报表 · {formatBeijingPeriod(baseline.period)}</p>}
+			{!comparing && <p>
+				{threshold.value && currency ? (
+					<>每次咨询 <strong>{formatReviewCost(threshold.value, currency)}</strong> · </>
+				) : null}
+				{thresholdLabels[threshold.status]}
+				{threshold.thresholdMinor !== undefined && currency && threshold.currency === currency.code
+					? `（提醒线 ${formatReviewAmount(threshold.thresholdMinor, currency, true)}）`
+					: ""}
+			</p>}
+			{spendMinor && currency && (
+				<p>投放花费 · {formatReviewAmount(spendMinor.baseline, currency)} → {formatReviewAmount(spendMinor.current, currency)}</p>
+			)}
+			{consultations && (
+				<p>咨询次数 · {consultations.baseline} 次 → {consultations.current} 次</p>
+			)}
+			{costPerConsultation && currency && (
 				<p>
-					消耗：{item.comparisons.spendMinor.baseline} → {item.comparisons.spendMinor.current}（变化 {item.comparisons.spendMinor.delta}）
+					每次咨询成本{directionLabels[costPerConsultation.direction]} · {formatReviewCost(costPerConsultation.baseline, currency)}
+					{" → "}{formatReviewCost(costPerConsultation.current, currency)}
 				</p>
-			) : null}
-			{item.comparisons.consultations ? (
-				<p>
-					咨询：{item.comparisons.consultations.baseline} → {item.comparisons.consultations.current}（变化 {item.comparisons.consultations.delta}）
-				</p>
-			) : null}
-			{item.comparisons.costPerConsultation ? (
-				<p>
-					每次咨询成本方向：{item.comparisons.costPerConsultation.direction}（精确比值使用分子/分母保存）
-				</p>
-			) : null}
-			{item.thresholdEvaluation.value ? (
-				<p>
-					当前每次咨询成本：{item.thresholdEvaluation.value.numeratorMinor} / {item.thresholdEvaluation.value.denominatorConsultations} 最小货币单位
-					{item.thresholdEvaluation.thresholdMinor !== undefined
-						? ` · 阈值 ${item.thresholdEvaluation.thresholdMinor}`
-						: ""}
-					{item.thresholdEvaluation.currency
-						? ` ${item.thresholdEvaluation.currency}`
-						: ""}
-				</p>
-			) : null}
-			{item.reasons.length ? (
-				<div className="mt-2 border-t pt-2">
-					<p className="font-medium">原因与处理建议</p>
-					<ul className="mt-1 list-disc space-y-1 pl-5">
-						{item.reasons.map((reason, index) => (
-							<li key={`${reason.code}-${reason.axis}-${index}`}>
-								<code>{reason.code}</code>（{reason.axis}）：
-								{actionLabels[reason.remediation.action]}；
-								{completionLabels[reason.remediation.completionCriteria]}
-								{reason.evidenceRef
-									? ` · 证据 ${reason.evidenceRef.evidenceId} v${reason.evidenceRef.version}`
-									: ""}
-							</li>
-						))}
-					</ul>
-				</div>
-			) : null}
+			)}
+			{reasons.length > 0 && (
+				<ul className="list-disc space-y-1 border-t pt-2 pl-5 text-muted-foreground">
+					{reasons.map((reason) => <li key={reason}>{reason}</li>)}
+				</ul>
+			)}
 		</li>
 	);
 }
@@ -386,9 +366,13 @@ function ComparisonHistoryItem({ item }: { item: ComparisonResult }) {
 function FollowUpItem({
 	item,
 	taskId,
+	reports,
+	taskVersions,
 }: {
 	item: ComparisonFollowUp;
 	taskId: string;
+	reports: EvidenceVersion[];
+	taskVersions: TaskVersion[];
 }) {
 	const queryClient = useQueryClient();
 	const [evidenceId, setEvidenceId] = useState("");
@@ -397,19 +381,11 @@ function FollowUpItem({
 	const operationKey = useRef<string | null>(null);
 	const resolve = useMutation({
 		mutationFn: async () => {
-			if (!version || !Number.isSafeInteger(Number(version)) || Number(version) < 1)
-				throw new Error("请输入有效的版本号");
-			const material =
+			if (!version) throw new Error("请先选择要提交的内容。");
+			const material: components["schemas"]["FollowUpResolutionInput"]["material"] =
 				item.resolutionKind === "evidence"
-					? evidenceId
-						? {
-								kind: "evidence" as const,
-								evidenceId,
-								version: Number(version),
-							}
-						: null
-					: { kind: "task_version" as const, taskId, version: Number(version) };
-			if (!material) throw new Error("请输入要关联的证据 ID");
+					? { kind: "evidence", evidenceId, version: Number(version) }
+					: { kind: "task_version", taskId, version: Number(version) };
 			const key = operationKey.current ?? crypto.randomUUID();
 			operationKey.current = key;
 			const result = await consoleClient.POST(
@@ -422,7 +398,15 @@ function FollowUpItem({
 					body: { material },
 				},
 			);
-			if (!result.data) throw new Error(JSON.stringify(result.error));
+			if (!result.data) {
+				if (result.response.status === 409) throw new Error("这项跟进已更新，请刷新页面后重试。");
+				if (result.response.status === 400) {
+					throw new Error(item.resolutionKind === "evidence"
+						? "这份报表还不能完成跟进。请核对统计时间、投放账号和花费、咨询数据。"
+						: "这次修改还不能完成跟进。请检查提醒线、统计天数和触发条件。");
+				}
+				throw new Error("暂时无法保存跟进，请重试。");
+			}
 			return result.data;
 		},
 		onSuccess: async () => {
@@ -435,84 +419,100 @@ function FollowUpItem({
 				}),
 			]);
 		},
-		onError: (cause) => setError(String(cause)),
+		onError: (cause) => setError(cause.message),
 	});
+	const selectVersion = (value: string) => {
+		operationKey.current = null;
+		setError("");
+		setVersion(value);
+	};
+	const eligibleReports = reports.filter((report) => report.createdAt > item.createdAt && (
+		!item.period || (item.period.startsAt === report.period.startsAt &&
+			item.period.endsAt === report.period.endsAt && item.period.timeZone === report.period.timeZone)
+	));
+	const eligibleVersions = taskVersions.filter((task) => task.version > item.taskVersion && task.createdAt > item.createdAt);
+	const needsReport = item.resolutionKind === "evidence";
+	const canSubmit = needsReport
+		? Boolean(version && eligibleReports.some((report) => report.evidenceId === evidenceId))
+		: eligibleVersions.some((task) => String(task.version) === version);
 
 	return (
-		<li className="rounded border p-3 text-sm">
+		<li className="space-y-2 rounded border p-3 text-sm">
 			<div className="flex flex-wrap items-center justify-between gap-2">
-				<strong>
-					{item.status === "open" ? "待处理" : "已完成"} · {item.reasonCode}
-				</strong>
+				<strong>{reviewReasonLabels[item.reasonCode]}</strong>
 				<span className="text-xs text-muted-foreground">
-					任务 v{item.taskVersion} · {item.axis}
+					{item.status === "open" ? "待跟进" : "已完成"} · {formatBeijingTime(item.updatedAt)}
 				</span>
 			</div>
-			<p className="mt-1">
-				建议：{actionLabels[item.remediation.action]}。完成标准：
-				{completionLabels[item.remediation.completionCriteria]}。
-			</p>
-			{item.source ? (
-				<p className="text-muted-foreground">
-					来源需匹配：{item.source.platform} · 账户 {item.source.accountRef}
-				</p>
-			) : null}
-			{item.scope ? (
-				<p className="text-muted-foreground">
-					范围：{item.scope.planRef} · {item.scope.campaignRefs.join(", ") || "计划整体"}
-				</p>
-			) : null}
-			{item.period ? (
-				<p className="text-muted-foreground">
-					区间：{item.period.startsAt} – {item.period.endsAt}（{item.period.timeZone}）
-				</p>
-			) : null}
-			{item.status === "open" && item.remediation.action !== "none" ? (
-				<div className="mt-3 flex flex-wrap items-end gap-2">
-					{item.resolutionKind === "evidence" ? (
-						<Input
-							aria-label="用于完成跟进的证据 ID"
-							placeholder="证据 ID"
-							value={evidenceId}
-							onChange={(event) => {
-								operationKey.current = null;
-								setEvidenceId(event.target.value);
-							}}
-						/>
-					) : null}
-					<Input
-						aria-label={item.resolutionKind === "evidence" ? "证据版本" : "新任务版本"}
-						placeholder={item.resolutionKind === "evidence" ? "证据版本" : "新任务版本"}
-						inputMode="numeric"
-						value={version}
-						onChange={(event) => {
-							operationKey.current = null;
-							setVersion(event.target.value);
-						}}
-					/>
-					<Button
-						type="button"
-						variant="outline"
-						disabled={resolve.isPending}
-						onClick={() => {
-							setError("");
-							resolve.mutate();
-						}}
-					>
-						{resolve.isPending ? "校验中…" : "校验并关联完成材料"}
-					</Button>
-				</div>
-			) : null}
-			{error ? (
-				<p role="alert" className="mt-2 text-red-600">
-					无法完成：{error}
-				</p>
-			) : null}
-			{item.events.length ? (
-				<p className="mt-2 text-xs text-muted-foreground">
-					历史：{item.events.map((event) => `${event.type} ${event.at}`).join(" · ")}
-				</p>
-			) : null}
+			{item.status === "open" && (
+				<>
+					<p>{item.reasonCode === "NO_BASELINE"
+						? "如果想看前后变化，请补一份紧接本期、天数相同的上期报表。"
+						: `${actionLabels[item.remediation.action]}。`}</p>
+					{item.period && (
+						<p className="text-muted-foreground">需要补充的统计时间 · {formatBeijingPeriod(item.period)}</p>
+					)}
+					{item.remediation.action !== "none" && (
+						<div className="space-y-2">
+							{needsReport ? (
+								eligibleReports.length > 0 ? (
+									<EvidenceSelector
+										label="选择补充的报表"
+										items={eligibleReports}
+										evidenceId={eligibleReports.some((report) => report.evidenceId === evidenceId) ? evidenceId : ""}
+										version={version}
+										createdAfter={item.createdAt}
+										disabled={resolve.isPending}
+										onEvidenceChange={(report) => {
+											setEvidenceId(report?.evidenceId ?? "");
+											selectVersion(report ? String(report.version) : "");
+										}}
+										onVersionChange={selectVersion}
+									/>
+								) : <p className="text-muted-foreground">导入或更正报表后，可以在这里选择。</p>
+							) : (
+								<>
+									<Link className="text-primary underline underline-offset-4" to={`/tasks/${taskId}`}>
+										修改成本提醒设置
+									</Link>
+									{eligibleVersions.length > 0 && (
+										<label className="block space-y-1">
+											<span>选择保存后的设置</span>
+											<select
+												className="w-full rounded-md border bg-background p-2"
+												value={version}
+												disabled={resolve.isPending}
+												onChange={(event) => selectVersion(event.target.value)}
+											>
+												<option value="">请选择</option>
+												{eligibleVersions.map((task) => (
+													<option key={task.id} value={String(task.version)}>
+														第 {task.version} 次保存 · {formatBeijingTime(task.createdAt)}
+													</option>
+												))}
+											</select>
+										</label>
+									)}
+								</>
+							)}
+							{(needsReport ? eligibleReports.length > 0 : eligibleVersions.length > 0) && (
+								<Button
+									type="button"
+									variant="outline"
+									disabled={resolve.isPending || !canSubmit}
+									onClick={() => {
+										setError("");
+										resolve.mutate();
+									}}
+								>
+									{resolve.isPending ? "正在核对…" : "确认补充"}
+								</Button>
+							)}
+						</div>
+					)}
+				</>
+			)}
+			{error && <p role="alert" className="text-destructive">{error}</p>}
 		</li>
 	);
 }

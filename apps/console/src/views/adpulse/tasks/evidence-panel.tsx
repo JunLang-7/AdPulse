@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, FileUp } from "lucide-react";
+import { FileUp } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { type components, consoleClient } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
@@ -10,10 +10,12 @@ import {
 	CardTitle,
 } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
-import { ComparisonPanel } from "./comparison-panel";
+import { ComparisonPanel, ReviewFollowUps } from "./comparison-panel";
 import { readEvidenceCorrection, readEvidenceImport, type ReportSummary } from "./evidence-file";
 import { InvestigationAlertsPanel } from "./investigation-alerts-panel";
+import { formatReviewAmount, formatReviewCount } from "./review-display";
 import { QuickReviewPanel } from "./review-quick-panel";
+import { ReviewSection } from "./review-section";
 import { formatBeijingPeriod, formatBeijingTime } from "./task-form";
 
 type EvidenceImportInput = components["schemas"]["EvidenceImportInput"];
@@ -33,10 +35,12 @@ function reportError(status: number, conflict: string): Error {
 export function EvidencePanel({
 	taskId,
 	taskVersion,
+	taskVersions,
 	rules,
 }: {
 	taskId: string;
 	taskVersion: number;
+	taskVersions: components["schemas"]["TaskVersion"][];
 	rules: components["schemas"]["TaskRules"];
 }) {
 	const queryClient = useQueryClient();
@@ -49,7 +53,7 @@ export function EvidencePanel({
 			const result = await consoleClient.GET("/api/tasks/{taskId}/evidence", {
 				params: { path: { taskId } },
 			});
-			if (!result.data) throw new Error(JSON.stringify(result.error));
+			if (!result.data) throw new Error("暂时无法读取报表，请稍后重试。");
 			return result.data.items;
 		},
 	});
@@ -151,34 +155,15 @@ export function EvidencePanel({
 			</Card>
 			{latestReport ? (
 				<>
-					<ReviewSection title="对比表现或检查成本" description="选择要查看的报表，检查成本是否超标，或与另一时段对比。">
-						<ComparisonPanel taskId={taskId} items={reports} />
-					</ReviewSection>
+					<ComparisonPanel taskId={taskId} items={reports} mode="cost" />
+					<ComparisonPanel taskId={taskId} items={reports} mode="comparison" />
+					<ReviewFollowUps taskId={taskId} items={reports} taskVersions={taskVersions} />
 					<ReviewSection title="成本提醒" description="查看需要跟进的成本异常和处理进度。">
 						<InvestigationAlertsPanel taskId={taskId} />
 					</ReviewSection>
 				</>
 			) : null}
 		</>
-	);
-}
-
-function ReviewSection({ title, description, children }: {
-	title: string;
-	description: string;
-	children: ReactNode;
-}) {
-	return (
-		<details className="group rounded-xl border bg-card">
-			<summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 marker:hidden">
-				<ChevronRight aria-hidden="true" className="size-4 shrink-0 group-open:rotate-90" />
-				<span>
-					<span className="block text-sm font-semibold">{title}</span>
-					<span className="block text-xs text-muted-foreground">{description}</span>
-				</span>
-			</summary>
-			<div className="px-3 pb-3">{children}</div>
-		</details>
 	);
 }
 
@@ -272,7 +257,7 @@ function ReportTable({ rows }: { rows: ReportSummary[] }) {
 						<tr key={index} className="border-t">
 							<td className="p-2">{formatBeijingPeriod(row.period)}</td>
 							<td className="p-2 tabular-nums">{formatSpend(row)}</td>
-							<td className="p-2 tabular-nums">{formatValue(row.values.consultations, "次")}</td>
+							<td className="p-2 tabular-nums">{formatReviewCount(row.values.consultations)}</td>
 						</tr>
 					))}
 				</tbody>
@@ -295,7 +280,7 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 			const result = await consoleClient.GET("/api/evidence/{evidenceId}", {
 				params: { path: { evidenceId: item.evidenceId } },
 			});
-			if (!result.data) throw new Error(JSON.stringify(result.error));
+			if (!result.data) throw new Error("暂时无法读取报表详情，请稍后重试。");
 			return result.data;
 		},
 	});
@@ -353,10 +338,7 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 					<p className="font-medium">
 						{formatBeijingPeriod(item.period)}
 					</p>
-					<p className="text-muted-foreground">
-						计划 {item.scope.planRef}
-						{item.period.completeness === "partial" ? " · 部分时段" : ""}
-					</p>
+					{item.period.completeness === "partial" && <p className="text-muted-foreground">报表缺少部分时段的数据</p>}
 				</div>
 				<Button
 					type="button"
@@ -375,7 +357,7 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 				</div>
 				<div className="border-l pl-3">
 					<dt className="text-muted-foreground">咨询次数</dt>
-					<dd className="break-words text-xl font-semibold tabular-nums">{formatValue(item.values.consultations, "次")}</dd>
+					<dd className="break-words text-xl font-semibold tabular-nums">{formatReviewCount(item.values.consultations)}</dd>
 				</div>
 			</dl>
 			{expanded ? (
@@ -383,7 +365,7 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 					{detail.isLoading ? <p>正在读取详情…</p> : null}
 					{detail.error ? (
 						<p role="alert" className="text-red-600">
-							读取失败：{String(detail.error)}
+								{detail.error.message}
 						</p>
 					) : null}
 					{detail.data ? (
@@ -436,19 +418,6 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 	);
 }
 
-function formatValue(value: number | null | undefined, unit: string): string {
-	if (value === undefined) return "未提供";
-	if (value === null) return "报表留空";
-	return `${value.toLocaleString("zh-CN")} ${unit}`;
-}
-
 function formatSpend({ values, currency }: ReportSummary): string {
-	const { spendMinor } = values;
-	const { code, minorUnit, minorUnitsPerMajor } = currency;
-	if (spendMinor == null || minorUnitsPerMajor !== 100) {
-		return formatValue(spendMinor, `${minorUnit} (${code})`);
-	}
-	const whole = Math.floor(spendMinor / 100).toLocaleString("zh-CN");
-	const cents = String(spendMinor % 100).padStart(2, "0");
-	return `${whole}.${cents} ${code === "CNY" ? "元" : code}`;
+	return formatReviewAmount(values.spendMinor, currency);
 }
