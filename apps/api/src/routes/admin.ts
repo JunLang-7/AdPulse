@@ -12,6 +12,7 @@ import type {
 import { taskDraftBriefMaxLength, taskDraftProviderIds, taskDraftStages, type Runtime } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
+import { handleMarketEvents } from "./market-events.js";
 
 const amount = z.number().finite().nonnegative();
 const strategy = z
@@ -281,6 +282,7 @@ export async function handleAdmin(
 	path: string,
 	auth: AuthenticationService,
 ): Promise<void> {
+	if (await handleMarketEvents(req, res, runtime, userId, path)) return;
 	if (path === "/api/task-drafts/models") {
 		res.setHeader("Cache-Control", "no-store");
 		const models = runtime.taskDraftModels;

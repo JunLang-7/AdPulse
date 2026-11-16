@@ -200,6 +200,17 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (10)",
 				);
 			}
+			if (!current.has(11)) {
+				for (const name of ["marketEvents", "marketEventVersions", "marketEventAliases", "marketEventOperations"])
+					await this.createEntityTable(client, name);
+				await client.query(`CREATE UNIQUE INDEX adpulse_market_event_logical
+					ON adpulse_marketEvents ((data->>'ownerId'), (data->>'logicalKey'))`);
+				await client.query(`CREATE UNIQUE INDEX adpulse_market_event_version
+					ON adpulse_marketEventVersions ((data->>'eventId'), (data->>'version'))`);
+				await client.query(`CREATE INDEX adpulse_market_event_owner
+					ON adpulse_marketEvents ((data->>'ownerId'), (data->>'createdAt'))`);
+				await client.query("INSERT INTO adpulse_schema_migrations(version) VALUES (11)");
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

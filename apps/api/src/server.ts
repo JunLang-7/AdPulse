@@ -7,6 +7,7 @@ import {
 	ComparisonValidationError,
 	EvidenceConflictError,
 	EvidenceValidationError,
+	MarketEventError,
 	InvestigationAlertValidationError,
 	NotificationError,
 	NotificationRecordError,
@@ -680,6 +681,8 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				return;
 			}
 			if (error instanceof HttpError || error instanceof WebhookError)
+				return json(res, error.status, { error: error.message });
+			if (error instanceof MarketEventError)
 				return json(res, error.status, { error: error.message });
 			if (error instanceof TaskInputValidationError)
 				return json(res, 400, { error: `invalid field: ${error.fieldPath}` });

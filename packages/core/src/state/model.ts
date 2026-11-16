@@ -1,3 +1,4 @@
+import type { MarketEventHead, MarketEventVersion, MarketEventAlias, MarketEventOperation } from "../market-events.js";
 import type { DecisionCard } from "../domain/decisionCard.js";
 import type {
 	Limits,
@@ -697,6 +698,10 @@ export interface SourceState {
 	lastPrunedAt: string | null;
 }
 export interface Entities {
+	marketEvents: MarketEventHead;
+	marketEventVersions: MarketEventVersion;
+	marketEventAliases: MarketEventAlias;
+	marketEventOperations: MarketEventOperation;
 	users: User;
 	identityBindings: IdentityBinding;
 	notificationDestinations: NotificationDestination;

@@ -14,6 +14,7 @@ import NotificationSettingsPage from "../views/adpulse/settings/notifications";
 import NotificationRecordsPage from "../views/adpulse/settings/notification-records";
 import SubscriptionSettingsPage from "../views/adpulse/settings/subscriptions";
 import TasksPage from "../views/adpulse/tasks";
+import MarketEventsPage from "../views/adpulse/market-events";
 
 function RouteError({ error }: { error: unknown }): ReactNode {
 	return (
@@ -133,6 +134,8 @@ const Router = [
 					{ path: "/sessions", element: <SessionsPage /> },
 					{ path: "/sessions/:sessionId", element: <SessionDetailPage /> },
 					{ path: "/tasks", element: <TasksPage /> },
+					{ path: "/market-events", element: <MarketEventsPage /> },
+					{ path: "/market-events/:eventId", element: <MarketEventsPage /> },
 					{ path: "/tasks/:taskId", element: <TaskEditorPage /> },
 					{ path: "/tasks/:taskId/review", element: <TaskReviewPage /> },
 					{ path: "/settings/notifications", element: <NotificationSettingsPage /> },

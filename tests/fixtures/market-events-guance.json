@@ -1,0 +1,172 @@
+[
+  {
+    "occurrenceKey": "haier-smart-home:S-06",
+    "title": "竞品用“轻量改造”切入旧房市场",
+    "type": "product_launch",
+    "subject": {
+      "kind": "competitor",
+      "name": "竞品智能家居动态（模拟）"
+    },
+    "eventTime": null,
+    "conditions": null,
+    "sources": [
+      {
+        "url": null,
+        "publisher": "竞品智能家居动态（模拟）",
+        "content": "“不用大改，半天装好，这种更适合老房子。”",
+        "scope": "excerpt",
+        "origin": "unknown",
+        "publishedAt": "2026-02-19",
+        "acquiredAt": "2026-02-20T10:00:00+08:00",
+        "limitations": "竞品名称与活动均为模拟，不对应真实企业。 原条目 status=verified 不改变模拟属性；原文链接和事件时间缺失。"
+      }
+    ],
+    "citations": {
+      "subject": null,
+      "eventTime": null,
+      "conditions": null
+    },
+    "taskRefs": [],
+    "provenance": {
+      "simulated": true,
+      "reference": "guance-ai@01ba5c2992f62b6ba9e4cb0eac22b3d1bbd2627f/simulations/projects/haier-smart-home.json#signals/S-06; sources/SRC-06",
+      "transformation": "仅映射一条竞品观察的标题、原引语和来源元数据；类别为本项目映射，未补造链接/正文/事件时间/适用条件；不导入报告、impact 或评分。"
+    }
+  },
+  {
+    "occurrenceKey": "weichai-powertrain:S-06",
+    "title": "竞品用延保和免费检测锁定车队",
+    "type": "campaign",
+    "subject": {
+      "kind": "competitor",
+      "name": "竞品服务政策动态（模拟）"
+    },
+    "eventTime": null,
+    "conditions": null,
+    "sources": [
+      {
+        "url": null,
+        "publisher": "竞品服务政策动态（模拟）",
+        "content": "“竞品送延保和免费检测，客户续约就更愿意。”",
+        "scope": "excerpt",
+        "origin": "unknown",
+        "publishedAt": "2026-03-23",
+        "acquiredAt": "2026-03-24T10:00:00+08:00",
+        "limitations": "竞品名称与政策均为模拟。 原条目 status=verified 不改变模拟属性；原文链接和事件时间缺失。"
+      }
+    ],
+    "citations": {
+      "subject": null,
+      "eventTime": null,
+      "conditions": null
+    },
+    "taskRefs": [],
+    "provenance": {
+      "simulated": true,
+      "reference": "guance-ai@01ba5c2992f62b6ba9e4cb0eac22b3d1bbd2627f/simulations/projects/weichai-powertrain.json#signals/S-06; sources/SRC-07",
+      "transformation": "仅映射一条竞品观察的标题、原引语和来源元数据；类别为本项目映射，未补造链接/正文/事件时间/适用条件；不导入报告、impact 或评分。"
+    }
+  },
+  {
+    "occurrenceKey": "dongee-ejiao:S-07",
+    "title": "竞品用零食化产品切年轻市场",
+    "type": "product_launch",
+    "subject": {
+      "kind": "competitor",
+      "name": "竞品零食化滋补动态（模拟）"
+    },
+    "eventTime": null,
+    "conditions": null,
+    "sources": [
+      {
+        "url": null,
+        "publisher": "竞品零食化滋补动态（模拟）",
+        "content": "“现在很多即食的，像零食一样，方便带。”",
+        "scope": "excerpt",
+        "origin": "unknown",
+        "publishedAt": "2026-08-22",
+        "acquiredAt": "2026-08-23T10:00:00+08:00",
+        "limitations": "竞品名称与产品均为模拟。 原条目 status=verified 不改变模拟属性；原文链接和事件时间缺失。"
+      }
+    ],
+    "citations": {
+      "subject": null,
+      "eventTime": null,
+      "conditions": null
+    },
+    "taskRefs": [],
+    "provenance": {
+      "simulated": true,
+      "reference": "guance-ai@01ba5c2992f62b6ba9e4cb0eac22b3d1bbd2627f/simulations/projects/dongee-ejiao.json#signals/S-07; sources/SRC-06",
+      "transformation": "仅映射一条竞品观察的标题、原引语和来源元数据；类别为本项目映射，未补造链接/正文/事件时间/适用条件；不导入报告、impact 或评分。"
+    }
+  },
+  {
+    "occurrenceKey": "tsingtao-premium-beer:S-05",
+    "title": "竞品用套餐和开瓶礼抢占餐饮终端",
+    "type": "campaign",
+    "subject": {
+      "kind": "competitor",
+      "name": "竞品餐饮促销动态（模拟）"
+    },
+    "eventTime": null,
+    "conditions": null,
+    "sources": [
+      {
+        "url": null,
+        "publisher": "竞品餐饮促销动态（模拟）",
+        "content": "“竞品给的开瓶费更高，服务员当然更愿意推。”",
+        "scope": "excerpt",
+        "origin": "unknown",
+        "publishedAt": "2026-05-05",
+        "acquiredAt": "2026-05-06T10:00:00+08:00",
+        "limitations": "竞品名称、套餐与价格均为模拟。 原条目 status=verified 不改变模拟属性；原文链接和事件时间缺失。"
+      }
+    ],
+    "citations": {
+      "subject": null,
+      "eventTime": null,
+      "conditions": null
+    },
+    "taskRefs": [],
+    "provenance": {
+      "simulated": true,
+      "reference": "guance-ai@01ba5c2992f62b6ba9e4cb0eac22b3d1bbd2627f/simulations/projects/tsingtao-premium-beer.json#signals/S-05; sources/SRC-06",
+      "transformation": "仅映射一条竞品观察的标题、原引语和来源元数据；类别为本项目映射，未补造链接/正文/事件时间/适用条件；不导入报告、impact 或评分。"
+    }
+  },
+  {
+    "occurrenceKey": "gambol-pet-food:S-08",
+    "title": "竞品用冻干/鲜肉概念抢占高端",
+    "type": "product_launch",
+    "subject": {
+      "kind": "competitor",
+      "name": "竞品冻干/鲜肉动态（模拟）"
+    },
+    "eventTime": null,
+    "conditions": null,
+    "sources": [
+      {
+        "url": null,
+        "publisher": "竞品冻干/鲜肉动态（模拟）",
+        "content": "“现在都讲冻干鲜肉，国产高端也得跟上。”",
+        "scope": "excerpt",
+        "origin": "unknown",
+        "publishedAt": "2026-07-22",
+        "acquiredAt": "2026-07-23T10:00:00+08:00",
+        "limitations": "竞品名称与产品均为模拟。 原条目 status=verified 不改变模拟属性；原文链接和事件时间缺失。"
+      }
+    ],
+    "citations": {
+      "subject": null,
+      "eventTime": null,
+      "conditions": null
+    },
+    "taskRefs": [],
+    "provenance": {
+      "simulated": true,
+      "reference": "guance-ai@01ba5c2992f62b6ba9e4cb0eac22b3d1bbd2627f/simulations/projects/gambol-pet-food.json#signals/S-08; sources/SRC-06",
+      "transformation": "仅映射一条竞品观察的标题、原引语和来源元数据；类别为本项目映射，未补造链接/正文/事件时间/适用条件；不导入报告、impact 或评分。"
+    }
+  }
+]
