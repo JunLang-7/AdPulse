@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { activeTaskIn } from "./lifecycle.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import { invalidateAlertsForEvidenceUpdate } from "./investigation-alerts.js";
 import type {
@@ -336,11 +337,11 @@ export class EvidenceService {
 					throw new EvidenceConflictError("idempotency conflict");
 				return existingOperation.results;
 			}
-			const task = await tx.tasks.get(input.taskRef.taskId);
+			const task = await activeTaskIn(tx, input.taskRef.taskId, ownerId);
 			const taskVersion = await tx.taskVersions.get(
 				`${input.taskRef.taskId}:${input.taskRef.taskVersion}`,
 			);
-			if (!task || task.ownerId !== ownerId || !taskVersion)
+			if (!task || !taskVersion)
 				throw new EvidenceValidationError("task not found");
 			const results: EvidenceImportResult[] = [];
 			for (const record of input.records) {
@@ -444,11 +445,11 @@ export class EvidenceService {
 			if (!current) throw new Error("evidence version unavailable");
 			if (current.version !== input.expectedEvidenceVersion)
 				throw new EvidenceConflictError("evidence version conflict");
-			const task = await tx.tasks.get(head.taskId);
+			const task = await activeTaskIn(tx, head.taskId, ownerId);
 			const taskVersion = await tx.taskVersions.get(
 				`${head.taskId}:${head.taskVersion}`,
 			);
-			if (!task || task.ownerId !== ownerId || !taskVersion)
+			if (!task || !taskVersion)
 				throw new EvidenceValidationError("evidence not found");
 			const businessKey = identityFor(
 				ownerId,
@@ -505,9 +506,8 @@ export class EvidenceService {
 		taskId: string,
 	): Promise<EvidenceVersion[]> {
 		return this.storage.transaction(async (tx) => {
-			const task = await tx.tasks.get(taskId);
-			if (!task || task.ownerId !== ownerId)
-				throw new EvidenceValidationError("task not found");
+			const task = await activeTaskIn(tx, taskId, ownerId);
+			if (!task) throw new EvidenceValidationError("task not found");
 			const heads = (await tx.evidenceHeads.all()).filter(
 				(head) => head.ownerId === ownerId && head.taskId === taskId,
 			);
@@ -529,6 +529,7 @@ export class EvidenceService {
 		return this.storage.transaction(async (tx) => {
 			const head = await tx.evidenceHeads.get(evidenceId);
 			if (!head || head.ownerId !== ownerId) return null;
+			if (!(await activeTaskIn(tx, head.taskId, ownerId))) return null;
 			const versions = (await tx.evidenceVersions.all())
 				.filter((version) => version.evidenceId === evidenceId)
 				.sort((a, b) => a.version - b.version);

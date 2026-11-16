@@ -19,6 +19,7 @@ import {
 	type NotificationQueue,
 } from "./notifications-queue.js";
 import type { SubscriptionService } from "./subscriptions.js";
+import { deletionOf } from "./lifecycle.js";
 import { notificationInputsStillCurrentIn } from "./notifications-selection.js";
 import { RecipientUnreachableError, type OutboundChannel } from "./ports/channel.js";
 import type { Storage, Transaction } from "./ports/storage.js";
@@ -432,7 +433,14 @@ export class Worker {
 				session.status !== "awaiting_input");
 		const staleConfirmation =
 			delivery.purpose === "confirmation" && session?.status === "cancelled";
-		if (staleDecision || staleConfirmation || expired) {
+		// 生命周期守卫：任务已确认删除时，在途投递按失效取消，不因随后重试补发。
+		const taskDeleted = session?.taskRef
+			? await this.storage.transaction(async (tx) => {
+					const task = await tx.tasks.get(session.taskRef!.taskId);
+					return Boolean(task && deletionOf(task));
+				})
+			: false;
+		if (staleDecision || staleConfirmation || expired || taskDeleted) {
 			await this.storage.transaction(async (tx) => {
 				if (!(await this.holdsLease(tx, job))) return;
 				const current = await tx.deliveries.get(deliveryId);

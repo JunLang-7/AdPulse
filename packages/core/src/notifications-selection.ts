@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { canSendProactiveIn } from "./notifications.js";
 import { digestInstant, itemId, localDate, NotificationQueue } from "./notifications-queue.js";
 import { NotificationRecordError } from "./notifications-records.js";
+import { activeTaskIn, deletionOf } from "./lifecycle.js";
 import { normalizeName } from "./subscriptions.js";
 import type { MarketEventVersion } from "./market-events.js";
 import type { Storage, Transaction } from "./ports/storage.js";
@@ -98,9 +99,9 @@ export class NotificationSelectionService {
 
 	/** 只在领域评估事务中调用；不扫描旧告警，不执行网络 I/O。 */
 	async selectIn(tx: Transaction, alert: InvestigationAlert, isNewEvidence: boolean): Promise<void> {
-		const task = await tx.tasks.get(alert.taskId);
+		const task = await activeTaskIn(tx, alert.taskId, alert.ownerId);
 		const result = await tx.comparisonResults.get(alert.current.comparisonResultId);
-		if (!task || task.ownerId !== alert.ownerId || !result || result.ownerId !== alert.ownerId) return;
+		if (!task || !result || result.ownerId !== alert.ownerId) return;
 		const evidence = await tx.evidenceVersions.get(`${result.current.evidenceId}:${result.current.version}`);
 		if (!evidence || evidence.ownerId !== alert.ownerId || evidence.taskId !== task.id) return;
 		const id = createHash("sha256").update(JSON.stringify([alert.ownerId, result.id])).digest("hex");
@@ -227,8 +228,8 @@ export class NotificationSelectionService {
 		const typeLabel = input.type === "announcement" ? "公告" : input.type === "campaign" ? "活动" : "产品发布";
 		const subjectLabel = input.subject.kind === "brand" ? "品牌" : "竞品";
 		const products = (await Promise.all([...new Set(matched.taskIds)].map(async (taskId) => {
-			const task = await tx.tasks.get(taskId);
-			if (!task || task.ownerId !== version.ownerId) return null;
+			const task = await activeTaskIn(tx, taskId, version.ownerId);
+			if (!task) return null;
 			return (await tx.taskVersions.get(`${task.id}:${task.currentVersion}`))?.product ?? null;
 		}))).filter((product): product is string => Boolean(product));
 		// 命中原因逐项列出实际命中的关注项，不把未订阅的对象写进理由。
@@ -351,7 +352,7 @@ async function selectionDeliveryIn(tx: Transaction, ownerId: string, record: Sel
 export async function effectNotificationCurrentIn(tx: Transaction, item: NotificationItem): Promise<boolean> {
 	const ref = item.effectRef;
 	if (!ref) return true; // 既有受控合成队列不冒充领域来源。
-	const task = item.taskId ? await tx.tasks.get(item.taskId) : null;
+	const task = item.taskId ? await activeTaskIn(tx, item.taskId, item.ownerId) : null;
 	const alert = await tx.investigationAlerts.get(ref.alertId);
 	const evidence = await tx.evidenceVersions.get(`${ref.evidenceId}:${ref.evidenceVersion}`);
 	const head = await tx.evidenceHeads.get(ref.evidenceId);
@@ -387,6 +388,12 @@ export async function marketEventNotificationCurrentIn(
 export async function notificationInputsStillCurrentIn(
 	tx: Transaction, item: NotificationItem,
 ): Promise<boolean> {
+	// 已确认删除的任务不再作为待发信息的有效输入：发送前重检时直接作废。
+	// 任务不存在时保留既有受控合成队列行为，由后续输入复检决定。
+	if (item.taskId) {
+		const task = await tx.tasks.get(item.taskId);
+		if (task && (task.ownerId !== item.ownerId || deletionOf(task))) return false;
+	}
 	return item.marketEventRef
 		? marketEventNotificationCurrentIn(tx, item)
 		: effectNotificationCurrentIn(tx, item);

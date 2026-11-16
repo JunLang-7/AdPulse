@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { activeTaskIn } from "./lifecycle.js";
 import { NotificationSelectionService } from "./notifications-selection.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
@@ -257,9 +258,9 @@ export class InvestigationAlertService {
 			);
 			if (!current || current.ownerId !== ownerId || current.taskId !== result.taskId)
 				throw new InvestigationAlertValidationError("comparison evidence unavailable");
-			const task = await tx.tasks.get(result.taskId);
+			const task = await activeTaskIn(tx, result.taskId, ownerId);
 			const rules = await tx.taskVersions.get(`${result.rulesRef.taskId}:${result.rulesRef.version}`);
-			if (!task || task.ownerId !== ownerId || !rules)
+			if (!task || !rules)
 				throw new InvestigationAlertValidationError("comparison task unavailable");
 			const sources = await tx.evidenceSources.all();
 			const source = sourceFor(sources, current);
@@ -410,7 +411,7 @@ export class InvestigationAlertService {
 		await this.storage.transaction(async (tx) => {
 			const alert = await tx.investigationAlerts.get(alertId);
 			if (!alert || alert.status !== "open" || alert.logicalRounds >= alert.maxPushRounds) return;
-			const task = await tx.tasks.get(alert.taskId);
+			const task = await activeTaskIn(tx, alert.taskId, alert.ownerId);
 			const evidence = await tx.evidenceVersions.get(`${alert.current.evidence.evidenceId}:${alert.current.evidence.version}`);
 			const version = await tx.taskVersions.get(`${alert.current.evidence.taskId}:${alert.current.evidence.taskVersion}`);
 			const head = evidence && await tx.evidenceHeads.get(evidence.evidenceId);
@@ -544,9 +545,8 @@ export class InvestigationAlertService {
 
 	async listForTask(ownerId: string, taskId: string): Promise<InvestigationAlert[]> {
 		return this.storage.transaction(async (tx) => {
-			const task = await tx.tasks.get(taskId);
-			if (!task || task.ownerId !== ownerId)
-				throw new InvestigationAlertValidationError("task not found");
+			const task = await activeTaskIn(tx, taskId, ownerId);
+			if (!task) throw new InvestigationAlertValidationError("task not found");
 			return (await tx.investigationAlerts.all())
 				.filter((item) => item.ownerId === ownerId && item.taskId === taskId)
 				.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));

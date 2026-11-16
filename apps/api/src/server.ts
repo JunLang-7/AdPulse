@@ -17,6 +17,7 @@ import {
 	SubscriptionError,
 	SubscriptionService,
 	TaskInputValidationError,
+	TaskLifecycleError,
 } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
 import { ZodError } from "zod";
@@ -707,6 +708,8 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				return json(res, error.status, { error: error.message });
 			if (error instanceof TaskInputValidationError)
 				return json(res, 400, { error: `invalid field: ${error.fieldPath}` });
+			if (error instanceof TaskLifecycleError)
+				return json(res, 404, { error: "task not found" });
 			if (
 				error instanceof EvidenceConflictError ||
 				error instanceof ComparisonConflictError

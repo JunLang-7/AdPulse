@@ -890,6 +890,28 @@
         }
       }
     },
+    "/api/tasks/{taskId}/deletion": {
+      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "getTaskDeletion",
+        "summary": "本人确认删除后的生命周期状态",
+        "responses": {
+          "200": { "description": "Deletion state of the current user's task", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDeletion" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Task is not deleted or not owned by the current user", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "post": {
+        "operationId": "requestTaskDeletion",
+        "summary": "本人确认删除任务，立即限访并抑制待发",
+        "description": "同一事务内标记 restricted、拒绝待处理动作并取消待发条目/投递/任务；幂等重复确认不刷新首次请求时间。物理清理由后续清理任务完成。",
+        "responses": {
+          "200": { "description": "Deletion accepted or already requested", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDeletion" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Task not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/api/tasks/{taskId}/evidence": {
       "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
       "get": {
@@ -2430,6 +2452,25 @@
         },
         "required": ["expectedVersion"],
         "additionalProperties": false
+      },
+      "TaskDeletionSuppressed": {
+        "type": "object",
+        "description": "本次确认删除时抑制掉的关联待发数量；不展开逐条明细。",
+        "required": ["items", "batches", "deliveries", "jobs", "sessions", "inboxes"],
+        "properties": { "items": { "type": "integer", "minimum": 0 }, "batches": { "type": "integer", "minimum": 0 }, "deliveries": { "type": "integer", "minimum": 0 }, "jobs": { "type": "integer", "minimum": 0 }, "sessions": { "type": "integer", "minimum": 0 }, "inboxes": { "type": "integer", "minimum": 0 } }
+      },
+      "TaskDeletion": {
+        "type": "object",
+        "required": ["taskId", "state", "requestedAt", "cleanupDueAt", "newlyRequested", "suppressed"],
+        "properties": {
+          "taskId": { "type": "string" },
+          "state": { "type": "string", "enum": ["restricted", "cleaned"] },
+          "requestedAt": { "type": "string", "description": "本人确认删除的 UTC 时刻；重复确认保持不变。" },
+          "cleanupDueAt": { "type": "string", "description": "在线业务资料最迟清理时刻（+7 天）。" },
+          "cleanedAt": { "type": "string" },
+          "newlyRequested": { "type": "boolean", "description": "本次调用是否首次确认。" },
+          "suppressed": { "$ref": "#/components/schemas/TaskDeletionSuppressed" }
+        }
       },
       "Error": {
         "type": "object",

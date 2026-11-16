@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { activeTaskIn } from "./lifecycle.js";
 import { NotificationSelectionService } from "./notifications-selection.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 
@@ -193,8 +194,8 @@ export class MarketEventService {
 	private async commit(tx: Transaction, ownerId: string, key: string, input: MarketEventInput, eventId: string | null, expectedVersion: number | null, reason: string, sourceItemId: string | null) {
 		if (!text(ownerId, 256) || !text(key, 256)) fail("invalid operation key");
 		for (const ref of input.taskRefs) {
-			const task = await tx.tasks.get(ref.taskId);
-			if (!task || task.ownerId !== ownerId || !await tx.taskVersions.get(`${ref.taskId}:${ref.taskVersion}`)) throw new MarketEventError(404, "task not found");
+			const task = await activeTaskIn(tx, ref.taskId, ownerId);
+			if (!task || !await tx.taskVersions.get(`${ref.taskId}:${ref.taskVersion}`)) throw new MarketEventError(404, "task not found");
 		}
 		const operationId = hash([ownerId, key]);
 		const digest = hash({ input, eventId, expectedVersion, reason, sourceItemId });

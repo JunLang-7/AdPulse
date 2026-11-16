@@ -3,6 +3,7 @@ import {
 	type DecisionAccountResolver,
 } from "./decision-delivery.js";
 import type { Limits, Signal, Strategy } from "./domain/strategy.js";
+import { activeTaskIn, deletionOf } from "./lifecycle.js";
 import { applyChanges, validateStrategy } from "./domain/strategy.js";
 import { invalidateAlertCandidate } from "./investigation-alerts.js";
 import type { Actor, ChoiceCommand, Recipient } from "./ports/channel.js";
@@ -109,11 +110,11 @@ export class Orchestrator {
 		return this.storage.transaction(async (tx) => {
 			let taskVersion: TaskVersion | null = null;
 			if (input.taskRef) {
-				const task = await tx.tasks.get(input.taskRef.taskId);
+				const task = await activeTaskIn(tx, input.taskRef.taskId, input.ownerId);
 				taskVersion = await tx.taskVersions.get(
 					`${input.taskRef.taskId}:${input.taskRef.taskVersion}`,
 				);
-				if (!task || task.ownerId !== input.ownerId || !taskVersion)
+				if (!task || !taskVersion)
 					throw new Error("task not found");
 				if (canonicalJson(taskVersion.strategy) !== canonicalJson(input.strategy))
 					throw new Error("task strategy mismatch");
@@ -212,6 +213,11 @@ export class Orchestrator {
 			if (!round) return reject("unknown_round");
 			const session = await tx.sessions.get(round.sessionId);
 			if (!session) return reject("unknown_session");
+			// 本人确认删除后立即不可处理：旧卡/在途点击都按业务拒绝，不当作系统故障。
+			if (session.taskRef) {
+				const task = await tx.tasks.get(session.taskRef.taskId);
+				if (task && deletionOf(task)) return reject("task_deleted");
+			}
 			const actor = inbox.command.actor;
 			const authorized =
 				actor.kind === "console"
@@ -249,7 +255,7 @@ export class Orchestrator {
 			if (session.investigationAlertId) {
 				investigationAlert = await tx.investigationAlerts.get(session.investigationAlertId);
 				const task = session.taskRef
-					? await tx.tasks.get(session.taskRef.taskId)
+					? await activeTaskIn(tx, session.taskRef.taskId, session.ownerId)
 					: null;
 				if (
 					!investigationAlert ||

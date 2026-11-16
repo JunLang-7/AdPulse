@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { activeTaskIn } from "./lifecycle.js";
 import {
 	calendarSpanDays,
 	evaluateEvidenceComparison,
@@ -277,9 +278,8 @@ export class ComparisonService {
 				: null;
 			if (input.baseline && (!baseline || baseline.ownerId !== ownerId))
 				throw new ComparisonValidationError("evidence not found");
-			const task = await tx.tasks.get(current.taskId);
-			if (!task || task.ownerId !== ownerId)
-				throw new ComparisonValidationError("task not found");
+			const task = await activeTaskIn(tx, current.taskId, ownerId);
+			if (!task) throw new ComparisonValidationError("task not found");
 			const rules = await tx.taskVersions.get(`${current.taskId}:${current.taskVersion}`);
 			if (!rules)
 				throw new ComparisonValidationError("task version not found");
@@ -387,9 +387,8 @@ export class ComparisonService {
 		taskId: string,
 	): Promise<ComparisonResult[]> {
 		return this.storage.transaction(async (tx) => {
-			const task = await tx.tasks.get(taskId);
-			if (!task || task.ownerId !== ownerId)
-				throw new ComparisonValidationError("task not found");
+			const task = await activeTaskIn(tx, taskId, ownerId);
+			if (!task) throw new ComparisonValidationError("task not found");
 			return (await tx.comparisonResults.all())
 				.filter((item) => item.ownerId === ownerId && item.taskId === taskId)
 				.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -401,9 +400,8 @@ export class ComparisonService {
 		taskId: string,
 	): Promise<ComparisonFollowUp[]> {
 		return this.storage.transaction(async (tx) => {
-			const task = await tx.tasks.get(taskId);
-			if (!task || task.ownerId !== ownerId)
-				throw new ComparisonValidationError("task not found");
+			const task = await activeTaskIn(tx, taskId, ownerId);
+			if (!task) throw new ComparisonValidationError("task not found");
 			return (await tx.comparisonFollowUps.all())
 				.filter((item) => item.ownerId === ownerId && item.taskId === taskId)
 				.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -588,8 +586,7 @@ export class ComparisonService {
 				);
 				if (
 					!version ||
-					!(await tx.tasks.get(version.taskId)) ||
-					(await tx.tasks.get(version.taskId))?.ownerId !== ownerId ||
+					!(await activeTaskIn(tx, version.taskId, ownerId)) ||
 					!canResolveRules(followUp, version, await tx.evidenceVersions.get(
 						`${followUp.anchorEvidenceRef?.evidenceId}:${followUp.anchorEvidenceRef?.version}`,
 					))

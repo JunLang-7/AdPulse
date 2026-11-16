@@ -694,7 +694,8 @@ export type JobTask =
 export interface Job {
 	id: string;
 	task: JobTask;
-	status: "pending" | "running" | "done" | "failed";
+	/** cancelled 是生命周期终止态（如任务确认删除）；worker 不再领取。 */
+	status: "pending" | "running" | "done" | "failed" | "cancelled";
 	runAt: string;
 	attempts: number;
 	leaseToken?: string;
@@ -746,6 +747,26 @@ export interface SourceState {
 	resumedBy: string | null;
 	lastPrunedAt: string | null;
 }
+/**
+ * 最小操作审计（#40）：只记必要内部操作者标识、对象、动作、时间与结果。
+ * 不保存密钥、完整登录凭据、业务原文或可用于复原已删资料的内容。
+ */
+export interface AuditRecord {
+	id: string;
+	/** 内部用户 ID；不存企业 open_id、邮箱或姓名。 */
+	actorId: string;
+	action: "task.deletion.requested" | "task.deletion.suppressed";
+	objectKind: "task" | "notification_item" | "delivery" | "job" | "audit";
+	objectId: string;
+	at: string;
+	outcome: "accepted" | "rejected";
+	/** 业务拒绝/系统故障等最小原因码；不含自由文本与业务内容。 */
+	reason?: string;
+	/** 关联结构版本（如 taskVersion），不含业务字段。 */
+	version?: number;
+	/** 聚合的受影响条目数；用于抑制记录，不展开逐条明细。 */
+	count?: number;
+}
 export interface Entities {
 	marketEvents: MarketEventHead;
 	marketEventVersions: MarketEventVersion;
@@ -784,4 +805,5 @@ export interface Entities {
 	inbox: Inbox;
 	deliveries: Delivery;
 	jobs: Job;
+	auditEvents: AuditRecord;
 }

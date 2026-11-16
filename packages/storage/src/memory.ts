@@ -38,6 +38,7 @@ export const tableNames = [
 	"inbox",
 	"deliveries",
 	"jobs",
+	"auditEvents",
 ] as const;
 type Data = { [K in keyof Entities]: Map<string, Entities[K]> };
 

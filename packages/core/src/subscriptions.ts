@@ -3,6 +3,7 @@
 // 版本语义：每人一个单调计数，开关与关注列表的所有写入共用，便于 #37 判断「哪批待发已过期」。
 
 import crypto from "node:crypto";
+import { activeTaskIn } from "./lifecycle.js";
 import { cancelDecisionDeliveriesIn } from "./decision-cancellation.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
@@ -435,9 +436,9 @@ export class SubscriptionService {
 		if (input.kind === "task") {
 			if (typeof input.refId !== "string" || !input.refId)
 				throw new SubscriptionError("invalid_target", "task id required");
-			const task = await tx.tasks.get(input.refId);
-			// 他人任务按不存在处理：不确认「这个 id 存在但不是你的」。
-			if (!task || task.ownerId !== userId)
+			const task = await activeTaskIn(tx, input.refId, userId);
+			// 他人任务与已确认删除的任务都按不存在处理：不确认「这个 id 存在但不是你的」。
+			if (!task)
 				throw new SubscriptionError("target_not_found", "task not found");
 			const versions = (await tx.taskVersions.all()).filter(
 				(item) => item.taskId === task.id,

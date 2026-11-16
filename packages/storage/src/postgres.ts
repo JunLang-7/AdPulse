@@ -219,6 +219,17 @@ export class PostgresStorage implements Storage {
 					ON adpulse_notificationSelections ((data->>'ownerId'), (data->>'evaluatedAt'), id)`);
 				await client.query("INSERT INTO adpulse_schema_migrations(version) VALUES (12)");
 			}
+			if (!current.has(13)) {
+				await this.createEntityTable(client, "auditEvents");
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_audit_actor_time
+					ON adpulse_auditEvents ((data->>'actorId'), (data->>'at'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_audit_purge
+					ON adpulse_auditEvents ((data->>'at'))`);
+				// 清理任务按删除状态捞取候选；deletion 缺省的历史行不建索引项。
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_task_deletion_state
+					ON adpulse_tasks ((data->'lifecycle'->'deletion'->>'state'))`);
+				await client.query("INSERT INTO adpulse_schema_migrations(version) VALUES (13)");
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

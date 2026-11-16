@@ -194,3 +194,17 @@ export function markCleaned(task: Task, cleanedAt: string): Task {
 		lifecycle: { deletion: { ...deletion, state: "cleaned", cleanedAt } },
 	};
 }
+
+/**
+ * 读取任务 head，并要求本人归属且未确认删除；restricted/cleaned 一律按不存在处理，
+ * 沿用调用方既有的「task not found」语义，不额外泄露删除状态。
+ */
+export async function activeTaskIn(
+	tx: Transaction,
+	taskId: string,
+	ownerId: string,
+): Promise<Task | null> {
+	const task = await tx.tasks.get(taskId);
+	if (!task || task.ownerId !== ownerId || deletionOf(task)) return null;
+	return task;
+}

@@ -6,6 +6,7 @@ import { consoleClient } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
+import { TaskDeletionAction, TaskDeletionNotice, type TaskDeletion } from "./task-deletion-action";
 import { TaskSetupGuide } from "./task-setup-guide";
 import {
 	operationAfterSaveError,
@@ -51,6 +52,7 @@ export default function TaskEditorPage() {
 	});
 	const { form, version, dirty, remoteVersion } = editorState;
 	const [formError, setFormError] = useState("");
+	const [deletion, setDeletion] = useState<TaskDeletion | null>(null);
 	const [entryMode, setEntryMode] = useState<"guide" | "form">("guide");
 	const guided = creating && entryMode === "guide";
 	const [guideBusy, setGuideBusy] = useState(false);
@@ -200,7 +202,8 @@ export default function TaskEditorPage() {
 				</p>
 			</header>
 
-			<form onSubmit={(event) => {
+			{deletion ? <TaskDeletionNotice view={deletion} /> : null}
+			<form hidden={Boolean(deletion)} onSubmit={(event) => {
 				event.preventDefault();
 				if (!guided) submitTask();
 			}} noValidate className="space-y-4">
@@ -349,6 +352,7 @@ export default function TaskEditorPage() {
 						</Button>
 					)}
 					<Link to="/tasks" className="rounded-md border px-3 py-2 text-sm">取消</Link>
+					{!creating && detail.data ? <TaskDeletionAction taskId={detail.data.task.taskId} onDeleted={setDeletion} /> : null}
 					{dirty && !creating ? <span className="text-sm text-muted-foreground">有未保存的更改</span> : null}
 				</div>
 			</form>

@@ -360,6 +360,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskId}/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        /** 本人确认删除后的生命周期状态 */
+        get: operations["getTaskDeletion"];
+        put?: never;
+        /**
+         * 本人确认删除任务，立即限访并抑制待发
+         * @description 同一事务内标记 restricted、拒绝待处理动作并取消待发条目/投递/任务；幂等重复确认不刷新首次请求时间。物理清理由后续清理任务完成。
+         */
+        post: operations["requestTaskDeletion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{taskId}/evidence": {
         parameters: {
             query?: never;
@@ -949,6 +972,28 @@ export interface components {
             scope?: "task_only" | "include_general";
             /** @enum {string} */
             status?: "active" | "muted";
+        };
+        /** @description 本次确认删除时抑制掉的关联待发数量；不展开逐条明细。 */
+        TaskDeletionSuppressed: {
+            items: number;
+            batches: number;
+            deliveries: number;
+            jobs: number;
+            sessions: number;
+            inboxes: number;
+        };
+        TaskDeletion: {
+            taskId: string;
+            /** @enum {string} */
+            state: "restricted" | "cleaned";
+            /** @description 本人确认删除的 UTC 时刻；重复确认保持不变。 */
+            requestedAt: string;
+            /** @description 在线业务资料最迟清理时刻（+7 天）。 */
+            cleanupDueAt: string;
+            cleanedAt?: string;
+            /** @description 本次调用是否首次确认。 */
+            newlyRequested: boolean;
+            suppressed: components["schemas"]["TaskDeletionSuppressed"];
         };
         Error: {
             error: string;
@@ -2977,6 +3022,86 @@ export interface operations {
             };
             /** @description Idempotency or content conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getTaskDeletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deletion state of the current user's task */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDeletion"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Task is not deleted or not owned by the current user */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    requestTaskDeletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deletion accepted or already requested */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDeletion"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Task not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

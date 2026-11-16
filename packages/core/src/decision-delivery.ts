@@ -1,6 +1,7 @@
 import { canSendProactiveIn } from "./notifications.js";
 import { inQuietHours, quietHoursEnd } from "./notifications-schedule.js";
 import type { Transaction } from "./ports/storage.js";
+import { activeTaskIn } from "./lifecycle.js";
 import type {
 	Delivery,
 	NotificationDestination,
@@ -130,7 +131,7 @@ export async function checkDecisionIn(
 		? await tx.investigationAlerts.get(session.investigationAlertId)
 		: null;
 	const task = session.taskRef
-		? await tx.tasks.get(session.taskRef.taskId)
+		? await activeTaskIn(tx, session.taskRef.taskId, session.ownerId)
 		: null;
 	const version = session.taskRef
 		? await tx.taskVersions.get(

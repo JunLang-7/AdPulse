@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { validateStrategy, type Strategy } from "./domain/strategy.js";
 import type { Storage } from "./ports/storage.js";
+import { activeTaskIn, deletionOf } from "./lifecycle.js";
 import { invalidateAlertsForTaskVersion } from "./investigation-alerts.js";
 import type { Task, TaskVersion } from "./state/model.js";
 
@@ -157,9 +158,8 @@ export class TaskService {
 				if (!version) throw new Error("task operation result missing");
 				return version;
 			}
-			const task = await tx.tasks.get(taskId);
-			if (!task || task.ownerId !== ownerId)
-				throw new Error("task not found");
+			const task = await activeTaskIn(tx, taskId, ownerId);
+			if (!task) throw new Error("task not found");
 			if (task.currentVersion !== expectedVersion)
 				throw new Error("task version conflict");
 			const nextVersion = expectedVersion + 1;
@@ -182,8 +182,8 @@ export class TaskService {
 
 	async get(ownerId: string, taskId: string): Promise<TaskVersion | null> {
 		return this.storage.transaction(async (tx) => {
-			const task = await tx.tasks.get(taskId);
-			if (!task || task.ownerId !== ownerId) return null;
+			const task = await activeTaskIn(tx, taskId, ownerId);
+			if (!task) return null;
 			return tx.taskVersions.get(`${taskId}:${task.currentVersion}`);
 		});
 	}
@@ -194,8 +194,8 @@ export class TaskService {
 		version: number,
 	): Promise<TaskVersion | null> {
 		return this.storage.transaction(async (tx) => {
-			const task = await tx.tasks.get(taskId);
-			if (!task || task.ownerId !== ownerId) return null;
+			const task = await activeTaskIn(tx, taskId, ownerId);
+			if (!task) return null;
 			return tx.taskVersions.get(`${taskId}:${version}`);
 		});
 	}
@@ -203,7 +203,7 @@ export class TaskService {
 	async list(ownerId: string): Promise<TaskVersion[]> {
 		return this.storage.transaction(async (tx) => {
 			const tasks = (await tx.tasks.all()).filter(
-				(task) => task.ownerId === ownerId,
+				(task) => task.ownerId === ownerId && !deletionOf(task),
 			);
 			const versions = await Promise.all(
 				tasks.map((task) =>

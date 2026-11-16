@@ -9,6 +9,7 @@
 
 import crypto from "node:crypto";
 import type { Storage, Transaction } from "./ports/storage.js";
+import { activeTaskIn, deletionOf } from "./lifecycle.js";
 import type {
 	NotificationBatch,
 	NotificationItem,
@@ -165,6 +166,12 @@ export class NotificationQueue {
 		input: QueueItemInput,
 		options: { settingsVersion: number; enabled: boolean; notBefore?: Date },
 	): Promise<QueueResult> {
+		if (input.taskId) {
+			const task = await tx.tasks.get(input.taskId);
+			// 已确认删除的任务不再产生新待发；找不到任务时保留既有受控合成条目行为。
+			if (task && (task.ownerId !== ownerId || deletionOf(task)))
+				return { outcome: "cancelled" };
+		}
 		if (!validText(input.logicalKey, 200))
 			throw new NotificationQueueError("invalid_item", "logicalKey required");
 		if (!validText(input.title, 200) || !validText(input.summary, 1000))

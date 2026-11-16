@@ -24,3 +24,4 @@ export * from "./ports/storage.js";
 export * from "./state/model.js";
 export * from "./worker.js";
 export * from "./lifecycle.js";
+export * from "./task-lifecycle.js";

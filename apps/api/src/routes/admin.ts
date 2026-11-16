@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { activeTaskIn } from "@adpluse/core";
 import type {
 	AuthenticationService,
 	EvidenceComparisonRequest,
@@ -345,6 +346,17 @@ export async function handleAdmin(
 		await runtime.investigationAlerts.evaluateComparison(userId, result.id);
 		return json(res, 201, result);
 	}
+	const taskDeletion = path.match(/^\/api\/tasks\/([^/]+)\/deletion$/);
+	if (taskDeletion?.[1] && (req.method === "POST" || req.method === "GET")) {
+		const taskId = decodeURIComponent(taskDeletion[1]);
+		if (req.method === "GET") {
+			const view = await runtime.taskLifecycle.viewDeletion(userId, taskId);
+			if (!view) throw new HttpError(404, "task not found");
+			return json(res, 200, view);
+		}
+		// 确认删除在同一事务内完成限访与待发抑制；重复确认幂等返回首次记录。
+		return json(res, 200, await runtime.taskLifecycle.requestDeletion(userId, taskId));
+	}
 	const taskComparisons = path.match(/^\/api\/tasks\/([^/]+)\/comparisons$/);
 	if (taskComparisons?.[1] && req.method === "GET") {
 		return json(res, 200, {
@@ -432,9 +444,9 @@ export async function handleAdmin(
 	if (path.startsWith("/api/tasks/") && req.method === "GET") {
 		const id = decodeURIComponent(path.slice("/api/tasks/".length));
 		const result = await runtime.storage.transaction(async (tx) => {
-			const task = await tx.tasks.get(id);
-			if (!task || task.ownerId !== userId)
-				throw new HttpError(404, "task not found");
+			// 已确认删除的任务按不存在处理，与 TaskService 的读取口径一致。
+			const task = await activeTaskIn(tx, id, userId);
+			if (!task) throw new HttpError(404, "task not found");
 			const versions = (await tx.taskVersions.all())
 				.filter((version) => version.taskId === id)
 				.sort((a, b) => a.version - b.version);
