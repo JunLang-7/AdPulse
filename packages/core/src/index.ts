@@ -23,3 +23,4 @@ export * from "./ports/policyEngine.js";
 export * from "./ports/storage.js";
 export * from "./state/model.js";
 export * from "./worker.js";
+export * from "./lifecycle.js";

@@ -248,11 +248,27 @@ export interface LoginTransaction {
 	purpose?: "login" | "reauth";
 	reauthSessionId?: string;
 }
+/**
+ * 本人确认删除后的生命周期状态（#40）。
+ * restricted 表示业务入口已不可见/不可操作但物理清理未完成；cleaned 表示在线清理已执行。
+ */
+export interface TaskDeletion {
+	/** 本人确认删除的 UTC 时刻。 */
+	requestedAt: string;
+	/** 操作者内部用户 ID；由服务端认证确定，不取前端自报值。 */
+	requestedBy: string;
+	state: "restricted" | "cleaned";
+	/** requestedAt + 7 天：在线业务资料最迟清理时刻。 */
+	cleanupDueAt: string;
+	cleanedAt?: string;
+}
 export interface Task {
 	id: string;
 	ownerId: string;
 	currentVersion: number;
 	createdAt: string;
+	/** #40 生命周期状态；缺省表示从未确认删除（历史行兼容）。 */
+	lifecycle?: { deletion: TaskDeletion | null };
 }
 export interface TaskVersion {
 	id: string;
