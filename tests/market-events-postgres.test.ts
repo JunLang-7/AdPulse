@@ -45,6 +45,8 @@ test("PostgreSQL market events: migration 11 upgrades baseline 10 atomically wit
 		for (const name of ["marketEvents","marketEventVersions","marketEventAliases","marketEventOperations"])
 			await pool.query(`DROP TABLE adpulse_${name}`);
 		await pool.query("DELETE FROM adpulse_schema_migrations WHERE version=11");
+		await pool.query("DROP TABLE adpulse_notificationSelections");
+		await pool.query("DELETE FROM adpulse_schema_migrations WHERE version=12");
 		await pool.query("CREATE TABLE adpulse_market_event_logical (id text)");
 		await assert.rejects(db.initialize());
 		const failed=await pool.query("SELECT to_regclass('adpulse_marketEvents') AS table_name");assert.equal(failed.rows[0].table_name,null);

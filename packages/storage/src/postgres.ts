@@ -211,6 +211,14 @@ export class PostgresStorage implements Storage {
 					ON adpulse_marketEvents ((data->>'ownerId'), (data->>'createdAt'))`);
 				await client.query("INSERT INTO adpulse_schema_migrations(version) VALUES (11)");
 			}
+			if (!current.has(12)) {
+				await this.createEntityTable(client, "notificationSelections");
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_notification_selection_input
+					ON adpulse_notificationSelections ((data->>'ownerId'), (data->>'comparisonResultId'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_notification_selection_owner
+					ON adpulse_notificationSelections ((data->>'ownerId'), (data->>'evaluatedAt'), id)`);
+				await client.query("INSERT INTO adpulse_schema_migrations(version) VALUES (12)");
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

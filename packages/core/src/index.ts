@@ -4,6 +4,7 @@ export * from "./subscriptions.js";
 export * from "./notifications-queue.js";
 export * from "./notifications-schedule.js";
 export * from "./notifications-records.js";
+export * from "./notifications-selection.js";
 export * from "./domain/decisionCard.js";
 export * from "./domain/infoCard.js";
 export * from "./evidence.js";

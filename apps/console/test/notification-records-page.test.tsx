@@ -26,7 +26,7 @@ const subscription = {
 	targets: [
 		{
 			id: "6f2b6b1e-1111-4222-8333-444455556666",
-			kind: "brand",
+			kind: "task",
 			kindLabel: "品牌",
 			refId: "某某灯饰",
 			label: "某某灯饰",
@@ -72,6 +72,56 @@ function renderPage(): void {
 		</QueryClientProvider>,
 	);
 }
+
+test("筛选记录页：当时原因、详情、任务/日期/结果过滤和稳定翻页", async () => {
+	const searches: URLSearchParams[] = [];
+	const record = { id: "record-a", alertId: "alert-a", taskId: "task-a", comparisonResultId: "comparison-a", evidenceRef: { evidenceId: "evidence-a", version: 1 }, revision: 1, settingsVersion: 4, matchedTargetIds: [], outcome: "not_queued", reason: "no_target", evaluatedAt: "2026-11-16T00:01:00.000Z" };
+	serve(defaults, {
+		"GET /api/me/notifications": () => json({ records: [], nextBefore: null }),
+		"GET /api/tasks": () => json({ items: [{ taskId: "task-a", product: "本人任务 A" }] }),
+		"GET /api/me/notification-selections": (request) => {
+			const params = new URL(request.url).searchParams; searches.push(params);
+			return json(params.has("before") ? { records: [{ ...record, id: "record-b", reason: "push_disabled" }], nextBefore: null } : { records: [record], nextBefore: "cursor-a" });
+		},
+	});
+	renderPage();
+	fireEvent.click(screen.getByRole("button", { name: "筛选记录" }));
+	assert.ok(await screen.findByText("当时未关注该任务"));
+	assert.ok(screen.getByText(/当时设置 v4/));
+	fireEvent.click(screen.getByText("查看当时依据"));
+	assert.ok(screen.getByText("比较引用：comparison-a"));
+	assert.equal(screen.getByRole("link", { name: "task-a" }).getAttribute("href"), "/tasks/task-a");
+	fireEvent.click(screen.getByRole("button", { name: "加载更早的筛选记录" }));
+	assert.ok(await screen.findByText("当时未开启主动推送"));
+	assert.equal(searches[1].get("before"), "cursor-a");
+	await screen.findByRole("option", { name: "本人任务 A" });
+	fireEvent.change(screen.getByLabelText("筛选任务"), { target: { value: "task-a" } });
+	fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-11-15" } });
+	fireEvent.change(screen.getByLabelText("结束日期"), { target: { value: "2026-11-16" } });
+	fireEvent.change(screen.getByLabelText("筛选结果"), { target: { value: "not_queued" } });
+	fireEvent.click(screen.getByRole("button", { name: "查询筛选记录" }));
+	await screen.findByText("当时未关注该任务");
+	assert.equal(searches[searches.length - 1]?.get("taskId"), "task-a");
+	assert.equal(searches[searches.length - 1]?.get("dateFrom"), "2026-11-15");
+	assert.equal(searches[searches.length - 1]?.get("dateTo"), "2026-11-16");
+	assert.equal(searches[searches.length - 1]?.get("outcome"), "not_queued");
+	assert.equal(searches[searches.length - 1]?.has("before"), false, "新过滤重置分页");
+	cleanup();
+});
+
+test("筛选记录页：失败可见且可重试，空历史不伪造原因", async () => {
+	let failed = true;
+	serve(defaults, {
+		"GET /api/me/notifications": () => json({ records: [], nextBefore: null }),
+		"GET /api/tasks": () => json({ items: [] }),
+		"GET /api/me/notification-selections": () => failed ? json({ error: "invalid_query" }, 400) : json({ records: [], nextBefore: null }),
+	});
+	renderPage(); fireEvent.click(screen.getByRole("button", { name: "筛选记录" }));
+	assert.ok(await screen.findByText("查询条件无效，请检查日期范围。"));
+	failed = false; fireEvent.click(screen.getByRole("button", { name: "重试读取筛选记录" }));
+	assert.ok(await screen.findByText(/未记录的历史原因无法还原/));
+	cleanup();
+});
 
 test("通知记录页：已取消批次显示原因，且不冒充「平台已接收」", async () => {
 	serve(defaults, {

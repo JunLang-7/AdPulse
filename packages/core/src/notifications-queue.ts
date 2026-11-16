@@ -63,6 +63,7 @@ const validText = (value: unknown, max: number): value is string =>
 	!/[\u0000-\u001f]/.test(value);
 
 export interface QueueItemInput {
+	effectRef?: NotificationItem["effectRef"];
 	logicalKey: string;
 	kind: NotificationItemKind;
 	taskId?: string;
@@ -95,9 +96,10 @@ export class NotificationQueue {
 		options: { settingsVersion: number; enabled: boolean },
 	): Promise<NotificationBatch | null> {
 		if (!options.enabled) return null;
-		return this.storage.transaction((tx) =>
-			this.resolveBatch(tx, ownerId, options.settingsVersion),
-		);
+		return this.storage.transaction(async (tx) => {
+			const existing = await tx.notificationBatches.get(batchId(ownerId, "digest", localDate(this.now())));
+			return existing?.status === "queued" ? existing : this.resolveBatch(tx, ownerId, options.settingsVersion);
+		});
 	}
 
 	/**
@@ -111,35 +113,34 @@ export class NotificationQueue {
 		tx: Transaction,
 		ownerId: string,
 		settingsVersion: number,
+		notBefore?: Date,
 	): Promise<NotificationBatch> {
 		const at = this.now();
-		const today = localDate(at);
-		const existingToday = await tx.notificationBatches.get(
-			batchId(ownerId, "digest", today),
-		);
-		if (existingToday?.status === "queued") return existingToday;
-
-		// 今天没有批次时用今天；今天已终态则用下一次计划日（此时是「下一批」而非补发）。
-		const date =
-			existingToday === null
-				? today
-				: localDate(new Date(at.getTime() + 24 * 60 * 60 * 1000));
-		const id = batchId(ownerId, "digest", date);
-		const existing = await tx.notificationBatches.get(id);
-		if (existing) return existing;
-		const batch: NotificationBatch = {
-			id,
-			ownerId,
-			kind: "digest",
-			localDate: date,
-			settingsVersion,
-			status: "queued",
-			scheduledAt: digestInstant(date),
-			createdAt: at.toISOString(),
-			updatedAt: at.toISOString(),
-		};
-		await tx.notificationBatches.put(batch);
-		return batch;
+		const firstDay = Math.max(at.getTime(), notBefore?.getTime() ?? at.getTime());
+		for (let offset = 0; offset <= 366; offset++) {
+			const date = localDate(new Date(firstDay + offset * 86_400_000));
+			const id = batchId(ownerId, "digest", date);
+			const existing = await tx.notificationBatches.get(id);
+			if (existing?.status === "queued" && existing.settingsVersion === settingsVersion) return existing;
+			if (existing) {
+				if (existing.status === "queued") {
+					// 新生产输入不能混入旧设置批次，随后被旧批次取消所吞掉。
+					await this.setBatchStatusIn(tx, id, "cancelled", { reason: "settings_changed" });
+					for (const item of await tx.notificationItems.all())
+						if (item.ownerId === ownerId && item.batchId === id && item.status === "queued")
+							await tx.notificationItems.put({ ...item, status: "cancelled", updatedAt: at.toISOString() });
+				}
+				continue; // 终态不复用，新内容进入下一有效计划日。
+			}
+			const batch: NotificationBatch = {
+				id, ownerId, kind: "digest", localDate: date, settingsVersion,
+				status: "queued", scheduledAt: digestInstant(date),
+				createdAt: at.toISOString(), updatedAt: at.toISOString(),
+			};
+			await tx.notificationBatches.put(batch);
+			return batch;
+		}
+		throw new NotificationQueueError("batch_unavailable", "no available digest date");
 	}
 
 	/**
@@ -152,6 +153,16 @@ export class NotificationQueue {
 		ownerId: string,
 		input: QueueItemInput,
 		options: { settingsVersion: number; enabled: boolean },
+	): Promise<QueueResult> {
+		return this.storage.transaction((tx) => this.queueIn(tx, ownerId, input, options));
+	}
+
+	/** 供生产者在同一事务中完成本人配置复检、筛选记录和入队。 */
+	async queueIn(
+		tx: Transaction,
+		ownerId: string,
+		input: QueueItemInput,
+		options: { settingsVersion: number; enabled: boolean; notBefore?: Date },
 	): Promise<QueueResult> {
 		if (!validText(input.logicalKey, 200))
 			throw new NotificationQueueError("invalid_item", "logicalKey required");
@@ -167,7 +178,7 @@ export class NotificationQueue {
 
 		// 批次解析与条目写入在同一个事务里：取消操作不能插在两者之间，
 		// 否则条目会挂在刚被取消的批次下，调度永远发现不了。
-		return this.storage.transaction(async (tx) => {
+		{
 			const id = itemId(ownerId, input.logicalKey);
 			const existing = await tx.notificationItems.get(id);
 			const at = this.now().toISOString();
@@ -177,11 +188,21 @@ export class NotificationQueue {
 					return { outcome: "cancelled", item: existing };
 				if (input.revision <= existing.revision)
 					return { outcome: "duplicate", item: existing };
+				const priorBatch = await tx.notificationBatches.get(existing.batchId);
+				if (existing.status === "queued" && priorBatch?.settingsVersion !== options.settingsVersion) {
+					await this.setBatchStatusIn(tx, existing.batchId, "cancelled", { reason: "settings_changed" });
+					for (const item of await tx.notificationItems.all()) {
+						if (item.ownerId === ownerId && item.batchId === existing.batchId && item.status === "queued")
+							await tx.notificationItems.put({ ...item, status: "cancelled", updatedAt: at });
+					}
+					return { outcome: "cancelled", item: { ...existing, status: "cancelled", updatedAt: at } };
+				}
 			}
 			const batch = await this.resolveBatch(
 				tx,
 				ownerId,
 				options.settingsVersion,
+				options.notBefore,
 			);
 			if (existing) {
 				const taskId = input.taskId ?? existing.taskId;
@@ -194,6 +215,7 @@ export class NotificationQueue {
 					relevance: input.relevance,
 					sources: input.sources,
 					revision: input.revision,
+					...(input.effectRef ? { effectRef: input.effectRef } : {}),
 					status: "queued",
 					updatedAt: at,
 					...(existing.deliveryId ? { deliveryId: existing.deliveryId } : {}),
@@ -213,13 +235,14 @@ export class NotificationQueue {
 				relevance: input.relevance,
 				sources: input.sources,
 				revision: input.revision,
+				...(input.effectRef ? { effectRef: input.effectRef } : {}),
 				status: "queued",
 				createdAt: at,
 				updatedAt: at,
 			};
 			await tx.notificationItems.put(item);
 			return { outcome: "queued", item };
-		});
+		}
 	}
 
 	/** 本人待发条目（queued），按 key 稳定排序，便于批次内容冻结。 */

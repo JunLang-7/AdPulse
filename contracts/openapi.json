@@ -630,6 +630,89 @@
         }
       }
     },
+    "/api/me/notification-selections": {
+      "get": {
+        "operationId": "listNotificationSelections",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "Opaque exclusive cursor returned by nextBefore"
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "dateFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "Inclusive Asia/Shanghai calendar date"
+            }
+          },
+          {
+            "name": "dateTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "Inclusive Asia/Shanghai calendar date"
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "not_queued",
+                "duplicate",
+                "cancelled"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Own historical selection facts, subject to current input access; queued does not mean sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSelectionPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
     "/api/me/notifications": {
       "get": {
         "operationId": "listNotifications",
@@ -2106,6 +2189,108 @@
           "targets": { "type": "array", "items": { "$ref": "#/components/schemas/SubscriptionTarget" } }
         },
         "required": ["settings", "targets"],
+        "additionalProperties": false
+      },
+      "NotificationSelectionRecord": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "alertId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "comparisonResultId": {
+            "type": "string"
+          },
+          "evidenceRef": {
+            "$ref": "#/components/schemas/EvidenceRef"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "settingsVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "matchedTargetIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "not_queued",
+              "duplicate",
+              "cancelled"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "push_disabled",
+              "before_enabled",
+              "no_target",
+              "target_muted",
+              "category_excluded",
+              "not_authorized",
+              "duplicate",
+              "previously_cancelled",
+              "historical_input",
+              "alert_inactive"
+            ]
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "alertId",
+          "taskId",
+          "comparisonResultId",
+          "evidenceRef",
+          "revision",
+          "settingsVersion",
+          "matchedTargetIds",
+          "outcome",
+          "reason",
+          "evaluatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "NotificationSelectionPage": {
+        "type": "object",
+        "properties": {
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationSelectionRecord"
+            }
+          },
+          "nextBefore": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "records",
+          "nextBefore"
+        ],
         "additionalProperties": false
       },
       "NotificationRecordPage": {

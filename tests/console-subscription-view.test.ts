@@ -92,6 +92,8 @@ test("subscription 视图: 四种状态分开，任一缺失都不显示为可�
 			"no_targets",
 		],
 		["全部就绪", subscription(), notification(), "ready"],
+		["仅品牌尚未接入", subscription({ targets: [target({ kind: "brand" })] }), notification(), "no_effect_targets"],
+		["仅补证尚未接入", subscription({ targets: [target({ categories: ["evidence"] })] }), notification(), "no_effect_targets"],
 	];
 	for (const [name, sub, note, state] of cases) {
 		const readiness = describeReadiness(sub, note);
