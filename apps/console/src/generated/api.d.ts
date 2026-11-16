@@ -827,6 +827,16 @@ export interface components {
             /** @enum {string} */
             reason: "matched" | "push_disabled" | "before_enabled" | "no_target" | "target_muted" | "category_excluded" | "not_authorized" | "duplicate" | "previously_cancelled" | "historical_input" | "alert_inactive" | "insufficient_evidence" | "simulated_input" | "no_association" | "scope_excluded";
             itemId?: string;
+            /** @description 同一提醒修订可确认的汇总结果。旧修订或缺少对应批次时省略。 */
+            deliveryResult?: {
+                /** @enum {string} */
+                status: "queued" | "sent" | "cancelled" | "expired" | "suppressed" | "failed";
+                /** Format: date-time */
+                scheduledAt: string;
+                /** Format: date-time */
+                sentAt?: string;
+                statusReason?: string;
+            };
             /** Format: date-time */
             evaluatedAt: string;
         };

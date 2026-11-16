@@ -2270,6 +2270,18 @@
           "itemId": {
             "type": "string"
           },
+          "deliveryResult": {
+            "type": "object",
+            "description": "同一提醒修订可确认的汇总结果。旧修订或缺少对应批次时省略。",
+            "additionalProperties": false,
+            "required": ["status", "scheduledAt"],
+            "properties": {
+              "status": { "type": "string", "enum": ["queued", "sent", "cancelled", "expired", "suppressed", "failed"] },
+              "scheduledAt": { "type": "string", "format": "date-time" },
+              "sentAt": { "type": "string", "format": "date-time" },
+              "statusReason": { "type": "string" }
+            }
+          },
           "evaluatedAt": {
             "type": "string",
             "format": "date-time"
