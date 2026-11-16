@@ -158,6 +158,31 @@ test("task draft ignores unsupported field values and keeps valid empty results"
 	assert.deepEqual(await extract("产品，发在小红书"), {});
 });
 
+test("overview separates normalized product names and optional goals from facts", async () => {
+	const evidence = "云南普洱，熟普";
+	const product = { value: "云南普洱熟茶", evidence };
+	const goals = ["带动茶友首次购买", "增加关于熟普口感和冲泡方式的咨询", "鼓励已有顾客复购"];
+	let reply: unknown = {
+		product: "云南普洱熟茶",
+		objective: goals[0],
+		recommendations: { product, objectives: [null, ...goals, goals[0], "额外一项"], budget: 500 },
+	};
+	const extract = createTaskDraftExtractor(deepseekEnv, async () => providerReply(JSON.stringify(reply)));
+	assert.ok(extract);
+	const brief = `我想推广茶叶，是那种${evidence}`;
+	assert.deepEqual(await extract(brief, "overview"), { recommendations: { product, objectives: goals } });
+	assert.deepEqual(await extract(brief, "audience"), {});
+	assert.deepEqual(await extract(brief), {});
+
+	reply = { objective: "吸引顾客到店", recommendations: { product, objectives: goals } };
+	assert.deepEqual(await extract(`${brief}，我想吸引顾客到店`, "overview"), {
+		objective: "吸引顾客到店", recommendations: { product },
+	});
+
+	reply = { recommendations: { product: { ...product, evidence: "不存在的原文" }, objectives: goals } };
+	assert.deepEqual(await extract(brief, "overview"), {});
+});
+
 test("task draft uses an instance-local provider call limit", async () => {
 	let calls = 0;
 	const extract = createTaskDraftExtractor(deepseekEnv, async () => {

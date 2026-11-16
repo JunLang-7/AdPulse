@@ -41,6 +41,8 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const [step, setStep] = useState(0);
 	const [provider, setProvider] = useState<TaskModelChoice>();
 	const [suggestion, setSuggestion] = useState<{ brief: string; data?: Suggestions }>();
+	const [useSuggestedProduct, setUseSuggestedProduct] = useState(true);
+	const [chosenGoals, setChosenGoals] = useState<string[]>([]);
 	const [returnToReview, setReturnToReview] = useState(false);
 	const [notes, setNotes] = useState(emptyNotes);
 	const [excluded, setExcluded] = useState<ExcludedChoices>({});
@@ -62,8 +64,24 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const remaining = TASK_SETUP_BRIEF_LIMIT - brief.length;
 	const attachment = stage ? attached[stage.id] : undefined;
 	const suggestionCurrent = suggestion?.brief === brief ? suggestion : undefined;
-	const draft = stage && suggestionCurrent?.data ? applyStageSuggestions(form, stage.id, suggestionCurrent.data, excluded) : undefined;
+	const recommendations = stage?.id === "overview" ? suggestionCurrent?.data?.recommendations : undefined;
+	const productIdea = recommendations?.product?.value !== form.product.trim() ? recommendations?.product : undefined;
+	const goalIdeas = form.objective.trim() ? [] : recommendations?.objectives ?? [];
+	const excerpts = stage && suggestionCurrent?.data ? applyStageSuggestions(form, stage.id, suggestionCurrent.data, excluded) : undefined;
+	const draft = excerpts && productIdea ? { ...excerpts, product: form.product } : excerpts;
 	const additions = stage?.fields.filter((field) => draft && stageValue(draft, field) !== stageValue(form, field)) ?? [];
+
+	function applySuggestions() {
+		if (!stage || !draft) return;
+		const selectedGoals = goalIdeas.filter((item) => chosenGoals.includes(item));
+		const next = {
+			...draft,
+			product: useSuggestedProduct && productIdea ? productIdea.value : draft.product,
+			objective: selectedGoals.length ? selectedGoals.join("\n") : draft.objective,
+		};
+		onChange(next);
+		setSuggestion({ brief: stageBrief(next, stage, notes[stage.id]) });
+	}
 
 	function go(index: number, fromReview = false) {
 		setStep(index);
@@ -132,8 +150,15 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 					return;
 				}
 				if (!result.data) throw new Error("整理服务不可用");
-				if (preview) {
+				const ideas = result.data.recommendations;
+				const hasIdeas = stage.id === "overview" && (
+					(ideas?.product && ideas.product.value !== form.product.trim()) ||
+					(ideas?.objectives?.length && !form.objective.trim())
+				);
+				if (preview || hasIdeas) {
 					setSuggestion({ brief, data: result.data });
+					setUseSuggestedProduct(true);
+					setChosenGoals([]);
 					setFailed(false);
 					setUseEnteredValues(false);
 					return;
@@ -271,14 +296,39 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 								<Button type="button" variant="outline" disabled={busy || !brief || remaining < 0}
 									onClick={() => void submitStage(true)}>AI 辅助填写</Button>
 							</div>
-							{draft && additions.length ? (
+							{draft && (additions.length > 0 || productIdea || goalIdeas.length > 0) ? (
 								<div className="space-y-2 rounded-md bg-muted/40 p-2 text-sm">
 									<p className="font-medium">待核对建议</p>
 									{additions.map((field) => <p key={field}>{fieldLabels[field]} · {stageValue(draft, field)}</p>)}
-									<Button type="button" size="sm" disabled={busy} onClick={() => {
-										onChange(draft);
-										setSuggestion({ brief: stageBrief(draft, stage, notes[stage.id]) });
-									}}>应用建议</Button>
+									{productIdea ? (
+										<div className="space-y-1">
+											<label className="flex items-center gap-2">
+												<input type="checkbox" checked={useSuggestedProduct} disabled={busy}
+													onChange={(event) => setUseSuggestedProduct(event.target.checked)} />
+												<span>建议名称 · {productIdea.value}</span>
+											</label>
+											<p className="text-xs text-muted-foreground">根据原文「{productIdea.evidence}」整理</p>
+										</div>
+									) : null}
+									{goalIdeas.length ? (
+										<fieldset className="space-y-1">
+											<legend className="font-medium">推广目标建议（可多选或跳过）</legend>
+											{goalIdeas.map((goal) => (
+												<label key={goal} className="flex items-center gap-2">
+													<input type="checkbox" checked={chosenGoals.includes(goal)} disabled={busy} onChange={(event) => {
+														const selected = event.target.checked;
+														setChosenGoals((current) => selected ? [...current, goal] : current.filter((item) => item !== goal));
+													}} />
+													<span>{goal}</span>
+												</label>
+											))}
+										</fieldset>
+									) : null}
+									<Button type="button" size="sm"
+										disabled={busy || !(additions.length || (productIdea && useSuggestedProduct) || goalIdeas.some((goal) => chosenGoals.includes(goal)))}
+										onClick={applySuggestions}>
+										{productIdea || goalIdeas.length ? "应用所选建议" : "应用建议"}
+									</Button>
 								</div>
 							) : draft ? <p role="status" className="text-sm">没有可补充的建议，可以继续手填。</p> : null}
 						</div>

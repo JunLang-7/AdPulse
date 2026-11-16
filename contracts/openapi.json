@@ -349,7 +349,7 @@
         "description": "Extract editable suggestions from the submitted stage. A personal default is used when no selection is sent. A legacy provider-only request requires an unambiguous personal connection. No draft or task is saved.",
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDraftExtractionInput" } } } },
         "responses": {
-          "200": { "description": "Suggestions supported by verbatim snippets from the brief", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDraftSuggestions" } } } },
+          "200": { "description": "Verbatim excerpts from the brief and optional, separately labeled recommendations for user confirmation", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDraftSuggestions" } } } },
           "400": { "description": "Invalid request or blank brief", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "404": { "description": "Personal connection not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
@@ -1874,7 +1874,7 @@
       "TaskDraftStage": {
         "type": "string",
         "enum": ["overview", "audience", "channels"],
-        "description": "Overview limits suggestions to product and objective, audience to audience and sellingPoints, and channels to channel names."
+        "description": "Overview supports product and objective excerpts and recommendations. Audience accepts audience and sellingPoints excerpts, and channels accepts channel names."
       },
       "TaskDraftSuggestions": {
         "type": "object",
@@ -1883,7 +1883,24 @@
           "objective": { "type": "string", "minLength": 1, "maxLength": 320 },
           "audience": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 160 } },
           "sellingPoints": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 160 } },
-          "channels": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 128 } }
+          "channels": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 128 } },
+          "recommendations": {
+            "type": "object",
+            "description": "Overview suggestions that require user confirmation.",
+            "additionalProperties": false,
+            "properties": {
+              "product": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["value", "evidence"],
+                "properties": {
+                  "value": { "type": "string", "minLength": 1, "maxLength": 200 },
+                  "evidence": { "type": "string", "description": "Verbatim source for the suggested product name.", "minLength": 1, "maxLength": 240 }
+                }
+              },
+              "objectives": { "type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 100 } }
+            }
+          }
         },
         "additionalProperties": false
       },

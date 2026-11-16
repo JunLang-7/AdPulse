@@ -179,7 +179,7 @@ export function createModelConnections(
 		async probe(ownerId: string, input: ModelRouteInput): Promise<boolean> {
 			const extract = createPersistedTaskDraftExtractor(input, fetchImpl, (request) => budgeted(ownerId, request));
 			const suggestions = extract ? await extract(modelConnectionTestBrief, "overview") : null;
-			return suggestions !== null && Object.keys(suggestions).length > 0;
+			return Boolean(suggestions?.product || suggestions?.objective);
 		},
 		draftExtractor(ownerId: string, input: ModelRouteInput): TaskDraftExtractor | undefined {
 			return createPersistedTaskDraftExtractor(input, fetchImpl, (request) => budgeted(ownerId, request));

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { emptyForm, type FormState } from "../src/views/adpulse/tasks/task-form.ts";
 import { TaskSetupGuide } from "../src/views/adpulse/tasks/task-setup-guide.tsx";
 
@@ -48,4 +49,38 @@ test("辅助填写：模型暂时不可用时保留普洱茶资料，换模型�
 	assert.equal(changes.length, 0);
 	fireEvent.click(screen.getByRole("button", { name: "应用建议" }));
 	assert.equal(changes[0]?.product, "云南普洱，熟普");
+});
+
+test("提交推广内容先确认整理出的熟茶名称，并允许从目标建议中多选", async (t) => {
+	t.after(cleanup);
+	const note = "我想推广茶叶，是那种云南普洱，熟普";
+	const goals = ["带动茶友首次购买", "增加熟普冲泡咨询", "鼓励老顾客复购"];
+	const { calls } = serve({
+		"POST /api/task-drafts/extract": () => json({
+			product: "云南普洱，熟普",
+			recommendations: { product: { value: "云南普洱熟茶", evidence: "云南普洱，熟普" }, objectives: goals },
+		}),
+	});
+	let current = emptyForm;
+	function Guide() {
+		const [form, setForm] = useState(emptyForm);
+		return <TaskSetupGuide form={form} onChange={(value) => { current = value; setForm(value); }}
+			onEdit={() => {}} onSave={() => {}} onBusyChange={() => {}} saving={false} />;
+	}
+	const client = new QueryClient();
+	render(<QueryClientProvider client={client}><Guide /></QueryClientProvider>);
+
+	fireEvent.change(screen.getByLabelText("补充资料"), { target: { value: note } });
+	fireEvent.click(screen.getByRole("button", { name: "提交本阶段" }));
+	await screen.findByRole("checkbox", { name: /云南普洱熟茶/ });
+	assert.equal(current.product, "");
+	assert.equal(current.objective, "");
+	assert.equal(screen.queryByText("产品或服务 · 云南普洱，熟普"), null);
+	for (const goal of [goals[0], goals[2]]) fireEvent.click(screen.getByRole("checkbox", { name: goal }));
+	fireEvent.click(screen.getByRole("button", { name: "应用所选建议" }));
+	assert.equal(current.product, "云南普洱熟茶");
+	assert.equal(current.objective, [goals[0], goals[2]].join("\n"));
+	fireEvent.click(screen.getByRole("button", { name: "提交本阶段" }));
+	await screen.findByRole("heading", { name: "人群与卖点" });
+	assert.deepEqual(calls, ["POST /api/task-drafts/extract"]);
 });

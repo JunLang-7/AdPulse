@@ -1056,7 +1056,7 @@ export interface components {
             connections: components["schemas"]["TaskDraftConnectionInfo"][];
         };
         /**
-         * @description Overview limits suggestions to product and objective, audience to audience and sellingPoints, and channels to channel names.
+         * @description Overview supports product and objective excerpts and recommendations. Audience accepts audience and sellingPoints excerpts, and channels accepts channel names.
          * @enum {string}
          */
         TaskDraftStage: "overview" | "audience" | "channels";
@@ -1066,6 +1066,15 @@ export interface components {
             audience?: string[];
             sellingPoints?: string[];
             channels?: string[];
+            /** @description Overview suggestions that require user confirmation. */
+            recommendations?: {
+                product?: {
+                    value: string;
+                    /** @description Verbatim source for the suggested product name. */
+                    evidence: string;
+                };
+                objectives?: string[];
+            };
         };
         TaskInput: {
             product: string;
@@ -2476,7 +2485,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Suggestions supported by verbatim snippets from the brief */
+            /** @description Verbatim excerpts from the brief and optional, separately labeled recommendations for user confirmation */
             200: {
                 headers: {
                     [name: string]: unknown;
