@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import createClient from "../apps/console/node_modules/openapi-fetch/dist/index.mjs";
+import type { paths } from "../apps/console/src/generated/api.js";
+import { selectionFixture } from "./selection-helpers.ts";
 import type { TestContext } from "node:test";
 
 import { createApi } from "../apps/api/dist/server.js";
@@ -25,8 +28,33 @@ const identity: PlatformIdentity = {
 	externalId: "ou-owner",
 };
 
-async function serve(t: TestContext) {
-	const runtime = compose(new MemoryStorage(), []);
+test("筛选记录 API/SDK：本人历史、筛选分页、非法参数及无权输入", async (t) => {
+	const storage = new MemoryStorage();
+	const f = await selectionFixture(storage); await f.evaluate();
+	const duplicate = await f.compare(); await f.alerts.evaluateComparison(f.owner, duplicate.id);
+	const other = await selectionFixture(storage); await other.evaluate();
+	const { url, login } = await serve(t, storage, f.identity);
+	const endpoint = `${url}/api/me/notification-selections`;
+	assert.equal((await fetch(endpoint)).status, 401);
+	const cookie = await login();
+	const client = createClient<paths>({ baseUrl: url, headers: { cookie: `adpulse_session=${cookie}` } });
+	const first = await client.GET("/api/me/notification-selections", { params: { query: { limit: 1, taskId: f.task.taskId, dateFrom: "2026-11-16", dateTo: "2026-11-16" } } });
+	assert.ok(first.data?.nextBefore); assert.equal(first.data.records.length, 1);
+	const next = await client.GET("/api/me/notification-selections", { params: { query: { limit: 1, before: first.data.nextBefore } } });
+	assert.equal(next.data?.records.length, 1);
+	assert.notEqual(next.data?.records[0].id, first.data.records[0].id);
+	assert.ok(!JSON.stringify(first.data).includes(other.task.taskId));
+	const denied = await client.GET("/api/me/notification-selections", { params: { query: { taskId: other.task.taskId } } });
+	assert.deepEqual(denied.data?.records, []);
+	for (const query of ["limit=0", "limit=51", "limit=x", "before=wrong", "outcome=sent", "dateFrom=2026-02-30", "dateFrom=2026-11-17&dateTo=2026-11-16", "ownerId=other", "limit=1&limit=2", "taskId="])
+		assert.equal((await fetch(`${endpoint}?${query}`, { headers: { cookie: `adpulse_session=${cookie}` } })).status, 400, query);
+	await storage.transaction((tx) => tx.tasks.delete(f.task.taskId));
+	const removed = await client.GET("/api/me/notification-selections");
+	assert.deepEqual(removed.data?.records, []);
+});
+
+async function serve(t: TestContext, storage = new MemoryStorage(), verifiedIdentity: PlatformIdentity = identity) {
+	const runtime = compose(storage, []);
 	const service = new AuthenticationService(runtime.storage);
 	const events: AuditEvent[] = [];
 	const provider = {
@@ -38,7 +66,7 @@ async function serve(t: TestContext) {
 			return target.toString();
 		},
 		async verifyAuthorizationCode() {
-			return { identity, displayName: "小明" };
+			return { identity: verifiedIdentity, displayName: "小明" };
 		},
 	};
 	const server = createApi(runtime, {

@@ -13,6 +13,7 @@ import { ModelConnectionError, modelConnectionProtocols, normalizeModelBaseUrl, 
 import { findCatalogModel, taskDraftBriefMaxLength, taskDraftStages, type Runtime, type TaskDraftSelection } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
+import { handleMarketEvents } from "./market-events.js";
 import type { AuditEvent, ModelAuditEvent } from "../server.js";
 
 const amount = z.number().finite().nonnegative();
@@ -409,6 +410,7 @@ export async function handleAdmin(
 	auth: AuthenticationService,
 	audit?: (event: AuditEvent) => void,
 ): Promise<void> {
+	if (await handleMarketEvents(req, res, runtime, userId, path)) return;
 	if (path.startsWith("/api/me/model-connections") || path === "/api/me/model-preferences") {
 		res.setHeader("Cache-Control", "no-store");
 		const modelApi = runtime.modelConnections;

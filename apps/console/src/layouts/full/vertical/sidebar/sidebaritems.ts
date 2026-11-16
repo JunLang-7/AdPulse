@@ -37,6 +37,7 @@ export interface MenuItem {
 import {
 	BellRing,
 	History,
+	Newspaper,
 	SlidersHorizontal,
 	ClipboardList,
 	House,
@@ -58,6 +59,7 @@ const SidebarContent: MenuItem[] = [
 				icon: ClipboardList,
 				url: "/tasks",
 			},
+			{ id: "market-events", name: "市场与竞品事件", icon: Newspaper, url: "/market-events" },
 			{
 				id: "notification-settings",
 				name: "通知设置",

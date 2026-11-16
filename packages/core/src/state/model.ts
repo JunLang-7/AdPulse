@@ -1,3 +1,4 @@
+import type { MarketEventHead, MarketEventVersion, MarketEventAlias, MarketEventOperation } from "../market-events.js";
 import type { DecisionCard } from "../domain/decisionCard.js";
 import type {
 	Limits,
@@ -147,7 +148,7 @@ export interface NotificationBatch {
 }
 
 /** 单条待发信息；logicalKey 保证同一逻辑事件不因重试/换标题/转载重复通知。 */
-export type NotificationItemKind = "effect_alert";
+export type NotificationItemKind = "effect_alert" | "market_event";
 export type NotificationItemStatus = "queued" | "sent" | "cancelled" | "expired";
 
 export interface NotificationItem {
@@ -171,11 +172,42 @@ export interface NotificationItem {
 	}>;
 	/** 实质更新序号：新增证据或纠正才 +1，并据此再次通知。 */
 	revision: number;
+	/** 生产入队的效果告警引用，用于发送前重检；受控合成条目可缺省。 */
+	effectRef?: { alertId: string; evidenceId: string; evidenceVersion: number; taskVersion: number };
+	/** 生产入队的市场/竞品事件引用；发送前重检事件仍是当前证据版本。 */
+	marketEventRef?: { eventId: string; version: number; evidenceRevision: number };
 	status: NotificationItemStatus;
 	/** 复用 Delivery：不另建投递状态机。 */
 	deliveryId?: string;
 	createdAt: string;
 	updatedAt: string;
+}
+
+/** 筛选当时的最小事实，不复制业务原文；与后续投递状态分开。 */
+export interface NotificationSelection {
+	id: string;
+	ownerId: string;
+	/** 输入类别：effect = #10 效果告警；event = #38 市场/竞品事件。 */
+	input: "effect" | "event";
+	/** effect 输入专用引用；event 输入不填。 */
+	alertId?: string;
+	/** 事件可无任务关联，因此 taskId 对 event 输入是可选的。 */
+	taskId?: string;
+	comparisonResultId?: string;
+	evidenceRef?: EvidenceRef;
+	/** event 输入专用引用；发送前与事件当前版本比对。 */
+	marketEventRef?: { eventId: string; version: number; evidenceRevision: number };
+	revision: number;
+	settingsVersion: number;
+	matchedTargetIds: string[];
+	outcome: "queued" | "not_queued" | "duplicate" | "cancelled";
+	reason: "matched" | "push_disabled" | "before_enabled" | "no_target"
+		| "target_muted" | "category_excluded" | "not_authorized"
+		| "duplicate" | "previously_cancelled" | "historical_input" | "alert_inactive"
+		| "insufficient_evidence" | "simulated_input"
+		| "no_association" | "scope_excluded";
+	itemId?: string;
+	evaluatedAt: string;
 }
 
 export interface WebSession {
@@ -530,6 +562,8 @@ export interface InvestigationAlert {
 	ownerId: string;
 	taskId: string;
 	logicalKey: string;
+	/** 信息通知的实质证据版本；历史告警缺省，不因重试补发。 */
+	notificationRevision?: number;
 	sessionId: string;
 	status: InvestigationAlertStatus;
 	statusReason?: string;
@@ -776,6 +810,10 @@ export interface UserModelPreference {
 }
 
 export interface Entities {
+	marketEvents: MarketEventHead;
+	marketEventVersions: MarketEventVersion;
+	marketEventAliases: MarketEventAlias;
+	marketEventOperations: MarketEventOperation;
 	users: User;
 	identityBindings: IdentityBinding;
 	notificationDestinations: NotificationDestination;
@@ -787,6 +825,7 @@ export interface Entities {
 	subscriptionSettings: SubscriptionSettings;
 	notificationBatches: NotificationBatch;
 	notificationItems: NotificationItem;
+	notificationSelections: NotificationSelection;
 	subscriptionTargets: SubscriptionTarget;
 	webSessions: WebSession;
 	loginTransactions: LoginTransaction;

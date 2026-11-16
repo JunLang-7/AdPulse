@@ -10,6 +10,384 @@
     }
   ],
   "paths": {
+    "/api/market-events": {
+      "get": {
+        "operationId": "listMarketEvents",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MarketEventVersion"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createMarketEvent",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketEventWriteResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketEventWriteResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Event or task unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "JSON required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarketEventInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market-events/{eventId}": {
+      "get": {
+        "operationId": "getMarketEvent",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketEventDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "eventId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/market-events/{eventId}/revisions": {
+      "post": {
+        "operationId": "reviseMarketEvent",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketEventWriteResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Event or task unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "JSON required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "eventId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarketEventRevision"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/me/model-connections": {
       "get": {
         "operationId": "listModelConnections",
@@ -409,6 +787,89 @@
         "responses": {
           "200": { "description": "Destination, consent and proactive-send gate", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotificationStatus" } } } },
           "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/me/notification-selections": {
+      "get": {
+        "operationId": "listNotificationSelections",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "Opaque exclusive cursor returned by nextBefore"
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "dateFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "Inclusive Asia/Shanghai calendar date"
+            }
+          },
+          {
+            "name": "dateTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "Inclusive Asia/Shanghai calendar date"
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "not_queued",
+                "duplicate",
+                "cancelled"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Own historical selection facts, subject to current input access; queued does not mean sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSelectionPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       }
     },
@@ -1330,6 +1791,413 @@
       }
     },
     "schemas": {
+      "MarketEventCitation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "sourceIndex",
+          "quote"
+        ],
+        "nullable": true
+      },
+      "MarketEventSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true
+          },
+          "publisher": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 30000,
+            "nullable": true
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "link_only",
+              "title_only",
+              "search_snippet",
+              "excerpt",
+              "full_text"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "official",
+              "repost",
+              "search",
+              "unknown"
+            ]
+          },
+          "publishedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Original ISO calendar date or date-time; date-only values keep unknown time.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}(T.*)?$"
+          },
+          "acquiredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "limitations": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "url",
+          "publisher",
+          "content",
+          "scope",
+          "origin",
+          "publishedAt",
+          "acquiredAt",
+          "limitations"
+        ]
+      },
+      "MarketEventInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "occurrenceKey": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "announcement",
+              "campaign",
+              "product_launch"
+            ]
+          },
+          "subject": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "brand",
+                  "competitor"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              }
+            },
+            "required": [
+              "kind",
+              "name"
+            ]
+          },
+          "eventTime": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true
+          },
+          "conditions": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketEventSource"
+            },
+            "maxItems": 10,
+            "minItems": 1
+          },
+          "citations": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "subject": {
+                "$ref": "#/components/schemas/MarketEventCitation"
+              },
+              "eventTime": {
+                "$ref": "#/components/schemas/MarketEventCitation"
+              },
+              "conditions": {
+                "$ref": "#/components/schemas/MarketEventCitation"
+              }
+            },
+            "required": [
+              "subject",
+              "eventTime",
+              "conditions"
+            ]
+          },
+          "taskRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "taskId": {
+                  "type": "string",
+                  "maxLength": 128,
+                  "minLength": 1
+                },
+                "taskVersion": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "taskId",
+                "taskVersion",
+                "reason"
+              ]
+            },
+            "maxItems": 20
+          },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "simulated": {
+                "type": "boolean"
+              },
+              "reference": {
+                "type": "string",
+                "maxLength": 2000,
+                "nullable": true
+              },
+              "transformation": {
+                "type": "string",
+                "maxLength": 2000,
+                "nullable": true
+              }
+            },
+            "required": [
+              "simulated",
+              "reference",
+              "transformation"
+            ]
+          }
+        },
+        "required": [
+          "occurrenceKey",
+          "title",
+          "type",
+          "subject",
+          "eventTime",
+          "conditions",
+          "sources",
+          "citations",
+          "taskRefs",
+          "provenance"
+        ]
+      },
+      "MarketEventVersion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "evidenceRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "input": {
+            "$ref": "#/components/schemas/MarketEventInput"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "source_item"
+            ]
+          },
+          "sourceItemId": {
+            "type": "string",
+            "nullable": true
+          },
+          "materials": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "manual",
+                    "source_item"
+                  ]
+                },
+                "sourceItemId": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "id",
+                "method",
+                "sourceItemId"
+              ]
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "changeReason": {
+            "type": "string"
+          },
+          "candidate": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "evidence_ready",
+                  "insufficient"
+                ]
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "status",
+              "reasons"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "eventId",
+          "ownerId",
+          "version",
+          "evidenceRevision",
+          "input",
+          "method",
+          "sourceItemId",
+          "materials",
+          "createdAt",
+          "changeReason",
+          "candidate"
+        ]
+      },
+      "MarketEventWriteResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "duplicate",
+              "revised",
+              "unchanged"
+            ]
+          },
+          "version": {
+            "$ref": "#/components/schemas/MarketEventVersion"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ]
+      },
+      "MarketEventDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/MarketEventVersion"
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketEventVersion"
+            }
+          }
+        },
+        "required": [
+          "current",
+          "versions"
+        ]
+      },
+      "MarketEventRevision": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "event": {
+            "$ref": "#/components/schemas/MarketEventInput"
+          },
+          "changeReason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "event",
+          "changeReason"
+        ]
+      },
       "VerifiedIdentity": {
         "type": "object",
         "properties": {
@@ -1481,6 +2349,136 @@
           "targets": { "type": "array", "items": { "$ref": "#/components/schemas/SubscriptionTarget" } }
         },
         "required": ["settings", "targets"],
+        "additionalProperties": false
+      },
+      "NotificationSelectionRecord": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "input": {
+            "type": "string",
+            "enum": ["effect", "event"],
+            "description": "筛选输入类别：effect = 效果告警，event = 市场/竞品事件"
+          },
+          "alertId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "comparisonResultId": {
+            "type": "string"
+          },
+          "evidenceRef": {
+            "$ref": "#/components/schemas/EvidenceRef"
+          },
+          "marketEventRef": {
+            "type": "object",
+            "properties": {
+              "eventId": { "type": "string" },
+              "version": { "type": "integer", "minimum": 1 },
+              "evidenceRevision": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["eventId", "version", "evidenceRevision"],
+            "additionalProperties": false
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "settingsVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "matchedTargetIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "not_queued",
+              "duplicate",
+              "cancelled"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "push_disabled",
+              "before_enabled",
+              "no_target",
+              "target_muted",
+              "category_excluded",
+              "not_authorized",
+              "duplicate",
+              "previously_cancelled",
+              "historical_input",
+              "alert_inactive",
+              "insufficient_evidence",
+              "simulated_input",
+              "no_association",
+              "scope_excluded"
+            ]
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "deliveryResult": {
+            "type": "object",
+            "description": "同一提醒修订可确认的汇总结果。旧修订或缺少对应批次时省略。",
+            "additionalProperties": false,
+            "required": ["status", "scheduledAt"],
+            "properties": {
+              "status": { "type": "string", "enum": ["queued", "sent", "cancelled", "expired", "suppressed", "failed"] },
+              "scheduledAt": { "type": "string", "format": "date-time" },
+              "sentAt": { "type": "string", "format": "date-time" },
+              "statusReason": { "type": "string" }
+            }
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "input",
+          "revision",
+          "settingsVersion",
+          "matchedTargetIds",
+          "outcome",
+          "reason",
+          "evaluatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "NotificationSelectionPage": {
+        "type": "object",
+        "properties": {
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationSelectionRecord"
+            }
+          },
+          "nextBefore": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "records",
+          "nextBefore"
+        ],
         "additionalProperties": false
       },
       "NotificationRecordPage": {

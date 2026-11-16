@@ -58,8 +58,8 @@ export const CATEGORY_OPTIONS: ReadonlyArray<{
 	hint: string;
 }> = [
 	{ value: "effect", label: "效果排查", hint: "投放数据出现异常、需要你判断时" },
-	{ value: "event", label: "明确事件", hint: "有来源的市场/竞品明确变化" },
-	{ value: "evidence", label: "补证/待处理", hint: "证据不足或需要你补充资料时" },
+	{ value: "event", label: "明确事件", hint: "尚未接入；保存配置后保留偏好" },
+	{ value: "evidence", label: "补证/待处理", hint: "尚未接入；保存配置后保留偏好" },
 ];
 
 export const SCOPE_OPTIONS: ReadonlyArray<{
@@ -128,6 +128,7 @@ export type ReadinessState =
 	| "identity_inactive"
 	| "push_disabled"
 	| "no_targets"
+	| "no_effect_targets"
 	| "ready";
 
 export interface Readiness {
@@ -185,6 +186,15 @@ export function describeReadiness(
 			state: "no_targets",
 			title: "还没有关注任何对象",
 			detail: "推送已开启，但没有任何生效的关注对象，因此不会有内容。",
+			canDeliver: false,
+		};
+	if (!activeTargets(subscription.targets).some(
+		(target) => target.kind === "task" && target.categories.includes("effect"),
+	))
+		return {
+			state: "no_effect_targets",
+			title: "尚无已接入的任务订阅",
+			detail: "当前仅接入本人任务的效果告警。品牌/竞品、明确事件和补证尚未接入，配置会保留。",
 			canDeliver: false,
 		};
 	return {

@@ -124,6 +124,10 @@ const DELIVERY_STATUS: Record<RecordDeliveryStatus, string> = {
  * 这里只做翻译；新增代码没翻译时显示原码，不编造原因。
  */
 const REASONS: Record<string, { label: string; detail: string }> = {
+	input_unavailable: {
+		label: "关联告警或证据已不可用于推送",
+		detail: "发送前发现告警已处理、失效或任务/证据已变更，待发条目已取消。历史筛选结果仍表示当时的判断。",
+	},
 	push_disabled: {
 		label: "当时关闭了主动提醒",
 		detail: "关闭期间不生成也不发送汇总；重新开启不会补发这一批。",
@@ -171,6 +175,15 @@ const REASONS: Record<string, { label: string; detail: string }> = {
 	},
 };
 
+export function knownNotificationReason(code: string | undefined): { label: string; detail: string } | undefined {
+	return code && Object.prototype.hasOwnProperty.call(REASONS, code) ? REASONS[code] : undefined;
+}
+
+const settingsReasons = new Set(["destination_missing", "destination_invalidated", "consent_missing", "consent_revoked", "identity_inactive", "recipient_unreachable", "not_authorized"]);
+export function needsNotificationSettings(reason: string | undefined): boolean {
+	return reason !== undefined && settingsReasons.has(reason);
+}
+
 const monthDay = (localDate: string): string => {
 	const [, month, day] = localDate.split("-");
 	return `${Number(month)}月${Number(day)}日`;
@@ -200,7 +213,7 @@ function describeReason(record: RecordLike): RecordView["reason"] {
 	if (record.status === "sent") return null;
 	if (record.statusReason)
 		return (
-			REASONS[record.statusReason] ?? {
+			knownNotificationReason(record.statusReason) ?? {
 				label: `已取消（${record.statusReason}）`,
 				detail: "服务端记录了原因代码，但界面还没有对应文案；不推测具体含义。",
 			}

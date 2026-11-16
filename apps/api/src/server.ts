@@ -7,10 +7,12 @@ import {
 	ComparisonValidationError,
 	EvidenceConflictError,
 	EvidenceValidationError,
+	MarketEventError,
 	InvestigationAlertValidationError,
 	NotificationError,
 	NotificationRecordError,
 	NotificationRecordService,
+	NotificationSelectionService,
 	NotificationService,
 	SubscriptionError,
 	SubscriptionService,
@@ -148,6 +150,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 	const publicOrigin = validatePublicOrigin(auth.publicOrigin);
 	const notifications = new NotificationService(runtime.storage);
 	const notificationRecords = new NotificationRecordService(runtime.storage);
+	const notificationSelections = new NotificationSelectionService(runtime.storage);
 	const subscriptions = new SubscriptionService(runtime.storage);
 	const subscriptionErrorStatus = (reason: SubscriptionError["reason"]): number => {
 		switch (reason) {
@@ -568,6 +571,25 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				if (path === "/api/me/notification-status" && req.method === "GET") {
 					return json(res, 200, await notifications.status(session.userId));
 				}
+				if (path === "/api/me/notification-selections" && req.method === "GET") {
+					const params = requestUrl.searchParams;
+					const allowed = ["limit", "before", "taskId", "dateFrom", "dateTo", "outcome"];
+					if ([...params.keys()].some((key) => !allowed.includes(key) || params.getAll(key).length !== 1))
+						throw new HttpError(400, "invalid_query");
+					try {
+						return json(res, 200, await notificationSelections.list(session.userId, {
+							...(params.has("limit") ? { limit: Number(params.get("limit")) } : {}),
+							...(params.has("before") ? { before: params.get("before")! } : {}),
+							...(params.has("taskId") ? { taskId: params.get("taskId")! } : {}),
+							...(params.has("dateFrom") ? { dateFrom: params.get("dateFrom")! } : {}),
+							...(params.has("dateTo") ? { dateTo: params.get("dateTo")! } : {}),
+							...(params.has("outcome") ? { outcome: params.get("outcome")! } : {}),
+						}));
+					} catch (error) {
+						if (error instanceof NotificationRecordError) throw new HttpError(400, error.reason);
+						throw error;
+					}
+				}
 				if (path === "/api/me/notifications" && req.method === "GET") {
 					// 只读投影：本人批次/条目/投递回执。不按 id 直取，跨用户无入口。
 					const limitParam = requestUrl.searchParams.get("limit");
@@ -718,6 +740,8 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				return;
 			}
 			if (error instanceof HttpError || error instanceof WebhookError)
+				return json(res, error.status, { error: error.message });
+			if (error instanceof MarketEventError)
 				return json(res, error.status, { error: error.message });
 			if (error instanceof TaskInputValidationError)
 				return json(res, 400, { error: `invalid field: ${error.fieldPath}` });

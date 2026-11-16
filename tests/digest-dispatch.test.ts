@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
 	AuthenticationService,
+	CATCH_UP_GRACE_MS,
 	DigestScheduler,
 	NotificationQueue,
 	NotificationService,
@@ -184,6 +185,31 @@ test("日汇总调度: 早于计划时刻不入队，到点才入队且只入队
 		1,
 	);
 	assert.ok(ownerId);
+});
+
+test("日汇总调度: 准点抖动不标补发，明显错过才标 catchUp", async () => {
+	assert.equal(CATCH_UP_GRACE_MS, 5 * 60_000, "容差是 5 分钟：覆盖 30s tick 抖动");
+
+	// 计划时刻 +10s：调度 tick 的正常抖动，属于准点发送。
+	const jitter = await setup(BEFORE_DIGEST);
+	await jitter.enqueue("k-jitter");
+	jitter.at("2026-11-11T01:30:10.000Z");
+	await jitter.scheduler.tick();
+	const onTime = (await jitter.storage.transaction((tx) =>
+		tx.notificationBatches.all(),
+	))[0];
+	assert.ok(onTime);
+	assert.equal(onTime.catchUp, undefined, "10s 抖动不得标成当日补发");
+
+	// 计划时刻 +6min：确实错过了计划时刻，属于当日补发。
+	const recovered = await setup(BEFORE_DIGEST);
+	await recovered.enqueue("k-recovered");
+	recovered.at("2026-11-11T01:36:00.000Z");
+	await recovered.scheduler.tick();
+	const late = (await recovered.storage.transaction((tx) =>
+		tx.notificationBatches.all(),
+	))[0];
+	assert.equal(late?.catchUp, true, "超出容差才记当日补发");
 });
 
 test("日汇总调度: 空批次不发，标记取消原因 empty", async () => {

@@ -15,6 +15,13 @@ export function beijingMinutes(at: Date): number {
 	return shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
 }
 
+/**
+ * 「当日补发」容差：计划时刻之后在这个窗口内入队仍算准点。
+ * 调度 tick 是 30s 粒度，正常抖动不应被记成补发（否则记录页会把准点汇总显示成补发）。
+ * 超出窗口才说明服务确实错过了计划时刻。
+ */
+export const CATCH_UP_GRACE_MS = 5 * 60_000;
+
 /** 免打扰可跨零点；端点：22:00 起暂停，08:00 起恢复。 */
 export function inQuietHours(
 	at: Date,
@@ -176,9 +183,11 @@ export class DigestScheduler {
 					["pending", "running"].includes(job.status),
 			);
 			if (exists) return false;
-			// 同一天的批次晚于计划时刻才入队 → 标记为「当日补发」。
+			// 同一天的批次明显晚于计划时刻才入队 → 「当日补发」。
+			// 调度 tick 有几十秒抖动，不能把准点发送标成补发；只在超出容差时标记。
 			const catchUp =
-				batch.localDate === today && batch.scheduledAt < atIso
+				batch.localDate === today &&
+				Date.parse(atIso) - Date.parse(batch.scheduledAt) > CATCH_UP_GRACE_MS
 					? { catchUp: true }
 					: {};
 			await tx.notificationBatches.put({
