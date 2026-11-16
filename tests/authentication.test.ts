@@ -84,8 +84,8 @@ test("personal users are stable only within the full scoped external identity", 
 		"2026-03-01T11:00:00.000Z",
 	);
 	assert.equal(first.userId, sameIdentity.userId);
-	assert.equal(first.expiresAt, "2026-03-01T18:00:00.000Z");
-	assert.equal(sameIdentity.expiresAt, "2026-03-01T19:00:00.000Z");
+	assert.equal(first.expiresAt, "2026-03-02T10:00:00.000Z");
+	assert.equal(sameIdentity.expiresAt, "2026-03-02T11:00:00.000Z");
 
 	const otherApplication = await auth.createWebSession(
 		{ ...identity, applicationId: "cli_other_app" },

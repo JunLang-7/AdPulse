@@ -11,8 +11,10 @@ import SessionsPage from "../views/adpulse/sessions";
 import TaskEditorPage from "../views/adpulse/tasks/editor";
 import TaskReviewPage from "../views/adpulse/tasks/review";
 import NotificationSettingsPage from "../views/adpulse/settings/notifications";
+import NotificationRecordsPage from "../views/adpulse/settings/notification-records";
 import SubscriptionSettingsPage from "../views/adpulse/settings/subscriptions";
 import TasksPage from "../views/adpulse/tasks";
+import MarketEventsPage from "../views/adpulse/market-events";
 
 function RouteError({ error }: { error: unknown }): ReactNode {
 	return (
@@ -73,12 +75,34 @@ function RequireSession() {
 		};
 		const focus = () => { void verify(); };
 		const restored = (event: PageTransitionEvent) => { if (event.persisted) invalidate(); };
+		let lastActivityReport = 0;
+		const reportActivity = () => {
+			const now = Date.now();
+			if (now - lastActivityReport < 60_000) return;
+			lastActivityReport = now;
+			void consoleClient
+				.POST("/api/session/activity")
+				.then(({ response }) => {
+					if (response.status === 401) invalidate();
+				})
+				.catch(() => {});
+		};
+		const activityEvents = ["click", "keydown", "input", "pointerdown"] as const;
+		for (const eventName of activityEvents)
+			window.addEventListener(eventName, reportActivity, { passive: true, capture: true });
+		const visibility = () => {
+			if (document.visibilityState === "visible") reportActivity();
+		};
+		document.addEventListener("visibilitychange", visibility);
 		window.addEventListener("focus", focus);
 		window.addEventListener("pageshow", restored);
 		void verify(true);
 		return () => {
 			active = false;
 			stopWatching();
+			for (const eventName of activityEvents)
+				window.removeEventListener(eventName, reportActivity, true);
+			document.removeEventListener("visibilitychange", visibility);
 			window.removeEventListener("focus", focus);
 			window.removeEventListener("pageshow", restored);
 		};
@@ -110,9 +134,12 @@ const Router = [
 					{ path: "/sessions", element: <SessionsPage /> },
 					{ path: "/sessions/:sessionId", element: <SessionDetailPage /> },
 					{ path: "/tasks", element: <TasksPage /> },
+					{ path: "/market-events", element: <MarketEventsPage /> },
+					{ path: "/market-events/:eventId", element: <MarketEventsPage /> },
 					{ path: "/tasks/:taskId", element: <TaskEditorPage /> },
 					{ path: "/tasks/:taskId/review", element: <TaskReviewPage /> },
 					{ path: "/settings/notifications", element: <NotificationSettingsPage /> },
+					{ path: "/settings/notification-records", element: <NotificationRecordsPage /> },
 					{ path: "/settings/subscriptions", element: <SubscriptionSettingsPage /> },
 				],
 			},

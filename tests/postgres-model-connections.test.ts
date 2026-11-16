@@ -3,10 +3,12 @@
 
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import test from "node:test";
 import { ModelConnectionError, ModelConnectionService } from "../packages/core/dist/index.js";
 import { createModelCredentialCipher } from "../packages/runtime/dist/model-credential-cipher.js";
 import { PostgresStorage } from "../packages/storage/dist/index.js";
+import { eventSelectionFixture } from "./selection-helpers.ts";
 
 const skip = !process.env.TEST_DATABASE_URL;
 
@@ -38,18 +40,46 @@ async function cleanup(storage: PostgresStorage, ownerId: string): Promise<void>
 	});
 }
 
-test("PostgreSQL: model connection tables migrate idempotently", { skip }, async (t) => {
-	const storage = PostgresStorage.connect(process.env.TEST_DATABASE_URL!);
-	t.after(() => storage.close());
-	await storage.initialize();
-	// 再次执行必须是无操作：版本 11 已记录，不会重建表或失败。
-	await storage.initialize();
-	const probe = await storage.transaction(async (tx) => [
-		await tx.userModelConnections.all(),
-		await tx.userModelCredentials.all(),
-		await tx.userModelPreferences.all(),
-	]);
-	assert.deepEqual(probe, [[], [], []]);
+test("PostgreSQL: migration 13 preserves market events and notification selections from version 12", { skip }, async () => {
+	const { Pool } = createRequire(new URL("../packages/storage/package.json", import.meta.url))("pg") as {
+		Pool: new (options: { connectionString: string }) => ConstructorParameters<typeof PostgresStorage>[0];
+	};
+	const databaseUrl = process.env.TEST_DATABASE_URL!;
+	const schema = `model_upgrade_${crypto.randomUUID().replaceAll("-", "")}`;
+	const admin = new Pool({ connectionString: databaseUrl });
+	const scopedUrl = new URL(databaseUrl);
+	scopedUrl.searchParams.set("options", `-c search_path=${schema}`);
+	const pool = new Pool({ connectionString: scopedUrl.href });
+	const storage = new PostgresStorage(pool);
+	try {
+		await admin.query(`CREATE SCHEMA ${schema}`);
+		await storage.initialize();
+		// Reconstruct the main branch's version 12 in this disposable schema.
+		await pool.query("DROP TABLE adpulse_userModelConnections, adpulse_userModelCredentials, adpulse_userModelPreferences");
+		await pool.query("DELETE FROM adpulse_schema_migrations WHERE version = 13");
+		const fixture = await eventSelectionFixture(storage);
+		await fixture.create();
+		const mainRows = () => storage.transaction(async (tx) => ({
+			events: await tx.marketEvents.all(),
+			selections: await tx.notificationSelections.all(),
+		}));
+		const before = await mainRows();
+		assert.equal(before.events.length, 1);
+		assert.equal(before.selections.length, 1);
+
+		await storage.initialize();
+		await storage.initialize();
+		assert.deepEqual(await mainRows(), before);
+		const migrations = await pool.query("SELECT version FROM adpulse_schema_migrations WHERE version >= 11 ORDER BY version");
+		assert.deepEqual(migrations.rows.map((row) => row.version), [11, 12, 13]);
+		const created = await service(storage).create(fixture.owner, inputFor(fixture.owner));
+		const credential = await storage.transaction((tx) => tx.userModelCredentials.get(created.id));
+		assert.ok(credential?.ciphertext);
+	} finally {
+		await storage.close();
+		await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+		await admin.end();
+	}
 });
 
 test("PostgreSQL: concurrent duplicate provider ids create exactly one connection", { skip }, async (t) => {

@@ -810,7 +810,7 @@ export default function SubscriptionSettingsPage() {
 
 					<p className="text-xs text-muted-foreground">
 						退订某个对象会保留它的配置，可随时恢复；关闭全部主动推送不会退出登录。
-						推送内容的分拣与发送由后续版本实现，本页只保存你的偏好。
+						当前仅本人任务的效果告警参与筛选与推送；品牌/竞品、明确事件和补证尚未接入，配置会保留。
 					</p>
 				</CardContent>
 			</Card>

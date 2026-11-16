@@ -7,6 +7,7 @@
 import {
 	ComparisonService,
 	EvidenceService,
+	MarketEventService,
 	DigestScheduler,
 	InvestigationAlertService,
 	NotificationQueue,
@@ -115,6 +116,7 @@ export function compose(
 		decisions,
 		tasks,
 		evidence,
+		marketEvents: new MarketEventService(storage),
 		comparisons,
 		investigationAlerts,
 		notifications,

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { NotificationSelectionService } from "./notifications-selection.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
 	ComparisonEvidenceRef,
@@ -238,10 +239,11 @@ export async function invalidateAlertsForTaskVersion(
 
 /** Converts only a current, explicitly evaluated threshold breach to an in-app alert. */
 export class InvestigationAlertService {
+	private readonly selections: NotificationSelectionService;
 	constructor(
 		private readonly storage: Storage,
 		private readonly now: () => string = () => new Date().toISOString(),
-	) {}
+	) { this.selections = new NotificationSelectionService(storage, now); }
 
 	async evaluateComparison(ownerId: string, comparisonResultId: string): Promise<InvestigationAlert | null> {
 		if (!ownerId || !comparisonResultId)
@@ -304,6 +306,7 @@ export class InvestigationAlertService {
 					ownerId,
 					taskId: result.taskId,
 					logicalKey,
+					notificationRevision: 1,
 					sessionId: `webalert_${digest(logicalKey).slice(0, 40)}`,
 					status: "open",
 					current: currentSnapshot,
@@ -322,6 +325,7 @@ export class InvestigationAlertService {
 					runAt: at,
 					attempts: 0,
 				});
+				await this.selections.selectIn(tx, alert, true);
 				return alert;
 			}
 
@@ -375,12 +379,14 @@ export class InvestigationAlertService {
 						: { events: [...alert.events, { type: "observed", at, comparisonResultId: result.id, evidence: evidenceRef(current) }] }),
 				};
 				await tx.investigationAlerts.put(unchanged);
+				await this.selections.selectIn(tx, unchanged, false);
 				return unchanged;
 			}
 
 			const maxPushRounds = (await tx.taskVersions.get(`${result.taskId}:${result.rulesRef.version}`))?.rules.maxPushRounds ?? 1;
 			alert = {
 				...alert,
+				notificationRevision: (alert.notificationRevision ?? 1) + 1,
 				current: currentSnapshot,
 				comparisonResultIds: resultIds,
 				updatedAt: at,
@@ -395,6 +401,7 @@ export class InvestigationAlertService {
 				await this.invalidateSession(tx, alert, "max_push_rounds_reached");
 			}
 			await tx.investigationAlerts.put(alert);
+			await this.selections.selectIn(tx, alert, true);
 			return alert;
 		});
 	}

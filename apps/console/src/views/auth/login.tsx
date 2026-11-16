@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLocation } from "react-router";
 import { safeReturnTo } from "./return-to";
 
@@ -14,7 +15,8 @@ export default function LoginPage() {
 		typeof state?.returnTo === "string" ? state.returnTo : query.get("returnTo"),
 	);
 	const error = query.get("error") ?? "";
-	const loginUrl = `/auth/feishu/login?returnTo=${encodeURIComponent(returnTo)}`;
+	const [rememberMe, setRememberMe] = useState(false);
+	const loginUrl = `/auth/feishu/login?returnTo=${encodeURIComponent(returnTo)}${rememberMe ? "&rememberMe=1" : ""}`;
 	return (
 		<main className="min-h-screen flex items-center justify-center p-6 bg-muted/40">
 			<section className="w-full max-w-sm rounded-xl border bg-background p-8 shadow-sm space-y-5">
@@ -29,6 +31,14 @@ export default function LoginPage() {
 						{messages[error]}
 					</p>
 				)}
+				<label className="flex items-center gap-2 text-sm text-muted-foreground">
+					<input
+						type="checkbox"
+						checked={rememberMe}
+						onChange={(event) => setRememberMe(event.target.checked)}
+					/>
+					记住我（仅限私人可信设备；公用设备请勿勾选）
+				</label>
 				<a
 					href={loginUrl}
 					className="inline-flex h-9 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"

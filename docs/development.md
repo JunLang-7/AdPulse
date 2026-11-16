@@ -292,9 +292,9 @@ bun run dev
 
 Vite 将同源 `/api`、`/auth`、`/webhooks` 请求代理到 127.0.0.1:3000，控制台与 API 不做跨域部署。`PUBLIC_ORIGIN` 必须与浏览器 origin 完全一致；Feishu 后台须登记 `${PUBLIC_ORIGIN}/auth/feishu/callback`。
 
-登录采用 Feishu OAuth authorization code + S256 PKCE；按[授权码接口当前说明](https://open.feishu.cn/document/common-capabilities/sso/api/obtain-oauth-code)，该授权入口的 PKCE 暂时搭配 `https://open.feishu.cn/open-apis/authen/v2/oauth/token`，不混用 v3、不在失败后自动切换端点重试同一码；服务端检查授权用户的 tenant scope，身份键包含 platform、application、tenant、ID 类型和外部 ID。首次验证自动建立个人用户；不保存 access/refresh token，不提供静态 Bearer 或开发绕过。浏览器 session cookie 为 HttpOnly、SameSite=Lax，生产设置 Secure；服务端固定 8 小时绝对过期且不滑动，退出会撤销 session。所有有副作用的 `/api/*` 请求还必须携带与 `PUBLIC_ORIGIN` 一致的 `Origin`。控制台在受保护 API 返回 401 时携带经校验的站内 `returnTo` 跳转登录，退出会撤销会话并清空本地查询缓存。跨标签页登录或退出会通知其他标签页清除旧页面并重新验证；通知只含非凭据身份标识，不充当登录凭证。
+登录采用 Feishu OAuth authorization code + S256 PKCE；按[授权码接口当前说明](https://open.feishu.cn/document/common-capabilities/sso/api/obtain-oauth-code)，该授权入口的 PKCE 暂时搭配 `https://open.feishu.cn/open-apis/authen/v2/oauth/token`，不混用 v3、不在失败后自动切换端点重试同一码；服务端检查授权用户的 tenant scope，身份键包含 platform、application、tenant、ID 类型和外部 ID。首次验证自动建立个人用户；不保存 access/refresh token，不提供静态 Bearer 或开发绕过。浏览器 session cookie 为 HttpOnly、SameSite=Lax，生产设置 Secure；会话随控制台上报的活动滑动到期——默认 24 小时无活动或登录起 7 天（先到者为准），登录时勾选「记住我」为 7 天 / 30 天，旧版会话仍按 8 小时绝对过期；令牌轮换带短暂宽限期。敏感写入（当前为模型凭据写入/删除）要求最近 15 分钟内重新验证过飞书身份，退出会撤销 session。所有有副作用的 `/api/*` 请求还必须携带与 `PUBLIC_ORIGIN` 一致的 `Origin`。控制台在受保护 API 返回 401 时携带经校验的站内 `returnTo` 跳转登录，退出会撤销会话并清空本地查询缓存。跨标签页登录或退出会通知其他标签页清除旧页面并重新验证；通知只含非凭据身份标识，不充当登录凭证。
 
-机器人卡片动作按飞书 open_id 的应用/租户作用域映射到内部用户；仅当映射用户是会话 owner 且 open_id 在 `allowedActorIds` 中时才允许。尚未在控制台登录建立绑定的用户会被拒绝，需先登录一次；`GET /api/me` 返回本人的 `identities`，可用于创建会话时填写收件人与允许操作者。worker 执行平台动作时还在同一数据库事务内复核有效用户与完整作用域的绑定，入库后撤销的动作会被拒绝；控制台正常8小时到期不撤销机器人绑定。通知授权由 #35 单独处理，本映射不改变发送授权。
+机器人卡片动作按飞书 open_id 的应用/租户作用域映射到内部用户；仅当映射用户是会话 owner 且 open_id 在 `allowedActorIds` 中时才允许。尚未在控制台登录建立绑定的用户会被拒绝，需先登录一次；`GET /api/me` 返回本人的 `identities`，可用于创建会话时填写收件人与允许操作者。worker 执行平台动作时还在同一数据库事务内复核有效用户与完整作用域的绑定，入库后撤销的动作会被拒绝；控制台会话到期（空闲或绝对上限）不撤销机器人绑定。通知授权由 #35 单独处理，本映射不改变发送授权。
 
 接口清单见 contracts/openapi.json；HTTP 调用示例见 scripts/demo.mjs。页面通过 apps/console/src/adpulse-client.ts 的 consoleClient 使用生成类型，不手写另一套 HTTP 契约。
 
@@ -367,8 +367,8 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
   不得改写别人的结果。
 - 调度入口复用 worker 轮询：没有任务可领且距上次 tick ≥30s 时跑一次
   `DigestScheduler.tick()`（`runExclusive` 跨进程互斥），不引入第二个调度进程或 Redis。
-- 同一批次最多一个在途 `send_digest` 任务，重复 tick 不会重复发送；晚于计划时刻入队时标
-  `catchUp`。
+- 同一批次最多一个在途 `send_digest` 任务，重复 tick 不会重复发送；晚于计划时刻超过
+  `CATCH_UP_GRACE_MS`（5 分钟，覆盖 30s tick 抖动）才标 `catchUp`，准点发送不标补发（#101）。
 - 卡片：`buildDigestCard` 最多 5 条，超出部分在页脚写明「另有 N 条」并**顺延到下一批次**；
   发送期间被实质更新的条目同样顺延，不留在已发送批次里。
 - 投递复用 `Delivery`（`purpose: "digest"`，带 `ownerId`/`batchId`，无 session/round）；
@@ -436,6 +436,143 @@ bun run --cwd apps/console test:components   # 由根 `bun run test` 一并执�
 5. 回滚先关闭闸门并停止所有新版 worker，备份并核对新增 outbox 状态；旧 worker 不认识新任务类型，可能把它完成而不发送，
    因此**禁止混跑或直接把待发交给旧版消费**。设置降级写入可能丢失独立确认，重升后须重新确认；
    不重置冻结时间、不重放取消状态，也不自动恢复备份中的旧通知。服务不可用与投递失败不作为业务决定失败。
+
+### 5.5 通知记录与解释（#37 PR4）
+
+`GET /api/me/notifications` 与控制台「通知记录」（`/settings/notification-records`）把已发生的汇总批次、
+条目与投递回执投影成本人可读的记录。核心是 `NotificationRecordService`
+（`packages/core/src/notifications-records.ts`），**只读**：不发消息、不改状态、不重试、不创建 Session。
+
+- 只返回本人批次（按北京时间 `localDate` 倒序）。没有按 id 直取的公开入口，因此不存在「知道 id 就能读别人记录」
+  的路径；`delivery` 还会再校验 `ownerId`，防止派生 id 撞车时串号。
+- 分页用 `limit`（1–50，默认 20）+ `before`（排他游标，北京时间 `YYYY-MM-DD`）；非法值返回 400，不静默改写。
+- 记录只陈述已存事实：批次状态、`statusReason` 代码、计划/发送时间、条目与 `Delivery` 回执。
+  原因代码到中文文案的翻译在控制台 `record-view.ts`；未翻译的代码显示原码并注明「不推测」，不补未知原因。
+- **历史内容以发送时冻结的卡片为准**：`queue()` 在 `revision` 提升时会复用同一条目行并改 `batchId`
+  （见 §5.1），所以按条目「当前所属批次」拼历史会让已发送批次变空、或显示成更新后的版本。
+  因此 `status: sent` 的批次从 `Delivery.card`（`purpose: digest`）读取当时实际发出的内容，
+  `itemsSource: "delivery"`；卡片没有行级 `id/revision/status`，服务端不补造。
+  缺快照（历史/测试数据）时退回条目行并标 `itemsSource: "rows"`，页面写明「可能与当时收到的版本不同」。
+- 取消/合并类批次保留为记录但不再尝试重建内容：`merged_stale` 明确写「已并入之后的汇总」；
+  `empty` 写「本批没有待发内容……或内容已因实质更新进入后续批次」，不冒充成「没有新内容」。
+- `sent` 只表示渠道接收，页面明确写「不代表你已读」；业务结果与投递状态仍然分开。
+- 页面顶部复用订阅页的 `describeReadiness` 判断「现在会不会收到」，避免两套说法；空记录时说明
+  「没有新内容不发空汇总」，不把空列表解释成已发送。
+- **生产者现状**：`NotificationQueue.queue()` 已由 #112 的筛选路径在生产代码中调用，但只接 `effect`；
+  #38 的市场/竞品事件与 #39 的来源尚未接入，因此真实环境不会因此类输入自动生成汇总条目。
+  本页只能看到已经存在的批次。
+- 真机验收用受控工具 `scripts/acceptance/digest.mjs`（`bun run notify:acceptance -- ...`）：
+  `enqueue` 写入带 `【验收测试】` 标记的合成条目（`--scene` 决定逻辑键、同场景按 revision 幂等、
+  关闭推送时拒绝；取消是终态，换场景才会得到新的逻辑事件），
+  `status` 读取本人批次与投递回执；脚本不发消息、不改订阅。步骤与判读见
+  [验收 runbook §16](acceptance/feishu-e2e.md)。
+
+### 5.6 市场与竞品事件（#38）
+
+操作路径：左侧「市场与竞品事件」→「录入事件」→ 保存 → 事件详情 →「修订事件 / 补充转载」。
+仅本人可读写；同一企业不共享。关联任务从本人任务中选择，记录明确的任务版本和关联理由，
+不据此宣称事件造成成本变化。详情保留每次修订、旧原文、逐字引用及稳定的材料引用 ID。
+
+- 支持公告、活动、产品发布，关注对象为品牌或竞品；`occurrenceKey` 是录入者指定的稳定事件标识。
+  同一用户、对象种类/名称、事件类别及标识去重；同一对象和类别下，规范 URL（去片段）也作为别名。
+  不同用户互不消费状态，同一文章涉及不同对象/类别可分别录入。跨链接转载由本人在原事件中补充来源，
+  不进行模型语义聚类。重复创建返回原版本，**不会**把未审阅的新材料偷偷附到原事件；补充内容须显式修订。
+- 来源分别记录 `link_only`、`title_only`、`search_snippet`、`excerpt`、`full_text`、来源性质、发布时间、
+  获取时间和局限。URL 不自动读取；仅链接没有正文；搜索摘要不能声明为正文。发布时间可为原始日期或带时区时间，
+  只有日期时不填造时分秒。事件时间、适用条件及引用缺失均保持未知。
+- 主体、事件时间和适用条件的引用必须逐字存在于指定材料。三项均有官方性质的原文引用、来源链接、
+  已知事件/发布时间及适用条件时，才标为 `evidence_ready`，其含义只是**引用齐备的信息候选**。
+  官方性质与全文范围由录入者声明，未做独立来源核验，既不证明事实为真，也不构成推送准入批准。
+  其他情况为 `insufficient` 并附原因，不要求所有保存的材料逐条审批。
+- 普通标题或任务关联修改只增加修订版本；来源内容/性质、主体、事件时间、条件或引用变化增加 `evidenceRevision`。
+  获取时间单独变化不视为新证据。所有历史版本均保留。合成标记不可通过修订去掉，合成内容不进入真实信息候选。
+- API：`GET/POST /api/market-events`、`GET /api/market-events/{eventId}`、
+  `POST /api/market-events/{eventId}/revisions`。写入要求 UUID `Idempotency-Key`，修订另带
+  `expectedVersion` 与变更说明；同键异内容、过期版本或同用户重叠写入返回 409。重叠写入可稍后用原键重试，
+  其他冲突须核对当前版本。客户端不能指定 owner、已存在材料引用或自动获取方式。操作表只保存摘要、版本引用、
+  状态和服务器时间，详情从所属用户的不可变版本追溯，不把原材料写入操作日志。
+- `MarketEventService.importSourceItem()` 是 #41 列表条目的内部规范化入口，只接受实际存在且 active 的条目，
+  保留 `sourceItemId`、仅标题、正文未读取和发布时间未知等限制，不发网络请求。
+  尚未连接采集调度或 #37 的个人订阅生产者；保存事件和形成候选都不会创建 Session、Job 或发送消息。
+  #39 的来源准入结论和 #37 的筛选/推送验收仍须分别处理。
+
+迁移版本 11 新增四张 JSONB 表：`marketEvents`、`marketEventVersions`、`marketEventAliases`、
+`marketEventOperations`。逻辑事件和事件版本有数据库唯一索引；别名/操作使用 owner 范围的确定性主键。
+迁移在既有 advisory lock 和单个事务中应用，无历史回填。升级前备份并核对目标库；回退旧应用时保留新增表，
+旧应用没有事件入口，重新升级可继续读原版本；不提供删除表的自动降级迁移。本轮只验证专用测试库，未操作部署库。
+
+固定样例为 `tests/fixtures/market-events-guance.json`，取自 guance-ai 的提交
+`01ba5c2992f62b6ba9e4cb0eac22b3d1bbd2627f`、`simulations/projects/*.json` 中每行业的一条竞品观察。
+每条保留 signal/source ID 与转换记录，只适配标题、原引语和来源元数据；事件类别为本项目映射，
+不代表原案例已证明明确发布。缺失链接、事件时间、适用条件不补造，原 `verified` 不覆盖 `simulated`。
+这些不足证据样例以及人造的完整公告、转载/修订、权限和并发变体用于自动测试，不能替代真实采集或飞书验收。
+
+测试：`tests/market-events*.test.ts` 覆盖领域/API/专用 PostgreSQL；
+`apps/console/test/market-events-page.test.tsx` 验证保存禁用、失败保留与幂等重试、第二来源引用、
+模拟修订/冲突及无权详情。它们使用合成输入，不连接真实平台。
+### 5.7 订阅筛选与历史原因（#112 第一阶段：效果告警；第二阶段：市场/竞品事件）
+
+- `InvestigationAlertService.evaluateComparison()` 在新告警或实质新证据评估时，通过
+  `NotificationSelectionService.selectIn()` 在同一数据库事务内完成筛选、最小记录与入队。
+  不是后台扫描历史告警；既有操作重试返回原判断，新比较操作重复同一证据只记重复抑制。
+- 仅接入 `effect`。匹配服务端已经证明的本人任务 id 与有效 `task` 关注、`effect` 类别；
+  `task_only` 与 `include_general` 对这一任务输入均适用。品牌/竞品名称、产品名、标题、摘要和域名
+  不作为显式关联；`event`/`evidence` 配置保留，界面明确尚未接入。
+- 启用之前产生的输入不补发；默认关、`muted`、类别排除、身份/目的地/通知授权不满足均留历史原因。
+  业务告警仍正常建立，不因未订阅而改变决策状态或本人操作回执。
+- 通知键为本人 + 逻辑告警，不包含标题或命中项。实质新证据推进 `notificationRevision`；
+  同版本重试不新增条目，取消/过期不复活。新输入遇旧设置批次时取消旧待发并进入下一有效批次，
+  避免混入旧批次后被误取消。09:30 之后才产生的新输入进下一次汇总；
+  09:30 前已产生但因服务延迟才处理的输入仍可使用当天逻辑批次补发。
+- 迁移 **12** 为加法式（接在 #38 的 11 之后）：新增 `notificationSelections`，本人 + 比较结果唯一约束及本人/时间索引。
+  不改旧表必填字段。发布须协调升级 API 与全部 worker；旧 worker 不认识领域引用复检，禁止混跑。
+  回滚前先关闭推送并停止新版消费者，隔离/取消生产待发后再启动旧版；新记录不自动回放。
+- `GET /api/me/notification-selections` 仅查询本人且当前仍有权访问的任务、告警、证据。
+  查询参数：`taskId`、`dateFrom`/`dateTo`（含端点的北京时间日期）、`outcome`
+  （`queued`/`not_queued`/`duplicate`/`cancelled`）、`limit`（1–50，默认 20）及 `before`
+  （响应 `nextBefore` 的不透明排他游标，含时间与 id，保证同毫秒分页）。非法/重复/额外参数返回 400。
+- 记录只存引用、评估时间、当时设置版本、命中关注项、通知版本与结果/原因，不复制原文、标题、摘要或凭据；
+  之后改设置不改写过去，缺历史就写无法还原。`queued` 不是投递回执，后续取消/失败仍看汇总与投递。
+- 生产条目保存领域引用，发送前检查任务/证据版本、来源和告警是否仍有效；失效取消并显示
+  `input_unavailable`。检查后仍可能发生在途竞态，平台端不承诺 exactly-once。
+- 通知记录在同一卡片展示最近待汇总的提醒和发送历史。选择「没收到通知？」可在卡片内按任务、日期和结果查找原因。
+  仅在关联的本人提醒和批次仍匹配同一修订时，查询结果带上可核实的后续状态。旧记录缺少对应条目时保留当时的筛选原因。
+- 本阶段只做本地合成输入、专用 PostgreSQL 和组件行为验证；未部署、未做该生产路径的真实 IM 验收。
+  这些记录属于业务派生数据；完整保留期、物理清理与备份防复活仍由 #40 联验，本阶段不宣称完成。
+
+#### 5.7.1 事件输入（#112 第二阶段，接 #38）
+
+- `MarketEventService` 在事件写入事务内调用 `NotificationSelectionService.selectEventIn()`：筛选、
+  历史记录与该事件入队同事务提交，不另起扫描任务，不在事务内发网络请求。
+- **准入**：事件的候选必须为 `evidence_ready`（三项官方原文引用齐备）、至少一条来源带 URL、
+  `provenance.simulated=false`，且事件已显式标注本人关注的主体或关联任务。
+  `insufficient` 候选与合成样例一律不入队，只留原因；`evidence_ready` 仍只是「引用齐备的候选」，
+  不等于事实核实或 #39 的来源准入结论。
+- **关联与范围**：`brand`/`competitor` 关注按 `subscriptionNameKey`（NFKC + 去首尾空白 + 折叠空白 + 小写）
+  与事件 `subject.name` 比较，且仅 `include_general` 接收这类「对象一般事件」；
+  `task` 关注按事件 `taskRefs` 的显式任务 id 比较，`task_only` 与 `include_general` 均接受。
+  标题/摘要包含名称、来源域名、品牌官网归属均不作为关联依据。
+- **去重与版本**：通知键为 `event:{eventId}`；筛选记录幂等键为「本人 + 事件 + 证据版本」。
+  只改标题或任务关联只增加事件版本、不推进 `evidenceRevision`，因此不重复通知；
+  来源原文/主体/事件时间/条件变化推进 `evidenceRevision` 并再次通知（同一条目 revision 提升）。
+  取消/过期仍是终态，重开不回放。
+- **原因代码**：除共用 `matched`/`push_disabled`/`before_enabled`/`target_muted`/`category_excluded`/
+  `not_authorized`/`previously_cancelled` 外，事件路径新增 `insufficient_evidence`、`simulated_input`、
+  `no_association`、`scope_excluded`，未命中同样写筛选记录（只存引用，不复制标题、摘要或正文）。
+- **卡片**：标题取事件标题，摘要写「事件类型 + 主体 + 事件时间/未知 + 适用条件/未提供」，
+  并明确「仅为你录入的明确事件与原文引用，未经独立来源核验」；来源只存 label/URL/发布时间/获取时间。
+  事件时间或适用条件未知时保持未知，不补造。
+- **发送前复检**：`marketEventNotificationCurrentIn()` 要求事件仍是当前版本、`evidenceRevision` 未变、
+  候选仍为 `evidence_ready`；否则取消该待发（`input_unavailable`），不把旧版本冒充最新事实。
+- **普通修订刷新待发**：改标题/任务关联不推进 `evidenceRevision`，因此不重复通知，但会刷新尚未发送的那条
+  待发内容的标题、摘要、关联理由、来源与事件引用（不新增条目、不改写筛选历史判断）；已发送/已取消的条目
+  不刷新、不复活。否则版本前进会让旧引用整条失效而无法补发。
+- **卡片长度预算**：`item.relevance` 上限 120（与 `domain/infoCard.ts` 校验一致）。主体与任务名称同时命中时
+  按总长度裁剪，避免拼接超限让整批汇总抛 `item relevance too long`。
+- 筛选记录查询接口无新增参数：事件记录按事件归属校验（本人），有任务关联时仍可按 `taskId` 过滤；
+  事件被删除/不再属于本人时不返回其历史引用。
+- 未接入：`evidence` 补证类别、#39 的自动来源采集、事件→决策卡；也**未**新增数据库迁移
+  （筛选表沿用 v12 的 JSONB 记录，新增字段为可选，事件路径用确定性 id + 存在性判定去重）。
 
 ## 6. PostgreSQL 集成测试
 

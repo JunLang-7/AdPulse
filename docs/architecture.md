@@ -15,8 +15,16 @@
 - 任务规则版本与效果证据：已实现固定 JSON 导入、不可变证据版本与幂等操作（#7、#8）。
 - 期次比较与阈值判定：已实现显式选择当前/基线证据、严格可比性校验与补证跟进（#9）。
 - 调查告警：已实现逻辑缺口告警、冻结期限与失效处理（#10、#55）；新候选可经 #83 的独立确认和部署闸门进入飞书单聊 outbox，默认关闭，不补历史。受控真机验收与试验实例迁移尚未执行，见开发指南 §5.4。
+- 市场/竞品事件（#38）：已实现本人录入、来源完整性/引用检查、修订与材料追溯，以及内部列表条目规范化入口；未进行独立来源核验，也未接 #39 的自动采集调度。
 - 受限来源采集：已实现两站列表页的标题/链接采集，**默认关闭**，见下文「受限来源采集」（#41）。
-- 仍未实现：个人订阅筛选与推送（#37）、企业飞书身份登录（#34）、自动广告操作。
+- 主动通知（#37）：已实现批次/去重、09:30 调度与发送前重检、退订取消、记录与解释（PR1/PR2/PR4）；
+  决策卡受控投递见 #83。#112 第一阶段新增效果告警的本人任务订阅筛选、事务内入队与历史筛选记录；
+  第二阶段接入 #38 的明确事件（`evidence_ready` + 非模拟 + 显式主体/任务关联，对象一般事件需 `include_general`）。
+  补证（`evidence`）类别、#39 自动来源与事件→决策卡仍未接入。
+  既有合成日汇总的受控单账号验收见 #37；本次生产筛选路径尚未部署或真机验收。
+- 企业飞书身份登录与个人权限（#34）：已实现 OAuth + PKCE 登录、个人账号建立、可撤销的浏览器会话与按 open_id 的机器人身份映射（#43/#45/#48）；
+  会话时效、滑动与重新验证见下文「控制台与验证」。
+- 仍未实现：市场/竞品事件和补证的订阅输入、#40 完整数据生命周期联动、自动广告操作。
 
 ## 模块职责
 
@@ -63,9 +71,9 @@ PostgreSQL 使用 SERIALIZABLE、行锁、唯一索引与冲突重试。
 version 是决策版本，每次成功处理选择都会递增，即使 changes 为空；快照版本增加不等于预算或其他策略字段发生变化。
 
 模型见 [model.ts](../packages/core/src/state/model.ts)，实际 DDL 与索引见 [postgres.ts](../packages/storage/src/postgres.ts)。
-当前为 25 张 id + jsonb 表，采用应用层引用关系；结构变更走 `initialize()` 内的版本化迁移（版本 1–11，顺序、加法式，在 advisory lock 下执行）。尚无分页，面向小规模验证。
+当前为 40 张 id + jsonb 表，采用应用层引用关系。结构变更走 `initialize()` 内的版本化迁移（版本 1–13，顺序、加法式，在 advisory lock 下执行）。存储端口仍采用全表读取，通知记录与筛选记录接口提供分页，面向小规模验证。
 
-个人模型连接（#86 PR1）另有三张表：`userModelConnections`（非敏感投影、版本、验证结果）、`userModelCredentials`（每条连接一份 AES-256-GCM 密文，密文与 nonce/tag 分列）、`userModelPreferences`（本人默认 `(connectionId, modelId)`）。唯一索引分别约束 `(ownerId, providerId)`、`(ownerId, connectionId)` 与 `ownerId`。加密端口在 core，实现在 runtime；AAD 绑定 owner/连接/凭据版本/目标地址/协议，主密钥不在数据库里。服务只在主密钥配置有效时装配，否则整个能力失败关闭。
+个人模型连接（#86 PR1）的三张表由迁移 13 新增。`userModelConnections` 保存连接信息、版本和验证结果，`userModelCredentials` 按连接保存 AES-256-GCM 密文、nonce 与 tag，`userModelPreferences` 保存本人默认 `(connectionId, modelId)`。唯一索引分别约束 `(ownerId, providerId)`、`(ownerId, connectionId)` 与 `ownerId`。加密端口在 core，实现在 runtime。AAD 绑定 owner、连接、凭据版本、目标地址和协议。服务只在主密钥配置有效时装配，主密钥由部署侧配置。
 
 ## 任务与发送语义
 
@@ -94,7 +102,8 @@ version 是决策版本，每次成功处理选择都会递增，即使 changes 
 - robots：2xx 遵从 `Disallow`/`Allow`（最长匹配、Allow 优先）与 `Crawl-delay`；4xx 视为无限制；5xx/不可达保守停止。
 - 失败语义：空列表、结构变化、超时、5xx 一律只记 `sourceRuns`，**不修改任何条目**；连续 3 次失败或 403/429 升级为 `stopped`，只能由 `resume(source, now, operator)` 人工恢复。
 - 清除：`purge(source, now)` 置空标题、删除快照并保留条目身份，后续再出现也不复活。运维入口为 `bun run sources`。
-- 未实现：卡片展示（归 #37）、语义去重（归 #38）、`gone` 推断（只取首屏，无法区分撤稿）。
+- 市场事件去重（#38）仅在本人、关注对象/类别的明确作用域内使用事件标识与 URL 别名；跨链接转载由本人修订关联，不做自动语义聚类。
+- 未实现：卡片展示（归 #37）、`gone` 推断（只取首屏，无法区分撤稿）。
 
 ## 控制台与验证
 
@@ -102,7 +111,12 @@ version 是决策版本，每次成功处理选择都会递增，即使 changes 
 
 控制台选择接口返回 202 只表示 inbox 已接收。当前界面提交后仅失效查询一次，尚未持续跟踪异步终态，可能要刷新才能看到最终处理结果；完善此行为见 [#11](https://github.com/JunLang-7/AdPulse/issues/11)。投递的 sent 表示渠道发送成功回执，不证明接收人已阅读。
 
-控制台使用 Feishu OAuth authorization code + PKCE 建立身份绑定和 HttpOnly 会话。服务端以 platform、application、tenant、ID 类型和外部 ID 共同限定身份，不持久化 Feishu access/refresh token；session cookie 在生产环境为 Secure、HttpOnly、SameSite=Lax，最多 8 小时且不滑动。副作用 API 请求校验同源 Origin。当前没有协作、分享、委派或产品级白名单，不是 RBAC 系统。 机器人入站动作同样按该作用域映射到内部用户，并要求操作者就是会话 owner；未建立绑定或非 owner 的动作会被拒绝，通知授权与身份映射分开。
+「通知记录」（`/settings/notification-records`）包含 #37 的汇总/投递投影和 #112 的筛选历史：
+列出本人汇总批次、条目与投递回执，并说明「为什么收到/没收到」。它不发消息、不改状态，也不提供
+按 id 直取的跨用户入口。筛选历史保留输入引用、当时设置版本、命中项与原因，不用现在的设置改写历史；
+查看时再次校验任务、告警、证据与事件引用的本人归属。详情见开发指南 §5.5、§5.7。
+
+控制台使用 Feishu OAuth authorization code + PKCE 建立身份绑定和 HttpOnly 会话。服务端以 platform、application、tenant、ID 类型和外部 ID 共同限定身份，不持久化 Feishu access/refresh token；session cookie 在生产环境为 Secure、HttpOnly、SameSite=Lax。会话时效随控制台上报的活动滑动：默认 24 小时无活动或登录起 7 天（以先到者为准）失效，勾选「记住我」为 7 天 / 30 天；旧版会话仍按 8 小时绝对过期。令牌轮换带短暂宽限期，敏感写入（当前为模型凭据写入/删除）要求最近 15 分钟内重新验证过飞书身份。副作用 API 请求校验同源 Origin。当前没有协作、分享、委派或产品级白名单，不是 RBAC 系统。 机器人入站动作同样按该作用域映射到内部用户，并要求操作者就是会话 owner；未建立绑定或非 owner 的动作会被拒绝，通知授权与身份映射分开。
 
 测试覆盖重复/并发选择、事务回滚、越权/过期、方案限制、慢提案版本冲突、租约恢复、平台协议和 SDK→HTTP 链路。PostgreSQL 集成测试需独立测试库；未配置时会跳过。
 
