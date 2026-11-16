@@ -1,13 +1,12 @@
 // Keep in sync with the TaskDraftExtractionInput brief limit in OpenAPI.
 export const TASK_SETUP_BRIEF_LIMIT = 2_500;
+export const TASK_SETUP_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
 
 const fileExtensions = [".txt", ".md", ".csv"];
 export const TASK_SETUP_FILE_ACCEPT = fileExtensions.join(",");
 
-// UTF-8 encoding uses at most three bytes per UTF-16 code unit, plus a BOM.
-const maxFileBytes = TASK_SETUP_BRIEF_LIMIT * 3 + 3;
 const unsupportedText = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
-const tooLong = "文件内容超过 " + TASK_SETUP_BRIEF_LIMIT + " 字。请保留和推广任务相关的部分后重新选择。";
+const tooLarge = "文件超过 8 MB，请另存所需部分后重试。";
 
 export async function readTaskSetupFile(
 	file: Pick<File, "name" | "size" | "arrayBuffer">,
@@ -15,7 +14,7 @@ export async function readTaskSetupFile(
 	const name = file.name.toLowerCase();
 	if (!fileExtensions.some((extension) => name.endsWith(extension)))
 		throw new Error("请选择 .txt、.md 或 .csv 文本文件。");
-	if (file.size > maxFileBytes) throw new Error(tooLong);
+	if (file.size > TASK_SETUP_ATTACHMENT_MAX_BYTES) throw new Error(tooLarge);
 
 	let bytes: ArrayBuffer;
 	try {
@@ -23,7 +22,7 @@ export async function readTaskSetupFile(
 	} catch {
 		throw new Error("暂时无法读取这个文件，请重新选择。");
 	}
-	if (bytes.byteLength > maxFileBytes) throw new Error(tooLong);
+	if (bytes.byteLength > TASK_SETUP_ATTACHMENT_MAX_BYTES) throw new Error(tooLarge);
 
 	let text: string;
 	try {
@@ -34,6 +33,5 @@ export async function readTaskSetupFile(
 	if (unsupportedText.test(text) || text.trimStart().startsWith("%PDF-"))
 		throw new Error("无法识别为纯文本。请选择 .txt、.md 或 .csv 文本文件。");
 	if (!text.trim()) throw new Error("这个文件没有可读取的文字。");
-	if (text.length > TASK_SETUP_BRIEF_LIMIT) throw new Error(tooLong);
 	return text;
 }

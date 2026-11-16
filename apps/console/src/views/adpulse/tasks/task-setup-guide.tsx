@@ -64,6 +64,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const brief = stage ? stageBrief(form, stage, notes[stage.id]) : "";
 	const remaining = TASK_SETUP_BRIEF_LIMIT - brief.length;
 	const attachment = stage ? attached[stage.id] : undefined;
+	const canUseFileStart = remaining < 0 && Boolean(attachment);
 	const suggestionCurrent = suggestion?.brief === brief ? suggestion : undefined;
 	const recommendations = stage?.id === "overview" ? suggestionCurrent?.data?.recommendations : undefined;
 	const productIdea = recommendations?.product?.value !== form.product.trim() ? recommendations?.product : undefined;
@@ -102,11 +103,17 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 		setFileError("");
 		try {
 			const { text, clipped, pagesWithoutText } = await readTaskSetupAttachment(file);
-			const combined = [notes[stage.id].trim(), text].filter(Boolean).join("\n");
-			if (combined.length > TASK_SETUP_PREVIEW_LIMIT)
-				throw new Error("合并后超过预览上限。请先精简现有资料，再选择文件。");
+			const existing = notes[stage.id].trim();
+			const prefix = existing ? existing + "\n" : "";
+			const available = Math.max(0, TASK_SETUP_PREVIEW_LIMIT - prefix.length);
+			const excerpt = text.slice(0, available).replace(/[\uD800-\uDBFF]$/, "");
+			if (!excerpt)
+				throw new Error("预览区已满。请删减现有资料后再选择文件。");
+			const combined = prefix + excerpt;
 			setNotes((previous) => ({ ...previous, [stage.id]: combined }));
-			setAttached((previous) => ({ ...previous, [stage.id]: { name: file.name, clipped, pagesWithoutText } }));
+			setAttached((previous) => ({
+				...previous, [stage.id]: { name: file.name, clipped: clipped || excerpt.length < text.length, pagesWithoutText },
+			}));
 		} catch (problem) {
 			setFileError(problem instanceof Error ? problem.message : "无法读取这个文件。");
 		} finally {
@@ -119,19 +126,23 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	async function submitStage(preview = false) {
 		if (!stage || busyRef.current || saving) return;
 		setError("");
-		if (remaining < 0 && !useEnteredValues) {
-			setError("说明和选项共超过 2,500 字，请先精简资料。");
+		const needsExtraction = Boolean(brief) && (preview || (!useEnteredValues && !suggestionCurrent));
+		const useFileStart = preview && canUseFileStart;
+		if (needsExtraction && remaining < 0 && !useFileStart) {
+			setError(canUseFileStart
+				? "资料超过 2,500 字。请先在上方用前 2,500 字生成建议，或编辑预览后提交。"
+				: "说明和选项共超过 2,500 字，请先精简资料。");
 			return;
 		}
 		let nextForm = form;
-		if (brief && (preview || (!useEnteredValues && !suggestionCurrent))) {
+		if (needsExtraction) {
 			busyRef.current = true;
 			setProcessing(true);
 			onBusyChange(true);
 			try {
 				const result = await consoleClient.POST("/api/task-drafts/extract", {
 					body: {
-						brief,
+						brief: useFileStart ? brief.slice(0, TASK_SETUP_BRIEF_LIMIT).replace(/[\uD800-\uDBFF]$/, "") : brief,
 						stage: stage.id,
 						...(provider
 							? "connectionId" in provider
@@ -261,20 +272,21 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 									<span className="text-sm font-semibold">{reading ? "正在读取文件…" : "选择文件"}</span>
 									<span className="text-xs text-muted-foreground">也可以拖到这里</span>
 								</button>
-								<p id={fileHelpId} className="text-xs text-muted-foreground">支持 PDF、Word、Excel、TXT、Markdown、CSV，单份文件最多 8 MB。</p>
+								<p id={fileHelpId} className="text-xs text-muted-foreground">支持 PDF、Word（.docx）、Excel（.xlsx）、TXT、Markdown、CSV，每份最多 8 MB。</p>
 								{attachment ? (
 									<div role="status" className="space-y-1 break-words text-sm">
-										<p>已读入 {attachment.name}。{attachment.clipped ? "仅预览前 30,000 字，请核对并保留相关内容。" : "可在上方核对和修改文字。"}</p>
+										<p>已读入 {attachment.name}。{attachment.clipped ? "仅展示部分文字，可在上方保留相关内容。" : "可在上方核对和修改文字。"}</p>
 										{attachment.pagesWithoutText ? <p>已检查的页面中有 {attachment.pagesWithoutText} 页没有可读取文字。如有需要，请识别文字后补充。</p> : null}
 									</div>
 								) : null}
 								{fileError ? <p role="alert" className="text-sm text-red-600">{fileError}</p> : null}
-								<p className={remaining >= 0 ? "text-xs text-muted-foreground" : "text-sm text-red-600"}>
-									{remaining >= 0 ? "先在本机预览，提交前可编辑。本阶段还可输入 " + remaining + " 字。" : "超过本阶段 2,500 字上限，请在上方删减 " + (-remaining) + " 字后提交。"}
+								<p className={remaining >= 0 || canUseFileStart ? "text-xs text-muted-foreground" : "text-sm text-red-600"}>
+									{canUseFileStart ? "生成建议时使用本阶段资料的前 2,500 字。你也可以先编辑预览，保留想用的段落。"
+										: remaining >= 0 ? "先在本机预览，提交前可编辑。本阶段还可输入 " + remaining + " 字。" : "超过本阶段 2,500 字上限，请在上方删减 " + (-remaining) + " 字后提交。"}
 								</p>
 							</div>
-							<Button type="button" disabled={busy || !brief || remaining < 0}
-								onClick={() => void submitStage(true)}>{processing ? "正在整理…" : "生成建议"}</Button>
+							<Button type="button" disabled={busy || !brief || (remaining < 0 && !canUseFileStart)}
+								onClick={() => void submitStage(true)}>{processing ? "正在整理…" : canUseFileStart ? "用前 2,500 字生成建议" : "生成建议"}</Button>
 							{draft && (additions.length > 0 || productIdea || goalIdeas.length > 0) ? (
 								<div className="space-y-2 rounded-md bg-muted/40 p-2 text-sm">
 									<p className="font-medium">待核对建议</p>

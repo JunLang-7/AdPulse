@@ -86,3 +86,35 @@ test("提交推广内容先确认整理出的熟茶名称，并允许从目标�
 	await screen.findByRole("heading", { name: "人群与卖点" });
 	assert.deepEqual(calls, ["POST /api/task-drafts/extract"]);
 });
+
+test("长资料先预览，可只用前 2,500 字生成建议并继续下一阶段", async (t) => {
+	t.after(cleanup);
+	const notes = "我想推广云南普洱熟茶。\n" + "这是推广工作的背景资料。".repeat(250);
+	const form = { ...emptyForm, product: "云南普洱熟茶" };
+	const briefs: string[] = [];
+	serve({
+		"POST /api/task-drafts/extract": async (request) => {
+			const body = await request.json() as { brief: string };
+			briefs.push(body.brief);
+			return json({});
+		},
+	});
+	render(<QueryClientProvider client={new QueryClient()}>
+		<TaskSetupGuide form={form} onChange={() => {}} onEdit={() => {}}
+			onSave={() => {}} onBusyChange={() => {}} saving={false} />
+	</QueryClientProvider>);
+
+	const region = screen.getByRole("region", { name: "AI 辅助填写" });
+	const input = region.querySelector('input[type="file"]');
+	assert.ok(input);
+	fireEvent.change(input, { target: { files: [new File([notes], "long.txt")] } });
+	const generate = await within(region).findByRole("button", { name: "用前 2,500 字生成建议" });
+	assert.equal(briefs.length, 0);
+	fireEvent.click(generate);
+	await within(region).findByText("没有可补充的建议，可以继续手填。");
+	assert.deepEqual(briefs, [("产品或服务：云南普洱熟茶\n" + notes).slice(0, 2_500)]);
+	assert.equal(region.querySelector<HTMLTextAreaElement>("textarea")?.value, notes);
+	fireEvent.click(screen.getByRole("button", { name: "提交本阶段" }));
+	await screen.findByRole("heading", { name: "人群与卖点" });
+	assert.equal(briefs.length, 1);
+});

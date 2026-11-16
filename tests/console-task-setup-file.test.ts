@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	readTaskSetupFile,
+	TASK_SETUP_ATTACHMENT_MAX_BYTES,
 	TASK_SETUP_BRIEF_LIMIT,
 } from "../apps/console/src/views/adpulse/tasks/task-setup-file.ts";
 
@@ -44,19 +45,15 @@ test("rejects invalid encoding, disguised binary formats and empty text", async 
 	await assert.rejects(readTaskSetupFile(new File(["\uFEFF  \t\n"], "empty.md")), /没有可读取的文字/);
 });
 
-test("accepts the maximum CJK brief and rejects oversized files without truncation", async () => {
-	const maximum = "样".repeat(TASK_SETUP_BRIEF_LIMIT);
-	assert.equal(await readTaskSetupFile(new File(["\uFEFF", maximum], "brief.md")), maximum);
-	await assert.rejects(
-		readTaskSetupFile(new File(["x".repeat(TASK_SETUP_BRIEF_LIMIT + 1)], "brief.txt")),
-		/超过 2500 字/,
-	);
+test("reads text longer than the model brief and rejects oversized files before decoding", async () => {
+	const text = "样".repeat(TASK_SETUP_BRIEF_LIMIT + 1);
+	assert.equal(await readTaskSetupFile(new File(["\uFEFF", text], "brief.md")), text);
 	await assert.rejects(
 		readTaskSetupFile({
 			name: "large.csv",
-			size: new File(["\uFEFF", maximum, "字"], "large.csv").size,
+			size: TASK_SETUP_ATTACHMENT_MAX_BYTES + 1,
 			arrayBuffer: async () => assert.fail("oversized files should not be read"),
 		}),
-		/超过 2500 字/,
+		/超过 8 MB/,
 	);
 });
