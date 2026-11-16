@@ -75,7 +75,7 @@ function renderPage(): void {
 
 test("筛选记录页：当时原因、详情、任务/日期/结果过滤和稳定翻页", async () => {
 	const searches: URLSearchParams[] = [];
-	const record = { id: "record-a", alertId: "alert-a", taskId: "task-a", comparisonResultId: "comparison-a", evidenceRef: { evidenceId: "evidence-a", version: 1 }, revision: 1, settingsVersion: 4, matchedTargetIds: [], outcome: "not_queued", reason: "no_target", evaluatedAt: "2026-11-16T00:01:00.000Z" };
+	const record = { id: "record-a", input: "effect", alertId: "alert-a", taskId: "task-a", comparisonResultId: "comparison-a", evidenceRef: { evidenceId: "evidence-a", version: 1 }, revision: 1, settingsVersion: 4, matchedTargetIds: [], outcome: "not_queued", reason: "no_target", evaluatedAt: "2026-11-16T00:01:00.000Z" };
 	serve(defaults, {
 		"GET /api/me/notifications": () => json({ records: [], nextBefore: null }),
 		"GET /api/tasks": () => json({ items: [{ taskId: "task-a", product: "本人任务 A" }] }),
@@ -106,6 +106,30 @@ test("筛选记录页：当时原因、详情、任务/日期/结果过滤和稳
 	assert.equal(searches[searches.length - 1]?.get("dateTo"), "2026-11-16");
 	assert.equal(searches[searches.length - 1]?.get("outcome"), "not_queued");
 	assert.equal(searches[searches.length - 1]?.has("before"), false, "新过滤重置分页");
+	cleanup();
+});
+
+test("筛选记录页：事件输入显示事件依据与已接入的拒绝原因", async () => {
+	const record = {
+		id: "record-event", input: "event",
+		marketEventRef: { eventId: "event-a", version: 2, evidenceRevision: 2 },
+		taskId: "task-a", revision: 2, settingsVersion: 5, matchedTargetIds: [],
+		outcome: "not_queued", reason: "scope_excluded", evaluatedAt: "2026-11-16T01:02:00.000Z",
+	};
+	serve(defaults, {
+		"GET /api/me/notifications": () => json({ records: [], nextBefore: null }),
+		"GET /api/tasks": () => json({ items: [{ taskId: "task-a", product: "本人任务 A" }] }),
+		"GET /api/me/notification-selections": () => json({ records: [record], nextBefore: null }),
+	});
+	renderPage();
+	fireEvent.click(screen.getByRole("button", { name: "筛选记录" }));
+	assert.ok(await screen.findByText("未入队 · 市场/竞品事件"));
+	assert.ok(screen.getByText(/只标注了关注对象、没有关联任务/));
+	fireEvent.click(screen.getByText("查看当时依据"));
+	assert.equal(screen.getByRole("link", { name: "event-a" }).getAttribute("href"), "/market-events/event-a");
+	assert.ok(screen.getByText(/（证据版本 2）/));
+	assert.equal(screen.getByRole("link", { name: "task-a" }).getAttribute("href"), "/tasks/task-a");
+	assert.equal(screen.queryByText(/告警引用/), null, "事件记录不显示效果告警引用");
 	cleanup();
 });
 

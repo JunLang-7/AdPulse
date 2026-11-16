@@ -26,8 +26,18 @@ test("筛选生产者：领域告警原子入队，重复操作不改写历史�
 	page = await service.list(f.owner);
 	assert.deepEqual(page.records.map((r) => r.outcome).sort(), ["duplicate", "queued"]);
 	assert.equal((await new NotificationQueue(f.storage).pending(f.owner)).length, 1);
+	assert.equal(original.input, "effect");
+	const evidenceRef = original.evidenceRef; assert.ok(evidenceRef);
+	// 早于事件阶段写入的历史记录没有 input 字段：查询时按效果告警返回，不伪造其他类别。
+	const legacy = structuredClone(original) as unknown as Record<string, unknown>;
+	legacy.id = "legacy-effect-record"; legacy.ownerId = f.owner; delete legacy.input;
+	await f.storage.transaction(async (tx) => {
+		await tx.notificationSelections.put(legacy as unknown as Parameters<typeof tx.notificationSelections.put>[0]);
+	});
+	assert.equal((await service.list(f.owner)).records.find((record) => record.id === "legacy-effect-record")?.input, "effect");
+	await f.storage.transaction((tx) => tx.notificationSelections.delete("legacy-effect-record"));
 	f.setTime("2026-11-16T00:02:00.000Z");
-	await f.evidence.revise(f.owner, original.evidenceRef.evidenceId, "revise", {
+	await f.evidence.revise(f.owner, evidenceRef.evidenceId, "revise", {
 		expectedEvidenceVersion: 1, reason: "合成实质修订", record: selectionEvidence(2100),
 	});
 	const revised = await f.compare(2);

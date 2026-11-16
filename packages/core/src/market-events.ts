@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { NotificationSelectionService } from "./notifications-selection.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 
 export interface EventSourceInput {
@@ -134,9 +135,12 @@ const evidenceHash = (input: MarketEventInput) => hash({
 	subject: input.subject, type: input.type, citations: input.citations, eventTime: input.eventTime, conditions: input.conditions, provenance: input.provenance,
 });
 
-/** Private materials never leave this owner scope. No fetching, notification or Session side effects. */
+/** Private materials never leave this owner scope. No fetching or Session side effects. */
 export class MarketEventService {
-	constructor(private storage: Storage, private now: () => string = () => new Date().toISOString()) {}
+	private readonly selections: NotificationSelectionService;
+	constructor(private storage: Storage, private now: () => string = () => new Date().toISOString()) {
+		this.selections = new NotificationSelectionService(storage, now);
+	}
 	async list(ownerId: string): Promise<MarketEventVersion[]> {
 		return this.storage.transaction(async tx => {
 			const heads = (await tx.marketEvents.all()).filter(h => h.ownerId === ownerId);
@@ -238,6 +242,8 @@ export class MarketEventService {
 		// Duplicate requests never attach unseen material without an explicit, audited revision.
 		if (status !== "duplicate")
 			for (const id of new Set(aliases)) await tx.marketEventAliases.put({ id, ownerId, eventId: version.eventId });
+		// #112 第二阶段：同一事务内按本人订阅筛选事件并留历史记录；只有新的证据版本会推进通知 revision。
+		if (status === "created" || status === "revised") await this.selections.selectEventIn(tx, version);
 		await tx.marketEventOperations.put({ id: operationId, ownerId, digest, versionId: version.id, status, createdAt: this.now() });
 		return { status, version };
 	}

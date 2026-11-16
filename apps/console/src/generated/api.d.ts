@@ -805,17 +805,27 @@ export interface components {
         };
         NotificationSelectionRecord: {
             id: string;
-            alertId: string;
-            taskId: string;
-            comparisonResultId: string;
-            evidenceRef: components["schemas"]["EvidenceRef"];
+            /**
+             * @description 筛选输入类别：effect = 效果告警，event = 市场/竞品事件
+             * @enum {string}
+             */
+            input: "effect" | "event";
+            alertId?: string;
+            taskId?: string;
+            comparisonResultId?: string;
+            evidenceRef?: components["schemas"]["EvidenceRef"];
+            marketEventRef?: {
+                eventId: string;
+                version: number;
+                evidenceRevision: number;
+            };
             revision: number;
             settingsVersion: number;
             matchedTargetIds: string[];
             /** @enum {string} */
             outcome: "queued" | "not_queued" | "duplicate" | "cancelled";
             /** @enum {string} */
-            reason: "matched" | "push_disabled" | "before_enabled" | "no_target" | "target_muted" | "category_excluded" | "not_authorized" | "duplicate" | "previously_cancelled" | "historical_input" | "alert_inactive";
+            reason: "matched" | "push_disabled" | "before_enabled" | "no_target" | "target_muted" | "category_excluded" | "not_authorized" | "duplicate" | "previously_cancelled" | "historical_input" | "alert_inactive" | "insufficient_evidence" | "simulated_input" | "no_association" | "scope_excluded";
             itemId?: string;
             /** Format: date-time */
             evaluatedAt: string;
