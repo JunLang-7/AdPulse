@@ -38,7 +38,7 @@ export default function NotificationRecordsPage() {
 			<button type="button" className="text-sm underline" aria-pressed={!selection} onClick={() => setSelection(false)}>汇总与投递</button>
 			<button type="button" className="text-sm underline" aria-pressed={selection} onClick={() => setSelection(true)}>筛选记录</button>
 		</div>
-		{selection ? <SelectionRecords /> : <DigestRecords />}
+		{selection ? <SelectionRecords onViewDelivery={() => setSelection(false)} /> : <DigestRecords />}
 	</>;
 }
 
