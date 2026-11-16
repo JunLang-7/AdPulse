@@ -1,4 +1,4 @@
-import {
+﻿import {
 	type ChannelAccount,
 	ChannelRegistry,
 	createFeishuAccount,
@@ -12,6 +12,7 @@ import {
 	InvestigationAlertService,
 	NotificationQueue,
 	NotificationService,
+	ModelConnectionService,
 	Orchestrator,
 	SubscriptionService,
 	resolveActiveIdentity,
@@ -24,6 +25,7 @@ import {
 	Worker,
 } from "@adpluse/core";
 import { MemoryStorage, PostgresStorage } from "@adpluse/storage";
+import { createModelCredentialCipher } from "./model-credential-cipher.js";
 import { HttpSourceFetcher } from "./source-fetch.js";
 import type { TaskDraftExtractor } from "./task-draft-extractor.js";
 import { createTaskDraftModels } from "./task-draft-models.js";
@@ -140,6 +142,18 @@ export function compose(
 }
 export type Runtime = ReturnType<typeof compose> & { extractTaskDraft?: TaskDraftExtractor; taskDraftModels?: ReturnType<typeof createTaskDraftModels> };
 
+/**
+ * 个人模型连接的持久化基础。主密钥未配置/不合法时返回 undefined，
+ * 调用方据此返回不可用，而不是退回内存临时连接或明文。
+ */
+export function createModelConnections(
+	storage: Storage,
+	env: Record<string, string | undefined> = process.env,
+): ModelConnectionService | undefined {
+	const cipher = createModelCredentialCipher(env);
+	return cipher ? new ModelConnectionService(storage, cipher) : undefined;
+}
+
 export { taskDraftProviderIds } from "./task-draft-models.js";
 export { taskDraftBriefMaxLength, taskDraftStages } from "./task-draft-extractor.js";
 
@@ -150,6 +164,8 @@ export {
 } from "./source-fetch.js";
 export { runSources } from "./source-runner.js";
 export { discoverSource } from "./source-discovery.js";
+export { createModelCredentialCipher, parseModelCredentialKeyring } from "./model-credential-cipher.js";
+export type { CredentialKeyring } from "./model-credential-cipher.js";
 
 /** Derived from the allowlisted definitions so the two cannot drift. */
 const SOURCE_HOSTS = [
@@ -218,12 +234,15 @@ export async function fromEnvironment(
 			},
 		});
 	const taskDraftModels = createTaskDraftModels(env);
+	const storage = postgres ?? new MemoryStorage();
+	const modelConnections = createModelConnections(storage, env);
 	return {
 		...compose(postgres ?? new MemoryStorage(), accounts, reviewPolicy, {
 			decisionCardsEnabled: env.DECISION_CARDS_ENABLED === "1",
 			...(env.PUBLIC_ORIGIN ? { detailUrlBase: env.PUBLIC_ORIGIN } : {}),
 		}),
 		taskDraftModels,
+		modelConnections,
 		close: async () => {
 			await postgres?.close();
 		},

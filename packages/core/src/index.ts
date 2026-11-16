@@ -1,4 +1,5 @@
 export * from "./authentication.js";
+export * from "./model-connections.js";
 export * from "./notifications.js";
 export * from "./subscriptions.js";
 export * from "./notifications-queue.js";

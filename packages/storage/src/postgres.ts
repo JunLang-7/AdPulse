@@ -219,6 +219,23 @@ export class PostgresStorage implements Storage {
 					ON adpulse_notificationSelections ((data->>'ownerId'), (data->>'evaluatedAt'), id)`);
 				await client.query("INSERT INTO adpulse_schema_migrations(version) VALUES (12)");
 			}
+			if (!current.has(13)) {
+				for (const name of [
+					"userModelConnections",
+					"userModelCredentials",
+					"userModelPreferences",
+				]) await this.createEntityTable(client, name);
+				// 同一用户的 Provider ID 唯一；跨用户同名允许存在。并发创建由唯一索引兜底。
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_model_connection_provider
+					ON adpulse_userModelConnections ((data->>'ownerId'), (data->>'providerId'))`);
+				// 每条连接一份凭据；id 与 connectionId 相同，这里再按归属加一道约束。
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_model_credential_connection
+					ON adpulse_userModelCredentials ((data->>'ownerId'), (data->>'connectionId'))`);
+				// 每人一份默认选择。
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_model_preference_owner
+					ON adpulse_userModelPreferences ((data->>'ownerId'))`);
+				await client.query("INSERT INTO adpulse_schema_migrations(version) VALUES (13)");
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");
