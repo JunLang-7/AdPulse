@@ -265,11 +265,26 @@ export interface Task {
 	deletion?: { at: string; by: "owner"; manifestId: string };
 }
 
+/** 最小操作审计：只存动作与对象引用，不保存业务原文或凭据；保留 180 天。 */
+export interface AuditRecord {
+	id: string;
+	/** UTC 绝对时刻。 */
+	at: string;
+	kind: "task_deleted" | "task_purged" | "audit_purged";
+	/** 触发者：本人 id；系统清理为 "system"。 */
+	actorId: string;
+	objectId?: string;
+	/** 结果摘要，例如清理条数；不含业务内容。 */
+	detail?: string;
+}
+
 /** 删除清单：S3 的清理任务与 S4 的备份重放都以此为准，不依赖业务表是否已被清理。 */
 export interface LifecycleDeletion {
 	id: string;
 	ownerId: string;
 	taskId: string;
+	/** 本人确认删除，还是 365 天保留期到期触发；历史记录缺省按本人删除处理。 */
+	reason?: "owner_request" | "retention_expired";
 	requestedAt: string;
 	/** 在线清理截止：请求起 7 天。 */
 	deadlineAt: string;
@@ -867,6 +882,7 @@ export interface Entities {
 	sourceSnapshots: SourceSnapshot;
 	sourceItems: SourceItem;
 	lifecycleDeletions: LifecycleDeletion;
+	auditEvents: AuditRecord;
 	sessions: Session;
 	rounds: Round;
 	actions: ActionRef;

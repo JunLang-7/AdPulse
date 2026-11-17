@@ -755,9 +755,20 @@ bun run sources discover weichai_news campaigns
   不会因为别人失败而跳过其他用户的清单。
 - **不清理**：来源域（`sourceItems`/`sourceSnapshots` 等按 #41 自己的 30 天策略）、身份/配置、模型凭据。
 
+### 最小审计（#40，180 天）
+
+- 表 `auditEvents`（迁移 **16**）：`{id, at, kind, actorId, objectId?, detail?}`，只存动作与对象引用，
+  **不保存业务原文、标题、摘要或凭据**。
+- 写入点：本人确认删除（`task_deleted`/`owner_request`）、保留期到期自动排单（`task_deleted`/`retention_expired`）、
+  清理完成（`task_purged`）、审计自身清理（`audit_purged`）。
+- 保留 **180 天**，按每条记录自身 `at` 计算；**恰好等于边界时保留**，越过才清（与业务删除互不影响）。
+- 迁移 16 同时给 `tasks`/`evidenceHeads`/`evidenceVersions`/`evidenceSources`/`comparisonResults`/
+  `investigationAlerts`/`sessions`/`deliveries`/`notificationItems`/`notificationSelections`/`marketEvents`
+  补 `data->>'ownerId'` 索引，配合存储端口 `Table.listByOwner(ownerId)`，清理不再靠整表扫描。
+
 ### 仍未包含
 
-- 180 天最小审计表与备份 30 天淘汰/恢复演练（S4，等受控备份目标）。
+- 备份 30 天淘汰与「恢复前重放删除清单」演练（S4 的备份部分），等受控备份目标与密钥管理。
 - 已送达飞书副本与在途网络请求不可撤回；平台端不承诺 exactly-once。
 
 ## 8. 扩展与现有限制

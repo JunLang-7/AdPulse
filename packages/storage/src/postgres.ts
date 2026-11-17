@@ -256,6 +256,33 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (15)",
 				);
 			}
+			if (!current.has(16)) {
+				// #40：最小审计表（180 天独立保留）+ 清理用的 ownerId 索引，避免整表扫描。
+				await this.createEntityTable(client, "auditEvents");
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_audit_at
+					ON adpulse_auditEvents ((data->>'at'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_audit_object
+					ON adpulse_auditEvents ((data->>'objectId'), (data->>'at'))`);
+				for (const table of [
+					"tasks",
+					"evidenceHeads",
+					"evidenceVersions",
+					"evidenceSources",
+					"comparisonResults",
+					"investigationAlerts",
+					"sessions",
+					"deliveries",
+					"notificationItems",
+					"notificationSelections",
+					"marketEvents",
+				]) {
+					await client.query(`CREATE INDEX IF NOT EXISTS adpulse_${table.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)}_owner
+						ON adpulse_${table} ((data->>'ownerId'))`);
+				}
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (16)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");
@@ -307,6 +334,13 @@ export class PostgresStorage implements Storage {
 							[ids],
 						);
 						return result.rowCount ?? 0;
+					},
+					listByOwner: async (ownerId: string) => {
+						const result = await client.query(
+							`SELECT data FROM adpulse_${name} WHERE data->>'ownerId' = $1 ORDER BY id`,
+							[ownerId],
+						);
+						return result.rows.map((row: { data: Entities[typeof name] }) => row.data);
 					},
 					all: async () => {
 						const result = await client.query(

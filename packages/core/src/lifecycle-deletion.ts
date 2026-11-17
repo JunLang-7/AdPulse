@@ -1,8 +1,8 @@
 // 本人确认删除（#40 S2）：
 // 同一事务内建立「立即不可访问」状态、抑制该任务的待发提醒、写入删除清单。
 // 物理清理在 S3；本片只保证删除后旧任务与其历史一律不可访问（含重建同名任务后）。
-import { createHash } from "node:crypto";
 import { MS_PER_DAY, ONLINE_CLEANUP_DAYS } from "./lifecycle.js";
+import { lifecycleManifestId } from "./lifecycle-cleanup.js";
 import { NotificationQueue } from "./notifications-queue.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type { LifecycleDeletion, Task } from "./state/model.js";
@@ -21,7 +21,7 @@ export interface DeletionResult {
 }
 
 const manifestId = (ownerId: string, taskId: string): string =>
-	createHash("sha256").update(JSON.stringify([ownerId, taskId])).digest("hex");
+	lifecycleManifestId(ownerId, taskId);
 
 export class LifecycleDeletionService {
 	private readonly queue: NotificationQueue;
@@ -79,11 +79,20 @@ export class LifecycleDeletionService {
 			id,
 			ownerId,
 			taskId,
+			reason: "owner_request",
 			requestedAt: at,
 			deadlineAt: new Date(Date.parse(at) + ONLINE_CLEANUP_DAYS * MS_PER_DAY).toISOString(),
 			status: "pending",
 		};
 		await tx.lifecycleDeletions.put(manifest);
+		await tx.auditEvents.put({
+			id: `audit:delete:${id}`,
+			at,
+			kind: "task_deleted",
+			actorId: ownerId,
+			objectId: taskId,
+			detail: "owner_request",
+		});
 		return { manifest, created: true };
 	}
 

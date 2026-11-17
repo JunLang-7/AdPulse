@@ -1,16 +1,22 @@
 // 在线清理（#40 S3）：删除清单到期后，把该任务及其关联业务数据从在线库物理删除。
 //
-// 三条不变量：
-// 1) 只清理**已到期**的删除清单（requestedAt + 7 天）；未到期不动任何数据。
+// 四条不变量：
+// 1) 只清理**已到期**的清单（本人删除满 7 天、保留期到期）；未到期不动任何数据。
 // 2) 清理可重试：中途失败时清单保持 pending，下一次 tick 从头重放；重放不会报错。
 // 3) 只动本清单所属任务的数据，不碰其他用户、不碰来源域（#41 另有保留策略）。
-import { MS_PER_DAY } from "./lifecycle.js";
+// 4) 最小审计只记动作与对象引用，180 天后独立清理；不因业务删除而延长业务原文留存。
+import { createHash } from "node:crypto";
+import { AUDIT_RETENTION_DAYS, MS_PER_DAY, taskLifecycleIn } from "./lifecycle.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type { Entities, LifecycleDeletion } from "./state/model.js";
 
 export interface CleanupResult {
 	manifests: number;
 	removed: Record<string, number>;
+	/** 本次新排入的保留期到期清单数。 */
+	scheduled: number;
+	/** 本次清理掉的过期审计条数。 */
+	auditPurged: number;
 }
 
 type TableName = keyof Entities;
@@ -24,6 +30,7 @@ export class LifecycleCleanupService {
 	 */
 	async runOnce(): Promise<CleanupResult> {
 		const at = new Date(this.now()).toISOString();
+		const scheduled = await this.scheduleExpiredIn(at);
 		const due = (await new LifecycleCleanupReader(this.storage).due(at)).slice(0, 50);
 		const removed: Record<string, number> = {};
 		let manifests = 0;
@@ -37,7 +44,74 @@ export class LifecycleCleanupService {
 			manifests += 1;
 			for (const [table, count] of Object.entries(lock.value)) removed[table] = (removed[table] ?? 0) + count;
 		}
-		return { manifests, removed };
+		const auditPurged = await this.purgeAuditIn(at);
+		return { manifests, removed, scheduled, auditPurged };
+	}
+
+	/**
+	 * 保留期到期（365 天）的任务也要物理清理，而不是永远只是"不可访问"。
+	 * 复用同一份删除清单：`reason=retention_expired`，`deadlineAt=expiresAt`（到期即可清）。
+	 */
+	private async scheduleExpiredIn(at: string): Promise<number> {
+		const now = new Date(at);
+		const candidates = await this.storage.transaction(async (tx) => {
+			const existing = new Set((await tx.lifecycleDeletions.all()).map((row) => `${row.ownerId}:${row.taskId}`));
+			const out: Array<{ id: string; ownerId: string; taskId: string; requestedAt: string; deadlineAt: string; status: "pending"; reason: "retention_expired" }> = [];
+			for (const task of await tx.tasks.all()) {
+				if (existing.has(`${task.ownerId}:${task.id}`)) continue;
+				const lifecycle = await taskLifecycleIn(tx, task, now);
+				if (!lifecycle.expired || lifecycle.state === "deleted") continue;
+				out.push({
+					id: lifecycleManifestId(task.ownerId, task.id),
+					ownerId: task.ownerId,
+					taskId: task.id,
+					requestedAt: lifecycle.expiresAt,
+					deadlineAt: lifecycle.expiresAt,
+					status: "pending",
+					reason: "retention_expired",
+				});
+				if (out.length >= 50) break;
+			}
+			return out;
+		});
+		if (candidates.length === 0) return 0;
+		return this.storage.transaction(async (tx) => {
+			let created = 0;
+			for (const manifest of candidates) {
+				if (await tx.lifecycleDeletions.get(manifest.id)) continue;
+				await tx.lifecycleDeletions.put(manifest);
+				await tx.auditEvents.put({
+					id: `audit:expiry:${manifest.id}`,
+					at,
+					kind: "task_deleted",
+					actorId: "system",
+					objectId: manifest.taskId,
+					detail: "retention_expired",
+				});
+				created += 1;
+			}
+			return created;
+		});
+	}
+
+	/** 最小审计保留 180 天；按 UTC 绝对时刻清理，batches 逐条删除。 */
+	private async purgeAuditIn(at: string): Promise<number> {
+		const cutoff = new Date(Date.parse(at) - AUDIT_RETENTION_DAYS * MS_PER_DAY).toISOString();
+		return this.storage.transaction(async (tx) => {
+			const expired = (await tx.auditEvents.all())
+				.filter((row) => Date.parse(row.at) < Date.parse(cutoff))
+				.map((row) => row.id);
+			if (expired.length === 0) return 0;
+			await tx.auditEvents.remove(expired);
+			await tx.auditEvents.put({
+				id: `audit:purge:${at.slice(0, 10)}`,
+				at,
+				kind: "audit_purged",
+				actorId: "system",
+				detail: `removed ${expired.length}`,
+			});
+			return expired.length;
+		});
 	}
 
 	private async cleanIn(
@@ -50,14 +124,15 @@ export class LifecycleCleanupService {
 		const { ownerId, taskId } = current;
 
 		// 归属检索：先算出本任务的全部引用 id，再按依赖顺序批量删除。
+		// 归属检索走 listByOwner（PG 上是 data->>'ownerId' + 索引），不做整表扫描。
 		const alertIds = new Set(
-			(await tx.investigationAlerts.all())
-				.filter((row) => row.ownerId === ownerId && row.taskId === taskId)
+			(await tx.investigationAlerts.listByOwner(ownerId))
+				.filter((row) => row.taskId === taskId)
 				.map((row) => row.id),
 		);
-		const sessions = (await tx.sessions.all()).filter(
-			(row) => row.ownerId === ownerId
-				&& (row.taskRef?.taskId === taskId || (row.investigationAlertId && alertIds.has(row.investigationAlertId))),
+		const sessions = (await tx.sessions.listByOwner(ownerId)).filter(
+			(row) => row.taskRef?.taskId === taskId
+				|| (row.investigationAlertId !== undefined && alertIds.has(row.investigationAlertId)),
 		);
 		const sessionIds = new Set(sessions.map((row) => row.id));
 		const roundIds = new Set(
@@ -143,6 +218,14 @@ export class LifecycleCleanupService {
 		await remove("tasks", [taskId]);
 
 		await tx.lifecycleDeletions.put({ ...current, status: "cleaned", cleanedAt: at });
+		await tx.auditEvents.put({
+			id: `audit:purged:${manifest.id}`,
+			at,
+			kind: "task_purged",
+			actorId: "system",
+			objectId: taskId,
+			detail: current.reason ?? "owner_request",
+		});
 		return removed;
 	}
 }
@@ -158,6 +241,11 @@ class LifecycleCleanupReader {
 				.sort((a, b) => a.deadlineAt.localeCompare(b.deadlineAt)),
 		);
 	}
+}
+
+/** 与 LifecycleDeletionService 保持一致的确定性清单 id。 */
+export function lifecycleManifestId(ownerId: string, taskId: string): string {
+	return createHash("sha256").update(JSON.stringify([ownerId, taskId])).digest("hex");
 }
 
 export { MS_PER_DAY };

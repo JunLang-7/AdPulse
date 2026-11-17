@@ -448,3 +448,103 @@ test("PostgreSQL：在线清理按清单删除全部关联并标记 cleaned", { 
 		await admin.end();
 	}
 });
+
+test("在线清理：保留期到期（365 天）的任务也会被排入清单并物理清理", async () => {
+	const f = await fixture();
+	const { LifecycleCleanupService } = await import("../packages/core/dist/index.js");
+	const expiresAt = (await f.lifecycle()).expiresAt;
+	const cleanup = new LifecycleCleanupService(f.storage, f.clock);
+
+	// 到期前：不排清单、不清数据。
+	f.setTime(new Date(Date.parse(expiresAt) - 60_000).toISOString());
+	const before = await cleanup.runOnce();
+	assert.equal(before.scheduled, 0);
+	assert.ok(await f.storage.transaction((tx) => tx.tasks.get(f.task.taskId)));
+
+	// 到期时刻：自动排入 retention_expired 清单并当轮清理。
+	f.setTime(expiresAt);
+	const result = await cleanup.runOnce();
+	assert.equal(result.scheduled, 1, "到期任务被排入清理清单");
+	assert.equal(result.manifests, 1, "同一轮即可清理（deadlineAt 已到）");
+	assert.equal(await f.storage.transaction((tx) => tx.tasks.get(f.task.taskId)), null);
+	const manifest = (await f.storage.transaction((tx) => tx.lifecycleDeletions.all()))[0]!;
+	assert.equal(manifest.reason, "retention_expired");
+	assert.equal(manifest.status, "cleaned");
+
+	// 再跑一次不重复排、不重复清。
+	const again = await cleanup.runOnce();
+	assert.equal(again.scheduled, 0);
+	assert.equal(again.manifests, 0);
+});
+
+test("最小审计：写入动作与对象引用，180 天后独立清理且不留业务原文", async () => {
+	const f = await fixture();
+	const { LifecycleCleanupService } = await import("../packages/core/dist/index.js");
+	const manifest = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
+	const audit = () => f.storage.transaction((tx) => tx.auditEvents.all());
+
+	const afterDelete = await audit();
+	assert.equal(afterDelete.length, 1);
+	assert.equal(afterDelete[0]?.kind, "task_deleted");
+	assert.equal(afterDelete[0]?.objectId, f.task.taskId);
+	assert.equal(afterDelete[0]?.detail, "owner_request");
+	assert.ok(!JSON.stringify(afterDelete).includes("生命周期任务"), "审计不含业务原文");
+
+	const cleanup = new LifecycleCleanupService(f.storage, f.clock);
+	f.setTime(manifest.deadlineAt);
+	await cleanup.runOnce();
+	const afterPurge = await audit();
+	assert.ok(afterPurge.some((row) => row.kind === "task_purged"), "清理完成写审计");
+
+	// 180 天边界：按每条审计自身时刻计算，差 1 毫秒保留、到点清理。
+	// `task_deleted` 发生在 deadline-7 天，`task_purged` 发生在 deadline。
+	const boundary = (offsetDays: number, ms = 0) =>
+		new Date(Date.parse(manifest.deadlineAt) + offsetDays * MS_PER_DAY + ms).toISOString();
+	f.setTime(boundary(180, -1));
+	const firstPurge = await cleanup.runOnce();
+	assert.equal(firstPurge.auditPurged, 1, "只清理已满 180 天的删除审计");
+	assert.ok((await audit()).some((row) => row.kind === "task_purged"), "未满 180 天的清理审计保留");
+	f.setTime(boundary(180));
+	assert.equal((await cleanup.runOnce()).auditPurged, 0, "恰好等于 180 天边界时保留");
+	f.setTime(boundary(180, 1));
+	assert.equal((await cleanup.runOnce()).auditPurged, 1, "越过边界后清理");
+	const remaining = await audit();
+	assert.ok(!remaining.some((row) => row.kind === "task_purged"), "业务审计已清理");
+	assert.ok(remaining.every((row) => row.kind === "audit_purged"), "只留下审计清理自身的记录");
+});
+
+test("PostgreSQL：listByOwner 与 ownerId 索引支撑清理，且审计表可查", { skip: !process.env.TEST_DATABASE_URL }, async () => {
+	const url = process.env.TEST_DATABASE_URL!;
+	const { createRequire } = await import("node:module");
+	const { Pool } = createRequire(new URL("../packages/storage/package.json", import.meta.url))("pg") as {
+		Pool: new (options: { connectionString: string; options?: string }) => ConstructorParameters<typeof PostgresStorage>[0];
+	};
+	const admin = new Pool({ connectionString: url }) as unknown as { query(sql: string): Promise<{ rows: Array<{ indexname?: string }> }>; end(): Promise<void> };
+	const schema = `lifecycle_owner_${randomUUID().replaceAll("-", "")}`;
+	await admin.query(`CREATE SCHEMA ${schema}`);
+	const pool = new Pool({ connectionString: url, options: `-c search_path=${schema}` });
+	const storage = new PostgresStorage(pool);
+	try {
+		await storage.initialize();
+		const start = "2026-01-01T00:00:00.000Z";
+		const identity = { platform: "feishu", applicationId: "cli_test", tenantId: "tenant-a", idType: "open_id", externalId: randomUUID() };
+		const session = await new AuthenticationService(storage).createWebSession(identity, createHash("sha256").update(randomUUID()).digest("hex"), start);
+		const tasks = new TaskService(storage, () => start);
+		const task = await tasks.create(session.userId, randomUUID(), taskInput);
+		await tasks.create(session.userId, randomUUID(), taskInput);
+		const mine = await storage.transaction((tx) => tx.tasks.listByOwner(session.userId));
+		assert.equal(mine.length, 2, "按归属检索只返回本人任务");
+		assert.deepEqual(await storage.transaction((tx) => tx.tasks.listByOwner("someone-else")), []);
+		await tasks.delete(session.userId, task.taskId);
+		const audits = await storage.transaction((tx) => tx.auditEvents.listByOwner("system"));
+		assert.equal(audits.length, 0, "系统审计的 actorId 不是本人，按 ownerId 检索不会串到用户表");
+		const indexes = await admin.query(
+			`SELECT indexname FROM pg_indexes WHERE schemaname = '${schema}' AND indexname IN ('adpulse_tasks_owner','adpulse_audit_at','adpulse_notification_items_owner') ORDER BY indexname`,
+		) as unknown as { rows: Array<{ indexname: string }> };
+		assert.ok(indexes.rows.length >= 2, "ownerId 与审计索引已建立");
+	} finally {
+		await storage.close();
+		await admin.query(`DROP SCHEMA ${schema} CASCADE`);
+		await admin.end();
+	}
+});

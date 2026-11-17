@@ -32,6 +32,7 @@ export const tableNames = [
 	"comparisonFollowUps",
 	"investigationAlerts",
 	"lifecycleDeletions",
+	"auditEvents",
 	"sourceStates",
 	"sourceRuns",
 	"sourceSnapshots",
@@ -83,6 +84,12 @@ export class MemoryStorage implements Storage {
 							for (const id of ids) if (draft[name].delete(id)) removed += 1;
 							return removed;
 						},
+						listByOwner: async (ownerId: string) =>
+							structuredClone(
+								[...draft[name].values()].filter(
+									(row) => (row as { ownerId?: string }).ownerId === ownerId,
+								),
+							),
 						all: async () => structuredClone([...draft[name].values()]),
 					},
 				]),
