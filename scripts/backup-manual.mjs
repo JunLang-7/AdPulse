@@ -125,6 +125,30 @@ if (!has("no-prune")) {
 	}
 }
 
+// 30 天 / 37 天淘汰：本地目录就是"备份存储"，策略与将来的对象存储一致。
+let evicted = { removed: [], failed: [], forDeletions: 0, violations: [] };
+if (!has("no-evict")) {
+	try {
+		const { LifecycleBackupService } = await import("../packages/core/dist/index.js");
+		const { PostgresStorage } = await import("../packages/storage/dist/index.js");
+		const localStore = {
+			list: async () => readdirSync(outDir)
+				.filter((n) => /^adpulse-\d{4}-\d{2}-\d{2}T.*\.dump\.gz$/.test(n))
+				.map((n) => ({ name: n, createdAt: statSync(join(outDir, n)).mtime.toISOString() })),
+			remove: async (n) => { rmSync(join(outDir, n)); },
+		};
+		const storage = PostgresStorage.connect(databaseUrl);
+		try {
+			evicted = await new LifecycleBackupService(localStore, storage).evictOnce();
+		} finally {
+			await storage.close();
+		}
+	} catch (error) {
+		// 软目标：淘汰失败不影响备份本身。
+		evicted = { removed: [], failed: [{ name: "*", reason: error instanceof Error ? error.message : "unknown" }], forDeletions: 0, violations: [] };
+	}
+}
+
 process.stdout.write(`${JSON.stringify({
 	file: target,
 	sizeBytes: size,
@@ -132,9 +156,10 @@ process.stdout.write(`${JSON.stringify({
 	gzipVerified: verified,
 	kept: Math.min(keep, readdirSync(outDir).filter((name) => name.endsWith(".dump.gz")).length),
 	pruned,
+	evicted,
 	via: tool.kind,
 	durationMs: Date.now() - started,
-	note: "手工备份：不含删除清单、未加密、不构成受控备份；恢复需另行重放清单",
+	note: "手工备份：不含删除清单、未加密、不构成受控备份；恢复需另行重放清单（--no-evict 可跳过淘汰）",
 }, null, 2)}\n`);
 
 if (!verified) {

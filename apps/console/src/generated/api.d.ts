@@ -304,6 +304,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/lifecycle-deletions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 本人删除请求的清理进度（#40）
+         * @description 只读：返回本人删除清单的 status（pending/cleaned）、requestedAt、deadlineAt（请求起 7 天）与 cleanedAt。不含业务正文。
+         */
+        get: operations["listLifecycleDeletions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/source-leads": {
         parameters: {
             query?: never;
@@ -3420,6 +3440,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationStatus"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listLifecycleDeletions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own deletion manifests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["LifecycleDeletion"][];
+                    };
                 };
             };
             /** @description Unauthorized */

@@ -12,6 +12,7 @@ import {
 	NotificationError,
 	NotificationRecordError,
 	NotificationRecordService,
+	LifecycleDeletionService,
 	NotificationSelectionService,
 	SourceLeadError,
 	SourceLeadService,
@@ -154,6 +155,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 	const notificationRecords = new NotificationRecordService(runtime.storage);
 	const notificationSelections = new NotificationSelectionService(runtime.storage);
 	const sourceLeads = new SourceLeadService(runtime.storage);
+	const lifecycleDeletions = new LifecycleDeletionService(runtime.storage);
 	const subscriptions = new SubscriptionService(runtime.storage);
 	const subscriptionErrorStatus = (reason: SubscriptionError["reason"]): number => {
 		switch (reason) {
@@ -576,6 +578,10 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				}
 				if (path === "/api/me/notification-status" && req.method === "GET") {
 					return json(res, 200, await notifications.status(session.userId));
+				}
+				if (path === "/api/me/lifecycle-deletions" && req.method === "GET") {
+					// 只读：本人删除请求的清理进度（pending / cleaned），不含业务正文。
+					return json(res, 200, { items: await lifecycleDeletions.list(session.userId) });
 				}
 				if (path === "/api/me/source-leads" && req.method === "GET") {
 					const params = requestUrl.searchParams;

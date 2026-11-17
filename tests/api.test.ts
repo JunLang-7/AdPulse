@@ -1065,3 +1065,27 @@ test("任务删除 API: 幂等、跨用户不可删、删除后任务与判定�
   assert.equal((await fetch(`${s.url}/api/tasks/${fresh.taskId}`, { headers: s.headers })).status, 200);
   assert.equal((await fetch(`${s.url}/api/tasks/${task.taskId}`, { headers: s.headers })).status, 404);
 });
+
+test("删除清单状态 API: 只返回本人的删除进度，不含业务正文", async (t) => {
+  const s = await serve(t);
+  const created = await fetch(`${s.url}/api/tasks`, {
+    method: "POST",
+    headers: { ...s.headers, "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify({ product: "待删任务", strategy: { objective: "咨询", audience: [], channels: {}, sellingPoints: [] }, observation: {}, rules: {} }),
+  });
+  const task = (await created.json()) as { taskId: string };
+  assert.equal((await fetch(`${s.url}/api/tasks/${task.taskId}`, { method: "DELETE", headers: s.headers })).status, 200);
+
+  const mine = await fetch(`${s.url}/api/me/lifecycle-deletions`, { headers: s.headers });
+  assert.equal(mine.status, 200);
+  const body = (await mine.json()) as { items: Array<Record<string, unknown>> };
+  assert.equal(body.items.length, 1);
+  assert.equal(body.items[0]?.taskId, task.taskId);
+  assert.equal(body.items[0]?.status, "pending");
+  assert.equal(body.items[0]?.reason, "owner_request");
+  assert.ok(!JSON.stringify(body).includes("待删任务"), "状态里不含任务正文");
+
+  const stranger = (await (await fetch(`${s.url}/api/me/lifecycle-deletions`, { headers: s.strangerHeaders })).json()) as { items: unknown[] };
+  assert.equal(stranger.items.length, 0, "跨用户看不到别人的删除状态");
+  assert.equal((await fetch(`${s.url}/api/me/lifecycle-deletions`)).status, 401);
+});
