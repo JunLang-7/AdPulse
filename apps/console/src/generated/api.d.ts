@@ -467,6 +467,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskId}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * 任务到期判定查询（#40 S1）
+         * @description 返回计时锚点、到期时刻与当前状态。365 天按 UTC 绝对时刻计算，普通查看/消息重试/worker 重启都不续期；到期后任务按不可访问处理。物理清理与备份策略在后续切片实现。
+         */
+        get: operations["getTaskLifecycle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{taskId}": {
         parameters: {
             query?: never;
@@ -1342,6 +1364,26 @@ export interface components {
         TaskRevision: {
             expectedTaskVersion: number;
             task: components["schemas"]["TaskInput"];
+        };
+        TaskLifecycle: {
+            taskId: string;
+            /** @enum {string} */
+            state: "active" | "expired";
+            /**
+             * Format: date-time
+             * @description 计时起点：观测期结束与最后有效业务更新中较早的已知时刻
+             */
+            anchor: string;
+            /** @enum {string} */
+            anchorSource: "observation_ends_at" | "last_business_update";
+            /** Format: date-time */
+            lastBusinessUpdate: string;
+            /** Format: date-time */
+            observationEndsAt: string | null;
+            /** Format: date-time */
+            expiresAt: string;
+            retentionDays: number;
+            expired: boolean;
         };
         TaskDetail: {
             task: components["schemas"]["TaskVersion"];
@@ -3783,6 +3825,46 @@ export interface operations {
             };
             /** @description Idempotency conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getTaskLifecycle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lifecycle */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskLifecycle"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Task not found or not owned */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

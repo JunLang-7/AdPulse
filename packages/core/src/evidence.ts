@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { taskActiveIn } from "./lifecycle.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import { invalidateAlertsForEvidenceUpdate } from "./investigation-alerts.js";
 import type {
@@ -340,7 +341,8 @@ export class EvidenceService {
 			const taskVersion = await tx.taskVersions.get(
 				`${input.taskRef.taskId}:${input.taskRef.taskVersion}`,
 			);
-			if (!task || task.ownerId !== ownerId || !taskVersion)
+			if (!task || task.ownerId !== ownerId || !taskVersion
+				|| !(await taskActiveIn(tx, task, new Date(this.now()))))
 				throw new EvidenceValidationError("task not found");
 			const results: EvidenceImportResult[] = [];
 			for (const record of input.records) {
@@ -506,7 +508,7 @@ export class EvidenceService {
 	): Promise<EvidenceVersion[]> {
 		return this.storage.transaction(async (tx) => {
 			const task = await tx.tasks.get(taskId);
-			if (!task || task.ownerId !== ownerId)
+			if (!task || task.ownerId !== ownerId || !(await taskActiveIn(tx, task, new Date(this.now()))))
 				throw new EvidenceValidationError("task not found");
 			const heads = (await tx.evidenceHeads.all()).filter(
 				(head) => head.ownerId === ownerId && head.taskId === taskId,

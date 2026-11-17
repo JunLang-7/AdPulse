@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { taskActiveIn } from "./lifecycle.js";
 import { NotificationSelectionService } from "./notifications-selection.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
@@ -259,7 +260,8 @@ export class InvestigationAlertService {
 				throw new InvestigationAlertValidationError("comparison evidence unavailable");
 			const task = await tx.tasks.get(result.taskId);
 			const rules = await tx.taskVersions.get(`${result.rulesRef.taskId}:${result.rulesRef.version}`);
-			if (!task || task.ownerId !== ownerId || !rules)
+			if (!task || task.ownerId !== ownerId || !rules
+				|| !(await taskActiveIn(tx, task, new Date(this.now()))))
 				throw new InvestigationAlertValidationError("comparison task unavailable");
 			const sources = await tx.evidenceSources.all();
 			const source = sourceFor(sources, current);

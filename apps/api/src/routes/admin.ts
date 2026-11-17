@@ -9,7 +9,7 @@ import type {
 	TaskInput,
 	Transaction,
 } from "@adpluse/core";
-import { ModelConnectionError, modelConnectionProtocols, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
+import { ModelConnectionError, modelConnectionProtocols, taskLifecycleIn, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
 import { findCatalogModel, taskDraftBriefMaxLength, taskDraftStages, type Runtime, type TaskDraftSelection } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
@@ -758,11 +758,20 @@ export async function handleAdmin(
 		if (!detail) throw new HttpError(404, "evidence not found");
 		return json(res, 200, detail);
 	}
+	const taskLifecycle = path.match(/^\/api\/tasks\/([^/]+)\/lifecycle$/);
+	if (taskLifecycle?.[1] && req.method === "GET") {
+		const lifecycle = await runtime.tasks.lifecycle(userId, decodeURIComponent(taskLifecycle[1]!));
+		if (!lifecycle) throw new HttpError(404, "task not found");
+		return json(res, 200, lifecycle);
+	}
 	if (path.startsWith("/api/tasks/") && req.method === "GET") {
 		const id = decodeURIComponent(path.slice("/api/tasks/".length));
 		const result = await runtime.storage.transaction(async (tx) => {
 			const task = await tx.tasks.get(id);
 			if (!task || task.ownerId !== userId)
+				throw new HttpError(404, "task not found");
+			// 到期即限访：不把到期任务的当前版本当成可读业务数据。
+			if ((await taskLifecycleIn(tx, task, new Date())).expired)
 				throw new HttpError(404, "task not found");
 			const versions = (await tx.taskVersions.all())
 				.filter((version) => version.taskId === id)

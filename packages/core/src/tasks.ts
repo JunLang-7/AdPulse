@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { validateStrategy, type Strategy } from "./domain/strategy.js";
 import type { Storage } from "./ports/storage.js";
 import { invalidateAlertsForTaskVersion } from "./investigation-alerts.js";
+import { taskLifecycleIn, type TaskLifecycle } from "./lifecycle.js";
 import type { Task, TaskVersion } from "./state/model.js";
 
 export interface TaskInput {
@@ -180,11 +181,22 @@ export class TaskService {
 		});
 	}
 
+	/** 到期即限访：任务到期后一律按「不可访问」处理，不靠前端隐藏。 */
 	async get(ownerId: string, taskId: string): Promise<TaskVersion | null> {
 		return this.storage.transaction(async (tx) => {
 			const task = await tx.tasks.get(taskId);
 			if (!task || task.ownerId !== ownerId) return null;
+			if ((await taskLifecycleIn(tx, task, new Date(this.now()))).expired) return null;
 			return tx.taskVersions.get(`${taskId}:${task.currentVersion}`);
+		});
+	}
+
+	/** 到期判定查询：返回锚点、到期时刻与当前状态，供「普通查看不续期」断言。 */
+	async lifecycle(ownerId: string, taskId: string): Promise<TaskLifecycle | null> {
+		return this.storage.transaction(async (tx) => {
+			const task = await tx.tasks.get(taskId);
+			if (!task || task.ownerId !== ownerId) return null;
+			return taskLifecycleIn(tx, task, new Date(this.now()));
 		});
 	}
 
@@ -205,8 +217,12 @@ export class TaskService {
 			const tasks = (await tx.tasks.all()).filter(
 				(task) => task.ownerId === ownerId,
 			);
+			const now = new Date(this.now());
+			const live: typeof tasks = [];
+			for (const task of tasks)
+				if (!(await taskLifecycleIn(tx, task, now)).expired) live.push(task);
 			const versions = await Promise.all(
-				tasks.map((task) =>
+				live.map((task) =>
 					tx.taskVersions.get(`${task.id}:${task.currentVersion}`),
 				),
 			);

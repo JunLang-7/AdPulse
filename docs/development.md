@@ -709,6 +709,20 @@ bun run sources discover weichai_news campaigns
 
 命令在临时配置目录内只执行 `web search`。查询最多返回 5 条结果，AdPulse 只输出两家官网新闻链接、去重标题及可解析的索引日期。潍柴搜索限定在 `www.weichai.com` 的新闻与事件栏目，兼容栏目下有分类和无分类两种文章路径。`verification: unverified` 和 `indexedPublishedAt` 表示这些字段来自搜索索引，须对照原文核对。发现结果只输出到终端，采集入库与用户展示仍按 [#41](https://github.com/JunLang-7/AdPulse/issues/41)、[#38](https://github.com/JunLang-7/AdPulse/issues/38) 和 [#37](https://github.com/JunLang-7/AdPulse/issues/37) 分别验收。限流或访问阻断会结束当前命令。
 
+## 7.1 任务生命周期（#40 S1：到期与限访）
+
+只做到期判定与读取限访；物理清理、删除确认、180 天审计与备份策略在后续切片实现。
+
+- **保留期**：任务、必要证据与决定记录 **365 天**；派生引用不延长原文留存。
+- **计时锚点**：取「观测期结束（`observation.endsAt`）」与「最后有效业务更新」中**较早**的已知时刻。
+  最后有效业务更新 = 任务版本、证据版本、比较结果、告警更新的最大 `createdAt`/`updatedAt`。
+  普通查看、消息重试、worker 重启都**不续期**。
+- **限访**：到期后 `tasks.get` / `tasks.list` 返回不可访问；`GET /api/tasks/{id}` 返回 404；
+  证据导入、比较评估、告警评估均拒绝；提醒在发送前复检时判定失效，不再发出。
+- **判定查询**：`GET /api/tasks/{taskId}/lifecycle` 返回 `anchor`、`anchorSource`、`expiresAt`、
+  `state`、`expired`、`retentionDays`，用于断言「普通查看不续期」「到期即限访」。
+- 全部按 UTC 绝对时刻与 24 小时/天计算；测试通过注入时钟验证边界，不靠真实等待。
+
 ## 8. 扩展与现有限制
 
 新接 IM：在 channels 中实现 InboundChannel 和 OutboundChannel，构造 ChannelAccount，在 runtime 注册。增加原始请求/ACK、渲染、账户隔离与重试测试；不要把平台字段或 HTTP 响应移入 core。

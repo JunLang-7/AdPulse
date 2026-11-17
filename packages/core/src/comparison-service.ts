@@ -4,6 +4,7 @@ import {
 	evaluateEvidenceComparison,
 	isFollowUpReason,
 } from "./comparisons.js";
+import { taskActiveIn } from "./lifecycle.js";
 import type { Storage } from "./ports/storage.js";
 import type {
 	ComparisonEvidenceRef,
@@ -278,7 +279,7 @@ export class ComparisonService {
 			if (input.baseline && (!baseline || baseline.ownerId !== ownerId))
 				throw new ComparisonValidationError("evidence not found");
 			const task = await tx.tasks.get(current.taskId);
-			if (!task || task.ownerId !== ownerId)
+			if (!task || task.ownerId !== ownerId || !(await taskActiveIn(tx, task, new Date(this.now()))))
 				throw new ComparisonValidationError("task not found");
 			const rules = await tx.taskVersions.get(`${current.taskId}:${current.taskVersion}`);
 			if (!rules)
@@ -388,7 +389,7 @@ export class ComparisonService {
 	): Promise<ComparisonResult[]> {
 		return this.storage.transaction(async (tx) => {
 			const task = await tx.tasks.get(taskId);
-			if (!task || task.ownerId !== ownerId)
+			if (!task || task.ownerId !== ownerId || !(await taskActiveIn(tx, task, new Date(this.now()))))
 				throw new ComparisonValidationError("task not found");
 			return (await tx.comparisonResults.all())
 				.filter((item) => item.ownerId === ownerId && item.taskId === taskId)
@@ -402,7 +403,7 @@ export class ComparisonService {
 	): Promise<ComparisonFollowUp[]> {
 		return this.storage.transaction(async (tx) => {
 			const task = await tx.tasks.get(taskId);
-			if (!task || task.ownerId !== ownerId)
+			if (!task || task.ownerId !== ownerId || !(await taskActiveIn(tx, task, new Date(this.now()))))
 				throw new ComparisonValidationError("task not found");
 			return (await tx.comparisonFollowUps.all())
 				.filter((item) => item.ownerId === ownerId && item.taskId === taskId)

@@ -1040,6 +1040,19 @@
         }
       }
     },
+    "/api/tasks/{taskId}/lifecycle": {
+      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "getTaskLifecycle",
+        "summary": "任务到期判定查询（#40 S1）",
+        "description": "返回计时锚点、到期时刻与当前状态。365 天按 UTC 绝对时刻计算，普通查看/消息重试/worker 重启都不续期；到期后任务按不可访问处理。物理清理与备份策略在后续切片实现。",
+        "responses": {
+          "200": { "description": "Lifecycle", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskLifecycle" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Task not found or not owned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/api/tasks/{taskId}": {
       "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
       "get": {
@@ -3012,6 +3025,22 @@
           "task": { "$ref": "#/components/schemas/TaskInput" }
         },
         "required": ["expectedTaskVersion", "task"],
+        "additionalProperties": false
+      },
+      "TaskLifecycle": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string" },
+          "state": { "type": "string", "enum": ["active", "expired"] },
+          "anchor": { "type": "string", "format": "date-time", "description": "计时起点：观测期结束与最后有效业务更新中较早的已知时刻" },
+          "anchorSource": { "type": "string", "enum": ["observation_ends_at", "last_business_update"] },
+          "lastBusinessUpdate": { "type": "string", "format": "date-time" },
+          "observationEndsAt": { "type": ["string", "null"], "format": "date-time" },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "retentionDays": { "type": "integer", "minimum": 1 },
+          "expired": { "type": "boolean" }
+        },
+        "required": ["taskId", "state", "anchor", "anchorSource", "lastBusinessUpdate", "observationEndsAt", "expiresAt", "retentionDays", "expired"],
         "additionalProperties": false
       },
       "TaskDetail": {
