@@ -353,7 +353,32 @@ export class ModelConnectionService {
 			});
 		} catch (error) {
 			if (error instanceof ModelConnectionError) throw error;
-			// 并发下可能先通过预查、再撞唯一索引：映射成同一个冲突错误，不泄露驱动细节。
+			// 唯一约束命中：直接视为冲突。
+			if ((error as { code?: string }).code === "23505")
+				throw new ModelConnectionError("connection_conflict", "providerId already exists");
+			// 并发下可能先通过预查、再撞唯一索引；也可能在 SERIALIZABLE 下拿到 40001，
+			// 而赢家事务此时尚未提交，立刻复查会查不到。SERIALIZABLE 的标准做法是重试一次：
+			// 重试时预查能看到已提交的赢家，从而稳定返回同一个冲突错误（而不是驱动异常）。
+			if ((error as { code?: string }).code === "40001") {
+				const raced = await this.storage.transaction(async (tx) =>
+					(await tx.userModelConnections.all()).some(
+						(candidate) => candidate.ownerId === ownerId && candidate.providerId === providerId,
+					),
+				);
+				if (raced)
+					throw new ModelConnectionError("connection_conflict", "providerId already exists");
+				return this.storage.transaction(async (tx) => {
+					const existing = (await tx.userModelConnections.all()).find(
+						(candidate) => candidate.ownerId === ownerId && candidate.providerId === providerId,
+					);
+					if (existing)
+						throw new ModelConnectionError("connection_conflict", "providerId already exists");
+					await tx.userModelConnections.put(connection);
+					await tx.userModelCredentials.put(credential);
+					return project(connection, true);
+				});
+			}
+			// 其余错误：仍然复查一次，能确定是并发重复就映射成冲突，否则原样抛出。
 			const raced = await this.storage.transaction(async (tx) =>
 				(await tx.userModelConnections.all()).some(
 					(candidate) => candidate.ownerId === ownerId && candidate.providerId === providerId,
