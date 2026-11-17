@@ -9,6 +9,7 @@ import {
 	CardTitle,
 } from "../../../components/ui/card";
 
+import { Section } from "../../../components/ui/section";
 import { formatBeijingTime } from "./task-form.js";
 
 /** 「11月17日 19:38」这种最短可读写法；毫秒对用户没有意义。 */
@@ -78,7 +79,7 @@ export default function TasksPage() {
 		return <div className="p-6 text-red-600">读取任务失败：{String(error)}</div>;
 
 	return (
-		<div className="p-6 space-y-4">
+		<div className="p-6 space-y-8">
 			<div className="flex items-baseline justify-between gap-3">
 				<div>
 					<h1 className="text-2xl font-bold">推广任务</h1>
@@ -96,39 +97,40 @@ export default function TasksPage() {
 
 			{notice ? <p role="status" className="rounded-md border p-3 text-sm">{notice}</p> : null}
 
-			{data?.length === 0 ? (
-				<p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-					还没有推广任务。创建任务时可以先留空未确认的预算、出价和规则。
-				</p>
-			) : null}
+			<Section title={`推广任务${data ? `（${data.length}）` : ""}`} hint="未填写的预算、阈值等保持未知">
+				{data?.length === 0 ? (
+					<p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+						还没有推广任务。创建任务时可以先留空未确认的预算、出价和规则。
+					</p>
+				) : null}
+				<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+					{data?.map((task) => (
+						<Link key={task.taskId} to={`/tasks/${task.taskId}`}>
+							<Card className="h-full transition hover:ring-foreground/25">
+								<CardHeader>
+									<div className="flex items-start justify-between gap-2">
+										<CardTitle className="line-clamp-2">{task.product}</CardTitle>
+										<Badge variant="outline">第 {task.version} 版</Badge>
+									</div>
+								</CardHeader>
+								<CardContent className="space-y-2">
+									<p className="whitespace-pre-line text-sm">{task.strategy.objective || "目标待补充"}</p>
+									<p className="text-sm text-muted-foreground line-clamp-2">
+										{task.strategy.audience.length
+										? task.strategy.audience.join("、")
+										: "受众待补充"}
+									</p>
+									<p className="text-xs text-muted-foreground">
+										更新于 {formatBeijingTime(task.createdAt)}
+									</p>
+								</CardContent>
+							</Card>
+						</Link>
+						))}
+				</div>
+			</Section>
 
 			<DeletionStatus />
-
-			<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-				{data?.map((task) => (
-					<Link key={task.taskId} to={`/tasks/${task.taskId}`}>
-						<Card className="h-full transition hover:ring-foreground/25">
-							<CardHeader>
-								<div className="flex items-start justify-between gap-2">
-									<CardTitle className="line-clamp-2">{task.product}</CardTitle>
-									<Badge variant="outline">第 {task.version} 版</Badge>
-								</div>
-							</CardHeader>
-							<CardContent className="space-y-2">
-								<p className="whitespace-pre-line text-sm">{task.strategy.objective || "目标待补充"}</p>
-								<p className="text-sm text-muted-foreground line-clamp-2">
-									{task.strategy.audience.length
-									? task.strategy.audience.join("、")
-									: "受众待补充"}
-								</p>
-								<p className="text-xs text-muted-foreground">
-									更新于 {formatBeijingTime(task.createdAt)}
-								</p>
-							</CardContent>
-						</Card>
-					</Link>
-				))}
-			</div>
 		</div>
 	);
 }
