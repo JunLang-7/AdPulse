@@ -91,6 +91,11 @@ test("市场事件页：事件区在上、线索区在下，两块分区可见",
 		events.compareDocumentPosition(leads) & Node.DOCUMENT_POSITION_FOLLOWING,
 		"事件区在前，线索区在后",
 	);
+	const details = leads.closest("details");
+	assert.ok(details, "线索区可折叠");
+	assert.equal(details.hasAttribute("open"), false, "默认收起，不抢事件区的注意力");
+	fireEvent.click(screen.getByText(/官网列表的标题与链接/));
+	assert.equal(details.hasAttribute("open"), true, "点标题可展开");
 });
 
 test("市场事件页：线索可按来源筛选，链接默认不带下划线", async t => {

@@ -320,7 +320,12 @@ export default function MarketEventsPage() {
 			<div className="grid gap-4 md:grid-cols-2">{list.data?.map(v => <Link key={v.eventId} to={`/market-events/${v.eventId}`}><Card className="h-full transition hover:ring-foreground/25"><CardHeader><CardTitle>{v.input.provenance.simulated ? "【模拟】" : ""}{v.input.title}</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><p>{types[v.input.type]} · {v.input.subject.name} · 第 {v.version} 版</p><p>{v.candidate.status === "evidence_ready" ? "依据齐备" : "还缺依据"}</p><p>{v.input.taskRefs.length ? `关联 ${v.input.taskRefs.length} 个任务` : "未关联任务"}</p></CardContent></Card></Link>)}</div>
 		</Section>
 		{leads.error && <p role="alert">{leads.error.message}</p>}
-		{leads.data && leads.data.leads.length > 0 && <Section title={`来源线索（${visibleLeads.length}）`} hint="官网列表的标题与链接，还没读正文；确认后才变成事件">
+		{leads.data && leads.data.leads.length > 0 && <Section
+			collapsible
+			defaultOpen={false}
+			title={`来源线索（${visibleLeads.length}）`}
+			hint="官网列表的标题与链接，还没读正文；展开后可转成事件"
+		>
 			<div className="space-y-2 text-sm">
 				<p className="text-xs text-muted-foreground">
 					下面是官网列表页的标题和原文链接，还没有读正文。想看完整内容请点标题去原文；要变成事件，
