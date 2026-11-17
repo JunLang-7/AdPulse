@@ -17,6 +17,7 @@ import {
 	resolveActiveIdentity,
 	SOURCE_DEFINITIONS,
 	SourceService,
+	LifecycleCleanupService,
 	TaskLifecycleService,
 	TaskService,
 	type DecisionAccountResolver,
@@ -98,6 +99,7 @@ export function compose(
 	);
 	const tasks = new TaskService(storage);
 	const taskLifecycle = new TaskLifecycleService(storage);
+	const lifecycleCleanup = new LifecycleCleanupService(storage);
 	const evidence = new EvidenceService(storage);
 	const comparisons = new ComparisonService(storage);
 	const investigationAlerts = new InvestigationAlertService(storage);
@@ -116,6 +118,7 @@ export function compose(
 		decisions,
 		tasks,
 		taskLifecycle,
+		lifecycleCleanup,
 		evidence,
 		marketEvents: new MarketEventService(storage),
 		comparisons,
@@ -138,6 +141,7 @@ export function compose(
 			},
 			30_000,
 			decisionAccountFor,
+			lifecycleCleanup,
 		),
 	};
 }

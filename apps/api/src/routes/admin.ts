@@ -266,8 +266,9 @@ async function sessionForJob(
 		return (await tx.deliveries.get(job.task.deliveryId))?.sessionId ?? null;
 	if (job.task.kind === "prepare_investigation_alert_session")
 		return (await tx.investigationAlerts.get(job.task.alertId))?.sessionId ?? null;
-	// 日汇总投递与批次绑定，不属于任何会话。
+	// 日汇总投递与批次绑定，不属于任何会话；#40 清理任务与会话无关。
 	if (job.task.kind === "send_digest") return null;
+	if (job.task.kind === "purge_task" || job.task.kind === "purge_audit") return null;
 	const inbox = await tx.inbox.get(job.task.inboxId);
 	const action = inbox && (await tx.actions.get(inbox.command.actionRef));
 	return action
@@ -549,7 +550,9 @@ export async function handleAdmin(
 							? deliveryIds.has(j.task.deliveryId)
 							: j.task.kind === "send_digest"
 								? false
-								: j.task.alertId === session.investigationAlertId,
+								: j.task.kind === "purge_task" || j.task.kind === "purge_audit"
+									? false
+									: j.task.alertId === session.investigationAlertId,
 			);
 			return {
 				session,

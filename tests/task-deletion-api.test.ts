@@ -106,7 +106,7 @@ test("HTTP: 确认删除需要本人会话，删除后立即 404 且重复确认
 
 	const unauthenticated = await fetch(`${url}/api/tasks/any/deletion`, {
 		method: "POST",
-		origin: "http://localhost",
+		headers: { origin: "http://localhost" },
 	});
 	assert.equal(unauthenticated.status, 401);
 

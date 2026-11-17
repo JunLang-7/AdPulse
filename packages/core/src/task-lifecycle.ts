@@ -164,6 +164,7 @@ export class TaskLifecycleService {
 				// running 任务不能被打断，由 worker 的发送前守卫兜底。
 				if (job.status !== "pending") continue;
 				const task = job.task;
+				if (task.kind === "purge_task" || task.kind === "purge_audit") continue;
 				const affected =
 					task.kind === "send_delivery" ||
 					task.kind === "send_investigation_decision"

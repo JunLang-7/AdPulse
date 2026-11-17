@@ -185,13 +185,37 @@ export function restrictForDeletion(
 	};
 }
 
-/** 在线清理完成标记；不删除记录本身，保留「已删除」不可访问状态与清理时间。 */
-export function markCleaned(task: Task, cleanedAt: string): Task {
+/**
+ * 在线清理完成标记；不删除任务 head，保留「不可访问」状态与清理时间。
+ * 保留期到期由系统清理时没有本人确认记录，这里补一条 system 归属的删除状态，
+ * 只含时间与原因，不含业务内容。
+ */
+export function markCleaned(
+	task: Task,
+	cleanedAt: string,
+	reason: TaskDeletion["reason"] = "user_request",
+): Task {
 	const deletion = deletionOf(task);
-	if (!deletion) return task;
+	if (!deletion) {
+		return {
+			...task,
+			lifecycle: {
+				deletion: {
+					requestedAt: cleanedAt,
+					requestedBy: "system",
+					state: "cleaned",
+					reason,
+					cleanupDueAt: cleanedAt,
+					cleanedAt,
+				},
+			},
+		};
+	}
 	return {
 		...task,
-		lifecycle: { deletion: { ...deletion, state: "cleaned", cleanedAt } },
+		lifecycle: {
+			deletion: { ...deletion, state: "cleaned", reason, cleanedAt },
+		},
 	};
 }
 

@@ -227,7 +227,7 @@ test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse
 	);
 	assert.deepEqual(
 		migrations.rows.map((row) => Number(row.version)),
-		[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+		[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
 	);
 	const indexes = await admin.query(
 		`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()
@@ -236,13 +236,21 @@ test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse
 		'adpulse_notification_consent_unique', 'adpulse_subscription_settings_user',
 		'adpulse_subscription_target_ref', 'adpulse_notification_batch_key',
 		'adpulse_notification_item_key', 'adpulse_notification_item_batch',
-		'adpulse_audit_actor_time', 'adpulse_audit_purge', 'adpulse_task_deletion_state') ORDER BY indexname`,
+		'adpulse_audit_actor_time', 'adpulse_audit_purge', 'adpulse_task_deletion_state',
+		'adpulse_tasks_owner', 'adpulse_evidenceheads_owner', 'adpulse_evidenceversions_owner',
+		'adpulse_evidencesources_owner', 'adpulse_evidenceoperations_owner',
+		'adpulse_sessions_owner', 'adpulse_deliveries_owner') ORDER BY indexname`,
 	);
 	assert.deepEqual(
 		indexes.rows.map((row) => row.indexname),
 		[
 			"adpulse_audit_actor_time",
 			"adpulse_audit_purge",
+			"adpulse_deliveries_owner",
+			"adpulse_evidenceheads_owner",
+			"adpulse_evidenceoperations_owner",
+			"adpulse_evidencesources_owner",
+			"adpulse_evidenceversions_owner",
 			"adpulse_identity_binding_scope",
 			"adpulse_login_transactions_expiry",
 			"adpulse_notification_batch_key",
@@ -250,9 +258,11 @@ test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse
 			"adpulse_notification_destination_scope",
 			"adpulse_notification_item_batch",
 			"adpulse_notification_item_key",
+			"adpulse_sessions_owner",
 			"adpulse_subscription_settings_user",
 			"adpulse_subscription_target_ref",
 			"adpulse_task_deletion_state",
+			"adpulse_tasks_owner",
 			"adpulse_web_sessions_user",
 		],
 	);
@@ -341,7 +351,7 @@ test("PostgreSQL: a failed auth migration rolls back atomically and can be retri
 		);
 		assert.deepEqual(
 			versions.rows.map((row) => Number(row.version)),
-			[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+			[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
 		);
 	} finally {
 		await check.end();
@@ -730,4 +740,83 @@ test("PostgreSQL: notification records project only the caller's batches with de
 	const other = await records.list(otherId);
 	assert.equal(other.records.length, 1);
 	assert.equal(other.records[0]?.items.length, 1);
+});
+
+test("PostgreSQL: 确认删除后的在线清理按归属删除业务行并保留 head", {
+	skip: !process.env.TEST_DATABASE_URL,
+}, async () => {
+	const storage = PostgresStorage.connect(process.env.TEST_DATABASE_URL!);
+	try {
+		await storage.initialize();
+		const {
+			LifecycleCleanupService,
+			TaskLifecycleService,
+			TaskService,
+		} = await import("../packages/core/dist/index.js");
+		let clock = "2026-01-01T00:00:00.000Z";
+		const tasks = new TaskService(storage, () => clock);
+		const lifecycle = new TaskLifecycleService(storage, () => clock);
+		const cleanup = new LifecycleCleanupService(storage, () => clock);
+		const ownerId = `owner-${crypto.randomUUID()}`;
+		const created = await tasks.create(ownerId, "create-key", {
+			product: "清理测试",
+			strategy: { objective: "o", audience: [], channels: {}, sellingPoints: [] },
+			observation: { scope: "s" },
+			rules: { minimumSpendMinor: 0 },
+		});
+		await storage.transaction(async (tx) => {
+			await tx.evidenceHeads.put({
+				id: `evidence-${created.taskId}`,
+				ownerId,
+				taskId: created.taskId,
+				taskVersion: 1,
+				currentVersion: 1,
+				createdAt: clock,
+			});
+			await tx.notificationItems.put({
+				id: `item-${created.taskId}`,
+				ownerId,
+				batchId: `batch-${created.taskId}`,
+				logicalKey: `effect:${created.taskId}`,
+				kind: "effect_alert",
+				taskId: created.taskId,
+				title: "标题",
+				summary: "摘要",
+				relevance: "相关",
+				sources: [],
+				revision: 1,
+				status: "queued",
+				createdAt: clock,
+				updatedAt: clock,
+			});
+		});
+		await lifecycle.requestDeletion(ownerId, created.taskId);
+		clock = "2026-01-08T00:00:00.000Z";
+		const result = await cleanup.purgeTask(created.taskId);
+		assert.ok(result);
+		assert.equal(result.counts.taskVersions, 1);
+		assert.equal(result.counts.evidenceHeads, 1);
+		assert.equal(result.counts.notificationItems, 1);
+		const state = await storage.transaction(async (tx) => ({
+			task: await tx.tasks.get(created.taskId),
+			versions: await tx.taskVersions.all(),
+			heads: await tx.evidenceHeads.all(),
+			items: await tx.notificationItems.all(),
+			audits: await tx.auditEvents.all(),
+		}));
+		assert.equal(state.task?.lifecycle?.deletion?.state, "cleaned");
+		assert.equal(state.versions.filter((row) => row.taskId === created.taskId).length, 0);
+		assert.equal(state.heads.filter((row) => row.taskId === created.taskId).length, 0);
+		assert.equal(state.items.filter((row) => row.taskId === created.taskId).length, 0);
+		assert.ok(
+			state.audits.some(
+				(row) =>
+					row.action === "task.deletion.cleaned" &&
+					row.actorId === ownerId &&
+					row.objectId === created.taskId,
+			),
+		);
+	} finally {
+		await storage.close();
+	}
 });

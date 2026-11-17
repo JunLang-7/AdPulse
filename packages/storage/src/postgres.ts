@@ -230,6 +230,21 @@ export class PostgresStorage implements Storage {
 					ON adpulse_tasks ((data->'lifecycle'->'deletion'->>'state'))`);
 				await client.query("INSERT INTO adpulse_schema_migrations(version) VALUES (13)");
 			}
+			if (!current.has(14)) {
+				// #40 清理按归属检索：为尚未覆盖 ownerId 前缀的表补索引，避免整表读。
+				for (const [table, columns] of [
+					["tasks", "(data->>'ownerId')"],
+					["evidenceHeads", "(data->>'ownerId')"],
+					["evidenceVersions", "(data->>'ownerId'), (data->>'taskId')"],
+					["evidenceSources", "(data->>'ownerId')"],
+					["evidenceOperations", "(data->>'ownerId')"],
+					["sessions", "(data->>'ownerId')"],
+					["deliveries", "(data->>'ownerId')"],
+				] as const)
+					await client.query(`CREATE INDEX IF NOT EXISTS adpulse_${table}_owner
+						ON adpulse_${table} (${columns})`);
+				await client.query("INSERT INTO adpulse_schema_migrations(version) VALUES (14)");
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");
@@ -277,6 +292,14 @@ export class PostgresStorage implements Storage {
 					all: async () => {
 						const result = await client.query(
 							`SELECT data FROM adpulse_${name} ORDER BY id`,
+						);
+						return result.rows.map((row) => row.data);
+					},
+					listByOwner: async (ownerId: string) => {
+						const result = await client.query(
+							`SELECT data FROM adpulse_${name}
+							WHERE data->>'ownerId' = $1 ORDER BY id`,
+							[ownerId],
 						);
 						return result.rows.map((row) => row.data);
 					},

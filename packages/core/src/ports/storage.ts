@@ -5,6 +5,11 @@ export interface Table<T extends { id: string }> {
 	put(entity: T): Promise<void>;
 	delete(id: string): Promise<void>;
 	all(): Promise<T[]>;
+	/**
+	 * 按归属检索（#40）：有 ownerId 投影的表用索引过滤，不必整表读。
+	 * 未实现的表由调用方自行按归属过滤。
+	 */
+	listByOwner?(ownerId: string): Promise<T[]>;
 }
 export type Transaction = { [K in keyof Entities]: Table<Entities[K]> };
 export interface Storage {

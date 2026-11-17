@@ -258,6 +258,8 @@ export interface TaskDeletion {
 	/** 操作者内部用户 ID；由服务端认证确定，不取前端自报值。 */
 	requestedBy: string;
 	state: "restricted" | "cleaned";
+	/** user_request：本人确认删除；retention_expired：保留期到期由系统清理。 */
+	reason?: "user_request" | "retention_expired";
 	/** requestedAt + 7 天：在线业务资料最迟清理时刻。 */
 	cleanupDueAt: string;
 	cleanedAt?: string;
@@ -690,7 +692,11 @@ export type JobTask =
 	| { kind: "prepare_investigation_alert_session"; alertId: string }
 	| { kind: "send_delivery"; deliveryId: string }
 	| { kind: "send_investigation_decision"; deliveryId: string }
-	| { kind: "send_digest"; batchId: string };
+	| { kind: "send_digest"; batchId: string }
+	/** #40 在线清理：到期或确认删除超过窗口的任务物理清理。 */
+	| { kind: "purge_task"; taskId: string }
+	/** #40 最小审计清理：删除早于 cutoff 的审计记录。 */
+	| { kind: "purge_audit"; cutoff: string };
 export interface Job {
 	id: string;
 	task: JobTask;
@@ -755,8 +761,18 @@ export interface AuditRecord {
 	id: string;
 	/** 内部用户 ID；不存企业 open_id、邮箱或姓名。 */
 	actorId: string;
-	action: "task.deletion.requested" | "task.deletion.suppressed";
-	objectKind: "task" | "notification_item" | "delivery" | "job" | "audit";
+	action:
+		| "task.deletion.requested"
+		| "task.deletion.suppressed"
+		| "task.deletion.cleaned"
+		| "task.retention.purged"
+		| "audit.purged";
+	objectKind:
+		| "task"
+		| "notification_item"
+		| "delivery"
+		| "job"
+		| "audit";
 	objectId: string;
 	at: string;
 	outcome: "accepted" | "rejected";

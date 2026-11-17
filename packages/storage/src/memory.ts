@@ -75,6 +75,13 @@ export class MemoryStorage implements Storage {
 							draft[name].delete(id);
 						},
 						all: async () => structuredClone([...draft[name].values()]),
+						listByOwner: async (ownerId: string) =>
+							structuredClone(
+								[...draft[name].values()].filter(
+									(row) =>
+										(row as { ownerId?: string }).ownerId === ownerId,
+								),
+							),
 					},
 				]),
 			) as unknown as Transaction;

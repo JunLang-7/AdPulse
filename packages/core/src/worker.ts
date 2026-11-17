@@ -19,6 +19,7 @@ import {
 	type NotificationQueue,
 } from "./notifications-queue.js";
 import type { SubscriptionService } from "./subscriptions.js";
+import { LifecycleCleanupService } from "./lifecycle-cleanup.js";
 import { deletionOf } from "./lifecycle.js";
 import { notificationInputsStillCurrentIn } from "./notifications-selection.js";
 import { RecipientUnreachableError, type OutboundChannel } from "./ports/channel.js";
@@ -47,10 +48,14 @@ export class Worker {
 		},
 		private readonly scheduleIntervalMs = 30_000,
 		private decisionAccountFor?: DecisionAccountResolver,
+		/** #40 生命周期清理；未注入时不做到期/确认删除的物理清理。 */
+		private cleanup?: LifecycleCleanupService,
 	) {}
 
 	/** 上一次日汇总调度的时间戳，用于在没有任务可领时按间隔触发。 */
 	private lastScheduleTick = 0;
+	/** 上一次生命周期清理调度的时间戳。 */
+	private lastCleanupTick = 0;
 
 	/**
 	 * 本次领取的租约在**当前事务**里是否仍然有效。
@@ -76,6 +81,13 @@ export class Worker {
 				this.lastScheduleTick = Date.parse(this.now());
 				await this.digest.scheduler.tick();
 			}
+			if (
+				this.cleanup &&
+				Date.parse(this.now()) - this.lastCleanupTick >= this.scheduleIntervalMs
+			) {
+				this.lastCleanupTick = Date.parse(this.now());
+				await this.cleanup.tick();
+			}
 			return false;
 		}
 		try {
@@ -91,6 +103,14 @@ export class Worker {
 					break;
 				case "send_digest":
 					await this.sendDigest(job);
+					break;
+				case "purge_task":
+					if (!this.cleanup) throw new Error("lifecycle cleanup is not configured");
+					await this.cleanup.purgeTask(job.task.taskId);
+					break;
+				case "purge_audit":
+					if (!this.cleanup) throw new Error("lifecycle cleanup is not configured");
+					await this.cleanup.purgeAudit(job.task.cutoff);
 					break;
 				case "prepare_investigation_alert_session":
 					if (!this.investigationAlerts)
