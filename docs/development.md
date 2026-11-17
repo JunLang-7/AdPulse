@@ -738,7 +738,27 @@ bun run sources discover weichai_news campaigns
 - **控制台路径**：任务详情页底部「保留期与删除」卡片显示「保留至 …/剩余 N 天」；点「删除任务…」后
   需勾选「我了解删除后不可恢复」才能点「确认删除任务」，成功后回到任务列表并提示已删除，
   失败（409 处理中 / 404 / 网络）显示可见错误，不显示成功提示。
-- **未包含**：7 天在线清理任务（S3）、180 天最小审计与备份 30 天淘汰/恢复演练（S4）。
+
+### 在线清理（#40 S3）
+
+- `LifecycleCleanupService.runOnce()` 由 worker 在没有任务可领时按 **1 小时** 间隔触发（与日汇总调度分开计时，
+  清理失败只影响清理本身，下一轮重试）；同一份清单用 `runExclusive` 单飞，多进程不会双删。
+- **只清到期清单**：`status=pending` 且 `deadlineAt <= now`（删除请求起 7 天）。未到期不动任何数据。
+- **清理范围**（按依赖顺序先删引用者）：`jobs`、`inbox`（按 actionRef 归属）、`deliveries`、`actions`、`rounds`、
+  `snapshots`、`sessions`、`notificationItems`、`notificationSelections`、`investigationAlerts`、
+  `comparisonOperations`/`comparisonFollowUps`/`comparisonResults`、`evidenceOperations`/`evidenceSources`/
+  `evidenceVersions`/`evidenceHeads`、`taskOperations`/`taskVersions`/`tasks`；
+  完成后清单置 `status=cleaned` + `cleanedAt`。
+- **存储端口**新增 `Table.remove(ids)` 批量删除（内存与 PostgreSQL 都实现，PG 用 `id = ANY($1::text[])`），
+  清理不靠逐条 `delete` 往返。
+- **可重试**：任一步失败时清单保持 `pending`、已删的行不复活；下一轮从头重放（删除幂等），
+  不会因为别人失败而跳过其他用户的清单。
+- **不清理**：来源域（`sourceItems`/`sourceSnapshots` 等按 #41 自己的 30 天策略）、身份/配置、模型凭据。
+
+### 仍未包含
+
+- 180 天最小审计表与备份 30 天淘汰/恢复演练（S4，等受控备份目标）。
+- 已送达飞书副本与在途网络请求不可撤回；平台端不承诺 exactly-once。
 
 ## 8. 扩展与现有限制
 

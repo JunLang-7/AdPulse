@@ -22,10 +22,10 @@ const taskInput = {
 	rules: { metricKey: "cost_per_consultation" as const, metricDefinition: "单次咨询成本", currency: "CNY", unit: "分", statWindowDays: 1, alertThresholdMinor: 100, minimumSpendMinor: 0, minimumConsultations: 0, maxPushRounds: 3 },
 };
 
-async function fixture(start = "2026-01-01T00:00:00.000Z") {
+async function fixture(start = "2026-01-01T00:00:00.000Z", shared?: MemoryStorage) {
 	let now = start;
 	const clock = () => now;
-	const storage = new MemoryStorage();
+	const storage = shared ?? new MemoryStorage();
 	const identity = { platform: "feishu", applicationId: "cli_test", tenantId: "tenant-a", idType: "open_id", externalId: randomUUID() };
 	const session = await new AuthenticationService(storage).createWebSession(identity, createHash("sha256").update(randomUUID()).digest("hex"), now);
 	const tasks = new TaskService(storage, clock);
@@ -320,4 +320,131 @@ test("删除确认后证据详情与修订同样不可用", async () => {
 		/evidence not found/,
 	);
 	await assert.rejects(f.tasks.revise(f.owner, f.task.taskId, 1, randomUUID(), taskInput), /task not found/);
+});
+
+test("在线清理：到期前不动数据，到期后按清单删除任务全部关联并标记已清理", async () => {
+	const f = await fixture();
+	const { EvidenceService, ComparisonService, InvestigationAlertService, NotificationQueue, LifecycleCleanupService } =
+		await import("../packages/core/dist/index.js");
+	// 造一套完整关联：证据 → 比较 → 告警 → 通知条目。
+	const evidence = new EvidenceService(f.storage, f.clock);
+	const imported = await evidence.import(f.owner, randomUUID(), {
+		schemaVersion: 1, taskRef: { taskId: f.task.taskId, taskVersion: 1 }, records: [selectionEvidence()],
+	});
+	const comparison = await new ComparisonService(f.storage, f.clock).evaluate(f.owner, randomUUID(), {
+		current: { evidenceId: imported[0]!.evidenceId, version: 1 },
+	});
+	await new InvestigationAlertService(f.storage, f.clock).evaluateComparison(f.owner, comparison.id);
+	const manifest = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
+	const cleanup = new LifecycleCleanupService(f.storage, f.clock);
+
+	// 到期前（6 天 23 小时）不清理。
+	f.setTime(new Date(Date.parse(manifest.requestedAt) + 7 * MS_PER_DAY - 60_000).toISOString());
+	assert.equal((await cleanup.runOnce()).manifests, 0);
+	assert.ok(await f.storage.transaction((tx) => tx.tasks.get(f.task.taskId)), "未到期时数据仍在库里");
+
+	// 到期后清理。
+	f.setTime(manifest.deadlineAt);
+	const result = await cleanup.runOnce();
+	assert.equal(result.manifests, 1);
+	assert.ok((result.removed.tasks ?? 0) >= 1);
+	assert.ok((result.removed.evidenceHeads ?? 0) >= 1);
+	assert.ok((result.removed.evidenceVersions ?? 0) >= 1);
+	assert.ok((result.removed.comparisonResults ?? 0) >= 1);
+	assert.ok((result.removed.investigationAlerts ?? 0) >= 1);
+	assert.ok((result.removed.notificationSelections ?? 0) >= 1);
+
+	const remaining = await f.storage.transaction(async (tx) => ({
+		tasks: (await tx.tasks.all()).filter((row) => row.id === f.task.taskId),
+		versions: (await tx.taskVersions.all()).filter((row) => row.taskId === f.task.taskId),
+		evidence: (await tx.evidenceHeads.all()).filter((row) => row.taskId === f.task.taskId),
+		alerts: (await tx.investigationAlerts.all()).filter((row) => row.taskId === f.task.taskId),
+		selections: (await tx.notificationSelections.all()).filter((row) => row.taskId === f.task.taskId),
+	}));
+	for (const [name, rows] of Object.entries(remaining)) assert.deepEqual(rows, [], `${name} 应被清理`);
+	const cleaned = (await f.storage.transaction((tx) => tx.lifecycleDeletions.get(manifest.id)))!;
+	assert.equal(cleaned.status, "cleaned");
+	assert.ok(cleaned.cleanedAt);
+
+	// 重放幂等：再跑一次不报错也不重复计。
+	assert.equal((await cleanup.runOnce()).manifests, 0);
+});
+
+test("在线清理：中断后清单保持 pending，重试可继续；不影响其他用户", async () => {
+	const { LifecycleCleanupService } = await import("../packages/core/dist/index.js");
+	const shared = new MemoryStorage();
+	const f = await fixture("2026-01-01T00:00:00.000Z", shared);
+	// 同一存储里的第二个用户：验证清理只动本清单的任务、且互不阻塞。
+	const other = await fixture("2026-01-01T00:00:00.000Z", shared);
+	const manifest = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
+	const otherManifest = (await other.tasks.delete(other.owner, other.task.taskId)).manifest;
+
+	// 注入失败：第一次清理在标记 cleaned 前抛错。
+	let fail = true;
+	const failing = {
+		transaction: (work: Parameters<typeof f.storage.transaction>[0]) =>
+			f.storage.transaction(async (tx) => {
+				if (fail && (await tx.lifecycleDeletions.all()).some((row) => row.status === "pending"))
+					throw new Error("injected cleanup failure");
+				return work(tx);
+			}),
+		runExclusive: f.storage.runExclusive.bind(f.storage),
+		claimJob: f.storage.claimJob.bind(f.storage),
+	} as unknown as typeof f.storage;
+	f.setTime(manifest.deadlineAt);
+	await assert.rejects(new LifecycleCleanupService(failing, f.clock).runOnce(), /injected cleanup failure/);
+	assert.equal((await f.storage.transaction((tx) => tx.lifecycleDeletions.get(manifest.id)))?.status, "pending");
+	assert.ok(await f.storage.transaction((tx) => tx.tasks.get(f.task.taskId)), "失败时不删除，留待重试");
+
+	fail = false;
+	const retried = await new LifecycleCleanupService(f.storage, f.clock).runOnce();
+	assert.equal(retried.manifests, 2, "两份到期清单都被清理（本人 + 另一用户）");
+	assert.equal(await f.storage.transaction((tx) => tx.tasks.get(f.task.taskId)), null);
+	assert.equal(await f.storage.transaction((tx) => tx.tasks.get(other.task.taskId)), null);
+	assert.equal(
+		(await f.storage.transaction((tx) => tx.lifecycleDeletions.get(otherManifest.id)))?.status,
+		"cleaned",
+		"其他用户的清单按自己的任务清理，不因别人失败被跳过",
+	);
+});
+
+test("PostgreSQL：在线清理按清单删除全部关联并标记 cleaned", { skip: !process.env.TEST_DATABASE_URL }, async () => {
+	const url = process.env.TEST_DATABASE_URL!;
+	const { createRequire } = await import("node:module");
+	const { Pool } = createRequire(new URL("../packages/storage/package.json", import.meta.url))("pg") as {
+		Pool: new (options: { connectionString: string; options?: string }) => ConstructorParameters<typeof PostgresStorage>[0];
+	};
+	const admin = new Pool({ connectionString: url }) as unknown as { query(sql: string): Promise<unknown>; end(): Promise<void> };
+	const schema = `lifecycle_cleanup_${randomUUID().replaceAll("-", "")}`;
+	await admin.query(`CREATE SCHEMA ${schema}`);
+	const pool = new Pool({ connectionString: url, options: `-c search_path=${schema}` });
+	const storage = new PostgresStorage(pool);
+	try {
+		await storage.initialize();
+		const start = "2026-01-01T00:00:00.000Z";
+		const identity = { platform: "feishu", applicationId: "cli_test", tenantId: "tenant-a", idType: "open_id", externalId: randomUUID() };
+		const session = await new AuthenticationService(storage).createWebSession(identity, createHash("sha256").update(randomUUID()).digest("hex"), start);
+		const tasks = new TaskService(storage, () => start);
+		const task = await tasks.create(session.userId, randomUUID(), taskInput);
+		const { EvidenceService: Evidence, LifecycleCleanupService: Cleanup } = await import("../packages/core/dist/index.js");
+		await new Evidence(storage, () => start).import(session.userId, randomUUID(), {
+			schemaVersion: 1, taskRef: { taskId: task.taskId, taskVersion: 1 }, records: [selectionEvidence()],
+		});
+		const manifest = (await tasks.delete(session.userId, task.taskId)).manifest;
+		const atDeadline = () => manifest.deadlineAt;
+		const cleaned = await new Cleanup(storage, atDeadline).runOnce();
+		assert.equal(cleaned.manifests, 1);
+		assert.equal(await storage.transaction((tx) => tx.tasks.get(task.taskId)), null);
+		assert.deepEqual(
+			await storage.transaction(async (tx) => (await tx.evidenceHeads.all()).filter((row) => row.taskId === task.taskId)),
+			[],
+		);
+		const row = await storage.transaction((tx) => tx.lifecycleDeletions.get(manifest.id));
+		assert.equal(row?.status, "cleaned");
+		assert.ok(row?.cleanedAt);
+	} finally {
+		await storage.close();
+		await admin.query(`DROP SCHEMA ${schema} CASCADE`);
+		await admin.end();
+	}
 });

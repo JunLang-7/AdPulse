@@ -78,6 +78,11 @@ export class MemoryStorage implements Storage {
 						delete: async (id: string) => {
 							draft[name].delete(id);
 						},
+						remove: async (ids: string[]) => {
+							let removed = 0;
+							for (const id of ids) if (draft[name].delete(id)) removed += 1;
+							return removed;
+						},
 						all: async () => structuredClone([...draft[name].values()]),
 					},
 				]),

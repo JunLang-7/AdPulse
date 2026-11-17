@@ -300,6 +300,14 @@ export class PostgresStorage implements Storage {
 							id,
 						]);
 					},
+					remove: async (ids: string[]) => {
+						if (ids.length === 0) return 0;
+						const result = await client.query(
+							`DELETE FROM adpulse_${name} WHERE id = ANY($1::text[])`,
+							[ids],
+						);
+						return result.rowCount ?? 0;
+					},
 					all: async () => {
 						const result = await client.query(
 							`SELECT data FROM adpulse_${name} ORDER BY id`,
