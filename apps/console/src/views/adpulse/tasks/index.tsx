@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { consoleClient } from "../../../adpulse-client";
 import { Badge } from "../../../components/ui/badge";
 import {
@@ -12,6 +12,8 @@ import {
 import { formatBeijingTime } from "./task-form.js";
 
 export default function TasksPage() {
+	const locationState: unknown = useLocation().state;
+	const notice = locationState && typeof locationState === "object" && "taskNotice" in locationState && typeof locationState.taskNotice === "string" ? locationState.taskNotice : null;
 	const { data, isLoading, error } = useQuery({
 		queryKey: ["tasks"],
 		queryFn: async () => {
@@ -41,6 +43,8 @@ export default function TasksPage() {
 					新建任务
 				</Link>
 			</div>
+
+			{notice ? <p role="status" className="rounded-md border p-3 text-sm">{notice}</p> : null}
 
 			{data?.length === 0 ? (
 				<p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">

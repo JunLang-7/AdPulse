@@ -357,8 +357,100 @@ export default function TaskEditorPage() {
 					{dirty && !creating ? <span className="text-sm text-muted-foreground">有未保存的更改</span> : null}
 				</div>
 			</form>
+			{!creating && taskId ? <DangerZone taskId={taskId} /> : null}
 
 		</div>
+	);
+}
+
+/**
+ * 危险操作区（#40 S2）：显示保留期状态，并要求显式确认后才删除。
+ * 删除后任务与其历史立即不可访问，因此成功后离开详情页。
+ */
+function DangerZone({ taskId }: { taskId: string }) {
+	const navigate = useNavigate();
+	const queryClient = useQueryClient();
+	const [confirming, setConfirming] = useState(false);
+	const [acknowledged, setAcknowledged] = useState(false);
+	const lifecycle = useQuery({
+		queryKey: ["task-lifecycle", taskId],
+		queryFn: async () => {
+			const result = await consoleClient.GET("/api/tasks/{taskId}/lifecycle", { params: { path: { taskId } } });
+			if (!result.data) throw new Error(result.response.status === 404 ? "任务不可访问" : "无法读取保留期状态");
+			return result.data;
+		},
+	});
+	const remove = useMutation({
+		mutationFn: async () => {
+			const result = await consoleClient.DELETE("/api/tasks/{taskId}", { params: { path: { taskId } } });
+			if (!result.data)
+				throw Object.assign(new Error(
+					result.response.status === 409
+						? "删除请求正在处理，请稍后重试。"
+						: result.response.status === 404 ? "任务不存在或已无权访问。" : "删除失败，请重试。",
+				), { status: result.response.status });
+			return result.data;
+		},
+		onSuccess: async (result) => {
+			await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+			navigate("/tasks", {
+				state: {
+					taskNotice: result.created
+						? "任务已删除，旧任务与其历史立即不可访问；相关待发提醒已取消。"
+						: "该任务此前已删除，未重复处理。",
+				},
+			});
+		},
+	});
+	const remainingDays = lifecycle.data
+		? Math.max(0, Math.ceil((Date.parse(lifecycle.data.expiresAt) - Date.now()) / 86_400_000))
+		: null;
+	return (
+		<Card className="mt-6 border-destructive/40">
+			<CardContent className="space-y-3 p-4 text-sm">
+				<div>
+					<p className="font-medium">保留期与删除</p>
+					<p className="text-xs text-muted-foreground">
+						{lifecycle.isLoading ? "正在读取保留期…" : lifecycle.error ? "无法读取保留期状态；删除前请核对任务。" : (
+							<>
+								保留至 {lifecycle.data?.expiresAt.slice(0, 10)}（剩余 {remainingDays} 天）。
+								到期后任务与证据自动不可访问；普通查看不会延长保留期。
+							</>
+						)}
+					</p>
+				</div>
+				{confirming ? (
+					<div className="space-y-2 rounded-md border border-destructive/40 p-3">
+						<p className="text-destructive">删除后不可恢复：任务、证据、比较、告警与通知记录将立即不可访问，尚未发送的提醒会被取消。</p>
+						<label className="flex items-start gap-2 text-sm">
+							<input
+								type="checkbox"
+								className="mt-1"
+								checked={acknowledged}
+								onChange={(event) => setAcknowledged(event.target.checked)}
+							/>
+							<span>我了解删除后不可恢复，旧任务与其历史不能再访问。</span>
+						</label>
+						{remove.error ? <p role="alert" className="text-red-600">{(remove.error as Error).message}</p> : null}
+						<div className="flex flex-wrap gap-2">
+							<Button
+								type="button"
+								variant="destructive"
+								disabled={!acknowledged || remove.isPending}
+								onClick={() => remove.mutate()}
+							>
+								{remove.isPending ? "正在删除…" : "确认删除任务"}
+							</Button>
+							<Button type="button" variant="outline" onClick={() => { setConfirming(false); setAcknowledged(false); }}>
+								取消
+							</Button>
+						</div>
+					</div>
+				) : (
+					<Button type="button" variant="outline" onClick={() => setConfirming(true)}>删除任务…</Button>
+				)}
+			</CardContent>
+		</Card>
 	);
 }
 
