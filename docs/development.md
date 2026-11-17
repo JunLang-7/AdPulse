@@ -671,6 +671,10 @@ bun run sources resume haier_news <operator>   # 解除 stopped，记录操作�
 
 测试用**人造 HTML fixture**，不访问真实站点，因此本地跑测试不会产生任何外发请求。
 
+来源清单、声明主体、许可状态与停用流程统一登记在
+[`docs/sources/registry.md`](sources/registry.md)：它是**登记而非合规结论**，与 `SOURCE_DEFINITIONS`
+双向对齐（由 `tests/source-registry.test.ts` 守卫）。新增站点必须先重走 #41 Gate 0 再改登记表与代码。
+
 ### 自动来源线索（#39 方案 A）
 
 采集到的列表条目**不会自动变成事件，也不会自动推送**。它只作为「待确认线索」出现在本人控制台：
