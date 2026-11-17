@@ -475,6 +475,24 @@ export async function handleAdmin(
 			auditModel(audit, "model.connection.created", path, "ok", { connectionId: created.id, version: created.version });
 			return json(res, 201, created);
 		}
+		const savedTestPath = /^\/api\/me\/model-connections\/([0-9a-f-]{36})\/test$/.exec(path);
+		if (savedTestPath?.[1] && req.method === "POST") {
+			const connectionId = savedTestPath[1];
+			const query = new URL(req.url ?? "", "http://localhost").searchParams;
+			const expectedVersion = z.coerce.number().int().min(1).parse(query.get("expectedVersion"));
+			const resolved = await withModelConnectionErrors(() => modelApi.service.resolveCredential(userId, connectionId));
+			if (resolved.connection.version !== expectedVersion) throw new HttpError(409, "connection_conflict");
+			const { connection, apiKey, baseUrl, protocol, modelId } = resolved;
+			const ok = await modelApi.probe(userId, {
+				providerId: connection.providerId, kind: connection.kind,
+				...(connection.catalogId ? { catalogId: connection.catalogId } : {}),
+				baseUrl, protocol, modelId, apiKey,
+			});
+			const updated = await withModelConnectionErrors(() =>
+				modelApi.service.recordVerification(userId, connectionId, expectedVersion, undefined, ok));
+			auditModel(audit, "model.connection.probed", path, ok ? "ok" : "rejected", { connectionId, version: updated.version });
+			return json(res, 200, updated);
+		}
 		const connectionPath = /^\/api\/me\/model-connections\/([0-9a-f-]{36})(\/credential)?$/.exec(path);
 		if (connectionPath?.[1]) {
 			const connectionId = connectionPath[1];
@@ -508,8 +526,22 @@ export async function handleAdmin(
 				// 换目标地址/协议必须同时换密钥；不允许拿旧密钥探新主机。
 				if (targetChanged && !replace)
 					throw new HttpError(400, "changing the target requires a new API key");
-				if (replace) {
+				const modelsChanged = body.models !== undefined && (
+					body.models.length !== existing.models.length ||
+					body.models.some((model, index) => model.id !== existing.models[index]?.id)
+				);
+				const verifyModels = modelsChanged && existing.hasCredential && existing.status === "active" &&
+					body.status !== "disabled" && body.credential?.action !== "remove";
+				if (replace || verifyModels) {
 					const models = body.models ?? existing.models;
+					let apiKey: string;
+					if (body.credential?.action === "replace") {
+						apiKey = body.credential.apiKey;
+					} else {
+						const resolved = await withModelConnectionErrors(() => modelApi.service.resolveCredential(userId, connectionId));
+						if (resolved.connection.version !== body.expectedVersion) throw new HttpError(409, "connection_conflict");
+						apiKey = resolved.apiKey;
+					}
 					const ok = await modelApi.probe(userId, {
 						providerId: existing.providerId,
 						kind: existing.kind,
@@ -517,7 +549,7 @@ export async function handleAdmin(
 						baseUrl,
 						protocol,
 						modelId: models[0]?.id ?? "",
-						apiKey: body.credential?.action === "replace" ? body.credential.apiKey : "",
+						apiKey,
 					});
 					if (!ok) throw new HttpError(503, "model connection unavailable");
 				}
@@ -530,7 +562,7 @@ export async function handleAdmin(
 						...(body.baseUrl === undefined ? {} : { baseUrl: body.baseUrl }),
 						...(body.protocol === undefined ? {} : { protocol: body.protocol }),
 						...(body.credential === undefined ? {} : { credential: body.credential }),
-					}, { verified: replace }));
+					}, { verified: replace || verifyModels }));
 				auditModel(audit, "model.connection.updated", path, "ok", { connectionId, version: updated.version });
 				if (replace)
 					auditModel(audit, "model.credential.replaced", path, "ok", { connectionId, version: updated.version });

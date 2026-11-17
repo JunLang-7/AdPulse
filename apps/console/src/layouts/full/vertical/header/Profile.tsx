@@ -68,7 +68,7 @@ export default function ProfileMenu() {
 	return (
 		<>
 		<DropdownMenu>
-			<DropdownMenuTrigger>
+			<DropdownMenuTrigger aria-label="个人菜单">
 				<div className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-primary/5">
 					<div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
 						<UserRound className="size-4" />

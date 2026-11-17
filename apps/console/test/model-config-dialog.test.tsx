@@ -26,7 +26,7 @@ const catalog = {
 
 const connectionList = {
 	connections: [
-		{ id: "4ca3688c-a790-49be-b318-e8b244648bcf", providerId: "mimo", kind: "custom", displayName: "MiMo", baseUrl: "https://api.mimotest.example/v1", protocol: "openai-completions", models: [{ id: "mimo-v2-flash" }], status: "active", version: 1, createdAt: "2026-11-12T00:00:00.000Z", updatedAt: "2026-11-12T00:00:00.000Z", hasCredential: true },
+		{ id: "4ca3688c-a790-49be-b318-e8b244648bcf", providerId: "mimo", kind: "custom", displayName: "MiMo", baseUrl: "https://api.mimotest.example/v1", protocol: "openai-completions", models: [{ id: "mimo-v2-flash" }], status: "active", version: 1, verifiedVersion: 1, createdAt: "2026-11-12T00:00:00.000Z", updatedAt: "2026-11-12T00:00:00.000Z", hasCredential: true },
 	],
 	preference: { connectionId: null, modelId: null, version: 0 },
 };
@@ -77,14 +77,59 @@ test("模型配置：未接通供应商只给原因不给保存", async (t) => {
 	assert.equal(screen.queryByRole("button", { name: "测试连接" }), null);
 });
 
+test("模型配置：部署未启用个人连接时显示原因，并保留禁用的测试与保存入口", async (t) => {
+	t.after(cleanup);
+	const { calls } = serve(baseRoutes, { "GET /api/me/model-connections": () => json({ error: "model connections unavailable" }, 503) });
+	renderDialog();
+	fireEvent.click(await screen.findByRole("button", { name: /DeepSeek 深度求索/ }));
+	assert.ok(await screen.findByText(/当前部署尚未启用个人模型连接/));
+	assert.ok(screen.getByPlaceholderText("粘贴你的 API Key").hasAttribute("disabled"));
+	assert.ok(screen.getByRole("button", { name: "测试连接" }).hasAttribute("disabled"));
+	assert.ok(screen.getByRole("button", { name: "保存并使用" }).hasAttribute("disabled"));
+	assert.equal(screen.queryByText("尚未验证"), null);
+	assert.ok(calls.every((call) => call.startsWith("GET ")));
+});
+
+test("模型配置：已有连接可重新测试，状态随测试结果改变", async (t) => {
+	t.after(cleanup);
+	const saved = connectionList.connections[0];
+	let connected = true;
+	const connection = () => ({ ...saved, verifiedVersion: connected ? saved.version : undefined });
+	let tests = 0;
+	serve(baseRoutes, {
+		"GET /api/me/model-connections": () => json({ ...connectionList, connections: [connection()] }),
+		[`POST /api/me/model-connections/${saved.id}/test`]: async (request) => {
+			assert.equal(new URL(request.url).searchParams.get("expectedVersion"), "1");
+			assert.equal(await request.text(), "");
+			tests++;
+			connected = tests > 1;
+			return json(connection());
+		},
+	});
+	renderDialog();
+	fireEvent.click(await screen.findByRole("button", { name: /MiMo.*已连接/ }));
+	assert.equal(screen.getAllByText("已连接").length, 2);
+	fireEvent.click(screen.getByRole("button", { name: "重新测试" }));
+	assert.ok(await screen.findByText(/测试未通过，已保留密钥/));
+	assert.equal(screen.getAllByText("已保存 · 待测试").length, 2);
+	assert.ok(screen.getByRole("button", { name: "用于本次任务" }).hasAttribute("disabled"));
+	fireEvent.click(screen.getByRole("button", { name: "重新测试" }));
+	assert.ok(await screen.findByText("测试通过，已连接。"));
+	assert.equal(screen.getAllByText("已连接").length, 2);
+	assert.equal(screen.getByRole("button", { name: "用于本次任务" }).hasAttribute("disabled"), false);
+});
+
 test("模型配置：保存后用于本次任务，密钥不回显且不修改默认模型", async (t) => {
 	t.after(cleanup);
 	const calls: string[] = [];
+	let saved = { ...connectionList.connections[0], verifiedVersion: 0 };
 	serve(baseRoutes, {
+		"GET /api/me/model-connections": () => json({ ...connectionList, connections: [saved] }),
 		"POST /api/me/model-connections": async (request) => {
 			const body = await request.json() as { providerId: string; kind: string; baseUrl: string; models: { id: string }[]; apiKey: string };
 			calls.push(`create:${body.providerId}:${body.kind}:${body.baseUrl}:${body.models[0]?.id}:${body.apiKey}`);
-			return json({ ...connectionList.connections[0], providerId: body.providerId, baseUrl: body.baseUrl }, 201);
+			saved = { ...saved, providerId: body.providerId, baseUrl: body.baseUrl, models: body.models, verifiedVersion: saved.version };
+			return json(saved, 201);
 		},
 		"PUT /api/me/model-preferences": async (request) => {
 			const body = await request.json() as { connectionId: string; modelId: string };
@@ -104,6 +149,8 @@ test("模型配置：保存后用于本次任务，密钥不回显且不修改�
 	fireEvent.click(screen.getByRole("button", { name: "保存并使用" }));
 
 	await waitFor(() => assert.equal(used !== undefined, true));
+	assert.ok(await screen.findByText("保存成功，已连接。"));
+	assert.equal(screen.getAllByText("已连接").length, 2);
 	assert.deepEqual(used, { connectionId: connectionList.connections[0].id, model: "mimo-v2.6-flash" });
 	assert.deepEqual(calls, [
 		"create:xiaomi:catalog:https://api.xiaomimimo.com/v1:mimo-v2.6-flash:synthetic-personal-key",
@@ -350,7 +397,7 @@ test("模型配置：部署未配置主密钥时提示不可保存，但仍可�
 	});
 	renderDialog();
 
-	await screen.findByText(/部署者尚未配置主密钥/);
+	await screen.findByText(/当前部署尚未启用个人模型连接/);
 	fireEvent.click(await screen.findByRole("button", { name: /DeepSeek（部署提供）/ }));
 	await screen.findByText(/该模型由部署者配置密钥/);
 	assert.equal(screen.queryByRole("button", { name: "保存并使用" }), null);

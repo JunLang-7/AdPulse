@@ -463,7 +463,7 @@ export class ModelConnectionService {
 			// 任何配置变更都让旧的验证结果失效。
 			delete next.verifiedAt;
 			delete next.verifiedVersion;
-			if (options.verified && update.action === "replace") {
+			if (options.verified && nextCredential && status === "active") {
 				next.verifiedAt = at;
 				next.verifiedVersion = nextVersion;
 			}
@@ -505,12 +505,13 @@ export class ModelConnectionService {
 		});
 	}
 
-	/** 记录一次成功验证；结果绑定到当前版本，配置变更后不再成立。 */
+	/** 验证结果绑定到当前版本。失败会清除上次成功的标记。 */
 	async recordVerification(
 		ownerId: string,
 		connectionId: string,
 		expectedVersion: number,
 		at: string = this.now(),
+		passed = true,
 	): Promise<ModelConnectionView> {
 		return this.storage.transaction(async (tx) => {
 			const connection = await this.requireOwned(tx, ownerId, connectionId);
@@ -522,10 +523,15 @@ export class ModelConnectionService {
 				throw new ModelConnectionError("credential_unreadable", "credential was revoked");
 			const next: UserModelConnection = {
 				...connection,
-				verifiedAt: at,
-				verifiedVersion: connection.version,
 				updatedAt: at,
 			};
+			if (passed) {
+				next.verifiedAt = at;
+				next.verifiedVersion = connection.version;
+			} else {
+				delete next.verifiedAt;
+				delete next.verifiedVersion;
+			}
 			await tx.userModelConnections.put(next);
 			return project(next, true);
 		});
