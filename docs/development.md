@@ -739,7 +739,47 @@ bun run sources discover weichai_news campaigns
 - **控制台路径**：任务详情页底部「保留期与删除」卡片显示「保留至 …/剩余 N 天」；点「删除任务…」后
   需勾选「我了解删除后不可恢复」才能点「确认删除任务」，成功后回到任务列表并提示已删除，
   失败（409 处理中 / 404 / 网络）显示可见错误，不显示成功提示。
-- **未包含**：7 天在线清理任务（S3）、180 天最小审计与备份 30 天淘汰/恢复演练（S4）。
+
+### 在线清理（#40 S3）
+
+- `LifecycleCleanupService.runOnce()` 由 worker 在没有任务可领时按 **1 小时** 间隔触发（与日汇总调度分开计时，
+  清理失败只影响清理本身，下一轮重试）；同一份清单用 `runExclusive` 单飞，多进程不会双删。
+- **只清到期清单**：`status=pending` 且 `deadlineAt <= now`（删除请求起 7 天）。未到期不动任何数据。
+- **清理范围**（按依赖顺序先删引用者）：`jobs`、`inbox`（按 actionRef 归属）、`deliveries`、`actions`、`rounds`、
+  `snapshots`、`sessions`、`notificationItems`、`notificationSelections`、`investigationAlerts`、
+  `comparisonOperations`/`comparisonFollowUps`/`comparisonResults`、`evidenceOperations`/`evidenceSources`/
+  `evidenceVersions`/`evidenceHeads`、`taskOperations`/`taskVersions`/`tasks`；
+  完成后清单置 `status=cleaned` + `cleanedAt`。
+- **存储端口**新增 `Table.remove(ids)` 批量删除（内存与 PostgreSQL 都实现，PG 用 `id = ANY($1::text[])`），
+  清理不靠逐条 `delete` 往返。
+- **可重试**：任一步失败时清单保持 `pending`、已删的行不复活；下一轮从头重放（删除幂等），
+  不会因为别人失败而跳过其他用户的清单。
+- **冻结卡片同步摘除**：已发送批次的卡片内容冻结在 `Delivery.card.items` 里，只删 `notificationItems`
+  会让已删任务的标题/摘要继续出现在「通知记录」。清理时按任务精确摘除这些条目（优先 `detailUrl` 中的
+  `/tasks/{id}`，退回标题匹配），**同批次其他任务的内容保留**。
+- **投递归属按 session/round 定位**：决策卡与结果回执由 `queueDelivery()` 创建，**不写 `ownerId`**；
+  清理不能用 `ownerId` 过滤，否则会漏掉含业务正文的投递与 `send_delivery` 任务。
+- **逐份隔离**：单份清单失败只保留它自己的 `pending`（结果里的 `failed` 列表），其他清单与审计清理
+  继续执行；失败原因只记日志，不写进业务数据。
+- **调度不依赖队列空闲**：清理计时在领取任务之前判断，任务持续可领时仍按间隔执行；
+  同一间隔内不重复触发。
+- **不清理**：来源域（`sourceItems`/`sourceSnapshots` 等按 #41 自己的 30 天策略）、身份/配置、模型凭据。
+
+### 最小审计（#40，180 天）
+
+- 表 `auditEvents`（迁移 **16**）：`{id, at, kind, actorId, objectId?, detail?}`，只存动作与对象引用，
+  **不保存业务原文、标题、摘要或凭据**。
+- 写入点：本人确认删除（`task_deleted`/`owner_request`）、保留期到期自动排单（`task_deleted`/`retention_expired`）、
+  清理完成（`task_purged`）、审计自身清理（`audit_purged`）。
+- 保留 **180 天**，按每条记录自身 `at` 计算；**恰好等于边界时保留**，越过才清（与业务删除互不影响）。
+- 迁移 16 同时给 `tasks`/`evidenceHeads`/`evidenceVersions`/`evidenceSources`/`comparisonResults`/
+  `investigationAlerts`/`sessions`/`deliveries`/`notificationItems`/`notificationSelections`/`marketEvents`
+  补 `data->>'ownerId'` 索引，配合存储端口 `Table.listByOwner(ownerId)`，清理不再靠整表扫描。
+
+### 仍未包含
+
+- 备份 30 天淘汰与「恢复前重放删除清单」演练（S4 的备份部分），等受控备份目标与密钥管理。
+- 已送达飞书副本与在途网络请求不可撤回；平台端不承诺 exactly-once。
 
 ## 8. 扩展与现有限制
 

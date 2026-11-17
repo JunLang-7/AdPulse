@@ -4,6 +4,13 @@ export interface Table<T extends { id: string }> {
 	get(id: string): Promise<T | null>;
 	put(entity: T): Promise<void>;
 	delete(id: string): Promise<void>;
+	/** 批量删除（按 id）：生命周期清理用，避免逐条往返。返回实际删除条数。 */
+	remove(ids: string[]): Promise<number>;
+	/**
+	 * 按归属检索（#40）：用 `ownerId` 过滤，避免清理时整表扫描。
+	 * 无 `ownerId` 字段的表返回空数组。
+	 */
+	listByOwner(ownerId: string): Promise<T[]>;
 	all(): Promise<T[]>;
 }
 export type Transaction = { [K in keyof Entities]: Table<Entities[K]> };

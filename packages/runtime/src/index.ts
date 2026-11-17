@@ -10,6 +10,7 @@ import {
 	MarketEventService,
 	DigestScheduler,
 	InvestigationAlertService,
+	LifecycleCleanupService,
 	NotificationQueue,
 	NotificationService,
 	ModelConnectionService,
@@ -114,6 +115,7 @@ export function compose(
 	const subscriptions = new SubscriptionService(storage);
 	const notificationQueue = new NotificationQueue(storage);
 	const digestScheduler = new DigestScheduler(storage, subscriptions, notificationQueue);
+	const lifecycleCleanup = new LifecycleCleanupService(storage);
 	// 目的地平台 → 渠道账号：只匹配声明了同一身份作用域的连接，避免把飞书消息发到别的账号。
 	const platformAccounts = new Map<string, string>();
 	for (const account of accounts)
@@ -146,6 +148,7 @@ export function compose(
 			},
 			30_000,
 			decisionAccountFor,
+			lifecycleCleanup,
 		),
 	};
 }

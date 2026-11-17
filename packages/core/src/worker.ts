@@ -46,10 +46,15 @@ export class Worker {
 		},
 		private readonly scheduleIntervalMs = 30_000,
 		private decisionAccountFor?: DecisionAccountResolver,
+		/** 生命周期在线清理（#40 S3）；未注入时不做清理。 */
+		private lifecycleCleanup?: { runOnce: () => Promise<unknown> },
+		private readonly cleanupIntervalMs = 3_600_000,
 	) {}
 
 	/** 上一次日汇总调度的时间戳，用于在没有任务可领时按间隔触发。 */
 	private lastScheduleTick = 0;
+	/** 上一次在线清理的时间戳，避免每个 tick 都扫一遍删除清单。 */
+	private lastCleanupTick = 0;
 
 	/**
 	 * 本次领取的租约在**当前事务**里是否仍然有效。
@@ -65,6 +70,19 @@ export class Worker {
 	}
 
 	async runOnce(): Promise<boolean> {
+		// 生命周期清理与队列是否空闲无关：任务持续可领时也必须按间隔执行，
+		// 否则 7 天清理与 180 天审计淘汰会被无限推迟。
+		if (
+			this.lifecycleCleanup &&
+			Date.parse(this.now()) - this.lastCleanupTick >= this.cleanupIntervalMs
+		) {
+			this.lastCleanupTick = Date.parse(this.now());
+			try {
+				await this.lifecycleCleanup.runOnce();
+			} catch {
+				console.error("lifecycle cleanup tick failed; will retry next interval");
+			}
+		}
 		const job = await this.storage.claimJob(this.now(), 60_000);
 		if (!job) {
 			// 没有任务可领时按间隔触发一次日汇总调度；不引第二个调度进程。
