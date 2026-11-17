@@ -20,24 +20,86 @@ const blank = (): EventInput => ({ occurrenceKey: `manual:${crypto.randomUUID()}
 function failure(status: number): Error {
 	return new Error(status === 409 ? "保存冲突：版本已更新或重复请求内容不同，请刷新核对后重试。" : status === 404 ? "事件或关联任务不可访问。" : "保存失败，请核对来源、引用、日期和必填字段后重试。");
 }
+/** 后端给的是结构化判断原因，界面只挑对用户有意义的说法，不把字段名和防御性表述直接摊开。 */
+const FIELD_LABELS = { subject: "公告主体", eventTime: "事件时间", conditions: "适用条件" };
+
+function plainReasons(reasons: string[]): { gaps: string[]; notes: string[] } {
+	const gaps: string[] = [];
+	const notes: string[] = [];
+	for (const reason of reasons) {
+		const citation = /^(subject|eventTime|conditions): 缺少官方原文引用/.exec(reason);
+		if (citation) { gaps.push(FIELD_LABELS[citation[1] as keyof typeof FIELD_LABELS]); continue; }
+		// 这两条事实在下面单独显示「未知」，不再重复列一遍原因。
+		if (reason === "事件时间未知" || reason === "适用条件未知") continue;
+		if (reason === "发布时间未知") { notes.push("材料没有发布时间"); continue; }
+		if (reason === "合成样例，仅供测试") { notes.push("这是合成样例，仅供测试"); continue; }
+		// 未识别的新原因原样显示，避免以后加了判断条件而界面沉默。
+		notes.push(reason);
+	}
+	return { gaps, notes };
+}
+
 function Summary({ version }: { version: EventVersion }) {
-	return <div className="space-y-3 text-sm">
-		{version.input.provenance.simulated && <p className="font-semibold text-amber-700">模拟材料 · 不代表真实公告或采集结果</p>}
-		<p>{types[version.input.type]} · {version.input.subject.name} · 修订 v{version.version} · 证据 v{version.evidenceRevision}</p>
-		<p>{version.candidate.status === "evidence_ready" ? "引用齐备，来源性质仍为录入者声明，尚待独立核验。" : "证据不足"} 保存不会发送消息。</p>
-		<ul className="list-disc pl-5">{version.candidate.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
-		<p>事件时间：{version.input.eventTime ?? "未知"}</p><p>适用条件：{version.input.conditions ?? "未知"}</p>
-		{version.input.taskRefs.length ? version.input.taskRefs.map(ref => <p key={ref.taskId}>本人声明的任务关联：<Link className="underline" to={`/tasks/${ref.taskId}`}>查看任务 v{ref.taskVersion}</Link> · {ref.reason}（不代表因果影响）</p>) : <p>尚未关联个人任务，不推断任务影响。</p>}
-		{version.input.sources.map((s, index) => <section key={version.materials[index]?.id} className="space-y-2 rounded-md border p-3">
-			<p className="font-medium">来源 {index + 1}：{s.publisher} · {scopes[s.scope]} · {origins[s.origin]}</p>
-			{s.url ? <a className="underline break-all" href={s.url} target="_blank" rel="noreferrer">查看原文</a> : <p>原文链接缺失</p>}
-			<p>发布时间：{s.publishedAt ?? "未知"} · 获取时间：{s.acquiredAt} · {version.materials[index]?.method === "manual" ? "人工录入" : "受限列表导入"}</p>
-			<p className="whitespace-pre-wrap">{s.content ?? "未读取正文"}</p><p>局限：{s.limitations || "未补充；不代表无局限"}</p>
-			<p className="text-xs text-muted-foreground">材料引用：{version.materials[index]?.id}</p>
-		</section>)}
-		{(Object.keys(fields) as Array<keyof typeof fields>).map(field => { const c = version.input.citations[field]; return <p key={field}>{fields[field]}依据：{c ? `来源 ${c.sourceIndex + 1}「${c.quote}」` : "缺失 / 待补充"}</p>; })}
-		{version.input.provenance.reference && <p className="break-all">来源版本：{version.input.provenance.reference}<br />转换记录：{version.input.provenance.transformation}</p>}
-		<p className="text-muted-foreground">{version.createdAt} · {version.changeReason}</p>
+	const input = version.input;
+	const { gaps, notes } = plainReasons(version.candidate.reasons);
+	const ready = version.candidate.status === "evidence_ready";
+	return <div className="space-y-4 text-sm">
+		{input.provenance.simulated && <p className="font-semibold text-amber-700">模拟样例 · 不是真实公告</p>}
+		<p className="text-muted-foreground">{types[input.type]} · {input.subject.name} · 第 {version.version} 版</p>
+		<p className={ready ? "text-sm" : "text-sm text-amber-700"}>
+			{ready ? "依据齐备，会进入通知筛选。" : "还缺依据，暂时不会进入通知筛选。"}
+			<span className="text-muted-foreground">保存只是存档，不会发出通知。</span>
+		</p>
+		{gaps.length ? <p>还差这几处的原文引用：{gaps.join("、")}</p> : null}
+		{notes.length ? <p className="text-muted-foreground">{notes.join("；")}</p> : null}
+		<div className="space-y-1">
+			<p>事件时间：{input.eventTime ?? "未知"}</p>
+			<p>适用条件：{input.conditions ?? "未知"}</p>
+		</div>
+		<div className="space-y-1">
+			<p className="font-medium">用到的材料</p>
+			{input.sources.map((s, index) => <div key={version.materials[index]?.id ?? index} className="space-y-1 rounded-md border p-3">
+				<p>{index + 1}. {s.publisher || "未命名来源"}<span className="text-muted-foreground">（{scopes[s.scope]}）</span></p>
+				{s.url
+					? <a className="break-all text-sm hover:underline" href={s.url} target="_blank" rel="noreferrer">{s.content ?? s.url}</a>
+					: <p>{s.content ?? "没有原文链接"}</p>}
+				<p className="text-xs text-muted-foreground">
+					发布 {s.publishedAt ? formatLeadDate(s.publishedAt) : "时间未知"}
+					{s.scope === "link_only" || s.scope === "title_only" ? " · 只拿到列表里的标题和链接，没有读正文" : ""}
+				</p>
+			</div>)}
+		</div>
+		<div className="space-y-1">
+			<p className="font-medium">事实依据</p>
+			{(Object.keys(fields) as Array<keyof typeof fields>).map(field => {
+				const citation = input.citations[field];
+				return <p key={field} className="text-muted-foreground">
+					{fields[field]}：{citation ? `材料 ${citation.sourceIndex + 1}「${citation.quote}」` : "还没有引用原文"}
+				</p>;
+			})}
+		</div>
+		<div className="space-y-1">
+			<p className="font-medium">关联任务</p>
+			{input.taskRefs.length
+				? input.taskRefs.map(ref => <p key={ref.taskId} className="text-muted-foreground">
+					你标记为相关：<Link className="hover:underline" to={`/tasks/${ref.taskId}`}>任务 v{ref.taskVersion}</Link>{ref.reason ? ` · ${ref.reason}` : ""}
+				</p>)
+				: <p className="text-muted-foreground">没有关联推广任务。</p>}
+		</div>
+		<details className="text-xs text-muted-foreground">
+			<summary className="cursor-pointer">技术细节</summary>
+			<div className="space-y-1 pt-2">
+				<p>录入方式：{version.method === "manual" ? "人工录入" : "来源线索导入"} · 录入时间 {formatBeijing(version.createdAt)}</p>
+				{input.sources.map((s, index) => <p key={version.materials[index]?.id ?? index}>
+					材料 {index + 1} 编号 {version.materials[index]?.id ?? "未知"} · 取得于 {s.acquiredAt ? formatBeijing(s.acquiredAt) : "未知"}
+					{" · "}{origins[s.origin]}
+					{s.limitations ? ` · 局限：${s.limitations}` : ""}
+				</p>)}
+				{input.provenance.reference ? <p>来源：{input.provenance.reference}</p> : null}
+				{input.provenance.transformation ? <p>转换：{input.provenance.transformation}</p> : null}
+				<p>版本说明：{version.changeReason}</p>
+			</div>
+		</details>
 	</div>;
 }
 type Lead = components["schemas"]["SourceLead"];
@@ -245,7 +307,7 @@ export default function MarketEventsPage() {
 		{detail.data && <><h1 className="text-2xl font-bold">{detail.data.current.input.title}</h1><Summary version={detail.data.current} />
 			<Button variant="outline" onClick={() => setEditing(!editing)}>{editing ? "取消编辑" : "修订事件 / 补充转载"}</Button>
 			{editing && <EventForm key={detail.data.current.id} current={detail.data.current} attach={attachLead ?? undefined} saved={(id, status) => { void saved(id, status); }} />}
-			<h2 className="font-semibold">修订与旧依据</h2>{detail.data.versions.slice(1).map(v => <details key={v.id} className="rounded-md border p-4"><summary>修订 v{v.version} · {v.changeReason}</summary><Summary version={v} /></details>)}
+			<h2 className="font-semibold">历史版本</h2>{detail.data.versions.slice(1).map(v => <details key={v.id} className="rounded-md border p-4"><summary>第 {v.version} 版 · {v.changeReason} · {formatBeijing(v.createdAt)}</summary><Summary version={v} /></details>)}
 		</>}
 	</div>;
 	return <div className="p-6 space-y-4"><div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-bold">市场与竞品事件</h1><Button onClick={() => setEditing(!editing)}>{editing ? "收起录入" : "录入事件"}</Button></div>
@@ -335,6 +397,6 @@ export default function MarketEventsPage() {
 		{leads.data && leads.data.leads.length === 0 && leads.data.sources.every((item) => !item.enabled) && <p className="text-xs text-muted-foreground">尚未开启自动来源；可在订阅页开启潍柴/海尔的受限列表线索。</p>}
 		{list.isLoading && <p>正在读取事件…</p>}{list.error && <p role="alert">{list.error.message}</p>}
 		{list.data?.length === 0 && <p className="rounded-md border border-dashed p-6">还没有录入事件。可先保存链接，缺失信息保持未知。</p>}
-		<div className="grid gap-4 md:grid-cols-2">{list.data?.map(v => <Link key={v.eventId} to={`/market-events/${v.eventId}`}><Card><CardHeader><CardTitle>{v.input.provenance.simulated ? "【模拟】" : ""}{v.input.title}</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><p>{v.input.subject.name} · {types[v.input.type]} · v{v.version}</p><p>{v.candidate.status === "evidence_ready" ? "引用齐备 · 待来源核验" : "证据不足"}</p><p>{v.input.taskRefs.length ? `关联 ${v.input.taskRefs.length} 个本人任务` : "任务关联未确定"}</p></CardContent></Card></Link>)}</div>
+		<div className="grid gap-4 md:grid-cols-2">{list.data?.map(v => <Link key={v.eventId} to={`/market-events/${v.eventId}`}><Card><CardHeader><CardTitle>{v.input.provenance.simulated ? "【模拟】" : ""}{v.input.title}</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><p>{types[v.input.type]} · {v.input.subject.name} · 第 {v.version} 版</p><p>{v.candidate.status === "evidence_ready" ? "依据齐备" : "还缺依据"}</p><p>{v.input.taskRefs.length ? `关联 ${v.input.taskRefs.length} 个任务` : "未关联任务"}</p></CardContent></Card></Link>)}</div>
 	</div>;
 }
