@@ -105,6 +105,50 @@ export class LifecycleDeletionService {
 		);
 	}
 
+	/**
+	 * 备份恢复后的清单重放：把外置清单写回库中。
+	 *
+	 * 外置清单是**删除台账**，不是清理进度：即使源库里这份清单已经 `cleaned`，
+	 * 恢复出来的旧备份里数据仍然存在，所以重放一律写回 `pending`，由清理任务重新执行（幂等）。
+	 * 已存在的条目**不覆盖**（更早的请求优先）。
+	 */
+	async replay(entries: Array<{
+		id: string; ownerId: string; taskId: string;
+		reason?: "owner_request" | "retention_expired";
+		requestedAt: string; deadlineAt: string;
+		status?: "pending" | "cleaned"; cleanedAt?: string;
+	}>): Promise<{ inserted: number; kept: number }> {
+		return this.storage.transaction(async (tx) => {
+			let inserted = 0;
+			let kept = 0;
+			for (const entry of entries) {
+				const existing = await tx.lifecycleDeletions.get(entry.id);
+				if (existing) {
+					kept += 1;
+					continue;
+				}
+				await tx.lifecycleDeletions.put({
+					id: entry.id,
+					ownerId: entry.ownerId,
+					taskId: entry.taskId,
+					reason: entry.reason ?? "owner_request",
+					requestedAt: entry.requestedAt,
+					deadlineAt: entry.deadlineAt,
+					status: "pending",
+				});
+				// 清单里出现即代表本人已确认删除：恢复出来的任务必须立即限访，不能等服务再跑。
+				const task = await tx.tasks.get(entry.taskId);
+				if (task && task.ownerId === entry.ownerId && !task.deletion)
+					await tx.tasks.put({
+						...task,
+						deletion: { at: entry.requestedAt, by: "owner", manifestId: entry.id },
+					});
+				inserted += 1;
+			}
+			return { inserted, kept };
+		});
+	}
+
 	/** 内部使用：S3 清理任务按状态取待清理清单。 */
 	async pending(): Promise<LifecycleDeletion[]> {
 		return this.storage.transaction(async (tx) =>

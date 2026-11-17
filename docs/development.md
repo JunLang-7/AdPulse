@@ -775,9 +775,31 @@ bun run sources discover weichai_news campaigns
   `investigationAlerts`/`sessions`/`deliveries`/`notificationItems`/`notificationSelections`/`marketEvents`
   补 `data->>'ownerId'` 索引，配合存储端口 `Table.listByOwner(ownerId)`，清理不再靠整表扫描。
 
+### 备份淘汰与恢复重放（#40 S4b，演练阶段）
+
+用户 2026-11-17 确认：备份目标用对象存储 + 版本化/生命周期；**演练阶段不加密**（仅一次性演练库）；
+暂不设 RPO/RTO，只验证「能恢复、不复活」；37 天为**软目标**（淘汰失败只记日志与审计）。
+
+- `LifecycleBackupService.evictOnce(store)`：`store` 只需实现 `list()`/`remove(name)`。
+  - 规则 1：任何超过 **30 天**的备份对象都删；
+  - 规则 2：删除请求满 **37 天**后，所有**早于该请求**的备份都必须消失（它们可能含已删数据）；
+  - 软目标：失败逐条记录在 `failed`，删不掉的残留在 `violations`，并写 `backup_evicted` 审计；
+  - 不负责打备份本身，也不宣称"受控备份"（演练阶段无加密）。
+- **删除清单外置**（`lifecycle-manifest.ts`）：`serializeManifest`/`parseManifest` 逐行 JSON，
+  坏行直接报错而不是跳过——重放时静默忽略一行等于让已删数据复活。
+- **重放**（`LifecycleDeletionService.replay`）：外置清单是删除台账而非清理进度，
+  重放一律写回 `pending`（旧备份里数据仍在，需要重新清），并立即给恢复出来的任务打墓碑。
+- **演练命令**：`bun run lifecycle:drill`（`scripts/acceptance/lifecycle-restore.mjs`）
+  - 只操作自建容器（前缀 `adpulse-lifecycle-drill-`，端口随机绑定 127.0.0.1），不读既有
+    `DATABASE_URL`/`TEST_DATABASE_URL`、不 `sudo`、不接受外部容器名；
+  - 流程：造数据 → **删除前** `pg_dump` → 删除 + 在线清理 → 导出清单 → 恢复旧备份（任务确实复活）
+    → 重放清单 + 清理 → 断言任务/证据/通知条目消失、清单 `cleaned`、审计留痕；
+  - 固定时钟注入，不靠真实等待；输出 JSON 摘要，失败非零退出。
+
 ### 仍未包含
 
-- 备份 30 天淘汰与「恢复前重放删除清单」演练（S4 的备份部分），等受控备份目标与密钥管理。
+- **生产备份本身**（对象存储桶、凭据、生命周期规则）与加密、RPO/RTO：演练阶段不覆盖，
+  不得据此宣称"备份已达标"或"受控备份已就绪"。
 - 已送达飞书副本与在途网络请求不可撤回；平台端不承诺 exactly-once。
 
 ## 8. 扩展与现有限制

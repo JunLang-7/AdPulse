@@ -736,3 +736,197 @@ test("PostgreSQL：清理会摘除冻结卡片里的已删任务条目", { skip:
 		await admin.end();
 	}
 });
+
+test("删除清单外置：序列化/解析逐行往返，坏行直接报错而不静默跳过", async () => {
+	const { serializeManifest, parseManifest, replayPlan } = await import("../packages/core/dist/index.js");
+	const f = await fixture();
+	const manifest = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
+	const text = serializeManifest([manifest]);
+	assert.equal(text.trim().split("\n").length, 1);
+	const [parsed] = parseManifest(text);
+	assert.ok(parsed);
+	assert.equal(parsed.taskId, f.task.taskId);
+	assert.equal(parsed.reason, "owner_request");
+	assert.equal(parsed.status, "pending");
+
+	assert.throws(() => parseManifest(`${text}\nnot-json\n`), /invalid JSON/, "坏行必须中止，不能当成没删除");
+	assert.throws(() => parseManifest('{"id":"x"}\n'), /invalid entry/);
+
+	// 同一任务多条记录时以最早请求为准；已过 deadline 的立即到期。
+	const later = { ...parsed!, id: "other-id", requestedAt: "2026-02-01T00:00:00.000Z", deadlineAt: "2026-02-08T00:00:00.000Z" };
+	const plan = replayPlan([later, parsed!], new Date("2026-01-03T00:00:00.000Z"));
+	assert.equal(plan.applicable.length, 1, "同一任务只保留一条");
+	assert.equal(plan.applicable[0]?.requestedAt, manifest.requestedAt, "取最早请求");
+	assert.equal(plan.dueNow.length, 0, "未到 7 天不立即清理");
+	assert.equal(replayPlan([parsed!], new Date(manifest.deadlineAt)).dueNow.length, 1);
+});
+
+test("备份恢复重放：清单写回后已删任务立即限访，重复重放不覆盖既有记录", async () => {
+	const { LifecycleDeletionService } = await import("../packages/core/dist/index.js");
+	const f = await fixture();
+	const manifest = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
+	// 模拟「恢复到一份更早的备份」：任务还在、但清单没了。
+	await f.storage.transaction(async (tx) => {
+		const task = await tx.tasks.get(f.task.taskId);
+		if (task) await tx.tasks.put({ id: task.id, ownerId: task.ownerId, currentVersion: task.currentVersion, createdAt: task.createdAt });
+		await tx.lifecycleDeletions.delete(manifest.id);
+	});
+	assert.ok(await f.storage.transaction((tx) => tx.tasks.get(f.task.taskId)), "恢复出的旧任务确实存在");
+
+	const service = new LifecycleDeletionService(f.storage, f.clock);
+	const { serializeManifest, parseManifest } = await import("../packages/core/dist/index.js");
+	const entries = parseManifest(serializeManifest([manifest]));
+	const first = await service.replay(entries);
+	assert.equal(first.inserted, 1);
+	assert.equal(first.kept, 0);
+	assert.equal(await f.tasks.get(f.owner, f.task.taskId), null, "重放后立即不可访问");
+
+	const again = await service.replay(entries);
+	assert.equal(again.inserted, 0);
+	assert.equal(again.kept, 1, "已有清单不覆盖");
+});
+
+test("备份淘汰：30 天软目标 + 删除满 37 天后早于请求的备份必须消失", async () => {
+	const { LifecycleBackupService } = await import("../packages/core/dist/index.js");
+	const f = await fixture();
+	const manifest = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
+	const names = new Set<string>();
+	const store = {
+		list: async () => [...names].map((name) => ({ name, createdAt: name.replace(/^b-/, "").replace(/\.dump$/, "") })),
+		remove: async (name: string) => { names.delete(name); },
+	};
+	const put = (iso: string) => names.add(`b-${iso}.dump`);
+	const days = (base: string, offset: number) => new Date(Date.parse(base) + offset * MS_PER_DAY).toISOString();
+	// 备份早于删除请求（可能含已删数据）与删除之后的备份各一份。
+	const beforeRequest = days(manifest.requestedAt, -5);
+	const afterRequest = days(manifest.requestedAt, 1);
+	put(beforeRequest); put(afterRequest);
+
+	// 未满 30 天、也未满 37 天：都不删。
+	let result = await new LifecycleBackupService(store, f.storage, () => days(manifest.requestedAt, 2)).evictOnce();
+	assert.deepEqual(result.removed, []);
+	assert.equal(result.forDeletions, 0);
+	assert.equal(names.size, 2);
+
+	// 满 30 天：只删老备份，删除之后的备份保留（软目标，失败不抛）。
+	const agedAt = days(beforeRequest, 31);
+	result = await new LifecycleBackupService(store, f.storage, () => agedAt).evictOnce();
+	assert.deepEqual(result.removed, [`b-${beforeRequest}.dump`]);
+	assert.equal(names.size, 1);
+
+	// 删除请求满 37 天：早于请求的备份必须消失；晚于请求的保留。
+	put(beforeRequest);
+	const deadline37 = days(manifest.requestedAt, 37);
+	result = await new LifecycleBackupService(store, f.storage, () => deadline37).evictOnce();
+	assert.ok(result.forDeletions >= 1, "命中删除淘汰规则");
+	assert.ok(result.removed.includes(`b-${beforeRequest}.dump`));
+	// 30 天保留期对所有备份生效：36 天前的「请求之后」备份同样因超龄被删，与删除规则无关。
+	assert.ok(result.removed.includes(`b-${afterRequest}.dump`));
+	assert.equal(result.forDeletions, 1, "只有覆盖删除请求的备份计入删除规则");
+	assert.deepEqual(result.violations, [], "软目标成功时没有残留");
+	const audits = await f.storage.transaction((tx) => tx.auditEvents.all());
+	assert.ok(audits.some((row) => row.kind === "backup_evicted"));
+
+	// 软目标：删除失败只记录并进 violations，不抛错、不阻断后续。
+	put(beforeRequest);
+	const failingStore = { list: store.list, remove: async () => { throw new Error("bucket unavailable"); } };
+	const soft = await new LifecycleBackupService(failingStore, f.storage, () => deadline37).evictOnce();
+	assert.equal(soft.removed.length, 0);
+	assert.ok(soft.failed.length >= 1, "失败被记录而非抛出");
+	assert.ok(soft.violations.includes(`b-${beforeRequest}.dump`), "残留可被后续核对");
+});
+
+test("PostgreSQL：清理会摘除冻结卡片里的已删任务条目", { skip: !process.env.TEST_DATABASE_URL }, async () => {
+	const url = process.env.TEST_DATABASE_URL!;
+	const { createRequire } = await import("node:module");
+	const { Pool } = createRequire(new URL("../packages/storage/package.json", import.meta.url))("pg") as {
+		Pool: new (options: { connectionString: string; options?: string }) => ConstructorParameters<typeof PostgresStorage>[0];
+	};
+	const admin = new Pool({ connectionString: url }) as unknown as { query(sql: string): Promise<unknown>; end(): Promise<void> };
+	const schema = `lifecycle_card_${randomUUID().replaceAll("-", "")}`;
+	await admin.query(`CREATE SCHEMA ${schema}`);
+	const pool = new Pool({ connectionString: url, options: `-c search_path=${schema}` });
+	const storage = new PostgresStorage(pool);
+	try {
+		await storage.initialize();
+		const start = "2026-01-01T00:00:00.000Z";
+		const identity = { platform: "feishu", applicationId: "cli_test", tenantId: "tenant-a", idType: "open_id", externalId: randomUUID() };
+		const session = await new AuthenticationService(storage).createWebSession(identity, createHash("sha256").update(randomUUID()).digest("hex"), start);
+		const tasks = new TaskService(storage, () => start);
+		const task = await tasks.create(session.userId, randomUUID(), taskInput);
+		await storage.transaction(async (tx) => {
+			await tx.notificationItems.put({
+				id: `${session.userId}:effect:x`, ownerId: session.userId, batchId: "digest:b", logicalKey: "effect:x",
+				kind: "effect_alert", taskId: task.taskId, title: "本任务标题", summary: "s", relevance: "r",
+				sources: [{ label: "l" }], revision: 1, status: "queued", createdAt: start, updatedAt: start,
+			});
+			await tx.deliveries.put({
+				id: "digest:b", ownerId: session.userId, purpose: "digest", status: "sent", actions: [],
+				expiresAt: "2027-01-01T00:00:00.000Z",
+				recipient: { accountId: "a", kind: "user", externalId: "ou" },
+				card: { title: "汇总", items: [
+					{ title: "本任务标题", summary: "s", relevance: "r", sources: [{ label: "l" }] },
+					{ title: "他任务标题", summary: "s2", relevance: "r2", sources: [{ label: "l2" }] },
+				] },
+			});
+		});
+		const manifest = (await tasks.delete(session.userId, task.taskId)).manifest;
+		const { LifecycleCleanupService: Cleanup } = await import("../packages/core/dist/index.js");
+		await new Cleanup(storage, () => manifest.deadlineAt).runOnce();
+		const card = (await storage.transaction((tx) => tx.deliveries.get("digest:b")))!.card as { items: Array<{ title: string }> };
+		assert.deepEqual(card.items.map((item) => item.title), ["他任务标题"], "只摘除已删任务条目");
+	} finally {
+		await storage.close();
+		await admin.query(`DROP SCHEMA ${schema} CASCADE`);
+		await admin.end();
+	}
+});
+
+test("删除清单外置：序列化/解析逐行往返，坏行直接报错而不静默跳过", async () => {
+	const { serializeManifest, parseManifest, replayPlan } = await import("../packages/core/dist/index.js");
+	const f = await fixture();
+	const manifest = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
+	const text = serializeManifest([manifest]);
+	assert.equal(text.trim().split("\n").length, 1);
+	const [parsed] = parseManifest(text);
+	assert.ok(parsed);
+	assert.equal(parsed.taskId, f.task.taskId);
+	assert.equal(parsed.reason, "owner_request");
+	assert.equal(parsed.status, "pending");
+
+	assert.throws(() => parseManifest(`${text}\nnot-json\n`), /invalid JSON/, "坏行必须中止，不能当成没删除");
+	assert.throws(() => parseManifest('{"id":"x"}\n'), /invalid entry/);
+
+	// 同一任务多条记录时以最早请求为准；已过 deadline 的立即到期。
+	const later = { ...parsed!, id: "other-id", requestedAt: "2026-02-01T00:00:00.000Z", deadlineAt: "2026-02-08T00:00:00.000Z" };
+	const plan = replayPlan([later, parsed!], new Date("2026-01-03T00:00:00.000Z"));
+	assert.equal(plan.applicable.length, 1, "同一任务只保留一条");
+	assert.equal(plan.applicable[0]?.requestedAt, manifest.requestedAt, "取最早请求");
+	assert.equal(plan.dueNow.length, 0, "未到 7 天不立即清理");
+	assert.equal(replayPlan([parsed!], new Date(manifest.deadlineAt)).dueNow.length, 1);
+});
+
+test("备份恢复重放：清单写回后已删任务立即限访，重复重放不覆盖既有记录", async () => {
+	const { LifecycleDeletionService } = await import("../packages/core/dist/index.js");
+	const f = await fixture();
+	const manifest = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
+	// 模拟「恢复到一份更早的备份」：任务还在、但清单没了。
+	await f.storage.transaction(async (tx) => {
+		const task = await tx.tasks.get(f.task.taskId);
+		if (task) await tx.tasks.put({ id: task.id, ownerId: task.ownerId, currentVersion: task.currentVersion, createdAt: task.createdAt });
+		await tx.lifecycleDeletions.delete(manifest.id);
+	});
+	assert.ok(await f.storage.transaction((tx) => tx.tasks.get(f.task.taskId)), "恢复出的旧任务确实存在");
+
+	const service = new LifecycleDeletionService(f.storage, f.clock);
+	const { serializeManifest, parseManifest } = await import("../packages/core/dist/index.js");
+	const entries = parseManifest(serializeManifest([manifest]));
+	const first = await service.replay(entries);
+	assert.equal(first.inserted, 1);
+	assert.equal(first.kept, 0);
+	assert.equal(await f.tasks.get(f.owner, f.task.taskId), null, "重放后立即不可访问");
+
+	const again = await service.replay(entries);
+	assert.equal(again.inserted, 0);
+	assert.equal(again.kept, 1, "已有清单不覆盖");
+});
