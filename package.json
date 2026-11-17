@@ -26,7 +26,10 @@
     "feishu:acceptance": "node --env-file=.env scripts/feishu-acceptance.mjs",
     "notify:acceptance": "node --env-file=.env scripts/acceptance/digest.mjs",
     "sources": "node --env-file-if-exists=.env scripts/sources.mjs",
-    "lifecycle:drill": "node scripts/acceptance/lifecycle-restore.mjs"
+    "lifecycle:drill": "node scripts/acceptance/lifecycle-restore.mjs",
+    "backup:manual": "node --env-file-if-exists=.env scripts/backup-manual.mjs",
+    "lifecycle:manifest": "node --env-file-if-exists=.env scripts/lifecycle-export-manifest.mjs",
+    "lifecycle:replay": "node --env-file-if-exists=.env scripts/lifecycle-replay.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
