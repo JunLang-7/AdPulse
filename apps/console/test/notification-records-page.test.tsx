@@ -91,7 +91,7 @@ test("筛选记录页：展示任务名称和当时原因，保留筛选、翻�
 	assert.ok(await screen.findByText("本人任务 A", { selector: "h3" }));
 	assert.ok(screen.getByText("未安排发送", { selector: '[data-slot="badge"]' }));
 	assert.doesNotMatch(document.body.textContent ?? "", /alert-a|comparison-a|evidence-a|task-a|当时设置 v4/);
-	fireEvent.click(screen.getByRole("button", { name: "加载更早的排查记录" }));
+	fireEvent.click(screen.getByRole("button", { name: "加载更早的记录" }));
 	assert.ok(await screen.findByText("当时未开启通知。"));
 	assert.equal(searches[1].get("before"), "cursor-a");
 	await screen.findByRole("option", { name: "本人任务 A" });

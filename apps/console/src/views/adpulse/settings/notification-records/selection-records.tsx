@@ -20,9 +20,9 @@ const reasons: { [K in Selection["reason"]]: string } = {
 	previously_cancelled: "这条提醒之前已经取消或过期。",
 	historical_input: "这条旧提醒重新检查过，历史提醒不会补发。",
 	alert_inactive: "提醒已处理、失效或达到提醒次数上限。",
-	insufficient_evidence: "事件证据不齐备（缺官方原文引用、事件时间或适用条件），不作为可推送信息",
-	simulated_input: "合成样例只用于测试，不进入真实推送",
-	no_association: "事件没有明确标注你关注的主体或关联任务",
+	insufficient_evidence: "这条事件还缺原文引用、时间或适用条件，所以没有推送。",
+	simulated_input: "这是测试用的合成样例，不会真的推送。",
+	no_association: "这条事件没有标注你关注的对象，也没关联你的任务。",
 	scope_excluded: "你当时选择了「只看任务」，这条事件超出订阅范围。",
 };
 const outcomeLabels = { queued: "已安排汇总", not_queued: "未安排发送", duplicate: "已去重", cancelled: "已取消" };
@@ -146,15 +146,15 @@ export default function SelectionRecords() {
 					<p className="text-sm">{result.reason}</p>
 					<div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
 						{needsNotificationSettings(record.deliveryResult?.statusReason ?? record.reason) ? (
-							<a className="underline" href="/settings/notifications">检查飞书连接和通知设置</a>
+							<a className="hover:underline" href="/settings/notifications">检查飞书连接和通知设置</a>
 						) : null}
-						{eventId ? <a className="underline" href={`/market-events/${encodeURIComponent(eventId)}`}>查看事件</a> : null}
-						{record.taskId ? <a className="underline" href={`/tasks/${encodeURIComponent(record.taskId)}/review`}>
+						{eventId ? <a className="hover:underline" href={`/market-events/${encodeURIComponent(eventId)}`}>查看事件</a> : null}
+						{record.taskId ? <a className="hover:underline" href={`/tasks/${encodeURIComponent(record.taskId)}/review`}>
 							{isEvent && taskName ? `查看关联任务「${taskName}」` : "查看推广效果"}
 						</a> : null}
 					</div>
 			</article>;
 		})}</div>}
-		{records.hasNextPage ? <Button type="button" variant="outline" size="sm" disabled={records.isFetchingNextPage} onClick={() => void records.fetchNextPage()}>加载更早的排查记录</Button> : null}
+		{records.hasNextPage ? <Button type="button" variant="outline" size="sm" disabled={records.isFetchingNextPage} onClick={() => void records.fetchNextPage()}>加载更早的记录</Button> : null}
 	</CardContent>;
 }

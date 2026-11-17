@@ -111,7 +111,7 @@ export default function TasksPage() {
 							<CardHeader>
 								<div className="flex items-start justify-between gap-2">
 									<CardTitle className="line-clamp-2">{task.product}</CardTitle>
-									<Badge variant="outline">v{task.version}</Badge>
+									<Badge variant="outline">第 {task.version} 版</Badge>
 								</div>
 							</CardHeader>
 							<CardContent className="space-y-2">

@@ -338,7 +338,7 @@ export default function TaskEditorPage() {
 
 				{remoteVersion !== null ? (
 					<p role="status" className="text-sm text-amber-700">
-						任务在别处更新到了 v{remoteVersion}。当前编辑仍基于 v{version}，请保留修改内容并重新打开任务核对。
+						这个任务在别处已经改到第 {remoteVersion} 版，你手上的是第 {version} 版。请先复制你的修改，再重新打开任务核对。
 					</p>
 				) : null}
 				{operation.current && !save.isPending ? (

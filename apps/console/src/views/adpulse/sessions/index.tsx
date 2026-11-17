@@ -74,7 +74,7 @@ export default function SessionsPage() {
 
 									<div className="flex flex-wrap items-center gap-1.5">
 										<Badge variant="outline">第 {session.roundNo} 轮</Badge>
-										<Badge variant="outline">v{session.version} 策略</Badge>
+										<Badge variant="outline">策略第 {session.version} 版</Badge>
 										{(session.signal.evidence ?? []).length > 0 ? (
 											<Badge variant="outline">
 												{session.signal.evidence.length} 条依据
@@ -85,8 +85,8 @@ export default function SessionsPage() {
 									<div className="flex items-center justify-between text-xs text-muted-foreground">
 										<span>
 											{session.deliveryMode === "web"
-												? "Web 待处理"
-												: `${session.recipient?.kind === "group" ? "群聊" : "单聊"} · ${session.recipient?.externalId ?? "—"}`}
+												? "网页待处理"
+												: session.recipient?.kind === "group" ? "群聊" : "单聊"}
 										</span>
 										<span className="flex items-center gap-1">
 											{formatTime(session.createdAt)}
