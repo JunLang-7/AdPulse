@@ -102,8 +102,6 @@ export default function TasksPage() {
 				</p>
 			) : null}
 
-			<DeletionStatus />
-
 			<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
 				{data?.map((task) => (
 					<Link key={task.taskId} to={`/tasks/${task.taskId}`}>
@@ -129,6 +127,8 @@ export default function TasksPage() {
 					</Link>
 				))}
 			</div>
+
+			<DeletionStatus />
 		</div>
 	);
 }
