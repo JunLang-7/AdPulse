@@ -11,7 +11,15 @@ import {
 
 import { formatBeijingTime } from "./task-form.js";
 
-/** 删除清单的清理进度（#40）：只展示状态与时间，不展示业务正文。 */
+/** 「11月17日 19:38」这种最短可读写法；毫秒对用户没有意义。 */
+function formatShort(value: string): string {
+	const [date, time] = formatBeijingTime(value).replace("（北京时间）", "").split(" ");
+	if (!date || !time) return date ?? value;
+	const [, month, day] = date.split("-");
+	return `${Number(month)}月${Number(day)}日 ${time.slice(0, 5)}`;
+}
+
+/** 删除清单（#40）：任务内容已删除，这里只留「请求已受理、什么时候清完」的回执。 */
 function DeletionStatus() {
 	const deletions = useQuery({
 		queryKey: ["lifecycle-deletions"],
@@ -23,23 +31,27 @@ function DeletionStatus() {
 	});
 	if (deletions.isError) return <p role="alert" className="text-sm text-red-600">读取删除状态失败，请刷新重试。</p>;
 	if (!deletions.data || deletions.data.length === 0) return null;
+	const pending = deletions.data.filter((row) => row.status !== "cleaned").length;
 	return (
 		<Card>
-			<CardHeader><CardTitle>删除与清理状态</CardTitle></CardHeader>
+			<CardHeader><CardTitle>删除进度</CardTitle></CardHeader>
 			<CardContent className="space-y-2 text-sm">
 				<p className="text-xs text-muted-foreground">
-					删除请求起 7 天内完成在线清理；清理完成后这条记录保留为状态，不含任务内容。
+					{pending > 0
+						? `已收到 ${deletions.data.length} 个删除请求，最迟 7 天内清理完成（剩下 ${pending} 个在排队）。清理后任务内容不再保留，这里只留一条记录。`
+						: `${deletions.data.length} 个删除请求都已清理完成，任务内容不再保留。`}
 				</p>
 				<ul className="space-y-2">
-					{deletions.data.map((row) => (
+					{deletions.data.map((row, index) => (
 						<li key={row.id} className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border p-2">
-							<span className="break-all">任务 {row.taskId.slice(0, 8)}…</span>
-							<span className={(row.status === "cleaned" ? "text-muted-foreground" : "text-amber-700")}>
+							<span className="text-muted-foreground">已删除的任务{deletions.data.length > 1 ? ` ${index + 1}` : ""}</span>
+							<span className={row.status === "cleaned" ? "text-muted-foreground" : "text-amber-700"}>
 								{row.status === "cleaned" ? "已清理" : "等待清理"}
 							</span>
 							<span className="text-xs text-muted-foreground">
-								请求 {formatBeijingTime(row.requestedAt)} · 截止 {formatBeijingTime(row.deadlineAt)}
-								{row.cleanedAt ? ` · 完成 ${formatBeijingTime(row.cleanedAt)}` : ""}
+								{row.cleanedAt
+									? `${formatShort(row.cleanedAt)} 清理完成`
+									: `请求于 ${formatShort(row.requestedAt)} · 最迟 ${formatShort(row.deadlineAt)} 清理完成`}
 							</span>
 						</li>
 					))}
