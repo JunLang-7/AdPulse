@@ -180,7 +180,54 @@ test("overview separates normalized product names and optional goals from facts"
 	});
 
 	reply = { recommendations: { product: { ...product, evidence: "不存在的原文" }, objectives: goals } };
-	assert.deepEqual(await extract(brief, "overview"), {});
+	assert.deepEqual(await extract(brief, "overview"), {
+		recommendations: { product: { value: "云南普洱熟茶" }, objectives: goals },
+	});
+});
+
+test("colloquial briefs keep cleaned-up values as confirmable recommendations", async () => {
+	const brief = "我是卖瓜子的，然后现在有不少产业园基地，然后还是南瓜子，据说有壮阳的效果，然后就是还有很多员工，福利也很好嘛，然后咱们的产品也还不错的，。你给我想想咋推广？";
+	const reply = {
+		product: "南瓜子礼盒",
+		objective: "让更多人买来尝尝",
+		recommendations: {
+			product: { value: "南瓜子", evidence: "然后还是南瓜子" },
+			objectives: ["提升南瓜子销量", "吸引新客户购买"],
+		},
+	};
+	const extract = createTaskDraftExtractor(deepseekEnv, async () => providerReply(JSON.stringify(reply)));
+	assert.ok(extract);
+	assert.deepEqual(await extract(brief, "overview"), {
+		recommendations: {
+			product: { value: "南瓜子", evidence: "然后还是南瓜子" },
+			objectives: ["让更多人买来尝尝", "提升南瓜子销量", "吸引新客户购买"],
+		},
+	});
+});
+
+test("audience and channel stages return recommendations without verbatim excerpts", async () => {
+	const brief = "我在卖南瓜子，有好几个产业园基地。";
+	const reply = {
+		audience: ["注重健康的消费者", "春节备货的家庭"],
+		sellingPoints: ["基地直供", "产地可参观"],
+		channels: ["抖音", "微信视频号"],
+		recommendations: {
+			audience: ["送礼人群"],
+			sellingPoints: ["自有产业基地"],
+			channels: ["小红书", "抖音"],
+		},
+	};
+	const extract = createTaskDraftExtractor(deepseekEnv, async () => providerReply(JSON.stringify(reply)));
+	assert.ok(extract);
+	assert.deepEqual(await extract(brief, "audience"), {
+		recommendations: {
+			audience: ["注重健康的消费者", "春节备货的家庭", "送礼人群"],
+			sellingPoints: ["基地直供", "产地可参观", "自有产业基地"],
+		},
+	});
+	assert.deepEqual(await extract(brief, "channels"), {
+		recommendations: { channels: ["抖音", "微信视频号", "小红书"] },
+	});
 });
 
 test("task draft uses an instance-local provider call limit", async () => {

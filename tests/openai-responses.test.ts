@@ -32,7 +32,10 @@ test("Responses uses native request fields and bounded excerpt extraction", asyn
 		return responsesReply(JSON.stringify({ product: "新品试用装", objective: "猜测目标", budget: 300, channels: ["小红书"] }));
 	});
 	assert.ok(extract);
-	assert.deepEqual(await extract("新品试用装，投小红书", "overview"), { product: "新品试用装" });
+	assert.deepEqual(await extract("新品试用装，投小红书", "overview"), {
+		product: "新品试用装",
+		recommendations: { objectives: ["猜测目标"] },
+	});
 });
 
 test("every Responses catalog provider uses its own endpoint and personal bearer key", async () => {

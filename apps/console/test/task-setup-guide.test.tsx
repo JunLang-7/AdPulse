@@ -78,13 +78,74 @@ test("提交推广内容先确认整理出的熟茶名称，并允许从目标�
 	assert.equal(current.product, "");
 	assert.equal(current.objective, "");
 	assert.equal(screen.queryByText("产品或服务 · 云南普洱，熟普"), null);
-	for (const goal of [goals[0], goals[2]]) fireEvent.click(screen.getByRole("checkbox", { name: goal }));
+	for (const goal of goals) assert.equal(screen.getByRole<HTMLInputElement>("checkbox", { name: goal }).checked, true);
+	fireEvent.click(screen.getByRole("checkbox", { name: goals[1] }));
 	fireEvent.click(screen.getByRole("button", { name: "应用所选建议" }));
 	assert.equal(current.product, "云南普洱熟茶");
 	assert.equal(current.objective, [goals[0], goals[2]].join("\n"));
 	fireEvent.click(screen.getByRole("button", { name: "提交本阶段" }));
 	await screen.findByRole("heading", { name: "人群与卖点" });
 	assert.deepEqual(calls, ["POST /api/task-drafts/extract"]);
+});
+
+test("口语化描述里整理出的名称和目标作为建议填入表单待核对", async (t) => {
+	t.after(cleanup);
+	const note = "我是卖瓜子的，然后现在有不少产业园基地，然后还是南瓜子，据说有壮阳的效果，然后就是还有很多员工，福利也很好嘛，然后咱们的产品也还不错的，。你给我想想咋推广？";
+	serve({
+		"POST /api/task-drafts/extract": () => json({
+			recommendations: {
+				product: { value: "南瓜子" },
+				objectives: ["提升南瓜子销量", "吸引新客户购买"],
+			},
+		}),
+	});
+	let current = emptyForm;
+	function Guide() {
+		const [form, setForm] = useState(emptyForm);
+		return <TaskSetupGuide form={form} onChange={(value) => { current = value; setForm(value); }}
+			onEdit={() => {}} onSave={() => {}} onBusyChange={() => {}} saving={false} />;
+	}
+	render(<QueryClientProvider client={new QueryClient()}><Guide /></QueryClientProvider>);
+
+	fireEvent.change(screen.getByRole("textbox", { name: "本阶段说明" }), { target: { value: note } });
+	fireEvent.click(screen.getByRole("button", { name: "生成建议" }));
+	await screen.findByRole("checkbox", { name: /建议名称 · 南瓜子/ });
+	assert.equal(current.product, "");
+	assert.equal(current.objective, "");
+	fireEvent.click(screen.getByRole("checkbox", { name: "吸引新客户购买" }));
+	fireEvent.click(screen.getByRole("button", { name: "应用所选建议" }));
+	assert.equal(current.product, "南瓜子");
+	assert.equal(current.objective, "提升南瓜子销量");
+});
+
+test("人群阶段的建议会成为待核对项，而不是直接改写表单", async (t) => {
+	t.after(cleanup);
+	const note = "南瓜子主要卖给注重健康的人和春节备货的家庭";
+	serve({
+		"POST /api/task-drafts/extract": async (request) => {
+			const body = await request.json() as { stage: string };
+			return body.stage === "audience"
+				? json({ recommendations: { audience: ["送礼人群"], sellingPoints: ["基地直供"] } })
+				: json({});
+		},
+	});
+	let current = { ...emptyForm, product: "南瓜子" };
+	function Guide() {
+		const [form, setForm] = useState(current);
+		return <TaskSetupGuide form={form} onChange={(value) => { current = value; setForm(value); }}
+			onEdit={() => {}} onSave={() => {}} onBusyChange={() => {}} saving={false} />;
+	}
+	render(<QueryClientProvider client={new QueryClient()}><Guide /></QueryClientProvider>);
+
+	fireEvent.click(screen.getByRole("button", { name: "提交本阶段" }));
+	await screen.findByRole("heading", { name: "人群与卖点" });
+	fireEvent.change(screen.getByRole("textbox", { name: "本阶段说明" }), { target: { value: note } });
+	fireEvent.click(screen.getByRole("button", { name: "生成建议" }));
+	await screen.findByRole("checkbox", { name: /人群建议 · 送礼人群/ });
+	assert.equal(current.audience, "");
+	fireEvent.click(screen.getByRole("button", { name: "应用所选建议" }));
+	assert.equal(current.audience, "送礼人群");
+	assert.equal(current.sellingPoints, "基地直供");
 });
 
 test("长资料先预览，可只用前 2,500 字生成建议并继续下一阶段", async (t) => {
@@ -111,7 +172,7 @@ test("长资料先预览，可只用前 2,500 字生成建议并继续下一阶�
 	const generate = await within(region).findByRole("button", { name: "用前 2,500 字生成建议" });
 	assert.equal(briefs.length, 0);
 	fireEvent.click(generate);
-	await within(region).findByText("没有可补充的建议，可以继续手填。");
+	await within(region).findByText(/没有可补充的建议/);
 	assert.deepEqual(briefs, [("产品或服务：云南普洱熟茶\n" + notes).slice(0, 2_500)]);
 	assert.equal(region.querySelector<HTMLTextAreaElement>("textarea")?.value, notes);
 	fireEvent.click(screen.getByRole("button", { name: "提交本阶段" }));
