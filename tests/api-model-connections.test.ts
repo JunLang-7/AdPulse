@@ -552,6 +552,48 @@ test("model connections API: extraction uses the owned connection and fails clos
 	assert.equal((await call(server, "/api/task-drafts/extract", "POST", { brief: "产品", connectionId: crypto.randomUUID() })).status, 404);
 });
 
+test("model connections API: saved connections can be tested again without sending a new key", async (t) => {
+	let works = true;
+	const { runtime, requests } = withModels({
+		reply: () => works ? providerReply(JSON.stringify({ product: "产品" })) : new Response("synthetic rejection", { status: 401 }),
+	});
+	const owner = await serve(t, runtime);
+	const other = await serve(t, runtime, new Date().toISOString(), "ou-model-other");
+	const created = await (await call(owner, "/api/me/model-connections", "POST", customInput())).json() as {
+		id: string; version: number; verifiedVersion: number;
+	};
+	assert.equal(created.verifiedVersion, created.version);
+	const connectionPath = `/api/me/model-connections/${created.id}`;
+	const testPath = `${connectionPath}/test?expectedVersion=${created.version}`;
+	assert.equal((await call(other, testPath, "POST")).status, 404);
+	assert.equal((await call(owner, `${connectionPath}/test?expectedVersion=99`, "POST")).status, 409);
+	assert.equal(requests.length, 1);
+
+	works = false;
+	const failed = await call(owner, testPath, "POST");
+	assert.equal(failed.status, 200);
+	const failedView = await failed.json() as { hasCredential: boolean; verifiedVersion?: number };
+	assert.equal(failedView.hasCredential, true);
+	assert.equal(failedView.verifiedVersion, undefined);
+	const modelUpdate = { expectedVersion: created.version, models: [{ id: "mimo-new" }] };
+	assert.equal((await call(owner, connectionPath, "PUT", modelUpdate)).status, 503);
+
+	works = true;
+	const retried = await call(owner, testPath, "POST");
+	assert.equal(retried.status, 200);
+	const retriedView = await retried.json() as { models: { id: string }[]; verifiedVersion?: number };
+	assert.equal(retriedView.verifiedVersion, created.version);
+	assert.equal(retriedView.models[0]?.id, "mimo-v2-flash");
+	const updated = await call(owner, connectionPath, "PUT", modelUpdate);
+	assert.equal(updated.status, 200);
+	const updatedView = await updated.json() as { version: number; verifiedVersion?: number; models: { id: string }[] };
+	assert.equal(updatedView.verifiedVersion, updatedView.version);
+	assert.equal(updatedView.models[0]?.id, "mimo-new");
+	assert.equal(requests.length, 5);
+	assert.ok(requests.every((request) => request.auth === "Bearer synthetic-personal-key"));
+	assert.doesNotMatch(JSON.stringify(updatedView), /synthetic-personal-key/);
+});
+
 test("model connections API: stale authentication cannot send probes or change credentials and preferences", async (t) => {
 	const { runtime, requests } = withModels();
 	const server = await serve(t, runtime, new Date(Date.now() - 20 * 60_000).toISOString());
@@ -559,6 +601,7 @@ test("model connections API: stale authentication cannot send probes or change c
 	for (const [path, method, body] of [
 		["/api/me/model-connections", "POST", customInput()],
 		["/api/me/model-connections/test", "POST", customInput()],
+		[`/api/me/model-connections/${id}/test?expectedVersion=1`, "POST", undefined],
 		["/api/me/model-connections/models", "POST", { baseUrl: "https://api.mimotest.example/v1", protocol: "openai-completions", apiKey: "synthetic-personal-key" }],
 		[`/api/me/model-connections/${id}`, "PUT", {}],
 		[`/api/me/model-connections/${id}`, "DELETE", undefined],

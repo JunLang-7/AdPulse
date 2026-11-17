@@ -477,6 +477,24 @@
         }
       }
     },
+    "/api/me/model-connections/{connectionId}/test": {
+      "post": {
+        "operationId": "testSavedModelConnection",
+        "description": "Test the saved model using its encrypted credential and a fixed synthetic sample. Updates only the verification result for the expected connection version.",
+        "parameters": [
+          { "name": "connectionId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "expectedVersion", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "responses": {
+          "200": { "description": "Connection view with verification state for this test", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelConnectionView" } } } },
+          "400": { "description": "Invalid version", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized or recent verification required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Connection not found for this owner", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Connection changed or credential missing", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Personal model credentials are unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/api/me/model-connections/{connectionId}/credential": {
       "delete": {
         "operationId": "deleteModelCredential",

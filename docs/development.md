@@ -77,7 +77,7 @@ bun run model-catalog:generate
 
 右上角个人菜单 →“模型配置”打开统一窗口：左侧是本人连接、部署提供和目录分组，右侧是配置表单与“测试连接 / 保存并使用”。保存前会用固定合成短句测试所选模型；密钥只写、不回显，服务端加密保存，登出或重启后仍可用。未适配的原生协议、仅账号授权、云凭据链或账号/区域/部署名等额外参数的供应商会显示原因；提供可选 OAuth 不妨碍单独使用其个人 API Key 路径。自定义 API 只接受 HTTPS 公网地址，校验全部 DNS 结果并绑定地址、禁止重定向；可显式选择 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 或 Gemini API；Anthropic 基础地址不含版本段，SDK 会请求 `${baseUrl}/v1/messages`；Gemini 基础地址含 `/v1beta`，请求 `${baseUrl}/models/{Model ID}:streamGenerateContent?alt=sse`。
 
-同一窗口还负责默认模型与连接维护：`ModelConnectionService` 的增删改查、删密钥停用、验证结果绑定版本等规则由服务端执行，界面只展示非敏感投影。部署未配置主密钥时，窗口提示个人连接不可保存，但仍可选用“部署提供”的模型。
+模型测试通过并保存后，连接显示「已连接」。可点「设为默认」供 AI 辅助填写使用，或在任务里点「用于本次任务」。「重新测试」用已加密保存的密钥发送固定测试样例。测试失败会清除通过标记并保留密钥。更换已连接的模型时，测试通过后才替换。部署未配置有效主密钥时，表单会说明原因并禁用个人测试和保存。已有部署提供的模型仍可选用。
 
 API 进程仍可读取 `DEEPSEEK_API_KEY` 作为部署提供的默认路由。使用另一供应商的 HTTPS OpenAI-compatible 网关时，在 API 进程的本地 `.env` 中同时设置：
 
@@ -120,6 +120,7 @@ MODEL_CREDENTIAL_ACTIVE_KEY=v1
 | `GET /api/me/model-connections` | 本人连接投影与默认选择，不含任何密文/密钥 |
 | `POST /api/me/model-connections` | 先用固定合成短句测试，通过后才写入连接与加密凭据 |
 | `POST /api/me/model-connections/test` | 只测不存，不发送任务材料 |
+| `POST /api/me/model-connections/{id}/test?expectedVersion=…` | 使用本人已保存的密钥测试当前模型，更新该连接版本的验证状态 |
 | `POST /api/me/model-connections/models` | 显式点击时用候选密钥读取 `${baseUrl}/models`；失败不当作空列表，也不代表生成能力已验证 |
 | `PUT /api/me/model-connections/{id}` | `expectedVersion` + 元数据/模型/凭据动作（keep/replace/remove）；换目标地址或协议必须同时 replace |
 | `DELETE /api/me/model-connections/{id}` | 同一事务删除连接、密文与默认引用 |
