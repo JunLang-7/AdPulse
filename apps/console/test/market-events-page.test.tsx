@@ -2,7 +2,7 @@ import { json, serve } from "./harness.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import MarketEventsPage from "../src/views/adpulse/market-events/index.tsx";
 import type { components } from "../src/adpulse-client.ts";
@@ -16,8 +16,8 @@ const closedSources = [
 	{ key: "haier_news", label: "海尔品牌资讯", subject: { kind: "brand" as const, name: "海尔" }, enabled: false },
 ];
 const defaults = { "GET /api/tasks": () => json({ items: [] }), "GET /api/market-events": () => json({ items: [] }), "GET /api/me/source-leads": () => json({ leads: [], sources: closedSources }), "GET /api/me/source-status": () => json({ items: [] }), "GET /api/market-events/event-1/lifecycle": () => json({ eventId: "event-1", state: "active", anchor: "2026-11-16T01:00:00Z", anchorSource: "last_business_update", lastBusinessUpdate: "2026-11-16T01:00:00Z", expiresAt: "2027-11-16T01:00:00Z", retentionDays: 365, expired: false }) };
-function mount(path = "/market-events") {
-	const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+function mount(path = "/market-events", existing?: QueryClient) {
+	const client = existing ?? new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 	render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><Routes><Route path="/market-events" element={<MarketEventsPage />} /><Route path="/market-events/:eventId" element={<MarketEventsPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 }
 function fillLink() {
@@ -263,4 +263,27 @@ test("市场事件页：到期事件显示保留期说明，不显示业务正�
 	assert.ok(await screen.findByText(/这条事件已过保留期（365 天），内容不再展示/));
 	assert.ok(screen.getByText(/到期时间 2026年11月20日 09:00/));
 	assert.equal(screen.queryByRole("button", { name: "修订事件 / 补充转载" }), null, "到期事件不提供修订入口");
+});
+
+test("市场事件页：曾成功加载的详情在到期后不再继续渲染正文", async t => {
+	t.after(cleanup);
+	const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+	serve(defaults, {
+		"GET /api/market-events/event-1": () => json({ error: "event not found" }, 404),
+		"GET /api/market-events/event-1/lifecycle": () => json({
+			eventId: "event-1", state: "expired", anchor: "2026-11-16T01:00:00Z", anchorSource: "last_business_update",
+			lastBusinessUpdate: "2026-11-16T01:00:00Z", expiresAt: "2026-11-20T01:00:00Z", retentionDays: 365, expired: true,
+		}),
+	});
+	mount("/market-events/event-1", client);
+	assert.ok(await screen.findByText(/这条事件已过保留期（365 天），内容不再展示/));
+
+	// 复现评审 P2：缓存里仍有上一次成功加载的详情。
+	await act(async () => {
+		client.setQueryData(["market-events", "event-1"], { current: version(), versions: [version()] });
+		await Promise.resolve();
+	});
+	assert.equal(screen.queryByRole("heading", { name: "样例发布" }), null, "到期后不再渲染缓存里的标题");
+	assert.equal(screen.queryByText(/还缺这几处的原文引用/), null, "不渲染正文详情");
+	assert.equal(screen.queryByRole("button", { name: "修订事件 / 补充转载" }), null, "不提供修订入口");
 });

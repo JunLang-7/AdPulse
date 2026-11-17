@@ -2802,6 +2802,10 @@
         "type": "object",
         "description": "itemsSource=delivery 时只保证展示字段（卡片冻结内容）；行级字段（id/kind/revision/status）仅 itemsSource=rows 时存在，服务端不补造",
         "properties": {
+          "inputExpired": {
+            "type": "boolean",
+            "description": "来源事件已过保留期：标题、摘要与来源不返回，只留状态"
+          },
           "id": { "type": "string" },
           "kind": { "type": "string", "enum": ["effect_alert"] },
           "taskId": { "type": "string" },

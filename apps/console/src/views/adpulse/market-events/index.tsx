@@ -313,23 +313,28 @@ export default function MarketEventsPage() {
 		await queryClient.invalidateQueries({ queryKey: ["market-events"] });
 		navigate(`/market-events/${id}`, { state: { marketEventNotice: status === "duplicate" ? "这条事件之前录过了，显示的是已有版本；新材料要到详情页做一次修订才会加进去。" : "事件已保存。" } });
 	};
+	// 到期后不再使用详情缓存：曾成功加载过的旧版本仍留在 React Query 里，
+	// 只靠「再请求一次拿到 404」不足以防住把正文继续渲染出来。
+	const expired = lifecycle.data?.expired === true;
 	if (eventId) return <div className="p-6 space-y-4">
 		<Link className="underline text-sm" to="/market-events">返回市场与竞品事件</Link>
 		{notice && <p role="status">{notice}</p>}
-		{detail.isLoading && <p>正在读取事件…</p>}
-		{detail.error && (lifecycle.data?.expired
+		{expired && lifecycle.data
 			? <p role="status" className="rounded-md border border-dashed p-4 text-sm">
 				这条事件已过保留期（{lifecycle.data.retentionDays} 天），内容不再展示。到期时间 {formatRetention(lifecycle.data.expiresAt)}。
 			</p>
-			: <p role="alert">{detail.error.message}</p>)}
-		{detail.data && <><h1 className="text-2xl font-bold">{detail.data.current.input.title}</h1><Summary version={detail.data.current} />
-			{lifecycle.data
-				? <p className="text-xs text-muted-foreground">保留至 {formatRetention(lifecycle.data.expiresAt)}。查看与投递不会顺延，每次修订会重新计时。</p>
-				: null}
-			<Button variant="outline" onClick={() => setEditing(!editing)}>{editing ? "取消编辑" : "修订事件 / 补充转载"}</Button>
-			{editing && <EventForm key={detail.data.current.id} current={detail.data.current} attach={attachLead ?? undefined} saved={(id, status) => { void saved(id, status); }} />}
-			<h2 className="font-semibold">历史版本</h2>{detail.data.versions.slice(1).map(v => <details key={v.id} className="rounded-md border p-4"><summary>第 {v.version} 版 · {v.changeReason} · {formatBeijing(v.createdAt)}</summary><Summary version={v} /></details>)}
-		</>}
+			: <>
+				{detail.isLoading && <p>正在读取事件…</p>}
+				{detail.error && <p role="alert">{detail.error.message}</p>}
+				{detail.data && <><h1 className="text-2xl font-bold">{detail.data.current.input.title}</h1><Summary version={detail.data.current} />
+					{lifecycle.data
+						? <p className="text-xs text-muted-foreground">保留至 {formatRetention(lifecycle.data.expiresAt)}。查看与投递不会顺延，每次修订会重新计时。</p>
+						: null}
+					<Button variant="outline" onClick={() => setEditing(!editing)}>{editing ? "取消编辑" : "修订事件 / 补充转载"}</Button>
+					{editing && <EventForm key={detail.data.current.id} current={detail.data.current} attach={attachLead ?? undefined} saved={(id, status) => { void saved(id, status); }} />}
+					<h2 className="font-semibold">历史版本</h2>{detail.data.versions.slice(1).map(v => <details key={v.id} className="rounded-md border p-4"><summary>第 {v.version} 版 · {v.changeReason} · {formatBeijing(v.createdAt)}</summary><Summary version={v} /></details>)}
+				</>}
+			</>}
 	</div>;
 	return <div className="p-6 space-y-8"><div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-bold">市场与竞品事件</h1><Button onClick={() => setEditing(!editing)}>{editing ? "收起录入" : "录入事件"}</Button></div>
 		{editing && <EventForm key={mergeDraftState?.key ?? leadDraftState?.key ?? "manual"} prefill={mergeDraftState ? mergeLeadDraft(mergeDraftState.leads) : leadDraftState ? leadDraft(leadDraftState.lead) : undefined} saved={(id, status) => { setLeadDraftState(null); setMergeDraftState(null); void saved(id, status); }} />}

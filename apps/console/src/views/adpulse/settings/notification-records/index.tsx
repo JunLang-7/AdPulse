@@ -169,6 +169,7 @@ function DigestRow({ record, upcoming = false }: { record: NotificationRecord; u
 			{items.length ? <ul className="divide-y divide-border text-sm">
 				{items.map((item, index) => (
 					<li key={item.id ?? index} className="space-y-1 py-2">
+						{item.inputExpired ? <p className="text-xs text-amber-700">来源事件已过保留期，标题与来源不再展示。</p> : null}
 						<div className="flex flex-wrap items-start justify-between gap-2">
 							<p className="font-medium break-words">{item.title}</p>
 							{item.taskId ? <a className="underline underline-offset-4" href={`/tasks/${encodeURIComponent(item.taskId)}/review`}>查看推广效果</a> : null}

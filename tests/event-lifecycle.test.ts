@@ -93,3 +93,23 @@ test("事件生命周期：判定只看事件版本，读取不推进锚点", as
 	const after = await service.lifecycle("owner", created.version.eventId);
 	assert.equal(after?.anchor, "2026-12-01T00:00:00.000Z", "修订推进锚点");
 });
+
+test("事件生命周期：别名/逻辑键命中的到期事件不能通过新幂等键取回", async () => {
+	// 复现评审 P1：POST 创建时 eventId 为空，只有别名解析后才会拿到旧 head。
+	const storage = new MemoryStorage();
+	const time = clock();
+	const service = new MarketEventService(storage, time.now);
+	const created = await service.create("owner", "key-1", eventInput());
+	time.set("2027-11-17T10:00:00.000Z");
+
+	// 同一个 occurrenceKey（逻辑键）与同一个来源 URL（别名键）都要被拒绝。
+	await assert.rejects(
+		() => service.create("owner", "key-2", eventInput()),
+		(error: { status?: number }) => error.status === 404,
+		"同逻辑键 + 新幂等键");
+	await assert.rejects(
+		() => service.create("owner", "key-3", { ...eventInput(), occurrenceKey: "another-key" }),
+		(error: { status?: number }) => error.status === 404,
+		"同来源 URL + 新幂等键");
+	assert.ok(created.version.eventId);
+});

@@ -1192,6 +1192,8 @@ export interface components {
         };
         /** @description itemsSource=delivery 时只保证展示字段（卡片冻结内容）；行级字段（id/kind/revision/status）仅 itemsSource=rows 时存在，服务端不补造 */
         NotificationRecordItem: {
+            /** @description 来源事件已过保留期：标题、摘要与来源不返回，只留状态 */
+            inputExpired?: boolean;
             id?: string;
             /** @enum {string} */
             kind?: "effect_alert";

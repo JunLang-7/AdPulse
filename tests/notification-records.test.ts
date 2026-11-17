@@ -378,3 +378,49 @@ test("通知记录: 实质更新移入后续批次后，已发送记录仍显示
 	assert.equal(next?.items[0]?.title, "成本上升（补充证据）");
 	assert.equal(next?.items[0]?.revision, 2);
 });
+
+test("通知记录：来源事件到期后不再返回标题、摘要与来源链接", async () => {
+	const storage = new MemoryStorage();
+	const ownerId = "owner-expired";
+	const now = "2027-11-18T00:00:00.000Z";
+	const eventCreatedAt = "2026-11-17T10:00:00.000Z";
+	const item = {
+		ownerId, logicalKey: "event:event-1", kind: "market_event" as const,
+		title: "到期事件的标题", summary: "到期事件的摘要", relevance: "该事件明确标注的主体是你关注的品牌",
+		sources: [{ label: "潍柴新闻与事件", url: "https://example.com/a", publishedAt: null }],
+		revision: 1, marketEventRef: { eventId: "event-1", version: 1, evidenceRevision: 1 },
+		status: "cancelled" as const, createdAt: eventCreatedAt, updatedAt: eventCreatedAt,
+	};
+	await storage.transaction(async (tx) => {
+		await tx.marketEvents.put({ id: "event-1", ownerId, logicalKey: "logical", currentVersion: 1, createdAt: eventCreatedAt });
+		await tx.marketEventVersions.put({
+			id: "event-1:1", eventId: "event-1", ownerId, version: 1, evidenceRevision: 1,
+			input: {} as never, method: "manual", sourceItemId: null, materials: [],
+			createdAt: eventCreatedAt, changeReason: "录入", candidate: { status: "evidence_ready", reasons: [] },
+		});
+		// 未发送条目（行投影）+ 已发送批次（冻结卡片投影）都要覆盖。
+		await tx.notificationBatches.put({ id: "batch-pending", ownerId, kind: "digest", localDate: "2026-11-17", status: "cancelled", settingsVersion: 1, scheduledAt: "2026-11-18T01:30:00Z", createdAt: eventCreatedAt, updatedAt: eventCreatedAt, statusReason: "input_unavailable" } as never);
+		await tx.notificationItems.put({ ...item, id: "item-pending", batchId: "batch-pending" });
+		await tx.notificationBatches.put({ id: "batch-sent", ownerId, kind: "digest", localDate: "2026-11-18", status: "sent", settingsVersion: 1, scheduledAt: "2026-11-19T01:30:00Z", createdAt: eventCreatedAt, updatedAt: eventCreatedAt } as never);
+		await tx.notificationItems.put({ ...item, id: "item-sent", batchId: "batch-sent", status: "sent" });
+		await tx.deliveries.put({
+			id: "digest:batch-sent", ownerId, batchId: "batch-sent", purpose: "digest", status: "sent",
+			card: { title: "信息汇总", items: [{ title: "冻结的标题", summary: "冻结的摘要", relevance: "冻结的关联", sources: item.sources, marketEventRef: item.marketEventRef }] },
+			expiresAt: "2026-11-19T02:00:00Z", sentAt: "2026-11-19T01:30:00Z",
+		} as never);
+	});
+
+	const page = await new NotificationRecordService(storage, () => now).list(ownerId);
+	const pending = page.records.find((record) => record.localDate === "2026-11-17");
+	const sent = page.records.find((record) => record.localDate === "2026-11-18");
+	assert.equal(pending?.itemsSource, "rows");
+	assert.equal(pending?.items[0]?.inputExpired, true, "未发送条目到期后标记为已到期");
+	assert.equal(pending?.items[0]?.title, "已到期的事件");
+	assert.equal(pending?.items[0]?.summary, "这条事件已过保留期（365 天），内容不再展示。");
+	assert.deepEqual(pending?.items[0]?.sources, [], "不返回来源链接");
+	assert.equal(sent?.itemsSource, "delivery");
+	assert.equal(sent?.items[0]?.inputExpired, true, "冻结卡片同样按到期抹掉内容");
+	assert.equal(sent?.items[0]?.title, "已到期的事件");
+	assert.equal(sent?.items[0]?.summary, "这条事件已过保留期（365 天），内容不再展示。");
+	assert.deepEqual(sent?.items[0]?.sources, []);
+});

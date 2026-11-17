@@ -14,6 +14,8 @@ export interface InfoCard {
 			observedAt?: string;
 		}>;
 		detailUrl?: string;
+		/** 事件来源的条目带上引用，便于记录页在事件到期后不再展示其内容。 */
+		marketEventRef?: { eventId: string; version: number; evidenceRevision: number };
 	}>;
 	footer?: string;
 	detailUrl?: string;

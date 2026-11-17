@@ -241,6 +241,10 @@ export class MarketEventService {
 			if (head && head.id !== alias.eventId) throw new MarketEventError(409, "source already belongs to another event");
 			head = await tx.marketEvents.get(alias.eventId);
 		}
+		// 别名/逻辑键可能指向已到期事件：这里必须对最终 head 再判一次，
+		// 否则换一个新幂等键提交相同链接即可把到期事件的标题与正文取回（duplicate 分支）。
+		if (head && !await eventActiveIn(tx, head, new Date(this.now())))
+			throw new MarketEventError(404, "event not found");
 		const previous = head ? await tx.marketEventVersions.get(`${head.id}:${head.currentVersion}`) : null;
 		if (eventId && head?.currentVersion !== expectedVersion) throw new MarketEventError(409, "event version conflict");
 		if (previous && ((previous.input.provenance.simulated && !input.provenance.simulated) || (!eventId && previous.input.provenance.simulated !== input.provenance.simulated))) throw new MarketEventError(409, "simulation provenance cannot be changed");
