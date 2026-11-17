@@ -72,10 +72,10 @@ export default function SessionDetailPage() {
 				</p>
 				<div className="flex flex-wrap items-center gap-1.5">
 					<Badge variant="outline">第 {session.roundNo} 轮</Badge>
-					<Badge variant="outline">v{session.version} 策略</Badge>
+					<Badge variant="outline">策略第 {session.version} 版</Badge>
 					<Badge variant="outline">
 						{session.deliveryMode === "web"
-							? "Web 待处理"
+							? "网页待处理"
 							: session.recipient?.kind === "group"
 								? "群聊"
 								: "单聊"}
@@ -85,7 +85,7 @@ export default function SessionDetailPage() {
 					) : null}
 					{session.taskRef ? (
 						<Link to={`/tasks/${session.taskRef.taskId}`}>
-							<Badge variant="outline">任务基线 v{session.taskRef.taskVersion}</Badge>
+							<Badge variant="outline">基于任务第 {session.taskRef.taskVersion} 版</Badge>
 						</Link>
 					) : null}
 				</div>
@@ -215,7 +215,7 @@ export default function SessionDetailPage() {
 
 				<Card>
 					<CardHeader>
-						<CardTitle>策略快照</CardTitle>
+						<CardTitle>策略变更记录</CardTitle>
 					</CardHeader>
 					<CardContent className="space-y-2 text-sm">
 						{data.snapshots.map((snapshot) => (
@@ -223,7 +223,7 @@ export default function SessionDetailPage() {
 								key={snapshot.id}
 								className="flex items-center justify-between gap-2 border-b border-border pb-2 last:border-0 last:pb-0"
 							>
-								<span>v{snapshot.version}</span>
+								<span>第 {snapshot.version} 版</span>
 								<span className="text-xs text-muted-foreground">
 									{snapshot.changes.length === 0
 										? "无变更"

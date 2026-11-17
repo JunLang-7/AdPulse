@@ -533,7 +533,7 @@ export default function SubscriptionSettingsPage() {
 					<dl className="grid gap-2 text-sm sm:grid-cols-2">
 						<div className="flex items-baseline justify-between gap-3">
 							<dt className="text-muted-foreground">订阅配置</dt>
-							<dd>v{data.settings.version}（{data.targets.length} 个关注对象）</dd>
+							<dd>{data.targets.length} 个关注对象</dd>
 						</div>
 						<div className="flex items-baseline justify-between gap-3">
 							<dt className="text-muted-foreground">单聊地址</dt>
@@ -605,9 +605,8 @@ export default function SubscriptionSettingsPage() {
 						{data.settings.decisionCards?.enabled ? "已记录单独确认" : "尚未单独确认"}
 					</p>
 					<p className="text-sm text-muted-foreground">
-						本页仅保存偏好；实际投递还需服务端明确启用。日汇总授权不自动开启决策卡。
-						后续投递仍须满足全部推送开关、本人授权、关注范围、免打扰与候选有效期。
-						不会补发历史 Web 候选；关闭后重新确认只考虑重新确认之后的新候选。
+						开启后，符合条件的决策卡会单独推给你；日汇总的授权不会顺带打开它。
+						关闭再重新打开，只对之后产生的提醒生效，不会补发之前的。
 					</p>
 					{data.settings.decisionCards?.enabled ? (
 						<button
@@ -811,9 +810,8 @@ export default function SubscriptionSettingsPage() {
 					/>
 
 					<p className="text-xs text-muted-foreground">
-						退订某个对象会保留它的配置，可随时恢复；关闭全部主动推送不会退出登录。
-						效果告警按本人任务关联匹配；明确事件按本人录入或来源线索转成的候选匹配；
-						补证类别尚未接入，配置会保留。
+						暂停某个对象不会删掉它的设置，随时可以恢复；关掉推送也不会让你退出登录。
+						效果提醒来自你关联的任务，市场事件提醒来自你自己录入的事件或来源线索。
 					</p>
 				</CardContent>
 			</Card>

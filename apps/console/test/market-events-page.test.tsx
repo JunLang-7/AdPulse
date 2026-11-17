@@ -213,7 +213,7 @@ test("市场事件页：无权详情只显示拒绝结果，不渲染录入或�
 test("市场事件页：重复录入展示原版本并明确告知新材料未附加",async t=>{
 	t.after(cleanup);const existing=version();serve(defaults,{"POST /api/market-events":()=>json({status:"duplicate",version:existing}),"GET /api/market-events/event-1":()=>json({current:existing,versions:[existing]})});
 	mount();fireEvent.click(await screen.findByRole("button",{name:"录入事件"}));fillLink();fireEvent.click(screen.getByRole("button",{name:"保存事件"}));
-	await screen.findByText("已存在相同事件，展示原版本。新材料尚未附加，请修订原事件。");assert.ok(await screen.findByRole("button",{name:"修订事件 / 补充转载"}));
+	await screen.findByText("这条事件之前录过了，显示的是已有版本；新材料要到详情页做一次修订才会加进去。");assert.ok(await screen.findByRole("button",{name:"修订事件 / 补充转载"}));
 });
 test("市场事件页：移除来源时清除指向该材料的引用",async t=>{
 	t.after(cleanup);let body:Input|undefined;serve(defaults,{"POST /api/market-events":async req=>{body=await req.json();return json({error:"test"},503);}});

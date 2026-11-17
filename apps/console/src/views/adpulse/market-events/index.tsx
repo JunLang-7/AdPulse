@@ -244,7 +244,7 @@ function EventForm({ current, prefill, attach, saved }: { current?: EventVersion
 				})}>移除来源 {index + 1}</Button>
 			</fieldset>)}
 			<Button type="button" variant="outline" disabled={draft.sources.length >= 10} onClick={() => setDraft({ ...draft, sources: [...draft.sources, source()] })}>补充来源</Button>
-			<fieldset className="space-y-3 rounded-md border p-4"><legend>事实依据（可留空；必须逐字引用上方材料）</legend>{(Object.keys(fields) as Array<keyof typeof fields>).map(field => <div key={field} className="grid gap-2 md:grid-cols-3">
+			<fieldset className="space-y-3 rounded-md border p-4"><legend>事实依据（可留空；引用要照抄上面的材料原文）</legend>{(Object.keys(fields) as Array<keyof typeof fields>).map(field => <div key={field} className="grid gap-2 md:grid-cols-3">
 				<label>{fields[field]}引用来源<select className={control} value={draft.citations[field]?.sourceIndex ?? 0} onChange={e => { const citation = draft.citations[field]; setDraft({ ...draft, citations: { ...draft.citations, [field]: { quote: citation?.quote ?? "", sourceIndex: Number(e.target.value) } } }); }}>{draft.sources.map((_s,i) => <option key={i} value={i}>来源 {i + 1}</option>)}</select></label>
 				<label className="md:col-span-2">{fields[field]}原文引用<Input maxLength={2000} value={draft.citations[field]?.quote ?? ""} onChange={e => setDraft({ ...draft, citations: { ...draft.citations, [field]: { sourceIndex: draft.citations[field]?.sourceIndex ?? 0, quote: e.target.value } } })} /></label>
 			</div>)}</fieldset>
@@ -298,7 +298,7 @@ export default function MarketEventsPage() {
 		setEditing(false);
 		setSelectedLeads([]);
 		await queryClient.invalidateQueries({ queryKey: ["market-events"] });
-		navigate(`/market-events/${id}`, { state: { marketEventNotice: status === "duplicate" ? "已存在相同事件，展示原版本。新材料尚未附加，请修订原事件。" : "事件已保存。" } });
+		navigate(`/market-events/${id}`, { state: { marketEventNotice: status === "duplicate" ? "这条事件之前录过了，显示的是已有版本；新材料要到详情页做一次修订才会加进去。" : "事件已保存。" } });
 	};
 	if (eventId) return <div className="p-6 space-y-4">
 		<Link className="underline text-sm" to="/market-events">返回市场与竞品事件</Link>
@@ -394,7 +394,7 @@ export default function MarketEventsPage() {
 				</ul>
 			</CardContent>
 		</Card>}
-		{leads.data && leads.data.leads.length === 0 && leads.data.sources.every((item) => !item.enabled) && <p className="text-xs text-muted-foreground">尚未开启自动来源；可在订阅页开启潍柴/海尔的受限列表线索。</p>}
+		{leads.data && leads.data.leads.length === 0 && leads.data.sources.every((item) => !item.enabled) && <p className="text-xs text-muted-foreground">还没有开启来源站点；可以到订阅页打开已接入的站点。</p>}
 		{list.isLoading && <p>正在读取事件…</p>}{list.error && <p role="alert">{list.error.message}</p>}
 		{list.data?.length === 0 && <p className="rounded-md border border-dashed p-6">还没有录入事件。可先保存链接，缺失信息保持未知。</p>}
 		<div className="grid gap-4 md:grid-cols-2">{list.data?.map(v => <Link key={v.eventId} to={`/market-events/${v.eventId}`}><Card><CardHeader><CardTitle>{v.input.provenance.simulated ? "【模拟】" : ""}{v.input.title}</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><p>{types[v.input.type]} · {v.input.subject.name} · 第 {v.version} 版</p><p>{v.candidate.status === "evidence_ready" ? "依据齐备" : "还缺依据"}</p><p>{v.input.taskRefs.length ? `关联 ${v.input.taskRefs.length} 个任务` : "未关联任务"}</p></CardContent></Card></Link>)}</div>
