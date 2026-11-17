@@ -820,21 +820,19 @@ export default function SubscriptionSettingsPage() {
 
 			<Card className="max-w-3xl">
 				<CardHeader>
-					<CardTitle>自动来源线索（#39 方案 A）</CardTitle>
+					<CardTitle>官网资讯</CardTitle>
 				</CardHeader>
 				<CardContent className="space-y-3">
 					<p className="text-sm text-muted-foreground">
-						开启后，该站点列表的新标题会出现在「市场与竞品事件」页的线索里，由你确认后转成事件；
-						<strong>不会自动建事件，也不会自动推送</strong>。关联依据是声明的「站点 → 主体」，不是标题或域名推断。
+						开启后，这些官网最新发布的标题和链接会出现在「市场与竞品事件」页，由你确认后才变成事件。
+						系统不会自动创建事件，也不会自动发消息。
 					</p>
 					<ul className="space-y-2">
 						{(data.sources ?? []).map((source) => (
 							<li key={source.key} className="flex items-center justify-between gap-3 rounded-md border p-3">
 								<div className="text-sm">
 									<p className="font-medium">{source.label}</p>
-									<p className="text-xs text-muted-foreground">
-										声明主体：{source.subject.kind === "brand" ? "品牌" : "竞品"}「{source.subject.name}」· 仅标题与原文链接
-									</p>
+									<p className="text-xs text-muted-foreground">只读取列表里的标题和链接，不读取正文</p>
 								</div>
 								<button
 									type="button"
@@ -843,7 +841,7 @@ export default function SubscriptionSettingsPage() {
 									onClick={() =>
 										updateSettings.mutate({
 											// 服务端会再校验 allowlist；这里只做边界收窄。
-											sourceFeeds: (data.sources ?? [])
+											sourceFeeds: data.sources
 												.map((item) =>
 													item.key === source.key ? { ...item, enabled: !item.enabled } : item,
 												)
@@ -852,15 +850,12 @@ export default function SubscriptionSettingsPage() {
 										})
 									}
 								>
-									{source.enabled ? "关闭来源" : "开启来源"}
+									{source.enabled ? "关闭" : "开启"}
 								</button>
 							</li>
 						))}
 					</ul>
-					<p className="text-xs text-muted-foreground">
-						这两个站点未取得合规签核（#41 Gate 0），仅按产品方决定做受限采集：只取标题与链接、不复制正文；
-						投诉或条款变化时应立即停用。
-					</p>
+					<p className="text-xs text-muted-foreground">内容以原文为准，系统不改写标题。</p>
 				</CardContent>
 			</Card>
 		</div>
