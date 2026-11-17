@@ -63,11 +63,28 @@ const OUTCOME_LABELS: Record<string, string> = {
 
 export const outcomeLabel = (outcome: string | null): string =>
 	outcome ? (OUTCOME_LABELS[outcome] ?? outcome) : "暂无记录";
+/** 从原文链接取一个稳定短标识，用于默认的事件编号（同一篇文章永远是同一个值）。 */
+export function occurrenceKeyFromUrl(sourceKey: string, url: string): string {
+	let slug = "";
+	try {
+		const parts = new URL(url).pathname.split("/").filter(Boolean);
+		const last = parts[parts.length - 1] ?? "";
+		slug = last === "index.html" || last === "index.shtml"
+			? (parts[parts.length - 2] ?? "")
+			: last.replace(/\.s?html?$/, "");
+	} catch {
+		slug = url;
+	}
+	return `${sourceKey}:${slug || url}`.slice(0, 200);
+}
+
 /** 线索转事件：只预填标题、主体声明与那条标题+链接，引用/类型仍需本人补。 */
 export function leadDraft(lead: Lead): EventInput {
 	return {
 		...blank(),
 		title: lead.title,
+		// 事件编号按原文链接生成：同一篇文章永远得到同一个值，避免用户随手填写造成重复事件。
+		occurrenceKey: occurrenceKeyFromUrl(lead.sourceKey, lead.url),
 		subject: { kind: lead.subject.kind, name: lead.subject.name },
 		sources: [{
 			url: lead.url, publisher: lead.sourceLabel, content: lead.title, scope: "title_only", origin: "official",
@@ -106,7 +123,7 @@ function EventForm({ current, prefill, saved }: { current?: EventVersion; prefil
 		<fieldset disabled={mutation.isPending} className="space-y-4">
 			<div className="grid gap-3 md:grid-cols-2">
 				<label>事件标题<Input required maxLength={200} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} /></label>
-				<label>同一事件标识<Input required maxLength={200} value={draft.occurrenceKey} onChange={e => setDraft({ ...draft, occurrenceKey: e.target.value })} /><span className="text-xs text-muted-foreground">同一对象、类别与事件使用相同标识；转载请修订原事件。</span></label>
+				<label>事件编号<Input required maxLength={200} value={draft.occurrenceKey} onChange={e => setDraft({ ...draft, occurrenceKey: e.target.value })} /><span className="text-xs text-muted-foreground">用来判断「是不是同一件事」：同一对象 + 类别 + 编号会被当成同一条事件，重复保存只返回原版本，不会多出一条。从线索转过来时已按原文链接自动填好，一般不用改。</span></label>
 				<label>类别<select className={control} value={draft.type} onChange={e => { const type = (Object.keys(types) as Array<keyof typeof types>).find(k => k === e.target.value); if (type) setDraft({ ...draft, type }); }}>{Object.entries(types).map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></label>
 				<label>关注对象类型<select className={control} value={draft.subject.kind} onChange={e => setDraft({ ...draft, subject: { ...draft.subject, kind: e.target.value === "brand" ? "brand" : "competitor" } })}><option value="brand">品牌</option><option value="competitor">竞品</option></select></label>
 				<label>关注对象名称<Input required maxLength={200} value={draft.subject.name} onChange={e => setDraft({ ...draft, subject: { ...draft.subject, name: e.target.value } })} /></label>
