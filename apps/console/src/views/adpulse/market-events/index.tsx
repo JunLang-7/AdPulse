@@ -41,6 +41,28 @@ function Summary({ version }: { version: EventVersion }) {
 	</div>;
 }
 type Lead = components["schemas"]["SourceLead"];
+
+/** 列表页只给日期时按日期展示；带时间的按北京时间显示，不把 UTC 串直接丢给用户。 */
+export function formatLeadDate(value: string | null): string {
+	if (!value) return "未知";
+	if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+		const [year, month, day] = value.split("-");
+		return `${year}年${Number(month)}月${Number(day)}日`;
+	}
+	return formatBeijing(value);
+}
+
+/** 采集结果码翻译成人话；未知码原样显示，不猜。 */
+const OUTCOME_LABELS: Record<string, string> = {
+	ok: "成功",
+	parse_failed: "页面结构变化，未取到条目",
+	http_error: "站点返回错误",
+	blocked: "被站点拒绝访问",
+	stopped: "已停止（需人工恢复）",
+};
+
+export const outcomeLabel = (outcome: string | null): string =>
+	outcome ? (OUTCOME_LABELS[outcome] ?? outcome) : "暂无记录";
 /** 线索转事件：只预填标题、主体声明与那条标题+链接，引用/类型仍需本人补。 */
 export function leadDraft(lead: Lead): EventInput {
 	return {
@@ -163,28 +185,40 @@ export default function MarketEventsPage() {
 		{leads.data && leads.data.leads.length > 0 && <Card>
 			<CardHeader><CardTitle>来源线索（{leads.data.leads.length}）</CardTitle></CardHeader>
 			<CardContent className="space-y-2 text-sm">
-				<p className="text-xs text-muted-foreground">只是来源列表的标题与链接，未读取正文；关联依据是声明的「站点 → 主体」，不是标题推断。转事件后仍需补类型、时间与逐字引用。</p>
+				<p className="text-xs text-muted-foreground">
+					下面是官网列表页的标题和原文链接，还没有读正文。想看完整内容请点标题去原文；要变成可推送的事件，
+					点「转事件」并由你补上时间、适用条件和原文引用。
+				</p>
 				{feedStatus.data && feedStatus.data.length > 0 ? <ul className="space-y-1 text-xs text-muted-foreground">
 					{feedStatus.data.map((feed) => <li key={feed.key}>
-						{feed.label}：{feed.status === "stopped" ? "已停止（需人工恢复）" : "采集正常"} ·
-						最近 {feed.lastRun ? formatBeijing(feed.lastRun) : "未运行"} ·
-						{feed.lastOutcome ? ` 结果 ${feed.lastOutcome}` : " 无结果"} · 条目 {feed.activeItems}
+						{feed.status === "stopped"
+							? `${feed.label}：已停止采集，需要人工恢复`
+							: `${feed.label}：${feed.lastRun ? `最近一次采集在 ${formatBeijing(feed.lastRun)}` : "还没有采集记录"}，${feed.lastOutcome ? outcomeLabel(feed.lastOutcome) : "暂无结果"}，现有 ${feed.activeItems} 条`}
 					</li>)}
 				</ul> : null}
 				{feedStatus.error ? <p role="alert" className="text-xs text-red-600">读取来源状态失败，不影响线索列表。</p> : null}
 				<ul className="space-y-2">
 					{leads.data.leads.map((lead) => <li key={lead.itemId} className="rounded-md border p-3">
-						<div className="flex flex-wrap items-center justify-between gap-2">
-							<div>
-								<a className="font-medium underline break-all" href={lead.url} target="_blank" rel="noreferrer">{lead.title}</a>
-								<p className="text-xs text-muted-foreground">{lead.sourceLabel} · 声明主体 {lead.subject.name} · 发布时间 {lead.publishedAt ?? "未知"} · 最近出现 {lead.lastSeenAt}</p>
+						<div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+							<div className="min-w-0 space-y-1">
+								<a className="block font-medium underline break-all" href={lead.url} target="_blank" rel="noreferrer">{lead.title}</a>
+								<p className="text-xs text-muted-foreground">
+									来自 {lead.sourceLabel} · 关联{lead.subject.kind === "brand" ? "品牌" : "竞品"}：{lead.subject.name}
+									{" · "}发布 {formatLeadDate(lead.publishedAt)}
+									{" · "}最近出现 {formatBeijing(lead.lastSeenAt)}
+								</p>
 							</div>
-							{lead.convertedEventId
-								? <Link className="underline text-sm" to={`/market-events/${lead.convertedEventId}`}>已录入，查看事件</Link>
-								: <Button variant="outline" onClick={() => { setLeadDraftState({ lead, key: lead.itemId }); setEditing(true); }}>转事件</Button>}
+							<div className="sm:justify-self-end">
+								{lead.convertedEventId
+									? <Link className="text-sm underline" to={`/market-events/${lead.convertedEventId}`}>已录入，查看事件</Link>
+									: <Button variant="outline" onClick={() => { setLeadDraftState({ lead, key: lead.itemId }); setEditing(true); }}>转事件</Button>}
+							</div>
 						</div>
 					</li>)}
 				</ul>
+				<p className="text-xs text-muted-foreground">
+					关联是按站点归属的：潍柴官网的条目归到潍柴、海尔官网的归到海尔，不会因为标题里出现某个名字就自动关联。
+				</p>
 			</CardContent>
 		</Card>}
 		{leads.data && leads.data.leads.length === 0 && leads.data.sources.every((item) => !item.enabled) && <p className="text-xs text-muted-foreground">尚未开启自动来源；可在订阅页开启潍柴/海尔的受限列表线索。</p>}

@@ -15,7 +15,7 @@ const closedSources = [
 	{ key: "weichai_news", label: "潍柴新闻与事件", subject: { kind: "brand" as const, name: "潍柴" }, enabled: false },
 	{ key: "haier_news", label: "海尔品牌资讯", subject: { kind: "brand" as const, name: "海尔" }, enabled: false },
 ];
-const defaults = { "GET /api/tasks": () => json({ items: [] }), "GET /api/market-events": () => json({ items: [] }), "GET /api/me/source-leads": () => json({ leads: [], sources: closedSources }) };
+const defaults = { "GET /api/tasks": () => json({ items: [] }), "GET /api/market-events": () => json({ items: [] }), "GET /api/me/source-leads": () => json({ leads: [], sources: closedSources }), "GET /api/me/source-status": () => json({ items: [] }) };
 function mount(path = "/market-events") {
 	const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 	render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><Routes><Route path="/market-events" element={<MarketEventsPage />} /><Route path="/market-events/:eventId" element={<MarketEventsPage />} /></Routes></MemoryRouter></QueryClientProvider>);
@@ -50,15 +50,17 @@ test("市场事件页：来源线索只展示标题与链接，转事件预填�
 	mount();
 	const link = await screen.findByRole("link", { name: "潍柴列表标题" });
 	assert.equal(link.getAttribute("href"), "https://www.weichai.com/news/1.html");
-	assert.equal(screen.getAllByText(/声明主体 潍柴/).length, 2, "每条线索都标出声明主体");
-	assert.equal(screen.getAllByText(/发布时间 2026-11-15/).length, 2);
+	assert.equal(screen.getAllByText(/关联品牌：潍柴/).length, 2, "每条线索都标出关联品牌");
+	assert.equal(screen.getAllByText(/发布 2026年11月15日/).length, 2, "日期用可读格式");
+	assert.equal(screen.getAllByText(/最近出现 11月16日 08:02/).length, 2, "时间按北京时间展示，不显示 ISO 串");
 	assert.equal(screen.getByRole("link", { name: "已录入，查看事件" }).getAttribute("href"), "/market-events/event-1");
 	fireEvent.click(screen.getAllByRole("button", { name: "转事件" })[0]!);
 	assert.equal((screen.getByLabelText("事件标题") as HTMLInputElement).value, "潍柴列表标题");
 	assert.equal((screen.getByLabelText("关注对象名称") as HTMLInputElement).value, "潍柴");
 	assert.equal((screen.getByLabelText("原文链接（不自动读取）") as HTMLInputElement).value, "https://www.weichai.com/news/1.html");
 	assert.equal((screen.getByLabelText("内容范围") as HTMLSelectElement).value, "title_only");
-	assert.ok(screen.getByText(/仅取得来源列表的标题与链接/));
+	assert.ok(screen.getByText(/还没有读正文/), "说明用日常说法");
+	assert.ok(screen.getByText(/不会因为标题里出现某个名字就自动关联/), "关联依据用人话解释");
 	// 实际提交：仅标题来源必须带上已取得的标题作为 content，否则领域会拒。
 	fireEvent.change(screen.getByLabelText("同一事件标识", { exact: false }), { target: { value: "lead-release" } });
 	fireEvent.click(screen.getByRole("button", { name: "保存事件" }));
