@@ -171,7 +171,14 @@ test("市场事件页：仅链接保持未知，保存中禁用，成功后可�
 	assert.equal((screen.getByLabelText("事件标题") as HTMLInputElement).matches(":disabled"),true);
 	release(); await screen.findByRole("heading",{name:"样例发布"});
 	assert.equal(saved.input.eventTime,null); assert.equal(saved.input.sources[0]?.content,null); assert.equal(saved.input.sources[0]?.publishedAt,null);
-	assert.ok(screen.getByText("未读取正文")); assert.ok(screen.getByText("尚未关联个人任务，不推断任务影响。")); assert.ok(screen.getByRole("link",{name:"查看原文"}));
+	assert.ok(screen.getByText(/只拿到列表里的标题和链接，没有读正文/), "材料说明用人话");
+	assert.ok(screen.getByText("没有关联推广任务。"));
+	assert.ok(screen.getByRole("link", { name: /https:\/\/example\.com\/news/ }), "链接用原文地址做文本");
+	assert.ok(screen.getByText(/还缺依据，暂时不会进入通知筛选/), "状态用人话");
+	assert.ok(screen.getByText("这是合成样例，仅供测试"), "未归并的原因原样保留，不被吞掉");
+	assert.ok(screen.getByText("事件时间：未知"));
+	assert.equal(screen.queryByText(/subject:|eventTime:|conditions:/), null, "不把字段名直接摊给用户");
+	assert.equal(screen.queryByText(/证据 v\d/), null, "不显示内部证据版本");
 	assert.equal(calls.some(c=>/sessions|choices|deliveries/.test(c)),false);
 });
 test("市场事件页：失败保留草稿，重试复用幂等键，引用可以选择第二来源", async t => {
@@ -192,7 +199,7 @@ test("市场事件页：修订带版本，冲突不冒充成功，旧依据和�
 	t.after(cleanup); const current=version({...input(),provenance:{simulated:true,reference:"guance-ai@pinned/file#record",transformation:"原引语映射，未知保留"}},2); const old=version(current.input,1); let payload:unknown;
 	serve(defaults,{"GET /api/market-events/event-1":()=>json({current,versions:[current,old]}),"POST /api/market-events/event-1/revisions":async req=>{payload=await req.json();return json({error:"event version conflict"},409);}});
 	mount("/market-events/event-1");await screen.findByRole("heading",{name:"样例发布"});
-	assert.ok(screen.getAllByText(/模拟材料 · 不代表真实公告或采集结果/).length); assert.ok(screen.getByText("修订 v1 · 人工录入"));
+	assert.ok(screen.getAllByText(/模拟样例 · 不是真实公告/).length); assert.ok(screen.getByText(/第 1 版 · 人工录入 · 11月16日 09:00/));
 	fireEvent.click(screen.getByRole("button",{name:"修订事件 / 补充转载"}));
 	assert.equal((screen.getByLabelText("这是合成 / 模拟材料") as HTMLInputElement).disabled,true);
 	fireEvent.change(screen.getByLabelText("本次修订说明"),{target:{value:"补充来源"}});fireEvent.click(screen.getByRole("button",{name:"保存修订"}));
