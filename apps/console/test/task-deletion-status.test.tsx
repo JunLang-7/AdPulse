@@ -27,13 +27,14 @@ test("任务列表：显示清理进度（等待清理/已清理），不含任�
 		] }),
 	});
 	mount();
-	assert.ok(await screen.findByText("删除与清理状态"));
+	assert.ok(await screen.findByText("删除进度"));
 	assert.ok(screen.getByText("等待清理"));
 	assert.ok(screen.getByText("已清理"));
-	assert.ok(
-		screen.getAllByText((_, element) => element?.textContent?.includes("aaaaaaaa") ?? false).length > 0,
-		"展示任务 id 前缀",
-	);
+	assert.ok(screen.getByText(/最迟 7 天内清理完成（剩下 1 个在排队）/), "说明还要等多久");
+	assert.ok(screen.getByText("请求于 11月17日 08:00 · 最迟 11月24日 08:00 清理完成"), "时间用北京时间到分钟");
+	assert.ok(screen.getByText("11月17日 09:00 清理完成"), "已清理的显示完成时间");
+	assert.equal(screen.queryByText(/aaaaaaaa|bbbbbbbb/), null, "不给用户看任务 ID");
+	assert.equal(screen.queryByText(/\d{2}:\d{2}:\d{2}/), null, "不显示秒和毫秒");
 	assert.equal(screen.queryByText(/任务正文/), null, "不展示任务正文");
 });
 
@@ -45,5 +46,5 @@ test("任务列表：没有删除请求时不渲染状态卡", async t => {
 	});
 	mount();
 	assert.ok(await screen.findByText(/还没有推广任务/));
-	assert.equal(screen.queryByText("删除与清理状态"), null);
+	assert.equal(screen.queryByText("删除进度"), null);
 });
