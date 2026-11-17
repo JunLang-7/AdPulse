@@ -5,6 +5,7 @@ import { consoleClient, type components } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
+import { Section } from "../../../components/ui/section";
 import { formatBeijing } from "../settings/notification-records/record-view.js";
 
 type EventInput = components["schemas"]["MarketEventInput"];
@@ -310,12 +311,17 @@ export default function MarketEventsPage() {
 			<h2 className="font-semibold">历史版本</h2>{detail.data.versions.slice(1).map(v => <details key={v.id} className="rounded-md border p-4"><summary>第 {v.version} 版 · {v.changeReason} · {formatBeijing(v.createdAt)}</summary><Summary version={v} /></details>)}
 		</>}
 	</div>;
-	return <div className="p-6 space-y-4"><div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-bold">市场与竞品事件</h1><Button onClick={() => setEditing(!editing)}>{editing ? "收起录入" : "录入事件"}</Button></div>
+	return <div className="p-6 space-y-8"><div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-bold">市场与竞品事件</h1><Button onClick={() => setEditing(!editing)}>{editing ? "收起录入" : "录入事件"}</Button></div>
 		{editing && <EventForm key={mergeDraftState?.key ?? leadDraftState?.key ?? "manual"} prefill={mergeDraftState ? mergeLeadDraft(mergeDraftState.leads) : leadDraftState ? leadDraft(leadDraftState.lead) : undefined} saved={(id, status) => { setLeadDraftState(null); setMergeDraftState(null); void saved(id, status); }} />}
+		<Section title={`已记录的事件${list.data ? `（${list.data.length}）` : ""}`} hint="依据齐备才会进入通知筛选；保存不会发消息">
+			{list.isLoading && <p>正在读取事件…</p>}
+			{list.error && <p role="alert">{list.error.message}</p>}
+			{list.data?.length === 0 && <p className="rounded-md border border-dashed p-6">还没有录入事件。可先保存链接，缺失信息保持未知。</p>}
+			<div className="grid gap-4 md:grid-cols-2">{list.data?.map(v => <Link key={v.eventId} to={`/market-events/${v.eventId}`}><Card className="h-full transition hover:ring-foreground/25"><CardHeader><CardTitle>{v.input.provenance.simulated ? "【模拟】" : ""}{v.input.title}</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><p>{types[v.input.type]} · {v.input.subject.name} · 第 {v.version} 版</p><p>{v.candidate.status === "evidence_ready" ? "依据齐备" : "还缺依据"}</p><p>{v.input.taskRefs.length ? `关联 ${v.input.taskRefs.length} 个任务` : "未关联任务"}</p></CardContent></Card></Link>)}</div>
+		</Section>
 		{leads.error && <p role="alert">{leads.error.message}</p>}
-		{leads.data && leads.data.leads.length > 0 && <Card>
-			<CardHeader><CardTitle>来源线索（{visibleLeads.length}）</CardTitle></CardHeader>
-			<CardContent className="space-y-2 text-sm">
+		{leads.data && leads.data.leads.length > 0 && <Section title={`来源线索（${visibleLeads.length}）`} hint="官网列表的标题与链接，还没读正文；确认后才变成事件">
+			<div className="space-y-2 text-sm">
 				<p className="text-xs text-muted-foreground">
 					下面是官网列表页的标题和原文链接，还没有读正文。想看完整内容请点标题去原文；要变成事件，
 					点「转事件」。如果几个链接说的是同一件事，先勾选这几条再点「合并为一条事件」；
@@ -392,11 +398,8 @@ export default function MarketEventsPage() {
 						</div>
 					</li>)}
 				</ul>
-			</CardContent>
-		</Card>}
+			</div>
+		</Section>}
 		{leads.data && leads.data.leads.length === 0 && leads.data.sources.every((item) => !item.enabled) && <p className="text-xs text-muted-foreground">还没有开启来源站点；可以到订阅页打开已接入的站点。</p>}
-		{list.isLoading && <p>正在读取事件…</p>}{list.error && <p role="alert">{list.error.message}</p>}
-		{list.data?.length === 0 && <p className="rounded-md border border-dashed p-6">还没有录入事件。可先保存链接，缺失信息保持未知。</p>}
-		<div className="grid gap-4 md:grid-cols-2">{list.data?.map(v => <Link key={v.eventId} to={`/market-events/${v.eventId}`}><Card><CardHeader><CardTitle>{v.input.provenance.simulated ? "【模拟】" : ""}{v.input.title}</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><p>{types[v.input.type]} · {v.input.subject.name} · 第 {v.version} 版</p><p>{v.candidate.status === "evidence_ready" ? "依据齐备" : "还缺依据"}</p><p>{v.input.taskRefs.length ? `关联 ${v.input.taskRefs.length} 个任务` : "未关联任务"}</p></CardContent></Card></Link>)}</div>
 	</div>;
 }

@@ -72,6 +72,27 @@ test("市场事件页：来源线索只展示标题与链接，转事件预填�
 	assert.equal(submitted.eventTime, null, "未知事件时间不补造");
 });
 
+test("市场事件页：事件区在上、线索区在下，两块分区可见", async t => {
+	t.after(cleanup);
+	const lead = {
+		sourceKey: "weichai_news", sourceLabel: "潍柴新闻与事件", subject: { kind: "brand" as const, name: "潍柴" },
+		itemId: "weichai_news:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html",
+		publishedAt: "2026-11-15", firstSeenAt: "2026-11-16T00:01:00.000Z", lastSeenAt: "2026-11-16T00:02:00.000Z",
+	};
+	serve(defaults, {
+		"GET /api/market-events": () => json({ items: [version()] }),
+		"GET /api/me/source-leads": () => json({ leads: [lead], sources: [{ ...closedSources[0]!, enabled: true }, closedSources[1]!] }),
+	});
+	mount();
+	const events = await screen.findByRole("heading", { name: /已记录的事件/ });
+	const leads = await screen.findByRole("heading", { name: /来源线索/ });
+	assert.equal(events.tagName, "H2", "分区标题是二级标题，能一眼分开");
+	assert.ok(
+		events.compareDocumentPosition(leads) & Node.DOCUMENT_POSITION_FOLLOWING,
+		"事件区在前，线索区在后",
+	);
+});
+
 test("市场事件页：线索可按来源筛选，链接默认不带下划线", async t => {
 	t.after(cleanup);
 	const base = {
