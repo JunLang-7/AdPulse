@@ -211,6 +211,7 @@ export default function MarketEventsPage() {
 	const editing = editingOverride ?? !!attachLead;
 	const setEditing = setEditingOverride;
 	const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
+	const [leadSource, setLeadSource] = useState<string | null>(null);
 	const [mergeDraftState, setMergeDraftState] = useState<{ leads: Lead[]; key: string } | null>(null);
 	const list = useQuery({ queryKey: ["market-events"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/market-events"); if (!r.data) throw new Error("无法读取事件列表"); return r.data.items; } });
 	const leads = useQuery({ queryKey: ["source-leads"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/me/source-leads"); if (!r.data) throw new Error("无法读取来源线索"); return r.data; } });
@@ -220,6 +221,16 @@ export default function MarketEventsPage() {
 		if (!r.data) throw new Error("无法读取来源状态");
 		return r.data.items;
 	} });
+	const leadGroups = (() => {
+		const groups = new Map<string, { key: string; label: string; count: number }>();
+		for (const lead of leads.data?.leads ?? []) {
+			const group = groups.get(lead.sourceKey);
+			if (group) group.count += 1;
+			else groups.set(lead.sourceKey, { key: lead.sourceKey, label: lead.sourceLabel, count: 1 });
+		}
+		return [...groups.values()].sort((left, right) => right.count - left.count);
+	})();
+	const visibleLeads = (leads.data?.leads ?? []).filter((lead) => !leadSource || lead.sourceKey === leadSource);
 	const detail = useQuery({ queryKey: ["market-events", eventId], enabled: !!eventId, queryFn: async () => { const r = await consoleClient.GET("/api/market-events/{eventId}", { params: { path: { eventId: eventId! } } }); if (!r.data) throw new Error(r.response.status === 404 ? "事件不存在或无权访问" : "无法读取事件"); return r.data; } });
 	const saved = async (id: string, status: components["schemas"]["MarketEventWriteResult"]["status"]) => {
 		setEditing(false);
@@ -237,11 +248,11 @@ export default function MarketEventsPage() {
 			<h2 className="font-semibold">修订与旧依据</h2>{detail.data.versions.slice(1).map(v => <details key={v.id} className="rounded-md border p-4"><summary>修订 v{v.version} · {v.changeReason}</summary><Summary version={v} /></details>)}
 		</>}
 	</div>;
-	return <div className="p-6 space-y-4"><div className="flex items-center justify-between gap-3"><div><h1 className="text-2xl font-bold">市场与竞品事件</h1><p className="text-sm text-muted-foreground">保留原文、未知字段与个人关联。几条材料不能证明整体趋势或成本变化原因。</p></div><Button onClick={() => setEditing(!editing)}>{editing ? "收起录入" : "录入事件"}</Button></div>
+	return <div className="p-6 space-y-4"><div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-bold">市场与竞品事件</h1><Button onClick={() => setEditing(!editing)}>{editing ? "收起录入" : "录入事件"}</Button></div>
 		{editing && <EventForm key={mergeDraftState?.key ?? leadDraftState?.key ?? "manual"} prefill={mergeDraftState ? mergeLeadDraft(mergeDraftState.leads) : leadDraftState ? leadDraft(leadDraftState.lead) : undefined} saved={(id, status) => { setLeadDraftState(null); setMergeDraftState(null); void saved(id, status); }} />}
 		{leads.error && <p role="alert">{leads.error.message}</p>}
 		{leads.data && leads.data.leads.length > 0 && <Card>
-			<CardHeader><CardTitle>来源线索（{leads.data.leads.length}）</CardTitle></CardHeader>
+			<CardHeader><CardTitle>来源线索（{visibleLeads.length}）</CardTitle></CardHeader>
 			<CardContent className="space-y-2 text-sm">
 				<p className="text-xs text-muted-foreground">
 					下面是官网列表页的标题和原文链接，还没有读正文。想看完整内容请点标题去原文；要变成事件，
@@ -256,6 +267,21 @@ export default function MarketEventsPage() {
 					</li>)}
 				</ul> : null}
 				{feedStatus.error ? <p role="alert" className="text-xs text-red-600">读取来源状态失败，不影响线索列表。</p> : null}
+				{leadGroups.length > 1 ? <div className="flex flex-wrap items-center gap-2" role="group" aria-label="按来源筛选线索">
+					<button
+						type="button"
+						className={`rounded-full border px-3 py-1 text-xs ${leadSource === null ? "bg-foreground text-background" : "text-muted-foreground"}`}
+						aria-pressed={leadSource === null}
+						onClick={() => { setLeadSource(null); setSelectedLeads([]); }}
+					>全部 {leads.data.leads.length}</button>
+					{leadGroups.map((group) => <button
+						key={group.key}
+						type="button"
+						className={`rounded-full border px-3 py-1 text-xs ${leadSource === group.key ? "bg-foreground text-background" : "text-muted-foreground"}`}
+						aria-pressed={leadSource === group.key}
+						onClick={() => { setLeadSource(group.key); setSelectedLeads([]); }}
+					>{group.label} {group.count}</button>)}
+				</div> : null}
 				{selectedLeads.length > 0 ? <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-2">
 					<span className="text-xs text-muted-foreground">已选 {selectedLeads.length} 条 · 认为是同一件事？</span>
 					<Button onClick={() => {
@@ -267,8 +293,9 @@ export default function MarketEventsPage() {
 					}}>合并为一条事件</Button>
 					<Button variant="outline" onClick={() => setSelectedLeads([])}>取消选择</Button>
 				</div> : null}
+				{visibleLeads.length === 0 ? <p className="text-xs text-muted-foreground">这个来源暂时没有线索。</p> : null}
 				<ul className="space-y-2">
-					{leads.data.leads.map((lead) => <li key={lead.itemId} className="rounded-md border p-3">
+					{visibleLeads.map((lead) => <li key={lead.itemId} className="rounded-md border p-3">
 						<div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
 							<div className="min-w-0 space-y-1">
 								<div className="flex items-start gap-2">
@@ -277,7 +304,7 @@ export default function MarketEventsPage() {
 										checked={selectedLeads.includes(lead.itemId)}
 										onChange={() => setSelectedLeads(ids => ids.includes(lead.itemId) ? ids.filter(id => id !== lead.itemId) : [...ids, lead.itemId])}
 									/> : null}
-									<a className="block font-medium underline break-all" href={lead.url} target="_blank" rel="noreferrer">{lead.title}</a>
+									<a className="block font-medium break-all hover:underline" href={lead.url} target="_blank" rel="noreferrer">{lead.title}</a>
 								</div>
 								<p className="text-xs text-muted-foreground">
 									来自 {lead.sourceLabel} · 关联{lead.subject.kind === "brand" ? "品牌" : "竞品"}：{lead.subject.name}
@@ -287,14 +314,14 @@ export default function MarketEventsPage() {
 							</div>
 							<div className="space-y-1 sm:justify-self-end sm:text-right">
 								{lead.convertedEventId
-									? <Link className="text-sm underline" to={`/market-events/${lead.convertedEventId}`}>已录入，查看事件</Link>
+									? <Link className="text-sm text-muted-foreground hover:underline" to={`/market-events/${lead.convertedEventId}`}>已录入，查看事件</Link>
 									: <>
 										<Button variant="outline" onClick={() => { setMergeDraftState(null); setLeadDraftState({ lead, key: lead.itemId }); setEditing(true); }}>转事件</Button>
 										{list.data && list.data.length > 0 ? <details className="text-xs">
 											<summary className="cursor-pointer text-muted-foreground">同一件事已录过？并入已有事件</summary>
 											<ul className="mt-1 max-h-56 space-y-1 overflow-auto">
 												{list.data.map(v => <li key={v.eventId}>
-													<button type="button" className="underline" onClick={() => navigate(`/market-events/${v.eventId}`, { state: { attachLead: lead } })}>{v.input.title}</button>
+													<button type="button" className="text-left hover:underline" onClick={() => navigate(`/market-events/${v.eventId}`, { state: { attachLead: lead } })}>{v.input.title}</button>
 												</li>)}
 											</ul>
 										</details> : null}
@@ -303,9 +330,6 @@ export default function MarketEventsPage() {
 						</div>
 					</li>)}
 				</ul>
-				<p className="text-xs text-muted-foreground">
-					关联是按站点归属的：潍柴官网的条目归到潍柴、海尔官网的归到海尔，不会因为标题里出现某个名字就自动关联。
-				</p>
 			</CardContent>
 		</Card>}
 		{leads.data && leads.data.leads.length === 0 && leads.data.sources.every((item) => !item.enabled) && <p className="text-xs text-muted-foreground">尚未开启自动来源；可在订阅页开启潍柴/海尔的受限列表线索。</p>}

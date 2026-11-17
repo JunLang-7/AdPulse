@@ -60,7 +60,6 @@ test("市场事件页：来源线索只展示标题与链接，转事件预填�
 	assert.equal((screen.getByLabelText("原文链接（不自动读取）") as HTMLInputElement).value, "https://www.weichai.com/news/1.html");
 	assert.equal((screen.getByLabelText("内容范围") as HTMLSelectElement).value, "title_only");
 	assert.ok(screen.getByText(/还没有读正文/), "说明用日常说法");
-	assert.ok(screen.getByText(/不会因为标题里出现某个名字就自动关联/), "关联依据用人话解释");
 	// 实际提交：仅标题来源必须带上已取得的标题作为 content，否则领域会拒。
 	fireEvent.click(screen.getByRole("button", { name: "保存事件" }));
 	await waitFor(() => assert.equal(bodies.length, 1));
@@ -71,6 +70,31 @@ test("市场事件页：来源线索只展示标题与链接，转事件预填�
 	assert.equal(submitted.subject.name, "潍柴");
 	assert.equal(submitted.occurrenceKey, "weichai_news:1", "编号按原文链接自动生成，用户不用填");
 	assert.equal(submitted.eventTime, null, "未知事件时间不补造");
+});
+
+test("市场事件页：线索可按来源筛选，链接默认不带下划线", async t => {
+	t.after(cleanup);
+	const base = {
+		sourceLabel: "潍柴新闻与事件", subject: { kind: "brand" as const, name: "潍柴" },
+		publishedAt: "2026-11-15", firstSeenAt: "2026-11-16T00:01:00.000Z", lastSeenAt: "2026-11-16T00:02:00.000Z",
+	};
+	const leads = [
+		{ ...base, sourceKey: "weichai_news", itemId: "weichai_news:1", title: "潍柴标题一", url: "https://www.weichai.com/news/1.html" },
+		{ ...base, sourceKey: "weichai_news", itemId: "weichai_news:2", title: "潍柴标题二", url: "https://www.weichai.com/news/2.html" },
+		{ ...base, sourceKey: "haier_news", sourceLabel: "海尔品牌资讯", subject: { kind: "brand" as const, name: "海尔" }, itemId: "haier_news:1", title: "海尔标题", url: "https://www.haier.com/news/1.shtml" },
+	];
+	serve(defaults, { "GET /api/me/source-leads": () => json({ leads, sources: [{ ...closedSources[0]!, enabled: true }, { ...closedSources[1]!, enabled: true }] }) });
+	mount();
+	await screen.findByRole("link", { name: "潍柴标题一" });
+	assert.equal(screen.getByRole("button", { name: "全部 3" }).getAttribute("aria-pressed"), "true", "默认看全部");
+	assert.ok(screen.getByRole("link", { name: "潍柴标题一" }).className.includes("hover:underline"), "链接默认无下划线，悬停才显示");
+	assert.ok(!screen.getByRole("link", { name: "潍柴标题一" }).className.includes(" underline"), "不常驻下划线");
+	fireEvent.click(screen.getByRole("button", { name: "海尔品牌资讯 1" }));
+	assert.equal(screen.queryByRole("link", { name: "潍柴标题一" }), null, "筛选后只显示该来源的线索");
+	assert.ok(screen.getByRole("link", { name: "海尔标题" }));
+	assert.ok(screen.getByText("来源线索（1）"), "标题跟着筛选变化");
+	fireEvent.click(screen.getByRole("button", { name: "全部 3" }));
+	assert.ok(screen.getByRole("link", { name: "潍柴标题一" }));
 });
 
 test("市场事件页：勾选多条线索合并为一条事件（用户用选择表达「同一件事」）", async t => {
