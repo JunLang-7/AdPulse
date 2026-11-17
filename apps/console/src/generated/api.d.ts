@@ -20,6 +20,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/market-events/{eventId}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * 事件到期判定查询（#144 S1）
+         * @description 返回计时锚点、到期时刻与当前状态。锚点取最后业务更新（首次录入或最后一次修订），365 天按 UTC 绝对时刻计算；普通查看、筛选、投递重试都不续期。到期后事件按不可访问处理：不出现在列表、详情返回 404、不可修订、不参与通知。删除入口、任务引用清理、在线清理与备份重放在后续切片实现。
+         */
+        get: operations["getMarketEventLifecycle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market-events/{eventId}": {
         parameters: {
             query?: never;
@@ -806,28 +828,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/market-events/{eventId}/lifecycle": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                eventId: string;
-            };
-            cookie?: never;
-        };
-        /**
-         * 事件到期判定查询（#144 S1）
-         * @description 返回计时锚点、到期时刻与当前状态。锚点取最后业务更新（首次录入或最后一次修订），365 天按 UTC 绝对时刻计算；普通查看、筛选、投递重试都不续期。到期后事件按不可访问处理：不出现在列表、详情返回 404、不可修订、不参与通知。删除入口、任务引用清理、在线清理与备份重放在后续切片实现。
-         */
-        get: operations["getMarketEventLifecycle"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -878,6 +878,24 @@ export interface components {
                 reference: string | null;
                 transformation: string | null;
             };
+        };
+        MarketEventLifecycle: {
+            eventId: string;
+            /** @enum {string} */
+            state: "active" | "expired";
+            /**
+             * Format: date-time
+             * @description 计时起点：最后业务更新（首次录入或最后一次修订）
+             */
+            anchor: string;
+            /** @enum {string} */
+            anchorSource: "last_business_update";
+            /** Format: date-time */
+            lastBusinessUpdate: string;
+            /** Format: date-time */
+            expiresAt: string;
+            retentionDays: number;
+            expired: boolean;
         };
         MarketEventVersion: {
             id: string;
@@ -2107,24 +2125,6 @@ export interface components {
             /** @enum {string} */
             status: "pending" | "processed" | "rejected";
         };
-        MarketEventLifecycle: {
-            eventId: string;
-            /** @enum {string} */
-            state: "active" | "expired";
-            /**
-             * Format: date-time
-             * @description 计时起点：最后业务更新（首次录入或最后一次修订）
-             */
-            anchor: string;
-            /** @enum {string} */
-            anchorSource: "last_business_update";
-            /** Format: date-time */
-            lastBusinessUpdate: string;
-            /** Format: date-time */
-            expiresAt: string;
-            retentionDays: number;
-            expired: boolean;
-        };
     };
     responses: never;
     parameters: never;
@@ -2281,6 +2281,46 @@ export interface operations {
             };
             /** @description Temporarily unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getMarketEventLifecycle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event lifecycle */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketEventLifecycle"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event not found or not owned */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5262,46 +5302,6 @@ export interface operations {
             };
             /** @description Request failed */
             503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    getMarketEventLifecycle: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                eventId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Event lifecycle */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MarketEventLifecycle"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Event not found or not owned */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
