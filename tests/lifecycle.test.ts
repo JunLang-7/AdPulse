@@ -930,3 +930,22 @@ test("备份恢复重放：清单写回后已删任务立即限访，重复重�
 	assert.equal(again.inserted, 0);
 	assert.equal(again.kept, 1, "已有清单不覆盖");
 });
+
+test("恢复后会话失效：revokeAllSessions 撤销全部会话并作废未完成登录", async () => {
+	const f = await fixture();
+	const auth = new AuthenticationService(f.storage);
+	const second = await auth.createWebSession(
+		{ platform: "feishu", applicationId: "cli_test", tenantId: "tenant-a", idType: "open_id", externalId: randomUUID() },
+		createHash("sha256").update(randomUUID()).digest("hex"),
+		"2026-01-01T00:00:00.000Z",
+	);
+	assert.ok(second.userId);
+	const revoked = await auth.revokeAllSessions("2026-01-02T00:00:00.000Z");
+	assert.ok(revoked >= 1, "至少撤销了这个用户的会话");
+	const sessions = await f.storage.transaction((tx) => tx.webSessions.all());
+	assert.ok(sessions.every((row) => row.revokedAt), "全部会话都带撤销时刻");
+	// 重复执行不重复计数。
+	assert.equal(await auth.revokeAllSessions("2026-01-03T00:00:00.000Z"), 0);
+	// 非法时刻不做任何事。
+	assert.equal(await auth.revokeAllSessions("not-a-date"), 0);
+});

@@ -808,6 +808,31 @@
         }
       }
     },
+    "/api/me/lifecycle-deletions": {
+      "get": {
+        "operationId": "listLifecycleDeletions",
+        "summary": "本人删除请求的清理进度（#40）",
+        "description": "只读：返回本人删除清单的 status（pending/cleaned）、requestedAt、deadlineAt（请求起 7 天）与 cleanedAt。不含业务正文。",
+        "responses": {
+          "200": {
+            "description": "Own deletion manifests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": { "type": "array", "items": { "$ref": "#/components/schemas/LifecycleDeletion" } }
+                  },
+                  "required": ["items"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
     "/api/me/source-leads": {
       "get": {
         "operationId": "listSourceLeads",

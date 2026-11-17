@@ -816,8 +816,12 @@ node --env-file=<api.env> scripts/backup-manual.mjs \
 bun run backup:manual -- --out ./backups
 ```
 
-输出 JSON：文件路径、大小、sha256、`gzipVerified`、被清理的旧备份、执行耗时。
-文件权限 `600`、目录 `700`；默认保留最近 4 份，可用 `--no-prune` 关闭。
+输出 JSON：文件路径、大小、sha256、`gzipVerified`、被清理的旧备份、**淘汰结果**（`evicted`）、执行耗时。
+文件权限 `600`、目录 `700`；默认保留最近 4 份（`--no-prune` 关闭）。
+
+打完备份后还会跑一次 `LifecycleBackupService.evictOnce`，把 `--out` 目录当作备份存储：
+**超过 30 天的备份删除**；**删除请求满 37 天后，早于该请求的备份删除**；失败是软目标（记日志与
+`backup_evicted` 审计，不阻断备份本身），可用 `--no-evict` 跳过。这样"备份淘汰"不再是死代码。
 
 **恢复**（手工，两步，顺序不能反）：
 
@@ -834,7 +838,12 @@ node --env-file=<目标库 env> scripts/lifecycle-replay.mjs manifest.jsonl --no
   已存在条目不会被覆盖（更早的请求优先）。
 - 若备份**早于**删除请求，重放会新增条目（`inserted>0`）；若备份本身已含清单（删除后才备份），
   则 `kept>0`，清理同样会执行。
-- 顺序不能反：先重放清单，再启用 API/worker。
+- `lifecycle:replay` 还会**撤销恢复库中的全部浏览器会话**（并作废未完成登录事务），
+  必须重新走飞书认证；这正是 #40 要求的「先应用删除/到期/撤销规则，再启用入口与 worker」。
+- 顺序不能反：先重放清单与撤销，再启用 API/worker。
+
+**清理进度可见**：任务列表页顶部「删除与清理状态」显示本人删除请求的 `等待清理` / `已清理`
+与请求、截止、完成时间（`GET /api/me/lifecycle-deletions`，只含状态与时间，不含业务正文）。
 
 **明确不做 / 不能宣称**：
 

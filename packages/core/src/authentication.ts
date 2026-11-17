@@ -433,6 +433,28 @@ export class AuthenticationService {
 		});
 	}
 
+	/**
+	 * 恢复备份后使用（#40）：使恢复库里的**全部**浏览器会话失效，要求重新走飞书认证。
+	 * 只应在恢复/重放工具里调用——正常业务不得批量踢人。
+	 */
+	async revokeAllSessions(now: string): Promise<number> {
+		if (!Number.isFinite(Date.parse(now))) return 0;
+		return this.storage.transaction(async (tx) => {
+			let revoked = 0;
+			for (const session of await tx.webSessions.all()) {
+				if (session.revokedAt) continue;
+				await tx.webSessions.put({ ...session, revokedAt: now });
+				revoked += 1;
+			}
+			for (const binding of await tx.loginTransactions.all()) {
+				// 未完成的登录事务同样作废，避免恢复后仍可用旧 state 完成登录。
+				if ("consumedAt" in binding && binding.consumedAt) continue;
+				await tx.loginTransactions.delete(binding.id);
+			}
+			return revoked;
+		});
+	}
+
 	/** Rotates the current token of a family, preserving absolute expiry and granting a short grace window to the old token. */
 	async rotateWebSession(
 		currentTokenHash: string,

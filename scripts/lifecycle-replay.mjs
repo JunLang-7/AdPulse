@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import { PostgresStorage } from "../packages/storage/dist/index.js";
 import {
+	AuthenticationService,
 	LifecycleCleanupService,
 	LifecycleDeletionService,
 	parseManifest,
@@ -36,8 +37,11 @@ const storage = PostgresStorage.connect(process.env.DATABASE_URL);
 const clock = () => now;
 try {
 	await storage.initialize();
+	// 顺序不能反：#40 要求「先应用删除/到期/撤销规则，再启用入口与 worker」。
 	const replayed = await new LifecycleDeletionService(storage, clock).replay(plan.applicable);
 	const cleaned = await new LifecycleCleanupService(storage, clock).runOnce();
+	// 恢复出来的浏览器会话一律作废，必须重新走飞书认证。
+	const revokedSessions = await new AuthenticationService(storage, clock).revokeAllSessions(now);
 	process.stdout.write(`${JSON.stringify({
 		file,
 		now,
@@ -48,7 +52,8 @@ try {
 		kept: replayed.kept,
 		cleanupManifests: cleaned.manifests,
 		cleanupFailed: cleaned.failed,
-		note: "重放后已删任务立即限访；未到期的清单保持 pending，由在线清理按 7 天处理",
+		revokedSessions,
+		note: "重放后已删任务立即限访、恢复出的会话全部作废；未到期清单保持 pending，由在线清理按 7 天处理",
 	}, null, 2)}\n`);
 } finally {
 	await storage.close();
