@@ -16,7 +16,7 @@ const origins = { unknown: "来源未核验", official: "官方原文（录入�
 const fields = { subject: "公告主体", eventTime: "事件时间", conditions: "适用条件" };
 const control = "w-full rounded-md border bg-background px-3 py-2 text-sm";
 const source = (): Source => ({ url: null, publisher: "", content: null, scope: "link_only", origin: "unknown", publishedAt: null, acquiredAt: new Date().toISOString(), limitations: "" });
-const blank = (): EventInput => ({ occurrenceKey: "", title: "", type: "announcement", subject: { kind: "brand", name: "" }, eventTime: null, conditions: null, sources: [source()], citations: { subject: null, eventTime: null, conditions: null }, taskRefs: [], provenance: { simulated: false, reference: null, transformation: null } });
+const blank = (): EventInput => ({ occurrenceKey: `manual:${crypto.randomUUID()}`, title: "", type: "announcement", subject: { kind: "brand", name: "" }, eventTime: null, conditions: null, sources: [source()], citations: { subject: null, eventTime: null, conditions: null }, taskRefs: [], provenance: { simulated: false, reference: null, transformation: null } });
 function failure(status: number): Error {
 	return new Error(status === 409 ? "保存冲突：版本已更新或重复请求内容不同，请刷新核对后重试。" : status === 404 ? "事件或关联任务不可访问。" : "保存失败，请核对来源、引用、日期和必填字段后重试。");
 }
@@ -41,6 +41,13 @@ function Summary({ version }: { version: EventVersion }) {
 	</div>;
 }
 type Lead = components["schemas"]["SourceLead"];
+
+/** 「并入已有事件」时从路由 state 里取线索；state 不在或形状不对就当没有。 */
+function stateLead(state: unknown): Lead | null {
+	if (!state || typeof state !== "object" || !("attachLead" in state)) return null;
+	const lead = (state as { attachLead?: unknown }).attachLead;
+	return lead && typeof lead === "object" && "itemId" in lead && "url" in lead ? (lead as Lead) : null;
+}
 
 /** 列表页只给日期时按日期展示；带时间的按北京时间显示，不把 UTC 串直接丢给用户。 */
 export function formatLeadDate(value: string | null): string {
@@ -78,24 +85,50 @@ export function occurrenceKeyFromUrl(sourceKey: string, url: string): string {
 	return `${sourceKey}:${slug || url}`.slice(0, 200);
 }
 
+/** 一条线索变成一个「仅标题」来源：只有标题和原文链接，正文未读取。 */
+export function leadSource(lead: Lead): Source {
+	return {
+		url: lead.url, publisher: lead.sourceLabel, content: lead.title, scope: "title_only", origin: "official",
+		publishedAt: lead.publishedAt, acquiredAt: lead.lastSeenAt,
+		limitations: "仅取得来源列表的标题与链接，未读取正文；主体按来源站点声明归属，不是标题推断",
+	};
+}
+
 /** 线索转事件：只预填标题、主体声明与那条标题+链接，引用/类型仍需本人补。 */
 export function leadDraft(lead: Lead): EventInput {
 	return {
 		...blank(),
 		title: lead.title,
-		// 事件编号按原文链接生成：同一篇文章永远得到同一个值，避免用户随手填写造成重复事件。
+		// 事件编号按原文链接生成：同一篇文章永远得到同一个值，避免重复事件。
 		occurrenceKey: occurrenceKeyFromUrl(lead.sourceKey, lead.url),
 		subject: { kind: lead.subject.kind, name: lead.subject.name },
-		sources: [{
-			url: lead.url, publisher: lead.sourceLabel, content: lead.title, scope: "title_only", origin: "official",
-			publishedAt: lead.publishedAt, acquiredAt: lead.lastSeenAt,
-			limitations: "仅取得来源列表的标题与链接，未读取正文；主体按来源站点声明归属，不是标题推断",
-		}],
+		sources: [leadSource(lead)],
 		provenance: { simulated: false, reference: `${lead.sourceKey} · 来源线索 ${lead.itemId}`, transformation: null },
 	};
 }
-function EventForm({ current, prefill, saved }: { current?: EventVersion; prefill?: EventInput; saved: (id: string, status: components["schemas"]["MarketEventWriteResult"]["status"]) => void }) {
-	const [draft, setDraft] = useState<EventInput>(() => current ? structuredClone(current.input) : (prefill ?? blank()));
+
+/** 勾选多条线索合并成一条事件：用户用「选择」表达同一件事，编号取第一条链接的自动值。 */
+export function mergeLeadDraft(leads: Lead[]): EventInput {
+	const first = leads[0];
+	if (!first) return blank();
+	return {
+		...leadDraft(first),
+		sources: leads.map(leadSource),
+		provenance: {
+			simulated: false,
+			reference: leads.map(l => `${l.sourceKey} · 来源线索 ${l.itemId}`).join("；"),
+			transformation: null,
+		},
+	};
+}
+function EventForm({ current, prefill, attach, saved }: { current?: EventVersion; prefill?: EventInput; attach?: Lead; saved: (id: string, status: components["schemas"]["MarketEventWriteResult"]["status"]) => void }) {
+	const attachAlreadyIn = !!(current && attach && current.input.sources.some(s => s.url === attach.url));
+	const [draft, setDraft] = useState<EventInput>(() => {
+		const base = current ? structuredClone(current.input) : (prefill ?? blank());
+		// 并入线索：把该链接作为新增来源放进修订表单，由本人核对后保存；已在事件里的不重复加。
+		if (current && attach && !attachAlreadyIn) base.sources = [...base.sources, leadSource(attach)];
+		return base;
+	});
 	const [reason, setReason] = useState("");
 	const [taskId, setTaskId] = useState("");
 	const operation = useRef<{ body: string; key: string } | null>(null);
@@ -121,9 +154,11 @@ function EventForm({ current, prefill, saved }: { current?: EventVersion; prefil
 	const patchSource = (index: number, patch: Partial<Source>) => setDraft(d => ({ ...d, sources: d.sources.map((s,i) => i === index ? { ...s, ...patch } : s) }));
 	return <form className="space-y-4" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}>
 		<fieldset disabled={mutation.isPending} className="space-y-4">
+			{attach && (attachAlreadyIn
+				? <p className="text-sm text-amber-700">这条链接已经在本事件来源里，没有重复添加。</p>
+				: <p className="text-sm text-muted-foreground">已把线索「{attach.title}」加入下方来源列表，核对后填写修订说明并保存。</p>)}
 			<div className="grid gap-3 md:grid-cols-2">
 				<label>事件标题<Input required maxLength={200} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} /></label>
-				<label>事件编号<Input required maxLength={200} value={draft.occurrenceKey} onChange={e => setDraft({ ...draft, occurrenceKey: e.target.value })} /><span className="text-xs text-muted-foreground">用来判断「是不是同一件事」：同一对象 + 类别 + 编号会被当成同一条事件，重复保存只返回原版本，不会多出一条。从线索转过来时已按原文链接自动填好，一般不用改。</span></label>
 				<label>类别<select className={control} value={draft.type} onChange={e => { const type = (Object.keys(types) as Array<keyof typeof types>).find(k => k === e.target.value); if (type) setDraft({ ...draft, type }); }}>{Object.entries(types).map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></label>
 				<label>关注对象类型<select className={control} value={draft.subject.kind} onChange={e => setDraft({ ...draft, subject: { ...draft.subject, kind: e.target.value === "brand" ? "brand" : "competitor" } })}><option value="brand">品牌</option><option value="competitor">竞品</option></select></label>
 				<label>关注对象名称<Input required maxLength={200} value={draft.subject.name} onChange={e => setDraft({ ...draft, subject: { ...draft.subject, name: e.target.value } })} /></label>
@@ -170,8 +205,13 @@ export default function MarketEventsPage() {
 	const navigate = useNavigate();
 	const locationState: unknown = useLocation().state;
 	const notice = locationState && typeof locationState === "object" && "marketEventNotice" in locationState && typeof locationState.marketEventNotice === "string" ? locationState.marketEventNotice : null;
+	const attachLead = stateLead(locationState);
 	const queryClient = useQueryClient();
-	const [editing, setEditing] = useState(false);
+	const [editingOverride, setEditingOverride] = useState<boolean | null>(null);
+	const editing = editingOverride ?? !!attachLead;
+	const setEditing = setEditingOverride;
+	const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
+	const [mergeDraftState, setMergeDraftState] = useState<{ leads: Lead[]; key: string } | null>(null);
 	const list = useQuery({ queryKey: ["market-events"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/market-events"); if (!r.data) throw new Error("无法读取事件列表"); return r.data.items; } });
 	const leads = useQuery({ queryKey: ["source-leads"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/me/source-leads"); if (!r.data) throw new Error("无法读取来源线索"); return r.data; } });
 	const [leadDraftState, setLeadDraftState] = useState<{ lead: Lead; key: string } | null>(null);
@@ -183,6 +223,7 @@ export default function MarketEventsPage() {
 	const detail = useQuery({ queryKey: ["market-events", eventId], enabled: !!eventId, queryFn: async () => { const r = await consoleClient.GET("/api/market-events/{eventId}", { params: { path: { eventId: eventId! } } }); if (!r.data) throw new Error(r.response.status === 404 ? "事件不存在或无权访问" : "无法读取事件"); return r.data; } });
 	const saved = async (id: string, status: components["schemas"]["MarketEventWriteResult"]["status"]) => {
 		setEditing(false);
+		setSelectedLeads([]);
 		await queryClient.invalidateQueries({ queryKey: ["market-events"] });
 		navigate(`/market-events/${id}`, { state: { marketEventNotice: status === "duplicate" ? "已存在相同事件，展示原版本。新材料尚未附加，请修订原事件。" : "事件已保存。" } });
 	};
@@ -192,19 +233,20 @@ export default function MarketEventsPage() {
 		{detail.isLoading && <p>正在读取事件…</p>}{detail.error && <p role="alert">{detail.error.message}</p>}
 		{detail.data && <><h1 className="text-2xl font-bold">{detail.data.current.input.title}</h1><Summary version={detail.data.current} />
 			<Button variant="outline" onClick={() => setEditing(!editing)}>{editing ? "取消编辑" : "修订事件 / 补充转载"}</Button>
-			{editing && <EventForm key={detail.data.current.id} current={detail.data.current} saved={(id, status) => { void saved(id, status); }} />}
+			{editing && <EventForm key={detail.data.current.id} current={detail.data.current} attach={attachLead ?? undefined} saved={(id, status) => { void saved(id, status); }} />}
 			<h2 className="font-semibold">修订与旧依据</h2>{detail.data.versions.slice(1).map(v => <details key={v.id} className="rounded-md border p-4"><summary>修订 v{v.version} · {v.changeReason}</summary><Summary version={v} /></details>)}
 		</>}
 	</div>;
 	return <div className="p-6 space-y-4"><div className="flex items-center justify-between gap-3"><div><h1 className="text-2xl font-bold">市场与竞品事件</h1><p className="text-sm text-muted-foreground">保留原文、未知字段与个人关联。几条材料不能证明整体趋势或成本变化原因。</p></div><Button onClick={() => setEditing(!editing)}>{editing ? "收起录入" : "录入事件"}</Button></div>
-		{editing && <EventForm key={leadDraftState?.key ?? "manual"} prefill={leadDraftState ? leadDraft(leadDraftState.lead) : undefined} saved={(id, status) => { setLeadDraftState(null); void saved(id, status); }} />}
+		{editing && <EventForm key={mergeDraftState?.key ?? leadDraftState?.key ?? "manual"} prefill={mergeDraftState ? mergeLeadDraft(mergeDraftState.leads) : leadDraftState ? leadDraft(leadDraftState.lead) : undefined} saved={(id, status) => { setLeadDraftState(null); setMergeDraftState(null); void saved(id, status); }} />}
 		{leads.error && <p role="alert">{leads.error.message}</p>}
 		{leads.data && leads.data.leads.length > 0 && <Card>
 			<CardHeader><CardTitle>来源线索（{leads.data.leads.length}）</CardTitle></CardHeader>
 			<CardContent className="space-y-2 text-sm">
 				<p className="text-xs text-muted-foreground">
-					下面是官网列表页的标题和原文链接，还没有读正文。想看完整内容请点标题去原文；要变成可推送的事件，
-					点「转事件」并由你补上时间、适用条件和原文引用。
+					下面是官网列表页的标题和原文链接，还没有读正文。想看完整内容请点标题去原文；要变成事件，
+					点「转事件」。如果几个链接说的是同一件事，先勾选这几条再点「合并为一条事件」；
+					之后由你补上时间、适用条件和原文引用。
 				</p>
 				{feedStatus.data && feedStatus.data.length > 0 ? <ul className="space-y-1 text-xs text-muted-foreground">
 					{feedStatus.data.map((feed) => <li key={feed.key}>
@@ -214,21 +256,49 @@ export default function MarketEventsPage() {
 					</li>)}
 				</ul> : null}
 				{feedStatus.error ? <p role="alert" className="text-xs text-red-600">读取来源状态失败，不影响线索列表。</p> : null}
+				{selectedLeads.length > 0 ? <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-2">
+					<span className="text-xs text-muted-foreground">已选 {selectedLeads.length} 条 · 认为是同一件事？</span>
+					<Button onClick={() => {
+						const chosen = (leads.data?.leads ?? []).filter(l => selectedLeads.includes(l.itemId));
+						if (chosen.length === 0) return;
+						setLeadDraftState(null);
+						setMergeDraftState({ leads: chosen, key: chosen.map(l => l.itemId).join("+") });
+						setEditing(true);
+					}}>合并为一条事件</Button>
+					<Button variant="outline" onClick={() => setSelectedLeads([])}>取消选择</Button>
+				</div> : null}
 				<ul className="space-y-2">
 					{leads.data.leads.map((lead) => <li key={lead.itemId} className="rounded-md border p-3">
 						<div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
 							<div className="min-w-0 space-y-1">
-								<a className="block font-medium underline break-all" href={lead.url} target="_blank" rel="noreferrer">{lead.title}</a>
+								<div className="flex items-start gap-2">
+									{!lead.convertedEventId ? <input
+										type="checkbox" className="mt-1" aria-label={`选择线索：${lead.title}`}
+										checked={selectedLeads.includes(lead.itemId)}
+										onChange={() => setSelectedLeads(ids => ids.includes(lead.itemId) ? ids.filter(id => id !== lead.itemId) : [...ids, lead.itemId])}
+									/> : null}
+									<a className="block font-medium underline break-all" href={lead.url} target="_blank" rel="noreferrer">{lead.title}</a>
+								</div>
 								<p className="text-xs text-muted-foreground">
 									来自 {lead.sourceLabel} · 关联{lead.subject.kind === "brand" ? "品牌" : "竞品"}：{lead.subject.name}
 									{" · "}发布 {formatLeadDate(lead.publishedAt)}
 									{" · "}最近出现 {formatBeijing(lead.lastSeenAt)}
 								</p>
 							</div>
-							<div className="sm:justify-self-end">
+							<div className="space-y-1 sm:justify-self-end sm:text-right">
 								{lead.convertedEventId
 									? <Link className="text-sm underline" to={`/market-events/${lead.convertedEventId}`}>已录入，查看事件</Link>
-									: <Button variant="outline" onClick={() => { setLeadDraftState({ lead, key: lead.itemId }); setEditing(true); }}>转事件</Button>}
+									: <>
+										<Button variant="outline" onClick={() => { setMergeDraftState(null); setLeadDraftState({ lead, key: lead.itemId }); setEditing(true); }}>转事件</Button>
+										{list.data && list.data.length > 0 ? <details className="text-xs">
+											<summary className="cursor-pointer text-muted-foreground">同一件事已录过？并入已有事件</summary>
+											<ul className="mt-1 max-h-56 space-y-1 overflow-auto">
+												{list.data.map(v => <li key={v.eventId}>
+													<button type="button" className="underline" onClick={() => navigate(`/market-events/${v.eventId}`, { state: { attachLead: lead } })}>{v.input.title}</button>
+												</li>)}
+											</ul>
+										</details> : null}
+									</>}
 							</div>
 						</div>
 					</li>)}
