@@ -820,11 +820,12 @@ export default function SubscriptionSettingsPage() {
 
 			<Card className="max-w-3xl">
 				<CardHeader>
-					<CardTitle>官网资讯</CardTitle>
+					<CardTitle>已接入的试点站点</CardTitle>
 				</CardHeader>
 				<CardContent className="space-y-3">
 					<p className="text-sm text-muted-foreground">
-						开启后，这些官网最新发布的标题和链接会出现在「市场与竞品事件」页，由你确认后才变成事件。
+						目前只接入了这两个试点站点；想接入其他官网需要先评估（站点结构验证与合规复核），评估通过后会出现在这里。
+						开启后，站点最新发布的标题和链接会出现在「市场与竞品事件」页，由你确认后才变成事件。
 						系统不会自动创建事件，也不会自动发消息。
 					</p>
 					<ul className="space-y-2">
