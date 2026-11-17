@@ -676,6 +676,19 @@ bun run sources resume haier_news <operator>   # 解除 stopped，记录操作�
 [`docs/sources/registry.md`](sources/registry.md)：它是**登记而非合规结论**，与 `SOURCE_DEFINITIONS`
 双向对齐（由 `tests/source-registry.test.ts` 守卫）。新增站点必须先重走 #41 Gate 0 再改登记表与代码。
 
+### 采集调度与状态（#39）
+
+- **谁来跑**：独立 worker（`apps/worker`）一直支持 `runSources`；此外 API 进程在
+  `SOURCES_ENABLED=1` 时也会跑采集循环（`EMBED_SOURCES` 语义由该变量承担），试点不必再单独部署 worker。
+  `SOURCE_TICK_MS` 只用于测试/演练，默认 60s。开关关闭时不起循环、不发请求。
+- **单例与失败**：`SourceService.sync` 用 `runExclusive('source:<key>')`，同来源并发只有一方执行，
+  另一方返回 `skipped`；抓取失败**不改动任何条目**，连续 3 次失败进 `stopped`，只能人工 `resume`。
+- **状态可见**：`GET /api/me/source-status` 只返回本人已开启来源的 `status`（active/stopped）、
+  最近一次 `lastRun`/`lastOutcome`/`lastReason` 与条目计数；未开启来源不返回，也不暴露全局运维信息。
+  控制台在「市场与竞品事件」的线索卡里显示这几项。
+- **PG 证据**：`tests/sources-postgres.test.ts` 在一次性 schema 上验证并发单例、失败不改条目、
+  重试只补新增条目、`purged` 不复活。
+
 ### 自动来源线索（#39 方案 A）
 
 采集到的列表条目**不会自动变成事件，也不会自动推送**。它只作为「待确认线索」出现在本人控制台：

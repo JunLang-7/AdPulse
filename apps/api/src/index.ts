@@ -1,5 +1,5 @@
 import { AuthenticationService } from "@adpluse/core";
-import { fromEnvironment, runWorker } from "@adpluse/runtime";
+import { createSourceService, fromEnvironment, runSources, runWorker } from "@adpluse/runtime";
 import { FeishuIdentityProvider } from "./feishu-auth.js";
 import { createApi } from "./server.js";
 
@@ -36,13 +36,21 @@ const loop =
 	process.env.EMBED_WORKER === "0"
 		? Promise.resolve()
 		: runWorker(runtime.worker, controller.signal);
+// 受限来源采集（#41/#39）：默认关闭；SOURCES_ENABLED=1 时才在 API 进程内按槽位轮询，
+// 这样试点不必再单独部署一个 worker 进程。SOURCE_TICK_MS 仅用于测试/演练。
+const sourcesLoop =
+	process.env.SOURCES_ENABLED === "1"
+		? runSources(createSourceService(runtime.storage), controller.signal, {
+			...(process.env.SOURCE_TICK_MS ? { tickMs: Number(process.env.SOURCE_TICK_MS) } : {}),
+		})
+		: Promise.resolve();
 let stopping = false;
 async function stop() {
 	if (stopping) return;
 	stopping = true;
 	controller.abort();
 	await new Promise<void>((resolve) => server.close(() => resolve()));
-	await loop;
+	await Promise.all([loop, sourcesLoop]);
 	await runtime.close();
 }
 process.on("SIGTERM", () => {

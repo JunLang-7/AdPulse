@@ -304,6 +304,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/source-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 本人已开启来源的采集状态（#39）
+         * @description 只返回本人已开启来源的聚合状态：active/stopped、最近一次采集时间与结果、条目计数。不含原文、URL 或全局运维信息。
+         */
+        get: operations["listSourceFeedStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/lifecycle-deletions": {
         parameters: {
             query?: never;
@@ -965,6 +985,20 @@ export interface components {
             lastSeenAt: string;
             /** @description 本人已录入同 URL 事件时给出；不表示已采纳或已核验 */
             convertedEventId?: string;
+        };
+        SourceFeedStatus: {
+            key: string;
+            label: string;
+            subject: components["schemas"]["SourceLeadSubject"];
+            enabled: boolean;
+            /** @enum {string} */
+            status: "active" | "stopped";
+            /** Format: date-time */
+            lastRun: string | null;
+            lastOutcome: string | null;
+            lastReason: string | null;
+            activeItems: number;
+            purgedItems: number;
         };
         SourceLeadPage: {
             leads: components["schemas"]["SourceLead"][];
@@ -3440,6 +3474,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationStatus"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listSourceFeedStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own enabled feed status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SourceFeedStatus"][];
+                    };
                 };
             };
             /** @description Unauthorized */
