@@ -579,6 +579,10 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				if (path === "/api/me/notification-status" && req.method === "GET") {
 					return json(res, 200, await notifications.status(session.userId));
 				}
+				if (path === "/api/me/source-status" && req.method === "GET") {
+					// 只返回本人已开启来源的采集状态；未开启即空，不暴露全局运维信息。
+					return json(res, 200, { items: await sourceLeads.status(session.userId) });
+				}
 				if (path === "/api/me/lifecycle-deletions" && req.method === "GET") {
 					// 只读：本人删除请求的清理进度（pending / cleaned），不含业务正文。
 					return json(res, 200, { items: await lifecycleDeletions.list(session.userId) });

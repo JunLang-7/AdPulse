@@ -31,6 +31,20 @@ export interface SourceLeadQuery {
 	limit?: number;
 }
 
+export interface SourceFeedStatus {
+	key: string;
+	label: string;
+	subject: { kind: "brand" | "competitor"; name: string };
+	enabled: boolean;
+	/** 采集侧状态：active / stopped（stopped 只能人工 resume）。 */
+	status: "active" | "stopped";
+	lastRun: string | null;
+	lastOutcome: string | null;
+	lastReason: string | null;
+	activeItems: number;
+	purgedItems: number;
+}
+
 export class SourceLeadError extends Error {
 	constructor(readonly reason: "invalid_query", message: string) {
 		super(message);
@@ -67,6 +81,40 @@ export class SourceLeadService {
 			subject: SOURCE_DEFINITIONS[key]!.subject,
 			enabled: enabled.has(key),
 		}));
+	}
+
+	/**
+	 * 采集侧状态（#39）：只返回本人已开启来源的聚合信息，便于在控制台看到"是否在跑、上次结果"。
+	 * 不含原文、URL 或错误细节之外的内容。
+	 */
+	async status(ownerId: string): Promise<SourceFeedStatus[]> {
+		return this.storage.transaction(async (tx) => {
+			const sources = await this.sourcesIn(tx, ownerId);
+			const states = await tx.sourceStates.all();
+			const runs = await tx.sourceRuns.all();
+			const items = await tx.sourceItems.all();
+			return sources
+				.filter((source) => source.enabled)
+				.map((source): SourceFeedStatus => {
+					const state = states.find((row) => row.sourceKey === source.key);
+					const last = runs
+						.filter((row) => row.sourceKey === source.key)
+						.sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+					const own = items.filter((row) => row.sourceKey === source.key);
+					return {
+						key: source.key,
+						label: source.label,
+						subject: source.subject,
+						enabled: true,
+						status: state?.status ?? "active",
+						lastRun: last?.startedAt ?? null,
+						lastOutcome: last?.outcome ?? null,
+						lastReason: last?.errorReason ?? null,
+						activeItems: own.filter((row) => row.status === "active").length,
+						purgedItems: own.filter((row) => row.status === "purged").length,
+					};
+				});
+		});
 	}
 
 	/** 只返回本人已开启来源的线索；未开启即空，不做跨用户共享或猜测。 */

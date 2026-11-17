@@ -1089,3 +1089,24 @@ test("删除清单状态 API: 只返回本人的删除进度，不含业务正�
   assert.equal(stranger.items.length, 0, "跨用户看不到别人的删除状态");
   assert.equal((await fetch(`${s.url}/api/me/lifecycle-deletions`)).status, 401);
 });
+
+test("来源状态 API: 未开启来源时为空，开启后只返回本人来源的采集状态", async (t) => {
+  const s = await serve(t);
+  const empty = await fetch(`${s.url}/api/me/source-status`, { headers: s.headers });
+  assert.equal(empty.status, 200);
+  assert.deepEqual((await empty.json()) as { items: unknown[] }, { items: [] });
+  assert.equal((await fetch(`${s.url}/api/me/source-status`)).status, 401);
+
+  await fetch(`${s.url}/api/me/subscription/settings`, {
+    method: "PUT",
+    headers: s.headers,
+    body: JSON.stringify({ expectedVersion: 0, sourceFeeds: ["weichai_news"] }),
+  });
+  const opened = (await (await fetch(`${s.url}/api/me/source-status`, { headers: s.headers })).json()) as {
+    items: Array<{ key: string; status: string; activeItems: number }>;
+  };
+  assert.equal(opened.items.length, 1);
+  assert.equal(opened.items[0]?.key, "weichai_news");
+  assert.equal(opened.items[0]?.status, "active");
+  assert.equal(opened.items[0]?.activeItems, 0);
+});

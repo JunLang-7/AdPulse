@@ -173,3 +173,28 @@ test("PostgreSQL：来源线索按本人开关过滤并与事件转换状态一�
 		await admin.end();
 	}
 });
+
+test("来源状态：只返回本人已开启来源，含最近结果与条目计数", async () => {
+	const f = await fixture(new MemoryStorage());
+	await f.seed([item("weichai_news", 1), item("weichai_news", 2, { status: "purged" })]);
+	const leads = new SourceLeadService(f.storage);
+	assert.deepEqual(await leads.status(f.owner), [], "未开启来源时为空");
+
+	await f.enable(["weichai_news"]);
+	await f.storage.transaction(async (tx) => {
+		await tx.sourceRuns.put({
+			id: "run-1", sourceKey: "weichai_news", startedAt: "2026-11-17T00:00:00.000Z",
+			finishedAt: "2026-11-17T00:00:01.000Z", httpStatus: 200, robotsState: "absent", bytes: 100,
+			itemCount: 2, outcome: "ok", snapshotComplete: true, configVersion: "2026-11-07.1", errorReason: null,
+		});
+		await tx.sourceStates.put({ id: "state-1", sourceKey: "weichai_news", status: "active", stoppedAt: null, stoppedReason: null, resumedAt: null, resumedBy: null, lastPrunedAt: null });
+	});
+	const [status] = await leads.status(f.owner);
+	assert.ok(status);
+	assert.equal(status.key, "weichai_news");
+	assert.equal(status.status, "active");
+	assert.equal(status.lastOutcome, "ok");
+	assert.equal(status.lastRun, "2026-11-17T00:00:00.000Z");
+	assert.equal(status.activeItems, 1);
+	assert.equal(status.purgedItems, 1);
+});

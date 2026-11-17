@@ -808,6 +808,31 @@
         }
       }
     },
+    "/api/me/source-status": {
+      "get": {
+        "operationId": "listSourceFeedStatus",
+        "summary": "本人已开启来源的采集状态（#39）",
+        "description": "只返回本人已开启来源的聚合状态：active/stopped、最近一次采集时间与结果、条目计数。不含原文、URL 或全局运维信息。",
+        "responses": {
+          "200": {
+            "description": "Own enabled feed status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": { "type": "array", "items": { "$ref": "#/components/schemas/SourceFeedStatus" } }
+                  },
+                  "required": ["items"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
     "/api/me/lifecycle-deletions": {
       "get": {
         "operationId": "listLifecycleDeletions",
@@ -2419,6 +2444,23 @@
           "convertedEventId": { "type": "string", "description": "本人已录入同 URL 事件时给出；不表示已采纳或已核验" }
         },
         "required": ["sourceKey", "sourceLabel", "subject", "itemId", "title", "url", "publishedAt", "firstSeenAt", "lastSeenAt"],
+        "additionalProperties": false
+      },
+      "SourceFeedStatus": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "label": { "type": "string" },
+          "subject": { "$ref": "#/components/schemas/SourceLeadSubject" },
+          "enabled": { "type": "boolean" },
+          "status": { "type": "string", "enum": ["active", "stopped"] },
+          "lastRun": { "type": ["string", "null"], "format": "date-time" },
+          "lastOutcome": { "type": ["string", "null"] },
+          "lastReason": { "type": ["string", "null"] },
+          "activeItems": { "type": "integer", "minimum": 0 },
+          "purgedItems": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["key", "label", "subject", "enabled", "status", "lastRun", "lastOutcome", "lastReason", "activeItems", "purgedItems"],
         "additionalProperties": false
       },
       "SourceLeadPage": {

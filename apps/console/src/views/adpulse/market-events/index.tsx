@@ -5,6 +5,7 @@ import { consoleClient, type components } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
+import { formatBeijing } from "../settings/notification-records/record-view.js";
 
 type EventInput = components["schemas"]["MarketEventInput"];
 type EventVersion = components["schemas"]["MarketEventVersion"];
@@ -135,6 +136,11 @@ export default function MarketEventsPage() {
 	const list = useQuery({ queryKey: ["market-events"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/market-events"); if (!r.data) throw new Error("无法读取事件列表"); return r.data.items; } });
 	const leads = useQuery({ queryKey: ["source-leads"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/me/source-leads"); if (!r.data) throw new Error("无法读取来源线索"); return r.data; } });
 	const [leadDraftState, setLeadDraftState] = useState<{ lead: Lead; key: string } | null>(null);
+	const feedStatus = useQuery({ queryKey: ["source-status"], enabled: !eventId, queryFn: async () => {
+		const r = await consoleClient.GET("/api/me/source-status");
+		if (!r.data) throw new Error("无法读取来源状态");
+		return r.data.items;
+	} });
 	const detail = useQuery({ queryKey: ["market-events", eventId], enabled: !!eventId, queryFn: async () => { const r = await consoleClient.GET("/api/market-events/{eventId}", { params: { path: { eventId: eventId! } } }); if (!r.data) throw new Error(r.response.status === 404 ? "事件不存在或无权访问" : "无法读取事件"); return r.data; } });
 	const saved = async (id: string, status: components["schemas"]["MarketEventWriteResult"]["status"]) => {
 		setEditing(false);
@@ -158,6 +164,14 @@ export default function MarketEventsPage() {
 			<CardHeader><CardTitle>来源线索（{leads.data.leads.length}）</CardTitle></CardHeader>
 			<CardContent className="space-y-2 text-sm">
 				<p className="text-xs text-muted-foreground">只是来源列表的标题与链接，未读取正文；关联依据是声明的「站点 → 主体」，不是标题推断。转事件后仍需补类型、时间与逐字引用。</p>
+				{feedStatus.data && feedStatus.data.length > 0 ? <ul className="space-y-1 text-xs text-muted-foreground">
+					{feedStatus.data.map((feed) => <li key={feed.key}>
+						{feed.label}：{feed.status === "stopped" ? "已停止（需人工恢复）" : "采集正常"} ·
+						最近 {feed.lastRun ? formatBeijing(feed.lastRun) : "未运行"} ·
+						{feed.lastOutcome ? ` 结果 ${feed.lastOutcome}` : " 无结果"} · 条目 {feed.activeItems}
+					</li>)}
+				</ul> : null}
+				{feedStatus.error ? <p role="alert" className="text-xs text-red-600">读取来源状态失败，不影响线索列表。</p> : null}
 				<ul className="space-y-2">
 					{leads.data.leads.map((lead) => <li key={lead.itemId} className="rounded-md border p-3">
 						<div className="flex flex-wrap items-center justify-between gap-2">
