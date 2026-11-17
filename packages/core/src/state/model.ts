@@ -270,7 +270,7 @@ export interface AuditRecord {
 	id: string;
 	/** UTC 绝对时刻。 */
 	at: string;
-	kind: "task_deleted" | "task_purged" | "audit_purged";
+	kind: "task_deleted" | "task_purged" | "audit_purged" | "backup_evicted";
 	/** 触发者：本人 id；系统清理为 "system"。 */
 	actorId: string;
 	objectId?: string;
