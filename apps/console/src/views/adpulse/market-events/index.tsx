@@ -122,6 +122,13 @@ export function formatLeadDate(value: string | null): string {
 	return formatBeijing(value);
 }
 
+/** 保留期要到一年后，只显示「月日」会含糊，这里固定「年月日 时:分」（北京时间）。 */
+export function formatRetention(value: string): string {
+	const beijing = new Date(Date.parse(value) + 8 * 60 * 60 * 1000);
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${beijing.getUTCFullYear()}年${beijing.getUTCMonth() + 1}月${beijing.getUTCDate()}日 ${pad(beijing.getUTCHours())}:${pad(beijing.getUTCMinutes())}`;
+}
+
 /** 采集结果码翻译成人话；未知码原样显示，不猜。 */
 const OUTCOME_LABELS: Record<string, string> = {
 	ok: "成功",
@@ -294,6 +301,11 @@ export default function MarketEventsPage() {
 		return [...groups.values()].sort((left, right) => right.count - left.count);
 	})();
 	const visibleLeads = (leads.data?.leads ?? []).filter((lead) => !leadSource || lead.sourceKey === leadSource);
+	const lifecycle = useQuery({ queryKey: ["market-events", eventId, "lifecycle"], enabled: !!eventId, queryFn: async () => {
+		const r = await consoleClient.GET("/api/market-events/{eventId}/lifecycle", { params: { path: { eventId: eventId! } } });
+		if (!r.data) throw new Error("无法读取保留期");
+		return r.data;
+	} });
 	const detail = useQuery({ queryKey: ["market-events", eventId], enabled: !!eventId, queryFn: async () => { const r = await consoleClient.GET("/api/market-events/{eventId}", { params: { path: { eventId: eventId! } } }); if (!r.data) throw new Error(r.response.status === 404 ? "事件不存在或无权访问" : "无法读取事件"); return r.data; } });
 	const saved = async (id: string, status: components["schemas"]["MarketEventWriteResult"]["status"]) => {
 		setEditing(false);
@@ -304,8 +316,16 @@ export default function MarketEventsPage() {
 	if (eventId) return <div className="p-6 space-y-4">
 		<Link className="underline text-sm" to="/market-events">返回市场与竞品事件</Link>
 		{notice && <p role="status">{notice}</p>}
-		{detail.isLoading && <p>正在读取事件…</p>}{detail.error && <p role="alert">{detail.error.message}</p>}
+		{detail.isLoading && <p>正在读取事件…</p>}
+		{detail.error && (lifecycle.data?.expired
+			? <p role="status" className="rounded-md border border-dashed p-4 text-sm">
+				这条事件已过保留期（{lifecycle.data.retentionDays} 天），内容不再展示。到期时间 {formatRetention(lifecycle.data.expiresAt)}。
+			</p>
+			: <p role="alert">{detail.error.message}</p>)}
 		{detail.data && <><h1 className="text-2xl font-bold">{detail.data.current.input.title}</h1><Summary version={detail.data.current} />
+			{lifecycle.data
+				? <p className="text-xs text-muted-foreground">保留至 {formatRetention(lifecycle.data.expiresAt)}。查看与投递不会顺延，每次修订会重新计时。</p>
+				: null}
 			<Button variant="outline" onClick={() => setEditing(!editing)}>{editing ? "取消编辑" : "修订事件 / 补充转载"}</Button>
 			{editing && <EventForm key={detail.data.current.id} current={detail.data.current} attach={attachLead ?? undefined} saved={(id, status) => { void saved(id, status); }} />}
 			<h2 className="font-semibold">历史版本</h2>{detail.data.versions.slice(1).map(v => <details key={v.id} className="rounded-md border p-4"><summary>第 {v.version} 版 · {v.changeReason} · {formatBeijing(v.createdAt)}</summary><Summary version={v} /></details>)}

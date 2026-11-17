@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { activeEventHeadIn, eventActiveIn, eventLifecycleIn, type EventLifecycle } from "./event-lifecycle.js";
 import { NotificationSelectionService } from "./notifications-selection.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 
@@ -142,16 +143,35 @@ export class MarketEventService {
 		this.selections = new NotificationSelectionService(storage, now);
 	}
 	async list(ownerId: string): Promise<MarketEventVersion[]> {
+		const now = new Date(this.now());
 		return this.storage.transaction(async tx => {
 			const heads = (await tx.marketEvents.all()).filter(h => h.ownerId === ownerId);
-			const versions = await Promise.all(heads.map(h => tx.marketEventVersions.get(`${h.id}:${h.currentVersion}`)));
-			return versions.filter((v): v is MarketEventVersion => v !== null).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+			const active = [];
+			for (const head of heads) {
+				// 到期即限访：到期事件不进列表，也不靠前端隐藏。
+				if (await eventLifecycleIn(tx, head, now).then(lifecycle => lifecycle.expired)) continue;
+				const version = await tx.marketEventVersions.get(`${head.id}:${head.currentVersion}`);
+				if (version) active.push(version);
+			}
+			return active.sort((a,b) => b.createdAt.localeCompare(a.createdAt));
 		});
 	}
-	async detail(ownerId: string, eventId: string): Promise<{ current: MarketEventVersion; versions: MarketEventVersion[] } | null> {
+
+	/** 到期判定查询：到期事件仍返回状态，便于解释「为什么打不开」。 */
+	async lifecycle(ownerId: string, eventId: string): Promise<EventLifecycle | null> {
+		const now = new Date(this.now());
 		return this.storage.transaction(async tx => {
 			const head = await tx.marketEvents.get(eventId);
 			if (!head || head.ownerId !== ownerId) return null;
+			return eventLifecycleIn(tx, head, now);
+		});
+	}
+	async detail(ownerId: string, eventId: string): Promise<{ current: MarketEventVersion; versions: MarketEventVersion[] } | null> {
+		const now = new Date(this.now());
+		return this.storage.transaction(async tx => {
+			// 到期事件按「不可访问」处理，与任务侧一致。
+			const head = await activeEventHeadIn(tx, ownerId, eventId, now);
+			if (!head) return null;
 			const versions = (await tx.marketEventVersions.all()).filter(v => v.eventId === eventId && v.ownerId === ownerId).sort((a,b) => b.version - a.version);
 			const current = versions[0];
 			return current ? { current, versions } : null;
@@ -203,12 +223,18 @@ export class MarketEventService {
 			if (operation.digest !== digest) throw new MarketEventError(409, "idempotency conflict");
 			const version = await tx.marketEventVersions.get(operation.versionId);
 			if (!version) throw new Error("event operation result missing");
+			// 幂等重放也要限访：不能因为重放就返回到期事件的业务正文。
+			if (version.eventId && !await activeEventHeadIn(tx, ownerId, version.eventId, new Date(this.now())))
+				throw new MarketEventError(404, "event not found");
 			return { status: operation.status, version };
 		}
 		const logicalKey = hash([input.subject.kind, normalize(input.subject.name), input.type, normalize(input.occurrenceKey)]);
 		const aliases = [hash([ownerId, "logical", logicalKey]), ...input.sources.flatMap(s => s.url ? [hash([ownerId, input.subject.kind, normalize(input.subject.name), input.type, "url", safeUrl(s.url)])] : [])];
 		let head = eventId ? await tx.marketEvents.get(eventId) : null;
 		if (eventId && (!head || head.ownerId !== ownerId)) throw new MarketEventError(404, "event not found");
+		// 写入前用原状态判定仍可访问：否则修订会推进「最后业务更新」，等于把已到期事件复活。
+		if (eventId && head && !await eventActiveIn(tx, head, new Date(this.now())))
+			throw new MarketEventError(404, "event not found");
 		for (const aliasId of aliases) {
 			const alias = await tx.marketEventAliases.get(aliasId);
 			if (!alias) continue;

@@ -15,7 +15,7 @@ const closedSources = [
 	{ key: "weichai_news", label: "潍柴新闻与事件", subject: { kind: "brand" as const, name: "潍柴" }, enabled: false },
 	{ key: "haier_news", label: "海尔品牌资讯", subject: { kind: "brand" as const, name: "海尔" }, enabled: false },
 ];
-const defaults = { "GET /api/tasks": () => json({ items: [] }), "GET /api/market-events": () => json({ items: [] }), "GET /api/me/source-leads": () => json({ leads: [], sources: closedSources }), "GET /api/me/source-status": () => json({ items: [] }) };
+const defaults = { "GET /api/tasks": () => json({ items: [] }), "GET /api/market-events": () => json({ items: [] }), "GET /api/me/source-leads": () => json({ leads: [], sources: closedSources }), "GET /api/me/source-status": () => json({ items: [] }), "GET /api/market-events/event-1/lifecycle": () => json({ eventId: "event-1", state: "active", anchor: "2026-11-16T01:00:00Z", anchorSource: "last_business_update", lastBusinessUpdate: "2026-11-16T01:00:00Z", expiresAt: "2027-11-16T01:00:00Z", retentionDays: 365, expired: false }) };
 function mount(path = "/market-events") {
 	const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 	render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><Routes><Route path="/market-events" element={<MarketEventsPage />} /><Route path="/market-events/:eventId" element={<MarketEventsPage />} /></Routes></MemoryRouter></QueryClientProvider>);
@@ -225,7 +225,8 @@ test("市场事件页：修订带版本，冲突不冒充成功，旧依据和�
 	t.after(cleanup); const current=version({...input(),provenance:{simulated:true,reference:"guance-ai@pinned/file#record",transformation:"原引语映射，未知保留"}},2); const old=version(current.input,1); let payload:unknown;
 	serve(defaults,{"GET /api/market-events/event-1":()=>json({current,versions:[current,old]}),"POST /api/market-events/event-1/revisions":async req=>{payload=await req.json();return json({error:"event version conflict"},409);}});
 	mount("/market-events/event-1");await screen.findByRole("heading",{name:"样例发布"});
-	assert.ok(screen.getAllByText(/模拟样例 · 不是真实公告/).length); assert.ok(screen.getByText(/第 1 版 · 人工录入 · 11月16日 09:00/));
+	assert.ok(screen.getAllByText(/模拟样例 · 不是真实公告/).length);
+	assert.ok(screen.getByText(/保留至 2027年11月16日 09:00。查看与投递不会顺延，每次修订会重新计时。/), "详情显示保留期"); assert.ok(screen.getByText(/第 1 版 · 人工录入 · 11月16日 09:00/));
 	fireEvent.click(screen.getByRole("button",{name:"修订事件 / 补充转载"}));
 	assert.equal((screen.getByLabelText("这是合成 / 模拟材料") as HTMLInputElement).disabled,true);
 	fireEvent.change(screen.getByLabelText("本次修订说明"),{target:{value:"补充来源"}});fireEvent.click(screen.getByRole("button",{name:"保存修订"}));
@@ -247,4 +248,19 @@ test("市场事件页：移除来源时清除指向该材料的引用",async t=>
 	fireEvent.change(screen.getByLabelText("公告主体引用来源"),{target:{value:"1"}});fireEvent.change(screen.getByLabelText("公告主体原文引用"),{target:{value:"待移除"}});
 	fireEvent.click(screen.getByRole("button",{name:"移除来源 2"}));fireEvent.click(screen.getByRole("button",{name:"保存事件"}));await screen.findByRole("alert");
 	assert.equal(body?.sources.length,1);assert.equal(body?.citations.subject,null);
+});
+
+test("市场事件页：到期事件显示保留期说明，不显示业务正文", async t => {
+	t.after(cleanup);
+	serve(defaults, {
+		"GET /api/market-events/event-1": () => json({ error: "event not found" }, 404),
+		"GET /api/market-events/event-1/lifecycle": () => json({
+			eventId: "event-1", state: "expired", anchor: "2026-11-16T01:00:00Z", anchorSource: "last_business_update",
+			lastBusinessUpdate: "2026-11-16T01:00:00Z", expiresAt: "2026-11-20T01:00:00Z", retentionDays: 365, expired: true,
+		}),
+	});
+	mount("/market-events/event-1");
+	assert.ok(await screen.findByText(/这条事件已过保留期（365 天），内容不再展示/));
+	assert.ok(screen.getByText(/到期时间 2026年11月20日 09:00/));
+	assert.equal(screen.queryByRole("button", { name: "修订事件 / 补充转载" }), null, "到期事件不提供修订入口");
 });

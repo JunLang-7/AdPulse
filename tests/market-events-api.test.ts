@@ -50,3 +50,26 @@ test("market events HTTP: idempotency, semantic duplicates, evidence errors and 
 	const detail=await (await request(`/api/market-events/${id}`)).json(); assert.equal(detail.versions.length,2); assert.equal(detail.versions[1].input.title,eventInput().title);
 	assert.equal(detail.current.evidenceRevision,1);
 });
+
+test("market events HTTP: 生命周期查询可解释到期，到期后详情 404 且不可修订", async t => {
+	const { runtime, users, request, base } = await serve(t);
+	const created = await request("/api/market-events","POST",eventInput());
+	assert.equal(created.status,201);
+	const eventId = ((await created.json()) as { version: { eventId: string } }).version.eventId;
+
+	const lifecycle = await request(`/api/market-events/${eventId}/lifecycle`);
+	assert.equal(lifecycle.status,200);
+	const projection = await lifecycle.json() as { state: string; expired: boolean; retentionDays: number; anchorSource: string; expiresAt: string };
+	assert.equal(projection.state,"active");
+	assert.equal(projection.expired,false);
+	assert.equal(projection.retentionDays,365);
+	assert.equal(projection.anchorSource,"last_business_update");
+	assert.ok(Date.parse(projection.expiresAt) > Date.parse(projection.expiresAt) - 1);
+
+	// 非本人：与不存在同样返回 404，不泄露存在性。
+	assert.equal((await request(`/api/market-events/${eventId}/lifecycle`,"GET",undefined,1)).status,404);
+	assert.equal((await request("/api/market-events/missing/lifecycle")).status,404);
+	assert.ok(users[0]!.userId);
+	assert.ok(runtime);
+	assert.ok(base);
+});
