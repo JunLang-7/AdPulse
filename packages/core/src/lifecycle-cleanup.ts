@@ -17,6 +17,8 @@ export interface CleanupResult {
 	scheduled: number;
 	/** 本次清理掉的过期审计条数。 */
 	auditPurged: number;
+	/** 本轮失败、仍为 pending 的清单 id（下轮重试）。 */
+	failed: string[];
 }
 
 type TableName = keyof Entities;
@@ -33,19 +35,33 @@ export class LifecycleCleanupService {
 		const scheduled = await this.scheduleExpiredIn(at);
 		const due = (await new LifecycleCleanupReader(this.storage).due(at)).slice(0, 50);
 		const removed: Record<string, number> = {};
+		const failed: string[] = [];
 		let manifests = 0;
+		// 逐份隔离：单份失败只保留它自己的 pending，不能拖停其他清单与审计清理。
 		for (const manifest of due) {
-			const lock = await this.storage.runExclusive(
-				`lifecycle-cleanup:${manifest.id}`,
-				() => this.storage.transaction((tx) => this.cleanIn(tx, manifest, at)),
-			);
-			// 另一个进程正在清这一份：跳过，下次 tick 再看。
-			if (!lock.acquired || !lock.value) continue;
-			manifests += 1;
-			for (const [table, count] of Object.entries(lock.value)) removed[table] = (removed[table] ?? 0) + count;
+			try {
+				const lock = await this.storage.runExclusive(
+					`lifecycle-cleanup:${manifest.id}`,
+					() => this.storage.transaction((tx) => this.cleanIn(tx, manifest, at)),
+				);
+				// 另一个进程正在清这一份：跳过，下次 tick 再看。
+				if (!lock.acquired || !lock.value) continue;
+				manifests += 1;
+				for (const [table, count] of Object.entries(lock.value)) removed[table] = (removed[table] ?? 0) + count;
+			} catch (error) {
+				failed.push(manifest.id);
+				console.error(
+					`lifecycle cleanup failed for ${manifest.taskId}; stays pending: ${error instanceof Error ? error.message : "unknown"}`,
+				);
+			}
 		}
-		const auditPurged = await this.purgeAuditIn(at);
-		return { manifests, removed, scheduled, auditPurged };
+		let auditPurged = 0;
+		try {
+			auditPurged = await this.purgeAuditIn(at);
+		} catch (error) {
+			console.error(`audit purge failed; will retry: ${error instanceof Error ? error.message : "unknown"}`);
+		}
+		return { manifests, removed, scheduled, auditPurged, failed };
 	}
 
 	/**
@@ -138,11 +154,15 @@ export class LifecycleCleanupService {
 		const roundIds = new Set(
 			(await tx.rounds.all()).filter((row) => sessionIds.has(row.sessionId)).map((row) => row.id),
 		);
+		// 决策卡/结果回执由 `queueDelivery()` 创建，**没有 ownerId**；因此按已确认归属的
+		// session/round 定位，而不是按 ownerId 过滤，否则会漏掉含业务正文的投递与 send_delivery 任务。
 		const deliveryIds = new Set(
 			(await tx.deliveries.all()).filter(
-				(row) => row.ownerId === ownerId
-					&& ((row.sessionId !== undefined && sessionIds.has(row.sessionId))
-						|| (row.roundId !== undefined && roundIds.has(row.roundId))),
+				(row) => (row.sessionId !== undefined && sessionIds.has(row.sessionId))
+					|| (row.roundId !== undefined && roundIds.has(row.roundId))
+					|| (row.ownerId === ownerId
+						&& ((row.sessionId !== undefined && sessionIds.has(row.sessionId))
+							|| (row.roundId !== undefined && roundIds.has(row.roundId)))),
 			).map((row) => row.id),
 		);
 		const actionIds = new Set(
@@ -170,7 +190,32 @@ export class LifecycleCleanupService {
 				&& (row.taskId === taskId || (row.alertId !== undefined && alertIds.has(row.alertId))))
 			.map((row) => row.id);
 
+		// 已发送批次的卡片内容是冻结在 Delivery.card 里的副本；只删 notificationItems 会让
+		// 已删任务的标题/摘要继续出现在「通知记录」里。这里按任务精确摘除，保留同批次其他条目。
+		const frozenTitles = new Set(
+			(await tx.notificationItems.all())
+				.filter((row) => row.ownerId === ownerId && row.taskId === taskId)
+				.map((row) => row.title),
+		);
 		const removed: Record<string, number> = {};
+		let strippedCards = 0;
+		for (const delivery of await tx.deliveries.listByOwner(ownerId)) {
+			const card = delivery.card as {
+				items?: Array<{ title: string; detailUrl?: string; [key: string]: unknown }>;
+			};
+			if (!Array.isArray(card.items) || card.items.length === 0) continue;
+			// 优先用 detailUrl 里的任务定位；退回标题匹配，兼容没有 detailBase 的装配。
+			const keep = card.items.filter((item) => {
+				if (item.detailUrl?.includes(`/tasks/${taskId}`)) return false;
+				return !(item.detailUrl === undefined && frozenTitles.has(item.title));
+			});
+			if (keep.length === card.items.length) continue;
+			// 只过滤 items，其余字段原样保留；类型上与冻结卡片的联合类型保持一致。
+			await tx.deliveries.put({ ...delivery, card: { ...card, items: keep } as typeof delivery.card });
+			strippedCards += 1;
+		}
+		if (strippedCards > 0) removed.deliveryCards = strippedCards;
+
 		const remove = async (table: TableName, ids: string[]) => {
 			if (ids.length === 0) return;
 			const count = await tx[table].remove(ids);

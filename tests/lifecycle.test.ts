@@ -548,3 +548,191 @@ test("PostgreSQL：listByOwner 与 ownerId 索引支撑清理，且审计表可�
 		await admin.end();
 	}
 });
+
+test("清理不再遗漏：冻结卡片摘除已删任务条目（保留同批次其他内容）", async () => {
+	const shared = new MemoryStorage();
+	const f = await fixture("2026-01-01T00:00:00.000Z", shared);
+	// 同一张已发送汇总卡里同时有「本任务」和「另一任务」的冻结条目。
+	const delivery = {
+		id: "digest:batch-1", recipient: { accountId: "acc", kind: "user" as const, externalId: "ou" },
+		ownerId: f.owner, purpose: "digest" as const, status: "sent" as const, actions: [], createdAt: "2026-01-01T00:00:00.000Z",
+		card: {
+			title: "信息汇总", items: [
+				{ title: "本任务的标题", summary: "本任务摘要", relevance: "与本任务相关", sources: [{ label: "来源 A" }] },
+				{ title: "其他任务的标题", summary: "其他任务摘要", relevance: "与其他任务相关", sources: [{ label: "来源 B" }] },
+			],
+		},
+	};
+	await f.storage.transaction(async (tx) => {
+		await tx.deliveries.put(delivery as never);
+		// 冻结卡片没有 detailUrl 时按标题回退匹配：这里补一条同标题的条目。
+		await tx.notificationItems.put({
+			id: `${f.owner}:effect:demo`, ownerId: f.owner, batchId: "digest:batch-1", logicalKey: "effect:demo",
+			kind: "effect_alert", taskId: f.task.taskId, title: "本任务的标题", summary: "摘要", relevance: "相关",
+			sources: [{ label: "来源 A" }], revision: 1, status: "queued",
+			createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+		} as never);
+	});
+	const manifest = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
+	const { LifecycleCleanupService } = await import("../packages/core/dist/index.js");
+	f.setTime(manifest.deadlineAt);
+	const result = await new LifecycleCleanupService(f.storage, f.clock).runOnce();
+	assert.equal(result.removed.deliveryCards, 1, "冻结卡片被处理");
+	const after = (await f.storage.transaction((tx) => tx.deliveries.get("digest:batch-1")))!;
+	const items = (after.card as { items: Array<{ title: string }> }).items;
+	assert.deepEqual(items.map((item) => item.title), ["其他任务的标题"], "只摘除已删任务的条目");
+});
+
+test("清理不再遗漏：没有 ownerId 的决策卡投递与其 send_delivery 任务也会被清", async () => {
+	const f = await fixture();
+	// 复刻 Orchestrator.queueDelivery 的形状：只带 sessionId/roundId，不写 ownerId。
+	const session = {
+		id: "session-1", ownerId: f.owner, taskRef: { taskId: f.task.taskId, taskVersion: 1 },
+		allowedActorIds: [], strategy: {}, limits: {}, signal: {}, version: 0, roundNo: 0,
+		status: "awaiting_input" as const, createdAt: "2026-01-01T00:00:00.000Z",
+	};
+	const round = { id: "round-1", sessionId: "session-1", roundNo: 0, strategyVersion: 1, status: "open" as const, card: { title: "t" }, candidates: [] };
+	const delivery = {
+		id: "delivery-1", sessionId: "session-1", roundId: "round-1", purpose: "decision" as const,
+		status: "pending" as const, recipient: { accountId: "acc", kind: "user" as const, externalId: "ou" },
+		card: { title: "待确认事项", summary: "业务正文", actions: [] }, actions: [], createdAt: "2026-01-01T00:00:00.000Z",
+	};
+	const job = { id: "job-1", task: { kind: "send_delivery" as const, deliveryId: "delivery-1" }, status: "pending" as const, runAt: "2026-01-01T00:00:00.000Z", attempts: 0 };
+	await f.storage.transaction(async (tx) => {
+		await tx.sessions.put(session as never);
+		await tx.rounds.put(round as never);
+		await tx.deliveries.put(delivery as never);
+		await tx.jobs.put(job as never);
+	});
+	const manifest = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
+	const { LifecycleCleanupService } = await import("../packages/core/dist/index.js");
+	f.setTime(manifest.deadlineAt);
+	const result = await new LifecycleCleanupService(f.storage, f.clock).runOnce();
+	assert.ok((result.removed.deliveries ?? 0) >= 1, "决策卡投递被清理");
+	assert.ok((result.removed.jobs ?? 0) >= 1, "对应的 send_delivery 任务被清理");
+	assert.equal(await f.storage.transaction((tx) => tx.deliveries.get("delivery-1")), null);
+	assert.equal(await f.storage.transaction((tx) => tx.jobs.get("job-1")), null);
+});
+
+test("清理隔离：单份清单失败不阻塞其他用户，也不跳过审计清理", async () => {
+	const shared = new MemoryStorage();
+	const f = await fixture("2026-01-01T00:00:00.000Z", shared);
+	const other = await fixture("2026-01-01T00:00:00.000Z", shared);
+	const first = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
+	const second = (await other.tasks.delete(other.owner, other.task.taskId)).manifest;
+
+	// 注入：清理「first」那份清单时在 tasks.remove 上失败。
+	let failing = true;
+	const failingStorage = {
+		transaction: (work: (tx: unknown) => Promise<unknown>) =>
+			shared.transaction(async (tx) => {
+				const wrapped = new Proxy(tx, {
+					get(target, table) {
+						const value = target[table as keyof typeof target];
+						if (failing && table === "tasks")
+							return { ...value, remove: async (ids: string[]) => {
+								if (ids.includes(f.task.taskId)) throw new Error("injected tasks.remove failure");
+								return (value as { remove(ids: string[]): Promise<number> }).remove(ids);
+							} };
+						return value;
+					},
+				});
+				return work(wrapped);
+			}),
+		runExclusive: shared.runExclusive.bind(shared),
+		claimJob: shared.claimJob.bind(shared),
+	} as unknown as typeof shared;
+	const { LifecycleCleanupService } = await import("../packages/core/dist/index.js");
+	f.setTime(first.deadlineAt);
+	await other.storage.transaction((tx) => tx.lifecycleDeletions.put({ ...second, deadlineAt: first.deadlineAt }));
+	const result = await new LifecycleCleanupService(failingStorage as never, f.clock).runOnce();
+	assert.ok(result.failed.length >= 1, "失败清单被记录而不是抛出");
+	assert.equal(
+		(await shared.transaction((tx) => tx.lifecycleDeletions.get(second.id)))?.status,
+		"cleaned",
+		"另一用户的清单仍然被清理",
+	);
+	assert.equal(
+		(await shared.transaction((tx) => tx.lifecycleDeletions.get(first.id)))?.status,
+		"pending",
+		"失败那份保持 pending",
+	);
+	failing = false;
+	const retried = await new LifecycleCleanupService(shared, f.clock).runOnce();
+	assert.equal(retried.manifests, 1, "下一轮重试可完成");
+	assert.equal((await shared.transaction((tx) => tx.lifecycleDeletions.get(first.id)))?.status, "cleaned");
+});
+
+test("清理调度不依赖队列空闲：持续有任务可领时仍按间隔执行", async () => {
+	const { Worker, LifecycleCleanupService } = await import("../packages/core/dist/index.js");
+	const f = await fixture();
+	const manifest = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
+	// 队列里始终有可领取的任务：用 claimJob 打桩返回一个 job，验证清理仍执行。
+	let claims = 0;
+	const busy = {
+		transaction: f.storage.transaction.bind(f.storage),
+		runExclusive: f.storage.runExclusive.bind(f.storage),
+		claimJob: async () => {
+			claims += 1;
+			return { id: `job-${claims}`, task: { kind: "send_digest" as const, batchId: "none" }, status: "pending" as const, runAt: f.clock(), attempts: 0 };
+		},
+	} as unknown as typeof f.storage;
+	let cleanups = 0;
+	const cleanup = {
+		runOnce: async () => { cleanups += 1; return { manifests: 0, removed: {}, scheduled: 0, auditPurged: 0, failed: [] }; },
+	};
+	const worker = new Worker(busy, {} as never, new Map(), f.clock, 0, undefined, undefined, undefined, 0, undefined, cleanup as never, 60_000);
+	f.setTime(manifest.deadlineAt);
+	await worker.runOnce();
+	assert.equal(claims, 1, "先领任务（有活干）");
+	assert.equal(cleanups, 1, "有任务可领时清理仍然执行");
+	// 同一间隔内不重复触发。
+	await worker.runOnce();
+	assert.equal(cleanups, 1);
+});
+
+test("PostgreSQL：清理会摘除冻结卡片里的已删任务条目", { skip: !process.env.TEST_DATABASE_URL }, async () => {
+	const url = process.env.TEST_DATABASE_URL!;
+	const { createRequire } = await import("node:module");
+	const { Pool } = createRequire(new URL("../packages/storage/package.json", import.meta.url))("pg") as {
+		Pool: new (options: { connectionString: string; options?: string }) => ConstructorParameters<typeof PostgresStorage>[0];
+	};
+	const admin = new Pool({ connectionString: url }) as unknown as { query(sql: string): Promise<unknown>; end(): Promise<void> };
+	const schema = `lifecycle_card_${randomUUID().replaceAll("-", "")}`;
+	await admin.query(`CREATE SCHEMA ${schema}`);
+	const pool = new Pool({ connectionString: url, options: `-c search_path=${schema}` });
+	const storage = new PostgresStorage(pool);
+	try {
+		await storage.initialize();
+		const start = "2026-01-01T00:00:00.000Z";
+		const identity = { platform: "feishu", applicationId: "cli_test", tenantId: "tenant-a", idType: "open_id", externalId: randomUUID() };
+		const session = await new AuthenticationService(storage).createWebSession(identity, createHash("sha256").update(randomUUID()).digest("hex"), start);
+		const tasks = new TaskService(storage, () => start);
+		const task = await tasks.create(session.userId, randomUUID(), taskInput);
+		await storage.transaction(async (tx) => {
+			await tx.notificationItems.put({
+				id: `${session.userId}:effect:x`, ownerId: session.userId, batchId: "digest:b", logicalKey: "effect:x",
+				kind: "effect_alert", taskId: task.taskId, title: "本任务标题", summary: "s", relevance: "r",
+				sources: [{ label: "l" }], revision: 1, status: "queued", createdAt: start, updatedAt: start,
+			});
+			await tx.deliveries.put({
+				id: "digest:b", ownerId: session.userId, purpose: "digest", status: "sent", actions: [],
+				expiresAt: "2027-01-01T00:00:00.000Z",
+				recipient: { accountId: "a", kind: "user", externalId: "ou" },
+				card: { title: "汇总", items: [
+					{ title: "本任务标题", summary: "s", relevance: "r", sources: [{ label: "l" }] },
+					{ title: "他任务标题", summary: "s2", relevance: "r2", sources: [{ label: "l2" }] },
+				] },
+			});
+		});
+		const manifest = (await tasks.delete(session.userId, task.taskId)).manifest;
+		const { LifecycleCleanupService: Cleanup } = await import("../packages/core/dist/index.js");
+		await new Cleanup(storage, () => manifest.deadlineAt).runOnce();
+		const card = (await storage.transaction((tx) => tx.deliveries.get("digest:b")))!.card as { items: Array<{ title: string }> };
+		assert.deepEqual(card.items.map((item) => item.title), ["他任务标题"], "只摘除已删任务条目");
+	} finally {
+		await storage.close();
+		await admin.query(`DROP SCHEMA ${schema} CASCADE`);
+		await admin.end();
+	}
+});

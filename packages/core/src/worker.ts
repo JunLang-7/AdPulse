@@ -70,6 +70,19 @@ export class Worker {
 	}
 
 	async runOnce(): Promise<boolean> {
+		// 生命周期清理与队列是否空闲无关：任务持续可领时也必须按间隔执行，
+		// 否则 7 天清理与 180 天审计淘汰会被无限推迟。
+		if (
+			this.lifecycleCleanup &&
+			Date.parse(this.now()) - this.lastCleanupTick >= this.cleanupIntervalMs
+		) {
+			this.lastCleanupTick = Date.parse(this.now());
+			try {
+				await this.lifecycleCleanup.runOnce();
+			} catch {
+				console.error("lifecycle cleanup tick failed; will retry next interval");
+			}
+		}
 		const job = await this.storage.claimJob(this.now(), 60_000);
 		if (!job) {
 			// 没有任务可领时按间隔触发一次日汇总调度；不引第二个调度进程。
@@ -79,18 +92,6 @@ export class Worker {
 			) {
 				this.lastScheduleTick = Date.parse(this.now());
 				await this.digest.scheduler.tick();
-			}
-			// 在线清理与投递调度分开计时：清理失败只影响清理，下一轮重试。
-			if (
-				this.lifecycleCleanup &&
-				Date.parse(this.now()) - this.lastCleanupTick >= this.cleanupIntervalMs
-			) {
-				this.lastCleanupTick = Date.parse(this.now());
-				try {
-					await this.lifecycleCleanup.runOnce();
-				} catch {
-					console.error("lifecycle cleanup tick failed; will retry next interval");
-				}
 			}
 			return false;
 		}
