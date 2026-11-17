@@ -3,6 +3,7 @@
 // 解释只陈述已存事实（状态、原因代码、时间、投递回执），不推断未记录的原因。
 
 import type { InfoCard } from "./domain/infoCard.js";
+import { eventLifecycleIn } from "./event-lifecycle.js";
 import type { Storage } from "./ports/storage.js";
 import type {
 	Delivery,
@@ -52,6 +53,8 @@ export interface NotificationRecordItem {
 	kind?: NotificationItem["kind"];
 	taskId?: string;
 	revision?: number;
+	/** 来源事件已过期或不可用：内容不返回，只留状态。 */
+	inputExpired?: boolean;
 	status?: NotificationItemStatus;
 	deliveryId?: string;
 	createdAt?: string;
@@ -96,7 +99,11 @@ const digestDeliveryId = (id: string): string => `digest:${id}`;
  * queue() 在 revision 提升时复用同一条目行并改 batchId，按行回查会让历史批次变空、
  * 或显示成更新后的版本，而用户当时收到的不是那个版本。
  */
-const frozenItems = (delivery: Delivery | null): NotificationRecordItem[] => {
+type RecordItemDraft = NotificationRecordItem & {
+	marketEventRef?: { eventId: string; version: number; evidenceRevision: number };
+};
+
+const frozenItems = (delivery: Delivery | null): RecordItemDraft[] => {
 	if (!delivery || delivery.purpose !== "digest") return [];
 	const card = delivery.card;
 	if (!("items" in card)) return [];
@@ -106,11 +113,32 @@ const frozenItems = (delivery: Delivery | null): NotificationRecordItem[] => {
 		summary: item.summary,
 		relevance: item.relevance,
 		sources: item.sources,
+		...(item.marketEventRef ? { marketEventRef: item.marketEventRef } : {}),
 	}));
 };
 
+/**
+ * 到期或已不存在的事件 id 集合：这些事件的内容不得出现在记录页。
+ * 与详情/列表用同一套生命周期判定，不另写一份到期规则。
+ */
+async function unavailableEventIdsIn(
+	tx: Parameters<Parameters<Storage["transaction"]>[0]>[0],
+	ownerId: string,
+	now: Date,
+): Promise<Set<string>> {
+	const ids = new Set<string>();
+	for (const head of await tx.marketEvents.all()) {
+		if (head.ownerId !== ownerId) continue;
+		if ((await eventLifecycleIn(tx, head, now)).expired) ids.add(head.id);
+	}
+	return ids;
+}
+
 export class NotificationRecordService {
-	constructor(private readonly storage: Storage) {}
+	constructor(
+		private readonly storage: Storage,
+		private now: () => string = () => new Date().toISOString(),
+	) {}
 
 	/**
 	 * 只返回本人记录；跨用户一律不可见（不提供按 id 直取公开入口，
@@ -149,6 +177,25 @@ export class NotificationRecordService {
 			const items = (await tx.notificationItems.all()).filter(
 				(item) => item.ownerId === ownerId,
 			);
+			const unavailableEvents = await unavailableEventIdsIn(tx, ownerId, new Date(this.now()));
+			const redact = (item: RecordItemDraft): NotificationRecordItem => {
+				const ref = item.marketEventRef;
+				if (!ref || !unavailableEvents.has(ref.eventId)) {
+					const { marketEventRef: _ref, ...rest } = item;
+					return rest;
+				}
+				// 到期/删除后只保留状态，不返回标题、摘要、关联理由与来源链接。
+				return {
+					...(item.id ? { id: item.id } : {}),
+					...(item.kind ? { kind: item.kind } : {}),
+					...(item.status ? { status: item.status } : {}),
+					title: "已到期的事件",
+					summary: "这条事件已过保留期（365 天），内容不再展示。",
+					relevance: "",
+					sources: [],
+					inputExpired: true,
+				};
+			};
 			const records: NotificationRecord[] = [];
 			for (const batch of page) {
 				const delivery = await tx.deliveries.get(digestDeliveryId(batch.id));
@@ -161,7 +208,7 @@ export class NotificationRecordService {
 				records.push({
 					...toRecord(batch),
 					itemsSource: frozen.length > 0 ? "delivery" : "rows",
-					items: frozen.length > 0 ? frozen : rows.map(toRecordItem),
+					items: (frozen.length > 0 ? frozen : rows.map(toRecordItem)).map(redact),
 					delivery:
 						own
 							? {
@@ -210,9 +257,11 @@ function toRecord(
 	};
 }
 
-function toRecordItem(item: NotificationItem): NotificationRecordItem {
+function toRecordItem(item: NotificationItem): RecordItemDraft {
 	return {
 		id: item.id,
+		// 仅供投影内部判断到期使用，不返回给客户端。
+		...(item.marketEventRef ? { marketEventRef: item.marketEventRef } : {}),
 		kind: item.kind,
 		...(item.taskId ? { taskId: item.taskId } : {}),
 		title: item.title,

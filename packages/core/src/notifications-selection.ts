@@ -3,6 +3,7 @@ import { canSendProactiveIn } from "./notifications.js";
 import { digestInstant, itemId, localDate, NotificationQueue } from "./notifications-queue.js";
 import { NotificationRecordError } from "./notifications-records.js";
 import { normalizeName } from "./subscriptions.js";
+import { eventLifecycleIn } from "./event-lifecycle.js";
 import { taskActiveIn } from "./lifecycle.js";
 import type { MarketEventVersion } from "./market-events.js";
 import type { Storage, Transaction } from "./ports/storage.js";
@@ -160,6 +161,7 @@ export class NotificationSelectionService {
 		const ownerId = version.ownerId;
 		const head = await tx.marketEvents.get(version.eventId);
 		if (!head || head.ownerId !== ownerId || head.currentVersion !== version.version) return;
+		if ((await eventLifecycleIn(tx, head, new Date(this.now()))).expired) return;
 		const id = createHash("sha256").update(JSON.stringify([ownerId, version.eventId, version.evidenceRevision])).digest("hex");
 		const previous = await tx.notificationSelections.get(id);
 		if (previous) {
@@ -378,16 +380,18 @@ export async function effectNotificationCurrentIn(
  * 事件修订、补充证据或转为不足时取消旧待发，不把旧版本冒充最新事实。
  */
 export async function marketEventNotificationCurrentIn(
-	tx: Transaction, item: NotificationItem,
+	tx: Transaction, item: NotificationItem, now: Date = new Date(),
 ): Promise<boolean> {
 	const ref = item.marketEventRef;
 	if (!ref) return true; // 非事件条目不受此检查影响。
 	const head = await tx.marketEvents.get(ref.eventId);
 	const version = await tx.marketEventVersions.get(`${ref.eventId}:${ref.version}`);
-	return Boolean(head && head.ownerId === item.ownerId && head.currentVersion === ref.version
-		&& version && version.ownerId === item.ownerId
-		&& version.evidenceRevision === ref.evidenceRevision
-		&& version.candidate.status === "evidence_ready");
+	if (!head || head.ownerId !== item.ownerId || head.currentVersion !== ref.version
+		|| !version || version.ownerId !== item.ownerId
+		|| version.evidenceRevision !== ref.evidenceRevision
+		|| version.candidate.status !== "evidence_ready") return false;
+	// 到期即失效：已到期的事件不能在发送前被当作当前输入。
+	return !(await eventLifecycleIn(tx, head, now)).expired;
 }
 
 /** 发送前按条目实际输入选择领域复检，不让事件条目跳过引用检查。 */
@@ -395,6 +399,6 @@ export async function notificationInputsStillCurrentIn(
 	tx: Transaction, item: NotificationItem, now: Date = new Date(),
 ): Promise<boolean> {
 	return item.marketEventRef
-		? marketEventNotificationCurrentIn(tx, item)
+		? marketEventNotificationCurrentIn(tx, item, now)
 		: effectNotificationCurrentIn(tx, item, now);
 }

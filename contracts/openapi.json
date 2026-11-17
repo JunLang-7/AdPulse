@@ -195,6 +195,55 @@
         }
       }
     },
+    "/api/market-events/{eventId}/lifecycle": {
+      "parameters": [
+        {
+          "name": "eventId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getMarketEventLifecycle",
+        "summary": "事件到期判定查询（#144 S1）",
+        "description": "返回计时锚点、到期时刻与当前状态。锚点取最后业务更新（首次录入或最后一次修订），365 天按 UTC 绝对时刻计算；普通查看、筛选、投递重试都不续期。到期后事件按不可访问处理：不出现在列表、详情返回 404、不可修订、不参与通知。删除入口、任务引用清理、在线清理与备份重放在后续切片实现。",
+        "responses": {
+          "200": {
+            "description": "Event lifecycle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketEventLifecycle"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Event not found or not owned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/market-events/{eventId}": {
       "get": {
         "operationId": "getMarketEvent",
@@ -2146,7 +2195,59 @@
           "provenance"
         ]
       },
-      "MarketEventVersion": {
+      "MarketEventLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "expired"
+          ]
+        },
+        "anchor": {
+          "type": "string",
+          "format": "date-time",
+          "description": "计时起点：最后业务更新（首次录入或最后一次修订）"
+        },
+        "anchorSource": {
+          "type": "string",
+          "enum": [
+            "last_business_update"
+          ]
+        },
+        "lastBusinessUpdate": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retentionDays": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expired": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "eventId",
+        "state",
+        "anchor",
+        "anchorSource",
+        "lastBusinessUpdate",
+        "expiresAt",
+        "retentionDays",
+        "expired"
+      ]
+    },
+    "MarketEventVersion": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
@@ -2701,6 +2802,10 @@
         "type": "object",
         "description": "itemsSource=delivery 时只保证展示字段（卡片冻结内容）；行级字段（id/kind/revision/status）仅 itemsSource=rows 时存在，服务端不补造",
         "properties": {
+          "inputExpired": {
+            "type": "boolean",
+            "description": "来源事件已过保留期：标题、摘要与来源不返回，只留状态"
+          },
           "id": { "type": "string" },
           "kind": { "type": "string", "enum": ["effect_alert"] },
           "taskId": { "type": "string" },

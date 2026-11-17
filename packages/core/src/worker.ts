@@ -292,6 +292,7 @@ export class Worker {
 				summary: item.summary,
 				relevance: item.relevance,
 				sources: item.sources,
+				...(item.marketEventRef ? { marketEventRef: item.marketEventRef } : {}),
 				...(detailBase && item.taskId
 					? { detailUrl: `${detailBase}/tasks/${item.taskId}` }
 					: {}),

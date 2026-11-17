@@ -20,6 +20,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/market-events/{eventId}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * 事件到期判定查询（#144 S1）
+         * @description 返回计时锚点、到期时刻与当前状态。锚点取最后业务更新（首次录入或最后一次修订），365 天按 UTC 绝对时刻计算；普通查看、筛选、投递重试都不续期。到期后事件按不可访问处理：不出现在列表、详情返回 404、不可修订、不参与通知。删除入口、任务引用清理、在线清理与备份重放在后续切片实现。
+         */
+        get: operations["getMarketEventLifecycle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market-events/{eventId}": {
         parameters: {
             query?: never;
@@ -857,6 +879,24 @@ export interface components {
                 transformation: string | null;
             };
         };
+        MarketEventLifecycle: {
+            eventId: string;
+            /** @enum {string} */
+            state: "active" | "expired";
+            /**
+             * Format: date-time
+             * @description 计时起点：最后业务更新（首次录入或最后一次修订）
+             */
+            anchor: string;
+            /** @enum {string} */
+            anchorSource: "last_business_update";
+            /** Format: date-time */
+            lastBusinessUpdate: string;
+            /** Format: date-time */
+            expiresAt: string;
+            retentionDays: number;
+            expired: boolean;
+        };
         MarketEventVersion: {
             id: string;
             eventId: string;
@@ -1152,6 +1192,8 @@ export interface components {
         };
         /** @description itemsSource=delivery 时只保证展示字段（卡片冻结内容）；行级字段（id/kind/revision/status）仅 itemsSource=rows 时存在，服务端不补造 */
         NotificationRecordItem: {
+            /** @description 来源事件已过保留期：标题、摘要与来源不返回，只留状态 */
+            inputExpired?: boolean;
             id?: string;
             /** @enum {string} */
             kind?: "effect_alert";
@@ -2241,6 +2283,46 @@ export interface operations {
             };
             /** @description Temporarily unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getMarketEventLifecycle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event lifecycle */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketEventLifecycle"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event not found or not owned */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

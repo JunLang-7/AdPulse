@@ -40,6 +40,13 @@ export async function handleMarketEvents(req: IncomingMessage, res: ServerRespon
 		json(res, 200, result);
 		return true;
 	}
+	const lifecycle = path.match(/^\/api\/market-events\/([^/]+)\/lifecycle$/);
+	if (lifecycle?.[1] && req.method === "GET") {
+		const result = await runtime.marketEvents.lifecycle(ownerId, decodeURIComponent(lifecycle[1]));
+		if (!result) throw new HttpError(404, "event not found");
+		json(res, 200, result);
+		return true;
+	}
 	const detail = path.match(/^\/api\/market-events\/([^/]+)$/);
 	if (detail?.[1] && req.method === "GET") {
 		const result = await runtime.marketEvents.detail(ownerId, decodeURIComponent(detail[1]));
