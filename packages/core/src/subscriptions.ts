@@ -4,6 +4,7 @@
 
 import crypto from "node:crypto";
 import { cancelDecisionDeliveriesIn } from "./decision-cancellation.js";
+import { SOURCE_DEFINITIONS, SOURCE_KEYS } from "./sources.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
 	SubscriptionCategory,
@@ -61,6 +62,13 @@ export interface SubscriptionView {
 		/** 从未保存过配置时缺省：不伪造一个更新时间。 */
 		updatedAt?: string;
 	};
+	/** 自动来源（#39 方案 A）：只在本人的线索列表里可见，不自动推送。 */
+	sources: Array<{
+		key: string;
+		label: string;
+		subject: { kind: "brand" | "competitor"; name: string };
+		enabled: boolean;
+	}>;
 	targets: Array<{
 		id: string;
 		kind: SubscriptionTargetKind;
@@ -149,6 +157,16 @@ function validateScope(value: unknown): SubscriptionScope {
 export const normalizeName = (value: string): string =>
 	value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 
+/** 自动来源只能取 allowlist 内已声明的 key；未知值直接拒绝，不做静默过滤。 */
+function validateSourceFeeds(value: unknown): string[] {
+	if (!Array.isArray(value) || value.some((key) => typeof key !== "string"))
+		throw new SubscriptionError("invalid_target", "sourceFeeds must be strings");
+	const unique = [...new Set(value as string[])];
+	if (unique.some((key) => !SOURCE_KEYS.includes(key)))
+		throw new SubscriptionError("invalid_target", "unknown source feed");
+	return unique.sort();
+}
+
 const validName = (value: unknown): value is string =>
 	typeof value === "string" &&
 	value.trim().length > 0 &&
@@ -188,6 +206,7 @@ export class SubscriptionService {
 			expectedVersion: number;
 			proactiveEnabled?: boolean;
 			decisionCardsEnabled?: boolean;
+			sourceFeeds?: string[];
 			schedule?: SubscriptionSettings["schedule"];
 		},
 	): Promise<SubscriptionView> {
@@ -232,6 +251,10 @@ export class SubscriptionService {
 					decisionCards.disabledAt = at;
 				decisionCards.enabled = input.decisionCardsEnabled;
 			}
+			const sourceFeeds =
+				input.sourceFeeds === undefined
+					? current?.sourceFeeds
+					: validateSourceFeeds(input.sourceFeeds);
 			const next: SubscriptionSettings = {
 				id: userId,
 				userId,
@@ -240,6 +263,7 @@ export class SubscriptionService {
 				decisionCards,
 				schedule,
 				updatedAt: at,
+				...(sourceFeeds ? { sourceFeeds } : {}),
 				...(current?.enabledAt ? { enabledAt: current.enabledAt } : {}),
 				...(current?.disabledAt ? { disabledAt: current.disabledAt } : {}),
 			};
@@ -482,6 +506,12 @@ export class SubscriptionService {
 				...(settings?.disabledAt ? { disabledAt: settings.disabledAt } : {}),
 				...(settings?.updatedAt ? { updatedAt: settings.updatedAt } : {}),
 			},
+			sources: SOURCE_KEYS.map((key) => ({
+				key,
+				label: SOURCE_DEFINITIONS[key]!.label,
+				subject: SOURCE_DEFINITIONS[key]!.subject,
+				enabled: (settings?.sourceFeeds ?? []).includes(key),
+			})),
 			targets: sorted.map((item) => ({
 				id: item.id,
 				kind: item.kind,

@@ -15,6 +15,7 @@ import {
 	type NotificationStatusLike,
 	type Readiness,
 	type SubscriptionCategory,
+	type SourceFeedKey,
 	type SubscriptionKind,
 	type SubscriptionScope,
 	type SubscriptionTargetLike,
@@ -375,6 +376,7 @@ export default function SubscriptionSettingsPage() {
 		mutationFn: async (body: {
 			proactiveEnabled?: boolean;
 			decisionCardsEnabled?: boolean;
+			sourceFeeds?: SourceFeedKey[];
 			schedule?: {
 				timezone: "Asia/Shanghai";
 				digestAt: string;
@@ -810,7 +812,54 @@ export default function SubscriptionSettingsPage() {
 
 					<p className="text-xs text-muted-foreground">
 						退订某个对象会保留它的配置，可随时恢复；关闭全部主动推送不会退出登录。
-						当前仅本人任务的效果告警参与筛选与推送；品牌/竞品、明确事件和补证尚未接入，配置会保留。
+						效果告警按本人任务关联匹配；明确事件按本人录入或来源线索转成的候选匹配；
+						补证类别尚未接入，配置会保留。
+					</p>
+				</CardContent>
+			</Card>
+
+			<Card className="max-w-3xl">
+				<CardHeader>
+					<CardTitle>自动来源线索（#39 方案 A）</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-3">
+					<p className="text-sm text-muted-foreground">
+						开启后，该站点列表的新标题会出现在「市场与竞品事件」页的线索里，由你确认后转成事件；
+						<strong>不会自动建事件，也不会自动推送</strong>。关联依据是声明的「站点 → 主体」，不是标题或域名推断。
+					</p>
+					<ul className="space-y-2">
+						{(data.sources ?? []).map((source) => (
+							<li key={source.key} className="flex items-center justify-between gap-3 rounded-md border p-3">
+								<div className="text-sm">
+									<p className="font-medium">{source.label}</p>
+									<p className="text-xs text-muted-foreground">
+										声明主体：{source.subject.kind === "brand" ? "品牌" : "竞品"}「{source.subject.name}」· 仅标题与原文链接
+									</p>
+								</div>
+								<button
+									type="button"
+									className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+									disabled={busy || updateSettings.isPending}
+									onClick={() =>
+										updateSettings.mutate({
+											// 服务端会再校验 allowlist；这里只做边界收窄。
+											sourceFeeds: (data.sources ?? [])
+												.map((item) =>
+													item.key === source.key ? { ...item, enabled: !item.enabled } : item,
+												)
+												.filter((item) => item.enabled)
+												.map((item) => item.key) as SourceFeedKey[],
+										})
+									}
+								>
+									{source.enabled ? "关闭来源" : "开启来源"}
+								</button>
+							</li>
+						))}
+					</ul>
+					<p className="text-xs text-muted-foreground">
+						这两个站点未取得合规签核（#41 Gate 0），仅按产品方决定做受限采集：只取标题与链接、不复制正文；
+						投诉或条款变化时应立即停用。
 					</p>
 				</CardContent>
 			</Card>

@@ -671,6 +671,29 @@ bun run sources resume haier_news <operator>   # 解除 stopped，记录操作�
 
 测试用**人造 HTML fixture**，不访问真实站点，因此本地跑测试不会产生任何外发请求。
 
+来源清单、声明主体、许可状态与停用流程统一登记在
+[`docs/sources/registry.md`](sources/registry.md)：它是**登记而非合规结论**，与 `SOURCE_DEFINITIONS`
+双向对齐（由 `tests/source-registry.test.ts` 守卫）。新增站点必须先重走 #41 Gate 0 再改登记表与代码。
+
+### 自动来源线索（#39 方案 A）
+
+采集到的列表条目**不会自动变成事件，也不会自动推送**。它只作为「待确认线索」出现在本人控制台：
+
+- 每人逐来源开启：`PUT /api/me/subscription/settings` 的 `sourceFeeds`（取值限 allowlist 的
+  `weichai_news`/`haier_news`，未知 key 直接 422）。默认空 = 不采集、不可见。
+- 关联依据是**声明的「站点 → 主体」映射**（`SOURCE_DEFINITIONS[key].subject`，潍柴站→品牌潍柴、海尔站→品牌海尔），
+  不是标题或域名推断；卡片/线索上都写明这一点。
+- `GET /api/me/source-leads?sourceKey=&limit=`（limit 1–50，默认 20）：只返回本人已开启来源的 active 条目，
+  含标题、原文链接、发布时间（未知保留 null）、`firstSeenAt`/`lastSeenAt` 与 `subject`；
+  查询未开启的来源返回 400，不泄漏别人的开关。
+- 「已录入」判定是**本人当前版本事件里有同 URL 的来源**，返回 `convertedEventId`；历史修订里的旧链接不算。
+- 控制台「市场与竞品事件」列出线索，点「转事件」把标题、声明主体与那条**仅标题+链接**预填进录入表单，
+  类型、事件时间与逐字引用仍需本人补；补齐后才可能变成 `evidence_ready` 并进入 #112 的事件筛选。
+- 产品方决定的「每日 ≤3 条、单站 ≤1 条」是**推送**限额；方案 A 不推送，因此本阶段不实现该限额，
+  线索列表只按时间倒序取最近 20 条。
+- 站点未取得合规签核（#41 Gate 0），只能取标题与链接、不复制正文；收到投诉或条款变化应立即
+  `purge` 并关闭来源。
+
 ### 用 Agent-Reach 查找官网线索
 
 运维人员可按品牌和主题手动查询海尔、潍柴的新品发布（`products`）或品牌活动（`campaigns`）。该命令独立于采集 worker 和数据库，固定把公开品牌、官网域名和主题词发给 Exa。

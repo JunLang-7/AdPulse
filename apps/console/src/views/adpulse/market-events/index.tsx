@@ -39,8 +39,23 @@ function Summary({ version }: { version: EventVersion }) {
 		<p className="text-muted-foreground">{version.createdAt} · {version.changeReason}</p>
 	</div>;
 }
-function EventForm({ current, saved }: { current?: EventVersion; saved: (id: string, status: components["schemas"]["MarketEventWriteResult"]["status"]) => void }) {
-	const [draft, setDraft] = useState<EventInput>(() => current ? structuredClone(current.input) : blank());
+type Lead = components["schemas"]["SourceLead"];
+/** 线索转事件：只预填标题、主体声明与那条标题+链接，引用/类型仍需本人补。 */
+export function leadDraft(lead: Lead): EventInput {
+	return {
+		...blank(),
+		title: lead.title,
+		subject: { kind: lead.subject.kind, name: lead.subject.name },
+		sources: [{
+			url: lead.url, publisher: lead.sourceLabel, content: lead.title, scope: "title_only", origin: "official",
+			publishedAt: lead.publishedAt, acquiredAt: lead.lastSeenAt,
+			limitations: "仅取得来源列表的标题与链接，未读取正文；主体按来源站点声明归属，不是标题推断",
+		}],
+		provenance: { simulated: false, reference: `${lead.sourceKey} · 来源线索 ${lead.itemId}`, transformation: null },
+	};
+}
+function EventForm({ current, prefill, saved }: { current?: EventVersion; prefill?: EventInput; saved: (id: string, status: components["schemas"]["MarketEventWriteResult"]["status"]) => void }) {
+	const [draft, setDraft] = useState<EventInput>(() => current ? structuredClone(current.input) : (prefill ?? blank()));
 	const [reason, setReason] = useState("");
 	const [taskId, setTaskId] = useState("");
 	const operation = useRef<{ body: string; key: string } | null>(null);
@@ -118,6 +133,8 @@ export default function MarketEventsPage() {
 	const queryClient = useQueryClient();
 	const [editing, setEditing] = useState(false);
 	const list = useQuery({ queryKey: ["market-events"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/market-events"); if (!r.data) throw new Error("无法读取事件列表"); return r.data.items; } });
+	const leads = useQuery({ queryKey: ["source-leads"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/me/source-leads"); if (!r.data) throw new Error("无法读取来源线索"); return r.data; } });
+	const [leadDraftState, setLeadDraftState] = useState<{ lead: Lead; key: string } | null>(null);
 	const detail = useQuery({ queryKey: ["market-events", eventId], enabled: !!eventId, queryFn: async () => { const r = await consoleClient.GET("/api/market-events/{eventId}", { params: { path: { eventId: eventId! } } }); if (!r.data) throw new Error(r.response.status === 404 ? "事件不存在或无权访问" : "无法读取事件"); return r.data; } });
 	const saved = async (id: string, status: components["schemas"]["MarketEventWriteResult"]["status"]) => {
 		setEditing(false);
@@ -135,7 +152,28 @@ export default function MarketEventsPage() {
 		</>}
 	</div>;
 	return <div className="p-6 space-y-4"><div className="flex items-center justify-between gap-3"><div><h1 className="text-2xl font-bold">市场与竞品事件</h1><p className="text-sm text-muted-foreground">保留原文、未知字段与个人关联。几条材料不能证明整体趋势或成本变化原因。</p></div><Button onClick={() => setEditing(!editing)}>{editing ? "收起录入" : "录入事件"}</Button></div>
-		{editing && <EventForm saved={(id, status) => { void saved(id, status); }} />}
+		{editing && <EventForm key={leadDraftState?.key ?? "manual"} prefill={leadDraftState ? leadDraft(leadDraftState.lead) : undefined} saved={(id, status) => { setLeadDraftState(null); void saved(id, status); }} />}
+		{leads.error && <p role="alert">{leads.error.message}</p>}
+		{leads.data && leads.data.leads.length > 0 && <Card>
+			<CardHeader><CardTitle>来源线索（{leads.data.leads.length}）</CardTitle></CardHeader>
+			<CardContent className="space-y-2 text-sm">
+				<p className="text-xs text-muted-foreground">只是来源列表的标题与链接，未读取正文；关联依据是声明的「站点 → 主体」，不是标题推断。转事件后仍需补类型、时间与逐字引用。</p>
+				<ul className="space-y-2">
+					{leads.data.leads.map((lead) => <li key={lead.itemId} className="rounded-md border p-3">
+						<div className="flex flex-wrap items-center justify-between gap-2">
+							<div>
+								<a className="font-medium underline break-all" href={lead.url} target="_blank" rel="noreferrer">{lead.title}</a>
+								<p className="text-xs text-muted-foreground">{lead.sourceLabel} · 声明主体 {lead.subject.name} · 发布时间 {lead.publishedAt ?? "未知"} · 最近出现 {lead.lastSeenAt}</p>
+							</div>
+							{lead.convertedEventId
+								? <Link className="underline text-sm" to={`/market-events/${lead.convertedEventId}`}>已录入，查看事件</Link>
+								: <Button variant="outline" onClick={() => { setLeadDraftState({ lead, key: lead.itemId }); setEditing(true); }}>转事件</Button>}
+						</div>
+					</li>)}
+				</ul>
+			</CardContent>
+		</Card>}
+		{leads.data && leads.data.leads.length === 0 && leads.data.sources.every((item) => !item.enabled) && <p className="text-xs text-muted-foreground">尚未开启自动来源；可在订阅页开启潍柴/海尔的受限列表线索。</p>}
 		{list.isLoading && <p>正在读取事件…</p>}{list.error && <p role="alert">{list.error.message}</p>}
 		{list.data?.length === 0 && <p className="rounded-md border border-dashed p-6">还没有录入事件。可先保存链接，缺失信息保持未知。</p>}
 		<div className="grid gap-4 md:grid-cols-2">{list.data?.map(v => <Link key={v.eventId} to={`/market-events/${v.eventId}`}><Card><CardHeader><CardTitle>{v.input.provenance.simulated ? "【模拟】" : ""}{v.input.title}</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><p>{v.input.subject.name} · {types[v.input.type]} · v{v.version}</p><p>{v.candidate.status === "evidence_ready" ? "引用齐备 · 待来源核验" : "证据不足"}</p><p>{v.input.taskRefs.length ? `关联 ${v.input.taskRefs.length} 个本人任务` : "任务关联未确定"}</p></CardContent></Card></Link>)}</div>

@@ -15,6 +15,11 @@ export interface SourceDefinition {
 	key: string;
 	label: string;
 	listUrl: string;
+	/**
+	 * #39 方案 A：声明式「站点 → 主体」映射。
+	 * 这是来源级的录入者声明，不是标题/域名推断；卡片与线索都要写明这一点。
+	 */
+	subject: { kind: "brand" | "competitor"; name: string };
 	allowedHosts: string[];
 	/** Only article-like paths become items; navigation anchors are ignored. */
 	pathPattern: RegExp;
@@ -39,6 +44,7 @@ export const SOURCE_DEFINITIONS: Record<string, SourceDefinition> = {
 	weichai_news: {
 		key: "weichai_news",
 		label: "潍柴新闻与事件",
+		subject: { kind: "brand", name: "潍柴" },
 		listUrl:
 			"https://www.weichai.com/group/weichai/cn/media-hub/news2/index.html",
 		allowedHosts: ["www.weichai.com"],
@@ -51,6 +57,7 @@ export const SOURCE_DEFINITIONS: Record<string, SourceDefinition> = {
 	haier_news: {
 		key: "haier_news",
 		label: "海尔品牌资讯",
+		subject: { kind: "brand", name: "海尔" },
 		listUrl: "https://www.haier.com/about_haier/xinwen/",
 		allowedHosts: ["www.haier.com"],
 		pathPattern: /^\/about_haier\/xinwen\/\d{8}_\d+\.shtml$/,
@@ -205,4 +212,12 @@ export function isSlotPending(
 ): boolean {
 	if (!lastStartedAt) return true;
 	return Date.parse(lastStartedAt) < Date.parse(slot);
+}
+
+/** 允许的自动来源 key；扩容须重走 #41 Gate 0，不在运行期接受任意值。 */
+export const SOURCE_KEYS = Object.keys(SOURCE_DEFINITIONS);
+
+/** 声明式主体映射：来源站点归属哪个关注对象。 */
+export function sourceSubject(key: string): SourceDefinition["subject"] | null {
+	return SOURCE_DEFINITIONS[key]?.subject ?? null;
 }

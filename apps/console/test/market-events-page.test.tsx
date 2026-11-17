@@ -11,7 +11,11 @@ type Input = components["schemas"]["MarketEventInput"];
 type Version = components["schemas"]["MarketEventVersion"];
 const input = (): Input => ({ occurrenceKey: "release", title: "样例发布", type: "announcement", subject: { kind: "brand", name: "测试品牌" }, eventTime: null, conditions: null, sources: [{ url: "https://example.com/news", publisher: "测试来源", content: null, scope: "link_only", origin: "unknown", publishedAt: null, acquiredAt: "2026-11-16T01:00:00Z", limitations: "正文缺失" }], citations: { subject: null, eventTime: null, conditions: null }, taskRefs: [], provenance: { simulated: false, reference: null, transformation: null } });
 const version = (event: Input = input(), number = 1): Version => ({ id: `event-1:${number}`, eventId: "event-1", ownerId: "owner", version: number, evidenceRevision: 1, input: event, method: "manual", sourceItemId: null, materials: [{ id: `event-1:${number}:source:0`, method: "manual", sourceItemId: null }], createdAt: "2026-11-16T01:00:00Z", changeReason: "人工录入", candidate: { status: "insufficient", reasons: ["事件时间未知", "合成样例，仅供测试"] } });
-const defaults = { "GET /api/tasks": () => json({ items: [] }), "GET /api/market-events": () => json({ items: [] }) };
+const closedSources = [
+	{ key: "weichai_news", label: "潍柴新闻与事件", subject: { kind: "brand" as const, name: "潍柴" }, enabled: false },
+	{ key: "haier_news", label: "海尔品牌资讯", subject: { kind: "brand" as const, name: "海尔" }, enabled: false },
+];
+const defaults = { "GET /api/tasks": () => json({ items: [] }), "GET /api/market-events": () => json({ items: [] }), "GET /api/me/source-leads": () => json({ leads: [], sources: closedSources }) };
 function mount(path = "/market-events") {
 	const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 	render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><Routes><Route path="/market-events" element={<MarketEventsPage />} /><Route path="/market-events/:eventId" element={<MarketEventsPage />} /></Routes></MemoryRouter></QueryClientProvider>);
@@ -23,6 +27,50 @@ function fillLink() {
 	fireEvent.change(screen.getByLabelText("来源名称"), { target: { value: "测试来源" } });
 	fireEvent.change(screen.getByLabelText("原文链接（不自动读取）"), { target: { value: "https://example.com/news" } });
 }
+test("市场事件页：来源线索只展示标题与链接，转事件预填标题/主体/仅标题来源", async t => {
+	t.after(cleanup);
+	const lead = {
+		sourceKey: "weichai_news", sourceLabel: "潍柴新闻与事件", subject: { kind: "brand", name: "潍柴" },
+		itemId: "weichai_news:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html",
+		publishedAt: "2026-11-15", firstSeenAt: "2026-11-16T00:01:00.000Z", lastSeenAt: "2026-11-16T00:02:00.000Z",
+	};
+	const bodies: Input[] = [];
+	serve(defaults, {
+		"POST /api/market-events": async (req) => {
+			const body: Input = await req.json();
+			bodies.push(body);
+			return json({ status: "created", version: version(body) }, 201);
+		},
+		"GET /api/market-events/event-1": () => json({ current: version(), versions: [version()] }),
+		"GET /api/me/source-leads": () => json({
+			leads: [lead, { ...lead, itemId: "weichai_news:2", title: "已录入的标题", convertedEventId: "event-1" }],
+			sources: [{ ...closedSources[0]!, enabled: true }, closedSources[1]!],
+		}),
+	});
+	mount();
+	const link = await screen.findByRole("link", { name: "潍柴列表标题" });
+	assert.equal(link.getAttribute("href"), "https://www.weichai.com/news/1.html");
+	assert.equal(screen.getAllByText(/声明主体 潍柴/).length, 2, "每条线索都标出声明主体");
+	assert.equal(screen.getAllByText(/发布时间 2026-11-15/).length, 2);
+	assert.equal(screen.getByRole("link", { name: "已录入，查看事件" }).getAttribute("href"), "/market-events/event-1");
+	fireEvent.click(screen.getAllByRole("button", { name: "转事件" })[0]!);
+	assert.equal((screen.getByLabelText("事件标题") as HTMLInputElement).value, "潍柴列表标题");
+	assert.equal((screen.getByLabelText("关注对象名称") as HTMLInputElement).value, "潍柴");
+	assert.equal((screen.getByLabelText("原文链接（不自动读取）") as HTMLInputElement).value, "https://www.weichai.com/news/1.html");
+	assert.equal((screen.getByLabelText("内容范围") as HTMLSelectElement).value, "title_only");
+	assert.ok(screen.getByText(/仅取得来源列表的标题与链接/));
+	// 实际提交：仅标题来源必须带上已取得的标题作为 content，否则领域会拒。
+	fireEvent.change(screen.getByLabelText("同一事件标识", { exact: false }), { target: { value: "lead-release" } });
+	fireEvent.click(screen.getByRole("button", { name: "保存事件" }));
+	await waitFor(() => assert.equal(bodies.length, 1));
+	const submitted = bodies[0]!;
+	assert.equal(submitted.sources[0]?.scope, "title_only");
+	assert.equal(submitted.sources[0]?.content, "潍柴列表标题", "把已取得的标题填入材料，不补造正文");
+	assert.equal(submitted.sources[0]?.url, "https://www.weichai.com/news/1.html");
+	assert.equal(submitted.subject.name, "潍柴");
+	assert.equal(submitted.eventTime, null, "未知事件时间不补造");
+});
+
 test("市场事件页：仅链接保持未知，保存中禁用，成功后可追溯且不请求决策接口", async t => {
 	t.after(cleanup); let release!: () => void; const pending = new Promise<void>(resolve => { release=resolve; }); let saved=version();
 	const { calls } = serve(defaults, { "POST /api/market-events": async req => { const body: Input = await req.json(); saved=version(body); await pending; return json({ status: "created", version: saved },201); }, "GET /api/market-events/event-1": () => json({ current: saved, versions: [saved] }) });

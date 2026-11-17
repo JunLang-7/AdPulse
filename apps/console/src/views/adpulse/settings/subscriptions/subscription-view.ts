@@ -35,9 +35,24 @@ export interface SubscriptionTargetLike {
 	updatedAt: string;
 }
 
+/** allowlist key 由 OpenAPI 枚举决定，不在前端另抄一份。 */
+export type SourceFeedKey = NonNullable<
+	components["schemas"]["SubscriptionSettingsInput"]["sourceFeeds"]
+>[number];
+
+export interface SourceFeedLike {
+	/** 服务端只返回 allowlist key；前端按字符串处理，提交时再收窄到生成类型。 */
+	key: string;
+	label: string;
+	subject: { kind: "brand" | "competitor"; name: string };
+	enabled: boolean;
+}
+
 export interface SubscriptionViewLike {
 	settings: SubscriptionSettingsLike;
 	targets: SubscriptionTargetLike[];
+	/** #39 方案 A：自动来源只提供线索，不自动推送。 */
+	sources: SourceFeedLike[];
 }
 
 export interface NotificationStatusLike {
@@ -58,7 +73,7 @@ export const CATEGORY_OPTIONS: ReadonlyArray<{
 	hint: string;
 }> = [
 	{ value: "effect", label: "效果排查", hint: "投放数据出现异常、需要你判断时" },
-	{ value: "event", label: "明确事件", hint: "尚未接入；保存配置后保留偏好" },
+	{ value: "event", label: "明确事件", hint: "本人录入或从来源线索转为事件后参与筛选" },
 	{ value: "evidence", label: "补证/待处理", hint: "尚未接入；保存配置后保留偏好" },
 ];
 
