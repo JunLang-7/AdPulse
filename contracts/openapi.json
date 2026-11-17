@@ -1040,6 +1040,19 @@
         }
       }
     },
+    "/api/tasks/{taskId}/lifecycle": {
+      "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "getTaskLifecycle",
+        "summary": "任务到期判定查询（#40 S1）",
+        "description": "返回计时锚点、到期时刻与当前状态。365 天按 UTC 绝对时刻计算，普通查看/消息重试/worker 重启都不续期；到期后任务按不可访问处理。物理清理与备份策略在后续切片实现。",
+        "responses": {
+          "200": { "description": "Lifecycle", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskLifecycle" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Task not found or not owned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/api/tasks/{taskId}": {
       "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }],
       "get": {
@@ -1048,6 +1061,18 @@
           "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDetail" } } } },
           "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "delete": {
+        "operationId": "deleteTask",
+        "summary": "本人确认删除任务及其全部关联（#40 S2）",
+        "description": "同一事务内建立立即不可访问状态、抑制该任务尚未发出的提醒与决策卡待发，并写入删除清单（请求起 7 天在线清理截止）。幂等：重复提交返回同一清单。物理清理在后续切片实现。",
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
+        "responses": {
+          "200": { "description": "Deleted or already deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDeletionResult" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Task not found or not owned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Deletion already in progress", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       },
       "patch": {
@@ -3012,6 +3037,46 @@
           "task": { "$ref": "#/components/schemas/TaskInput" }
         },
         "required": ["expectedTaskVersion", "task"],
+        "additionalProperties": false
+      },
+      "LifecycleDeletion": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "ownerId": { "type": "string" },
+          "taskId": { "type": "string" },
+          "requestedAt": { "type": "string", "format": "date-time" },
+          "deadlineAt": { "type": "string", "format": "date-time", "description": "在线清理截止：请求起 7 天" },
+          "status": { "type": "string", "enum": ["pending", "cleaned"] },
+          "cleanedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "ownerId", "taskId", "requestedAt", "deadlineAt", "status"],
+        "additionalProperties": false
+      },
+      "TaskDeletionResult": {
+        "type": "object",
+        "properties": {
+          "manifest": { "$ref": "#/components/schemas/LifecycleDeletion" },
+          "created": { "type": "boolean", "description": "false 表示此前已删除，返回原清单" }
+        },
+        "required": ["manifest", "created"],
+        "additionalProperties": false
+      },
+      "TaskLifecycle": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string" },
+          "state": { "type": "string", "enum": ["active", "expired", "deleted"] },
+          "anchor": { "type": "string", "format": "date-time", "description": "计时起点：观测期结束与最后有效业务更新中较早的已知时刻" },
+          "anchorSource": { "type": "string", "enum": ["observation_ends_at", "last_business_update"] },
+          "lastBusinessUpdate": { "type": "string", "format": "date-time" },
+          "observationEndsAt": { "type": ["string", "null"], "format": "date-time" },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "retentionDays": { "type": "integer", "minimum": 1 },
+          "expired": { "type": "boolean" },
+          "deletedAt": { "type": ["string", "null"], "format": "date-time", "description": "本人确认删除的时刻；未删除为 null" }
+        },
+        "required": ["taskId", "state", "anchor", "anchorSource", "lastBusinessUpdate", "observationEndsAt", "expiresAt", "retentionDays", "expired", "deletedAt"],
         "additionalProperties": false
       },
       "TaskDetail": {

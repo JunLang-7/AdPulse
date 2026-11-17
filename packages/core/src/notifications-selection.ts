@@ -3,6 +3,7 @@ import { canSendProactiveIn } from "./notifications.js";
 import { digestInstant, itemId, localDate, NotificationQueue } from "./notifications-queue.js";
 import { NotificationRecordError } from "./notifications-records.js";
 import { normalizeName } from "./subscriptions.js";
+import { taskActiveIn } from "./lifecycle.js";
 import type { MarketEventVersion } from "./market-events.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
@@ -348,10 +349,16 @@ async function selectionDeliveryIn(tx: Transaction, ownerId: string, record: Sel
 }
 
 /** 在发送前重检生产引用；不把已处理/删除/修订的旧信息重新包装。 */
-export async function effectNotificationCurrentIn(tx: Transaction, item: NotificationItem): Promise<boolean> {
+export async function effectNotificationCurrentIn(
+	tx: Transaction,
+	item: NotificationItem,
+	now: Date = new Date(),
+): Promise<boolean> {
 	const ref = item.effectRef;
 	if (!ref) return true; // 既有受控合成队列不冒充领域来源。
 	const task = item.taskId ? await tx.tasks.get(item.taskId) : null;
+	// 到期即不再发送：任务到期后其提醒与证据按限访处理，不把旧信息当新内容。
+	if (task && !(await taskActiveIn(tx, task, now))) return false;
 	const alert = await tx.investigationAlerts.get(ref.alertId);
 	const evidence = await tx.evidenceVersions.get(`${ref.evidenceId}:${ref.evidenceVersion}`);
 	const head = await tx.evidenceHeads.get(ref.evidenceId);
@@ -385,9 +392,9 @@ export async function marketEventNotificationCurrentIn(
 
 /** 发送前按条目实际输入选择领域复检，不让事件条目跳过引用检查。 */
 export async function notificationInputsStillCurrentIn(
-	tx: Transaction, item: NotificationItem,
+	tx: Transaction, item: NotificationItem, now: Date = new Date(),
 ): Promise<boolean> {
 	return item.marketEventRef
 		? marketEventNotificationCurrentIn(tx, item)
-		: effectNotificationCurrentIn(tx, item);
+		: effectNotificationCurrentIn(tx, item, now);
 }

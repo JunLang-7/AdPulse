@@ -248,7 +248,7 @@ export class Worker {
 			let count = 0;
 			for (const item of await tx.notificationItems.all()) {
 				if (item.ownerId === view.ownerId && item.batchId === batchId && item.status === "queued"
-					&& !(await notificationInputsStillCurrentIn(tx, item))) {
+					&& !(await notificationInputsStillCurrentIn(tx, item, new Date(this.now())))) {
 					await tx.notificationItems.put({ ...item, status: "cancelled", updatedAt: this.now() });
 					count++;
 				}

@@ -31,6 +31,7 @@ export const tableNames = [
 	"comparisonOperations",
 	"comparisonFollowUps",
 	"investigationAlerts",
+	"lifecycleDeletions",
 	"sourceStates",
 	"sourceRuns",
 	"sourceSnapshots",

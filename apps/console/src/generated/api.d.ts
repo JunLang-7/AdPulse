@@ -467,6 +467,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskId}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * 任务到期判定查询（#40 S1）
+         * @description 返回计时锚点、到期时刻与当前状态。365 天按 UTC 绝对时刻计算，普通查看/消息重试/worker 重启都不续期；到期后任务按不可访问处理。物理清理与备份策略在后续切片实现。
+         */
+        get: operations["getTaskLifecycle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{taskId}": {
         parameters: {
             query?: never;
@@ -479,7 +501,11 @@ export interface paths {
         get: operations["getTask"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * 本人确认删除任务及其全部关联（#40 S2）
+         * @description 同一事务内建立立即不可访问状态、抑制该任务尚未发出的提醒与决策卡待发，并写入删除清单（请求起 7 天在线清理截止）。幂等：重复提交返回同一清单。物理清理在后续切片实现。
+         */
+        delete: operations["deleteTask"];
         options?: never;
         head?: never;
         patch: operations["reviseTask"];
@@ -1342,6 +1368,52 @@ export interface components {
         TaskRevision: {
             expectedTaskVersion: number;
             task: components["schemas"]["TaskInput"];
+        };
+        LifecycleDeletion: {
+            id: string;
+            ownerId: string;
+            taskId: string;
+            /** Format: date-time */
+            requestedAt: string;
+            /**
+             * Format: date-time
+             * @description 在线清理截止：请求起 7 天
+             */
+            deadlineAt: string;
+            /** @enum {string} */
+            status: "pending" | "cleaned";
+            /** Format: date-time */
+            cleanedAt?: string;
+        };
+        TaskDeletionResult: {
+            manifest: components["schemas"]["LifecycleDeletion"];
+            /** @description false 表示此前已删除，返回原清单 */
+            created: boolean;
+        };
+        TaskLifecycle: {
+            taskId: string;
+            /** @enum {string} */
+            state: "active" | "expired" | "deleted";
+            /**
+             * Format: date-time
+             * @description 计时起点：观测期结束与最后有效业务更新中较早的已知时刻
+             */
+            anchor: string;
+            /** @enum {string} */
+            anchorSource: "observation_ends_at" | "last_business_update";
+            /** Format: date-time */
+            lastBusinessUpdate: string;
+            /** Format: date-time */
+            observationEndsAt: string | null;
+            /** Format: date-time */
+            expiresAt: string;
+            retentionDays: number;
+            expired: boolean;
+            /**
+             * Format: date-time
+             * @description 本人确认删除的时刻；未删除为 null
+             */
+            deletedAt: string | null;
         };
         TaskDetail: {
             task: components["schemas"]["TaskVersion"];
@@ -3792,6 +3864,46 @@ export interface operations {
             };
         };
     };
+    getTaskLifecycle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lifecycle */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskLifecycle"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Task not found or not owned */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getTask: {
         parameters: {
             query?: never;
@@ -3823,6 +3935,55 @@ export interface operations {
             };
             /** @description Not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted or already deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDeletionResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Task not found or not owned */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Deletion already in progress */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

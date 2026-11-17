@@ -995,3 +995,73 @@ test("source leads API: 只返回本人已开启来源的线索，未开启来�
   });
   assert.equal(unknownFeed.status, 422, "未声明的来源 key 不静默忽略");
 });
+
+test("任务生命周期 API: 返回锚点与到期时刻，到期后任务按不可访问处理", async (t) => {
+  const s = await serve(t);
+  const created = await fetch(`${s.url}/api/tasks`, {
+    method: "POST",
+    headers: { ...s.headers, "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify({ product: "生命周期任务", strategy: { objective: "咨询", audience: [], channels: {}, sellingPoints: [] }, observation: {}, rules: {} }),
+  });
+  assert.equal(created.status, 201);
+  const task = (await created.json()) as { taskId: string };
+
+  const lifecycle = await fetch(`${s.url}/api/tasks/${task.taskId}/lifecycle`, { headers: s.headers });
+  assert.equal(lifecycle.status, 200);
+  const body = (await lifecycle.json()) as { state: string; retentionDays: number; expiresAt: string; anchorSource: string; expired: boolean };
+  assert.equal(body.state, "active");
+  assert.equal(body.retentionDays, 365);
+  assert.equal(body.expired, false);
+  assert.ok(Date.parse(body.expiresAt) > Date.now());
+  assert.equal(body.anchorSource, "last_business_update");
+
+  assert.equal((await fetch(`${s.url}/api/tasks/${task.taskId}/lifecycle`, { headers: s.strangerHeaders })).status, 404, "不是本人的任务不暴露到期信息");
+  assert.equal((await fetch(`${s.url}/api/tasks/${task.taskId}/lifecycle`)).status, 401);
+});
+
+test("任务删除 API: 幂等、跨用户不可删、删除后任务与判定查询均不可访问", async (t) => {
+  const s = await serve(t);
+  const created = await fetch(`${s.url}/api/tasks`, {
+    method: "POST",
+    headers: { ...s.headers, "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify({ product: "待删除任务", strategy: { objective: "咨询", audience: [], channels: {}, sellingPoints: [] }, observation: {}, rules: {} }),
+  });
+  assert.equal(created.status, 201);
+  const task = (await created.json()) as { taskId: string };
+
+  assert.equal((await fetch(`${s.url}/api/tasks/${task.taskId}`, { method: "DELETE" })).status, 401);
+  assert.equal((await fetch(`${s.url}/api/tasks/${task.taskId}`, { method: "DELETE", headers: s.strangerHeaders })).status, 404);
+
+  const deleted = await fetch(`${s.url}/api/tasks/${task.taskId}`, { method: "DELETE", headers: s.headers });
+  assert.equal(deleted.status, 200);
+  const first = (await deleted.json()) as { created: boolean; manifest: { id: string; taskId: string; status: string } };
+  assert.equal(first.created, true);
+  assert.equal(first.manifest.taskId, task.taskId);
+  assert.equal(first.manifest.status, "pending");
+
+  const again = await fetch(`${s.url}/api/tasks/${task.taskId}`, { method: "DELETE", headers: s.headers });
+  assert.equal(again.status, 200);
+  const second = (await again.json()) as { created: boolean; manifest: { id: string } };
+  assert.equal(second.created, false, "重复提交幂等");
+  assert.equal(second.manifest.id, first.manifest.id);
+
+  assert.equal((await fetch(`${s.url}/api/tasks/${task.taskId}`, { headers: s.headers })).status, 404, "删除后任务不可读");
+  assert.equal((await fetch(`${s.url}/api/tasks/${task.taskId}/lifecycle`, { headers: s.headers })).status, 200);
+  const lifecycle = (await (await fetch(`${s.url}/api/tasks/${task.taskId}/lifecycle`, { headers: s.headers })).json()) as { state: string; deletedAt: string | null };
+  assert.equal(lifecycle.state, "deleted");
+  assert.ok(lifecycle.deletedAt);
+  const list = (await (await fetch(`${s.url}/api/tasks`, { headers: s.headers })).json()) as { items: unknown[] };
+  assert.equal(list.items.length, 0, "已删除任务不出现在列表里");
+
+  // 重建同名任务：新任务可用，旧任务仍然不可访问。
+  const recreated = await fetch(`${s.url}/api/tasks`, {
+    method: "POST",
+    headers: { ...s.headers, "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify({ product: "待删除任务", strategy: { objective: "咨询", audience: [], channels: {}, sellingPoints: [] }, observation: {}, rules: {} }),
+  });
+  assert.equal(recreated.status, 201);
+  const fresh = (await recreated.json()) as { taskId: string };
+  assert.notEqual(fresh.taskId, task.taskId);
+  assert.equal((await fetch(`${s.url}/api/tasks/${fresh.taskId}`, { headers: s.headers })).status, 200);
+  assert.equal((await fetch(`${s.url}/api/tasks/${task.taskId}`, { headers: s.headers })).status, 404);
+});

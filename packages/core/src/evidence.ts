@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { taskActiveIn } from "./lifecycle.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import { invalidateAlertsForEvidenceUpdate } from "./investigation-alerts.js";
 import type {
@@ -340,7 +341,8 @@ export class EvidenceService {
 			const taskVersion = await tx.taskVersions.get(
 				`${input.taskRef.taskId}:${input.taskRef.taskVersion}`,
 			);
-			if (!task || task.ownerId !== ownerId || !taskVersion)
+			if (!task || task.ownerId !== ownerId || !taskVersion
+				|| !(await taskActiveIn(tx, task, new Date(this.now()))))
 				throw new EvidenceValidationError("task not found");
 			const results: EvidenceImportResult[] = [];
 			for (const record of input.records) {
@@ -448,7 +450,8 @@ export class EvidenceService {
 			const taskVersion = await tx.taskVersions.get(
 				`${head.taskId}:${head.taskVersion}`,
 			);
-			if (!task || task.ownerId !== ownerId || !taskVersion)
+			if (!task || task.ownerId !== ownerId || !taskVersion
+				|| !(await taskActiveIn(tx, task, new Date(this.now()))))
 				throw new EvidenceValidationError("evidence not found");
 			const businessKey = identityFor(
 				ownerId,
@@ -506,7 +509,7 @@ export class EvidenceService {
 	): Promise<EvidenceVersion[]> {
 		return this.storage.transaction(async (tx) => {
 			const task = await tx.tasks.get(taskId);
-			if (!task || task.ownerId !== ownerId)
+			if (!task || task.ownerId !== ownerId || !(await taskActiveIn(tx, task, new Date(this.now()))))
 				throw new EvidenceValidationError("task not found");
 			const heads = (await tx.evidenceHeads.all()).filter(
 				(head) => head.ownerId === ownerId && head.taskId === taskId,
@@ -529,6 +532,10 @@ export class EvidenceService {
 		return this.storage.transaction(async (tx) => {
 			const head = await tx.evidenceHeads.get(evidenceId);
 			if (!head || head.ownerId !== ownerId) return null;
+			// 详情读取同样受任务生命周期约束：不能凭旧 evidenceId 绕过列表的限访。
+			const owningTask = await tx.tasks.get(head.taskId);
+			if (!owningTask || owningTask.ownerId !== ownerId
+				|| !(await taskActiveIn(tx, owningTask, new Date(this.now())))) return null;
 			const versions = (await tx.evidenceVersions.all())
 				.filter((version) => version.evidenceId === evidenceId)
 				.sort((a, b) => a.version - b.version);

@@ -245,6 +245,17 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (14)",
 				);
 			}
+			if (!current.has(15)) {
+				// #40 S2：删除清单独立于业务表，清理与备份重放都以它为准。
+				await this.createEntityTable(client, "lifecycleDeletions");
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_lifecycle_deletion_task
+					ON adpulse_lifecycleDeletions ((data->>'ownerId'), (data->>'taskId'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_lifecycle_deletion_status
+					ON adpulse_lifecycleDeletions ((data->>'status'), (data->>'deadlineAt'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (15)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");
