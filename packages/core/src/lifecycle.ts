@@ -18,7 +18,7 @@ export const BACKUP_RETENTION_DAYS = 30;
 /** 最小操作审计独立保留 180 天，不因业务删除而延长业务原文留存。 */
 export const AUDIT_RETENTION_DAYS = 180;
 
-export type TaskLifecycleState = "active" | "expired";
+export type TaskLifecycleState = "active" | "expired" | "deleted";
 
 export interface TaskLifecycle {
 	taskId: string;
@@ -33,6 +33,8 @@ export interface TaskLifecycle {
 	retentionDays: number;
 	/** 当前是否已到期；与 state 同源，便于直接断言「到期即限访」。 */
 	expired: boolean;
+	/** 本人确认删除的时刻；未删除时为 null。删除优先于到期。 */
+	deletedAt: string | null;
 }
 
 const iso = (value: string | null | undefined): string | null => {
@@ -90,6 +92,7 @@ export function taskLifecycleOf(
 		expiresAt,
 		retentionDays: RETENTION_DAYS,
 		expired: false,
+		deletedAt: null,
 	};
 }
 
@@ -105,8 +108,13 @@ export async function taskLifecycleIn(
 	);
 	const lastBusinessUpdate = await lastBusinessUpdateIn(tx, task.id, task.createdAt);
 	const lifecycle = taskLifecycleOf(task, lastBusinessUpdate, current?.observation.endsAt ?? null);
+	// 删除优先于到期：删了就立即不可访问，不再走保留期。
+	if (task.deletion) {
+		const at = new Date(task.deletion.at).toISOString();
+		return { ...lifecycle, state: "deleted", expired: true, deletedAt: at };
+	}
 	const expired = Date.parse(lifecycle.expiresAt) <= now.getTime();
-	return { ...lifecycle, state: expired ? "expired" : "active", expired };
+	return { ...lifecycle, state: expired ? "expired" : "active", expired, deletedAt: null };
 }
 
 /** 到期即限访：返回 false 表示不可读、不可写、不可参与通知。 */

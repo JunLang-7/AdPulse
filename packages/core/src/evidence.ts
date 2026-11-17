@@ -450,7 +450,8 @@ export class EvidenceService {
 			const taskVersion = await tx.taskVersions.get(
 				`${head.taskId}:${head.taskVersion}`,
 			);
-			if (!task || task.ownerId !== ownerId || !taskVersion)
+			if (!task || task.ownerId !== ownerId || !taskVersion
+				|| !(await taskActiveIn(tx, task, new Date(this.now()))))
 				throw new EvidenceValidationError("evidence not found");
 			const businessKey = identityFor(
 				ownerId,
@@ -531,6 +532,10 @@ export class EvidenceService {
 		return this.storage.transaction(async (tx) => {
 			const head = await tx.evidenceHeads.get(evidenceId);
 			if (!head || head.ownerId !== ownerId) return null;
+			// 详情读取同样受任务生命周期约束：不能凭旧 evidenceId 绕过列表的限访。
+			const owningTask = await tx.tasks.get(head.taskId);
+			if (!owningTask || owningTask.ownerId !== ownerId
+				|| !(await taskActiveIn(tx, owningTask, new Date(this.now())))) return null;
 			const versions = (await tx.evidenceVersions.all())
 				.filter((version) => version.evidenceId === evidenceId)
 				.sort((a, b) => a.version - b.version);

@@ -3,6 +3,7 @@ import { validateStrategy, type Strategy } from "./domain/strategy.js";
 import type { Storage } from "./ports/storage.js";
 import { invalidateAlertsForTaskVersion } from "./investigation-alerts.js";
 import { taskLifecycleIn, type TaskLifecycle } from "./lifecycle.js";
+import { LifecycleDeletionService, type DeletionResult } from "./lifecycle-deletion.js";
 import type { Task, TaskVersion } from "./state/model.js";
 
 export interface TaskInput {
@@ -152,6 +153,11 @@ export class TaskService {
 			if (existing) {
 				if (existing.digest !== requestDigest)
 					throw new Error("idempotency conflict");
+				// 幂等重放也要限访：不能因为重放就返回到期/已删任务的业务正文。
+				const replayTask = await tx.tasks.get(existing.taskId);
+				if (!replayTask || replayTask.ownerId !== ownerId
+					|| (await taskLifecycleIn(tx, replayTask, new Date(this.now()))).expired)
+					throw new Error("task not found");
 				const version = await tx.taskVersions.get(
 					`${existing.taskId}:${existing.taskVersion}`,
 				);
@@ -160,6 +166,10 @@ export class TaskService {
 			}
 			const task = await tx.tasks.get(taskId);
 			if (!task || task.ownerId !== ownerId)
+				throw new Error("task not found");
+			// 写入前用原状态判定仍可访问：否则修订会推进「最后有效业务更新」，
+			// 等于把已到期/已删除的任务复活。
+			if ((await taskLifecycleIn(tx, task, new Date(this.now()))).expired)
 				throw new Error("task not found");
 			if (task.currentVersion !== expectedVersion)
 				throw new Error("task version conflict");
@@ -189,6 +199,11 @@ export class TaskService {
 			if ((await taskLifecycleIn(tx, task, new Date(this.now()))).expired) return null;
 			return tx.taskVersions.get(`${taskId}:${task.currentVersion}`);
 		});
+	}
+
+	/** 本人确认删除（#40 S2）：立即不可访问 + 抑制待发 + 写删除清单，幂等。 */
+	async delete(ownerId: string, taskId: string): Promise<DeletionResult> {
+		return new LifecycleDeletionService(this.storage, this.now).requestDelete(ownerId, taskId);
 	}
 
 	/** 到期判定查询：返回锚点、到期时刻与当前状态，供「普通查看不续期」断言。 */

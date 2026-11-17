@@ -723,6 +723,20 @@ bun run sources discover weichai_news campaigns
   `state`、`expired`、`retentionDays`，用于断言「普通查看不续期」「到期即限访」。
 - 全部按 UTC 绝对时刻与 24 小时/天计算；测试通过注入时钟验证边界，不靠真实等待。
 
+### 本人确认删除（#40 S2）
+
+- `DELETE /api/tasks/{taskId}`：本人确认删除任务及其**全部关联**（证据、比较、告警、会话、通知条目）。
+  同一事务内：写任务墓碑 `task.deletion`、取消该任务尚未发出的提醒（`cancelPendingIn`，reason
+  `task_deleted`）、抑制该任务关联的决策卡待发（`suppressionReason=task_deleted`）、写删除清单。
+- **幂等**：重复提交返回同一清单（`created:false`）；并发写入由 `runExclusive` 串行化，
+  失败返回 409，不会产生两份清单（数据库上 `(ownerId, taskId)` 唯一索引兜底）。
+- **立即限访**：删除后任务读取/列表/证据/比较/告警/发送前复检一律按不可访问处理，
+  `lifecycle` 查询返回 `state=deleted` 与 `deletedAt`。
+- **重建同名任务**：允许新建，但那是新 `taskId`；旧任务与其历史始终不可访问，删除清单保留。
+- 删除清单表 `lifecycleDeletions`（迁移 **15**）：`requestedAt` + `deadlineAt`（请求起 7 天在线清理截止）+
+  `status`。物理清理（S3）与备份重放（S4）都以它为准，不依赖业务表是否已被清理。
+- **未包含**：控制台删除确认 UI、7 天在线清理任务、180 天最小审计、备份 30 天淘汰与恢复演练。
+
 ## 8. 扩展与现有限制
 
 新接 IM：在 channels 中实现 InboundChannel 和 OutboundChannel，构造 ChannelAccount，在 runtime 注册。增加原始请求/ACK、渲染、账户隔离与重试测试；不要把平台字段或 HTTP 响应移入 core。

@@ -109,7 +109,9 @@ test("PostgreSQL: migrations 13 and 14 preserve market events and notification s
 		await storage.initialize();
 		// Reconstruct the main branch's version 12 in this disposable schema.
 		await pool.query("DROP TABLE adpulse_userModelConnections, adpulse_userModelCredentials, adpulse_userModelPreferences, adpulse_userModelRevocations");
-		await pool.query("DELETE FROM adpulse_schema_migrations WHERE version IN (13, 14)");
+		// #40 S2 的删除清单也要回到 v12 基线，否则重跑迁移链时状态不真实。
+		await pool.query("DROP TABLE IF EXISTS adpulse_lifecycleDeletions");
+		await pool.query("DELETE FROM adpulse_schema_migrations WHERE version IN (13, 14, 15)");
 		const fixture = await eventSelectionFixture(storage);
 		await fixture.create();
 		const mainRows = () => storage.transaction(async (tx) => ({
@@ -124,7 +126,7 @@ test("PostgreSQL: migrations 13 and 14 preserve market events and notification s
 		await storage.initialize();
 		assert.deepEqual(await mainRows(), before);
 		const migrations = await pool.query("SELECT version FROM adpulse_schema_migrations WHERE version >= 11 ORDER BY version");
-		assert.deepEqual(migrations.rows.map((row) => row.version), [11, 12, 13, 14]);
+		assert.deepEqual(migrations.rows.map((row) => row.version), [11, 12, 13, 14, 15]);
 		const created = await service(storage).create(fixture.owner, inputFor(fixture.owner));
 		const credential = await storage.transaction((tx) => tx.userModelCredentials.get(created.id));
 		assert.ok(credential?.ciphertext);

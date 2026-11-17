@@ -9,7 +9,7 @@ import type {
 	TaskInput,
 	Transaction,
 } from "@adpluse/core";
-import { ModelConnectionError, modelConnectionProtocols, taskLifecycleIn, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
+import { LifecycleDeletionError, ModelConnectionError, modelConnectionProtocols, taskLifecycleIn, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
 import { findCatalogModel, taskDraftBriefMaxLength, taskDraftStages, type Runtime, type TaskDraftSelection } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
@@ -644,6 +644,17 @@ export async function handleAdmin(
 		const input = parseTaskInput(await readJson(req));
 		const task = await runtime.tasks.create(userId, requestId(req), input);
 		return json(res, 201, task);
+	}
+	const taskDelete = path.match(/^\/api\/tasks\/([^/]+)$/);
+	if (taskDelete?.[1] && req.method === "DELETE") {
+		try {
+			const result = await runtime.tasks.delete(userId, decodeURIComponent(taskDelete[1]!));
+			return json(res, 200, result);
+		} catch (error) {
+			if (error instanceof LifecycleDeletionError)
+				throw new HttpError(error.status, error.message);
+			throw error;
+		}
 	}
 	if (path === "/api/evidence/imports" && req.method === "POST") {
 		let input: EvidenceImportInput;

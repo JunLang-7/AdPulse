@@ -258,6 +258,23 @@ export interface Task {
 	ownerId: string;
 	currentVersion: number;
 	createdAt: string;
+	/**
+	 * 本人确认删除（#40 S2）：写入后该任务及其关联一律不可访问，
+	 * 即使之后重建同名任务也不恢复旧任务的历史。
+	 */
+	deletion?: { at: string; by: "owner"; manifestId: string };
+}
+
+/** 删除清单：S3 的清理任务与 S4 的备份重放都以此为准，不依赖业务表是否已被清理。 */
+export interface LifecycleDeletion {
+	id: string;
+	ownerId: string;
+	taskId: string;
+	requestedAt: string;
+	/** 在线清理截止：请求起 7 天。 */
+	deadlineAt: string;
+	status: "pending" | "cleaned";
+	cleanedAt?: string;
 }
 export interface TaskVersion {
 	id: string;
@@ -849,6 +866,7 @@ export interface Entities {
 	sourceRuns: SourceRun;
 	sourceSnapshots: SourceSnapshot;
 	sourceItems: SourceItem;
+	lifecycleDeletions: LifecycleDeletion;
 	sessions: Session;
 	rounds: Round;
 	actions: ActionRef;

@@ -157,3 +157,167 @@ test("PostgreSQL：生命周期判定与限访在同一存储上一致", { skip:
 		await reconnected.close();
 	}
 });
+
+test("删除确认：立即不可访问、抑制待发、写删除清单，重复提交幂等", async () => {
+	const f = await fixture();
+	// 造一条待发提醒与一条待发决策卡，验证删除会抑制它们。
+	const { NotificationQueue } = await import("../packages/core/dist/index.js");
+	const queued = await new NotificationQueue(f.storage, () => new Date(f.clock())).queue(f.owner, {
+		logicalKey: "effect:demo", kind: "effect_alert", taskId: f.task.taskId,
+		title: "待发提醒", summary: "删除前已入队", relevance: "与你关注的任务相关",
+		sources: [{ label: "效果导入证据", publishedAt: null }], revision: 1,
+	}, { settingsVersion: 1, enabled: true });
+	assert.equal(queued.outcome, "queued");
+
+	const result = await f.tasks.delete(f.owner, f.task.taskId);
+	assert.equal(result.created, true);
+	assert.equal(result.manifest.status, "pending");
+	assert.equal(result.manifest.taskId, f.task.taskId);
+	assert.equal(
+		Date.parse(result.manifest.deadlineAt) - Date.parse(result.manifest.requestedAt),
+		7 * MS_PER_DAY,
+		"在线清理截止为请求起 7 天",
+	);
+
+	// 立即限访：任务、证据、比较、判定查询都不可用。
+	assert.equal(await f.tasks.get(f.owner, f.task.taskId), null);
+	assert.deepEqual(await f.tasks.list(f.owner), []);
+	const lifecycle = await f.tasks.lifecycle(f.owner, f.task.taskId);
+	assert.equal(lifecycle?.state, "deleted");
+	assert.ok(lifecycle?.deletedAt);
+	assert.equal(await f.tasks.lifecycle(f.owner, "missing-task"), null);
+
+	// 待发被抑制，且不会因旧 revision 复活。
+	const pending = await new NotificationQueue(f.storage).pending(f.owner);
+	assert.equal(pending.length, 0, "删除后该任务的待发条目被取消");
+	const items = await f.storage.transaction((tx) => tx.notificationItems.all());
+	assert.equal(items.find((item) => item.taskId === f.task.taskId)?.status, "cancelled");
+
+	// 幂等：重复提交返回同一清单，不新建。
+	const again = await f.tasks.delete(f.owner, f.task.taskId);
+	assert.equal(again.created, false);
+	assert.equal(again.manifest.id, result.manifest.id);
+	assert.equal((await f.storage.transaction((tx) => tx.lifecycleDeletions.all())).length, 1);
+
+	// 别人不能删除，也看不到清单。
+	const other = await fixture();
+	await assert.rejects(other.tasks.delete(other.owner, f.task.taskId), /task not found/);
+	const { LifecycleDeletionService } = await import("../packages/core/dist/index.js");
+	assert.deepEqual(await new LifecycleDeletionService(other.storage, other.clock).list(other.owner), [],
+		"跨用户不共享删除清单");
+});
+
+test("删除后可重建同名任务，但旧任务历史仍不可访问", async () => {
+	const f = await fixture();
+	const old = await f.tasks.delete(f.owner, f.task.taskId);
+	const recreated = await f.tasks.create(f.owner, randomUUID(), taskInput);
+	assert.notEqual(recreated.taskId, f.task.taskId, "新任务是新 id，不复用旧任务");
+	assert.ok(await f.tasks.get(f.owner, recreated.taskId), "新任务可正常读取");
+	assert.equal(await f.tasks.get(f.owner, f.task.taskId), null, "旧任务仍然不可访问");
+	const oldLifecycle = await f.tasks.lifecycle(f.owner, f.task.taskId);
+	assert.equal(oldLifecycle?.state, "deleted");
+	assert.equal((await f.storage.transaction((tx) => tx.lifecycleDeletions.all()))
+		.filter((row) => row.taskId === f.task.taskId).length, 1, "旧任务的删除清单保留");
+	assert.equal(old.manifest.status, "pending");
+});
+
+test("PostgreSQL：删除清单与任务墓碑在同一事务落库", { skip: !process.env.TEST_DATABASE_URL }, async () => {
+	const url = process.env.TEST_DATABASE_URL!;
+	const { createRequire } = await import("node:module");
+	const { Pool } = createRequire(new URL("../packages/storage/package.json", import.meta.url))("pg") as {
+		Pool: new (options: { connectionString: string; options?: string }) => ConstructorParameters<typeof PostgresStorage>[0];
+	};
+	const admin = new Pool({ connectionString: url }) as unknown as { query(sql: string): Promise<unknown>; end(): Promise<void> };
+	const schema = `lifecycle_delete_${randomUUID().replaceAll("-", "")}`;
+	await admin.query(`CREATE SCHEMA ${schema}`);
+	const pool = new Pool({ connectionString: url, options: `-c search_path=${schema}` });
+	const other = new Pool({ connectionString: url, options: `-c search_path=${schema}` });
+	const storage = new PostgresStorage(pool);
+	const reconnected = new PostgresStorage(other);
+	try {
+		await storage.initialize();
+		const start = "2026-01-01T00:00:00.000Z";
+		const identity = { platform: "feishu", applicationId: "cli_test", tenantId: "tenant-a", idType: "open_id", externalId: randomUUID() };
+		const session = await new AuthenticationService(reconnected).createWebSession(identity, createHash("sha256").update(randomUUID()).digest("hex"), start);
+		const tasks = new TaskService(reconnected, () => start);
+		const task = await tasks.create(session.userId, randomUUID(), taskInput);
+		const result = await tasks.delete(session.userId, task.taskId);
+		assert.equal(result.created, true);
+		assert.equal(await tasks.get(session.userId, task.taskId), null);
+		const manifest = (await new (await import("../packages/core/dist/index.js")).LifecycleDeletionService(reconnected, () => start).list(session.userId))[0];
+		assert.equal(manifest?.taskId, task.taskId);
+		assert.equal(manifest?.status, "pending");
+		await assert.rejects(
+			reconnected.transaction(async (tx) => {
+				const row = (await tx.lifecycleDeletions.all())[0]; assert.ok(row);
+				await tx.lifecycleDeletions.put({ ...row, id: "another-id" });
+			}),
+			/duplicate key/,
+			"同一任务不能出现两份删除清单",
+		);
+	} finally {
+		await storage.close();
+		await reconnected.close();
+		await admin.query(`DROP SCHEMA ${schema} CASCADE`);
+		await admin.end();
+	}
+});
+
+test("限访不能被绕过：证据详情与修订、任务修订都不能让到期任务复活", async () => {
+	const f = await fixture();
+	const { EvidenceService } = await import("../packages/core/dist/index.js");
+	const evidence = new EvidenceService(f.storage, f.clock);
+	const imported = await evidence.import(f.owner, randomUUID(), {
+		schemaVersion: 1, taskRef: { taskId: f.task.taskId, taskVersion: 1 }, records: [selectionEvidence()],
+	});
+	const evidenceId = imported[0]!.evidenceId;
+	assert.ok(await evidence.get(f.owner, evidenceId), "未到期时详情可读");
+
+	// 到期后：列表、详情、修订全部按不可访问处理。
+	const expiresAt = (await f.lifecycle()).expiresAt;
+	f.setTime(expiresAt);
+	assert.deepEqual(await evidence.listForTask(f.owner, f.task.taskId).catch(() => []), []);
+	assert.equal(await evidence.get(f.owner, evidenceId), null, "旧 evidenceId 也不能绕过限访");
+	await assert.rejects(
+		evidence.revise(f.owner, evidenceId, randomUUID(), {
+			expectedEvidenceVersion: 1, reason: "到期后修订", record: selectionEvidence(2200),
+		}),
+		/evidence not found/,
+	);
+	await assert.rejects(
+		f.tasks.revise(f.owner, f.task.taskId, 1, randomUUID(), taskInput),
+		/task not found/,
+		"到期任务不能通过修订推进最后业务更新",
+	);
+	assert.equal(await f.tasks.get(f.owner, f.task.taskId), null, "修订被拒后任务仍不可读");
+
+	// 幂等重放：同一 key 再提交也不能返回业务正文。
+	const key = randomUUID();
+	f.setTime("2026-01-01T00:01:00.000Z");
+	const revised = await f.tasks.revise(f.owner, f.task.taskId, 1, key, taskInput);
+	assert.equal(revised.version, 2);
+	const replayAt = (await f.lifecycle()).expiresAt;
+	f.setTime(replayAt);
+	await assert.rejects(
+		f.tasks.revise(f.owner, f.task.taskId, 1, key, taskInput),
+		/task not found/,
+		"幂等重放也不得到期任务正文",
+	);
+});
+
+test("删除确认后证据详情与修订同样不可用", async () => {
+	const f = await fixture();
+	const { EvidenceService } = await import("../packages/core/dist/index.js");
+	const evidence = new EvidenceService(f.storage, f.clock);
+	const imported = await evidence.import(f.owner, randomUUID(), {
+		schemaVersion: 1, taskRef: { taskId: f.task.taskId, taskVersion: 1 }, records: [selectionEvidence()],
+	});
+	const evidenceId = imported[0]!.evidenceId;
+	await f.tasks.delete(f.owner, f.task.taskId);
+	assert.equal(await evidence.get(f.owner, evidenceId), null);
+	await assert.rejects(
+		evidence.revise(f.owner, evidenceId, randomUUID(), { expectedEvidenceVersion: 1, reason: "删除后修订", record: selectionEvidence(2300) }),
+		/evidence not found/,
+	);
+	await assert.rejects(f.tasks.revise(f.owner, f.task.taskId, 1, randomUUID(), taskInput), /task not found/);
+});

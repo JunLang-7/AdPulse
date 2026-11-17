@@ -266,8 +266,18 @@ export class NotificationQueue {
 		reason: string,
 		filter?: (item: NotificationItem) => boolean,
 	): Promise<{ items: number; batches: number }> {
-		const at = this.now().toISOString();
-		return this.storage.transaction(async (tx) => {
+		return this.cancelPendingIn(this.storage, ownerId, reason, filter);
+	}
+
+	/** 供已在事务中的调用方（如 #40 删除确认）复用，避免嵌套事务。 */
+	async cancelPendingIn(
+		txLike: Transaction | Storage,
+		ownerId: string,
+		reason: string,
+		filter?: (item: NotificationItem) => boolean,
+	): Promise<{ items: number; batches: number }> {
+		const work = async (tx: Transaction) => {
+			const at = this.now().toISOString();
 			let items = 0;
 			for (const item of await tx.notificationItems.all()) {
 				if (item.ownerId !== ownerId || item.status !== "queued") continue;
@@ -299,7 +309,10 @@ export class NotificationQueue {
 				batches += 1;
 			}
 			return { items, batches };
-		});
+		};
+		return "transaction" in txLike
+			? txLike.transaction(work)
+			: work(txLike);
 	}
 
 	/**
