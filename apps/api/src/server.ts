@@ -13,6 +13,8 @@ import {
 	NotificationRecordError,
 	NotificationRecordService,
 	NotificationSelectionService,
+	SourceLeadError,
+	SourceLeadService,
 	NotificationService,
 	SubscriptionError,
 	SubscriptionService,
@@ -151,6 +153,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 	const notifications = new NotificationService(runtime.storage);
 	const notificationRecords = new NotificationRecordService(runtime.storage);
 	const notificationSelections = new NotificationSelectionService(runtime.storage);
+	const sourceLeads = new SourceLeadService(runtime.storage);
 	const subscriptions = new SubscriptionService(runtime.storage);
 	const subscriptionErrorStatus = (reason: SubscriptionError["reason"]): number => {
 		switch (reason) {
@@ -496,6 +499,9 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 							...(body?.schedule === undefined
 								? {}
 								: { schedule: body.schedule as never }),
+							...(body?.sourceFeeds === undefined
+								? {}
+								: { sourceFeeds: body.sourceFeeds as never }),
 						});
 						audit({ event: "subscription.settings.updated", path });
 						return json(res, 200, view);
@@ -570,6 +576,21 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				}
 				if (path === "/api/me/notification-status" && req.method === "GET") {
 					return json(res, 200, await notifications.status(session.userId));
+				}
+				if (path === "/api/me/source-leads" && req.method === "GET") {
+					const params = requestUrl.searchParams;
+					const allowed = ["limit", "sourceKey"];
+					if ([...params.keys()].some((key) => !allowed.includes(key) || params.getAll(key).length !== 1))
+						throw new HttpError(400, "invalid_query");
+					try {
+						return json(res, 200, await sourceLeads.list(session.userId, {
+							...(params.has("limit") ? { limit: Number(params.get("limit")) } : {}),
+							...(params.has("sourceKey") ? { sourceKey: params.get("sourceKey")! } : {}),
+						}));
+					} catch (error) {
+						if (error instanceof SourceLeadError) throw new HttpError(400, error.reason);
+						throw error;
+					}
 				}
 				if (path === "/api/me/notification-selections" && req.method === "GET") {
 					const params = requestUrl.searchParams;

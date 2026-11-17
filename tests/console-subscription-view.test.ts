@@ -46,6 +46,10 @@ const subscription = (
 ): SubscriptionViewLike => ({
 	settings: { version: 3, proactiveEnabled: true, schedule },
 	targets: [target()],
+	sources: [
+		{ key: "weichai_news", label: "潍柴新闻与事件", subject: { kind: "brand", name: "潍柴" }, enabled: false },
+		{ key: "haier_news", label: "海尔品牌资讯", subject: { kind: "brand", name: "海尔" }, enabled: false },
+	],
 	...overrides,
 });
 

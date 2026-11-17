@@ -114,6 +114,11 @@ export interface SubscriptionSettings {
 		disabledAt?: string;
 		confirmedVersion?: number;
 	};
+	/**
+	 * #39 方案 A：本人逐来源开启的自动采集列表（`SOURCE_DEFINITIONS` 的 key）。
+	 * 缺省为空 = 不采集、不产生线索；不会替用户在其私人空间创建事件。
+	 */
+	sourceFeeds?: string[];
 	updatedAt: string;
 }
 

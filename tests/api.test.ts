@@ -938,3 +938,60 @@ for (const invalidation of ["binding", "user"] as const) {
     assert.equal(result.session?.version, 0);
   });
 }
+
+test("source leads API: 只返回本人已开启来源的线索，未开启来源与非法查询被拒", async (t) => {
+  const s = await serve(t);
+  await s.runtime.storage.transaction(async (tx) => {
+    await tx.sourceItems.put({
+      id: "weichai_news:1", sourceKey: "weichai_news", itemKey: "https://www.weichai.com/news/1.html",
+      title: "潍柴列表标题", itemUrl: "https://www.weichai.com/news/1.html", publishedAt: "2026-11-15",
+      firstSeenAt: "2026-11-16T00:01:00.000Z", lastSeenAt: "2026-11-16T00:01:00.000Z",
+      titleUpdatedAt: null, contentScope: "title_link_only", status: "active",
+    });
+    await tx.sourceItems.put({
+      id: "haier_news:1", sourceKey: "haier_news", itemKey: "https://www.haier.com/news/1.html",
+      title: "海尔列表标题", itemUrl: "https://www.haier.com/news/1.html", publishedAt: null,
+      firstSeenAt: "2026-11-16T00:02:00.000Z", lastSeenAt: "2026-11-16T00:02:00.000Z",
+      titleUpdatedAt: null, contentScope: "title_link_only", status: "active",
+    });
+  });
+
+  const before = await fetch(`${s.url}/api/me/source-leads`, { headers: s.headers });
+  assert.equal(before.status, 200);
+  const closed = (await before.json()) as { leads: unknown[]; sources: Array<{ key: string; enabled: boolean }> };
+  assert.equal(closed.leads.length, 0, "默认不采集也不返回线索");
+  assert.deepEqual(closed.sources.map((source) => source.key), ["weichai_news", "haier_news"]);
+  assert.ok(closed.sources.every((source) => !source.enabled));
+
+  const enable = await fetch(`${s.url}/api/me/subscription/settings`, {
+    method: "PUT",
+    headers: s.headers,
+    body: JSON.stringify({ expectedVersion: 0, sourceFeeds: ["weichai_news"] }),
+  });
+  assert.equal(enable.status, 200);
+  const view = (await enable.json()) as { sources: Array<{ key: string; enabled: boolean; subject: { name: string } }> };
+  assert.equal(view.sources.find((source) => source.key === "weichai_news")?.enabled, true);
+  assert.equal(view.sources.find((source) => source.key === "weichai_news")?.subject.name, "潍柴");
+
+  const opened = (await (await fetch(`${s.url}/api/me/source-leads`, { headers: s.headers })).json()) as {
+    leads: Array<{ title: string; sourceKey: string; subject: { name: string } }>;
+  };
+  assert.equal(opened.leads.length, 1);
+  assert.equal(opened.leads[0]?.title, "潍柴列表标题");
+  assert.equal(opened.leads[0]?.subject.name, "潍柴");
+
+  const stranger = (await (await fetch(`${s.url}/api/me/source-leads`, { headers: s.strangerHeaders })).json()) as { leads: unknown[] };
+  assert.equal(stranger.leads.length, 0, "别人的开关不影响本人，也看不到本人来源");
+
+  assert.equal((await fetch(`${s.url}/api/me/source-leads?sourceKey=haier_news`, { headers: s.headers })).status, 400);
+  assert.equal((await fetch(`${s.url}/api/me/source-leads?limit=51`, { headers: s.headers })).status, 400);
+  assert.equal((await fetch(`${s.url}/api/me/source-leads?limit=1&limit=2`, { headers: s.headers })).status, 400);
+  assert.equal((await fetch(`${s.url}/api/me/source-leads`)).status, 401);
+
+  const unknownFeed = await fetch(`${s.url}/api/me/subscription/settings`, {
+    method: "PUT",
+    headers: s.headers,
+    body: JSON.stringify({ expectedVersion: 1, sourceFeeds: ["unknown_feed"] }),
+  });
+  assert.equal(unknownFeed.status, 422, "未声明的来源 key 不静默忽略");
+});

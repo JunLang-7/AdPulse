@@ -790,6 +790,34 @@
         }
       }
     },
+    "/api/me/source-leads": {
+      "get": {
+        "operationId": "listSourceLeads",
+        "summary": "本人已开启来源的待确认线索（#39 方案 A）",
+        "description": "只返回本人已开启来源的公开列表条目（标题+链接）；关联依据是声明的站点→主体映射，不是标题或域名推断。不自动建事件、不自动推送。",
+        "security": [{"sessionCookie": []}, {"sameOriginOrigin": []}],
+        "parameters": [
+          { "name": "sourceKey", "in": "query", "required": false, "schema": { "type": "string" }, "description": "只看已开启的来源" },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Own enabled-source leads only",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SourceLeadPage" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query or source feed not enabled"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
     "/api/me/notification-selections": {
       "get": {
         "operationId": "listNotificationSelections",
@@ -2288,6 +2316,52 @@
         "required": ["destination", "consent", "canSendProactive"],
         "additionalProperties": false
       },
+      "SourceLeadSubject": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["brand", "competitor"] },
+          "name": { "type": "string" }
+        },
+        "required": ["kind", "name"],
+        "additionalProperties": false
+      },
+      "SourceLeadSource": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "label": { "type": "string" },
+          "subject": { "$ref": "#/components/schemas/SourceLeadSubject" },
+          "enabled": { "type": "boolean" }
+        },
+        "required": ["key", "label", "subject", "enabled"],
+        "additionalProperties": false
+      },
+      "SourceLead": {
+        "type": "object",
+        "properties": {
+          "sourceKey": { "type": "string" },
+          "sourceLabel": { "type": "string" },
+          "subject": { "$ref": "#/components/schemas/SourceLeadSubject" },
+          "itemId": { "type": "string" },
+          "title": { "type": "string" },
+          "url": { "type": "string" },
+          "publishedAt": { "type": ["string", "null"] },
+          "firstSeenAt": { "type": "string", "format": "date-time" },
+          "lastSeenAt": { "type": "string", "format": "date-time" },
+          "convertedEventId": { "type": "string", "description": "本人已录入同 URL 事件时给出；不表示已采纳或已核验" }
+        },
+        "required": ["sourceKey", "sourceLabel", "subject", "itemId", "title", "url", "publishedAt", "firstSeenAt", "lastSeenAt"],
+        "additionalProperties": false
+      },
+      "SourceLeadPage": {
+        "type": "object",
+        "properties": {
+          "leads": { "type": "array", "items": { "$ref": "#/components/schemas/SourceLead" } },
+          "sources": { "type": "array", "items": { "$ref": "#/components/schemas/SourceLeadSource" } }
+        },
+        "required": ["leads", "sources"],
+        "additionalProperties": false
+      },
       "SubscriptionSchedule": {
         "type": "object",
         "properties": {
@@ -2320,7 +2394,8 @@
           "schedule": { "$ref": "#/components/schemas/SubscriptionSchedule", "description": "未保存过配置时返回默认值（09:30 汇总、22:00–08:00 免打扰）" },
           "enabledAt": { "type": "string", "format": "date-time" },
           "disabledAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time", "description": "从未保存过配置时缺省（不返回空串）" }
+          "updatedAt": { "type": "string", "format": "date-time", "description": "从未保存过配置时缺省（不返回空串）" },
+          "sourceFeeds": { "type": "array", "items": { "type": "string" }, "description": "本人已开启的自动来源 key；缺省为空" }
         },
         "required": ["version", "proactiveEnabled", "decisionCards", "schedule"],
         "additionalProperties": false
@@ -2346,9 +2421,10 @@
         "type": "object",
         "properties": {
           "settings": { "$ref": "#/components/schemas/SubscriptionSettings" },
-          "targets": { "type": "array", "items": { "$ref": "#/components/schemas/SubscriptionTarget" } }
+          "targets": { "type": "array", "items": { "$ref": "#/components/schemas/SubscriptionTarget" } },
+          "sources": { "type": "array", "items": { "$ref": "#/components/schemas/SourceLeadSource" } }
         },
-        "required": ["settings", "targets"],
+        "required": ["settings", "targets", "sources"],
         "additionalProperties": false
       },
       "NotificationSelectionRecord": {
@@ -2561,7 +2637,8 @@
           "expectedVersion": { "type": "integer", "minimum": 0, "description": "调用方看到的版本；未配置时为 0。旧请求重放会因版本不符被拒" },
           "proactiveEnabled": { "type": "boolean" },
           "decisionCardsEnabled": { "type": "boolean", "description": "本人单独明确确认；不改变全部主动推送开关、地址或通知授权。此接口仅记录，不直接排队或发送。" },
-          "schedule": { "$ref": "#/components/schemas/SubscriptionSchedule" }
+          "schedule": { "$ref": "#/components/schemas/SubscriptionSchedule" },
+          "sourceFeeds": { "type": "array", "maxItems": 2, "items": { "type": "string", "enum": ["weichai_news", "haier_news"] }, "description": "自动来源（#39 方案 A）逐来源开启：只影响本人线索列表，不自动建事件、不自动推送" }
         },
         "required": ["expectedVersion"],
         "additionalProperties": false

@@ -287,6 +287,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/source-leads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 本人已开启来源的待确认线索（#39 方案 A）
+         * @description 只返回本人已开启来源的公开列表条目（标题+链接）；关联依据是声明的站点→主体映射，不是标题或域名推断。不自动建事件、不自动推送。
+         */
+        get: operations["listSourceLeads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/notification-selections": {
         parameters: {
             query?: never;
@@ -857,6 +877,36 @@ export interface components {
             } | null;
             canSendProactive: boolean;
         };
+        SourceLeadSubject: {
+            /** @enum {string} */
+            kind: "brand" | "competitor";
+            name: string;
+        };
+        SourceLeadSource: {
+            key: string;
+            label: string;
+            subject: components["schemas"]["SourceLeadSubject"];
+            enabled: boolean;
+        };
+        SourceLead: {
+            sourceKey: string;
+            sourceLabel: string;
+            subject: components["schemas"]["SourceLeadSubject"];
+            itemId: string;
+            title: string;
+            url: string;
+            publishedAt: string | null;
+            /** Format: date-time */
+            firstSeenAt: string;
+            /** Format: date-time */
+            lastSeenAt: string;
+            /** @description 本人已录入同 URL 事件时给出；不表示已采纳或已核验 */
+            convertedEventId?: string;
+        };
+        SourceLeadPage: {
+            leads: components["schemas"]["SourceLead"][];
+            sources: components["schemas"]["SourceLeadSource"][];
+        };
         SubscriptionSchedule: {
             /**
              * @description 首期固定北京时间，不做跨时区
@@ -898,6 +948,8 @@ export interface components {
              * @description 从未保存过配置时缺省（不返回空串）
              */
             updatedAt?: string;
+            /** @description 本人已开启的自动来源 key；缺省为空 */
+            sourceFeeds?: string[];
         };
         SubscriptionTarget: {
             id: string;
@@ -923,6 +975,7 @@ export interface components {
         SubscriptionView: {
             settings: components["schemas"]["SubscriptionSettings"];
             targets: components["schemas"]["SubscriptionTarget"][];
+            sources: components["schemas"]["SourceLeadSource"][];
         };
         NotificationSelectionRecord: {
             id: string;
@@ -1048,6 +1101,8 @@ export interface components {
             /** @description 本人单独明确确认；不改变全部主动推送开关、地址或通知授权。此接口仅记录，不直接排队或发送。 */
             decisionCardsEnabled?: boolean;
             schedule?: components["schemas"]["SubscriptionSchedule"];
+            /** @description 自动来源（#39 方案 A）逐来源开启：只影响本人线索列表，不自动建事件、不自动推送 */
+            sourceFeeds?: ("weichai_news" | "haier_news")[];
         };
         SubscriptionTargetInput: {
             expectedVersion: number;
@@ -3208,6 +3263,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["NotificationStatus"];
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listSourceLeads: {
+        parameters: {
+            query?: {
+                /** @description 只看已开启的来源 */
+                sourceKey?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own enabled-source leads only */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceLeadPage"];
+                };
+            };
+            /** @description Invalid query or source feed not enabled */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {
