@@ -47,7 +47,7 @@ export function leadDraft(lead: Lead): EventInput {
 		title: lead.title,
 		subject: { kind: lead.subject.kind, name: lead.subject.name },
 		sources: [{
-			url: lead.url, publisher: lead.sourceLabel, content: null, scope: "title_only", origin: "official",
+			url: lead.url, publisher: lead.sourceLabel, content: lead.title, scope: "title_only", origin: "official",
 			publishedAt: lead.publishedAt, acquiredAt: lead.lastSeenAt,
 			limitations: "仅取得来源列表的标题与链接，未读取正文；主体按来源站点声明归属，不是标题推断",
 		}],

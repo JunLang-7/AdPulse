@@ -32,6 +32,28 @@ test("market events: missing/link/title/search/excerpt evidence remains explicit
 		assert.ok(result.version.candidate.reasons.includes("事件时间未知"));
 	}
 });
+test("market events: 仅标题来源必须把已取得的标题作为 content，不能留空", async () => {
+	const service = new MarketEventService(new MemoryStorage());
+	const empty = eventInput();
+	empty.sources[0] = { ...empty.sources[0]!, scope: "title_only", content: null };
+	empty.citations = { subject: null, eventTime: null, conditions: null };
+	await assert.rejects(service.create("a", "k-empty", empty), /content scope requires content/);
+
+	// 来源线索转事件时的形状：标题即内容，范围仍为 title_only，不补造正文。
+	const fromLead = eventInput();
+	fromLead.title = "潍柴列表标题";
+	fromLead.sources[0] = {
+		...fromLead.sources[0]!, scope: "title_only", content: "潍柴列表标题", origin: "official", publishedAt: null,
+		limitations: "仅取得来源列表的标题与链接，未读取正文；主体按来源站点声明归属，不是标题推断",
+	};
+	fromLead.citations = { subject: null, eventTime: null, conditions: null };
+	fromLead.eventTime = null; fromLead.conditions = null;
+	const result = await service.create("a", "k-lead", fromLead);
+	assert.equal(result.version.input.sources[0]?.scope, "title_only");
+	assert.equal(result.version.input.sources[0]?.content, "潍柴列表标题");
+	assert.equal(result.version.candidate.status, "insufficient", "仅标题不冒充可推送候选");
+});
+
 test("market events: domain refuses fabricated citations, unsafe links and search body claims", async () => {
 	const service = new MarketEventService(new MemoryStorage());
 	const quote = eventInput(); quote.citations.subject = { sourceIndex: 0, quote: "根本不存在" };
