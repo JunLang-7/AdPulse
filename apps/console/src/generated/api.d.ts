@@ -1441,7 +1441,7 @@ export interface components {
             connections: components["schemas"]["TaskDraftConnectionInfo"][];
         };
         /**
-         * @description Overview supports product and objective excerpts and recommendations. Audience accepts audience and sellingPoints excerpts, and channels accepts channel names.
+         * @description Overview accepts product and objective excerpts plus product and objective suggestions. Audience accepts audience and sellingPoints excerpts plus suggestions. Channels accepts channel names plus suggestions.
          * @enum {string}
          */
         TaskDraftStage: "overview" | "audience" | "channels";
@@ -1451,14 +1451,17 @@ export interface components {
             audience?: string[];
             sellingPoints?: string[];
             channels?: string[];
-            /** @description Overview suggestions that require user confirmation. */
+            /** @description Stage suggestions that require user confirmation. Values may be normalized rather than verbatim. */
             recommendations?: {
                 product?: {
                     value: string;
-                    /** @description Verbatim source for the suggested product name. */
-                    evidence: string;
+                    /** @description Verbatim source when available. */
+                    evidence?: string;
                 };
                 objectives?: string[];
+                audience?: string[];
+                sellingPoints?: string[];
+                channels?: string[];
             };
         };
         TaskInput: {
@@ -3339,7 +3342,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Verbatim excerpts from the brief and optional, separately labeled recommendations for user confirmation */
+            /** @description Verbatim excerpts from the brief and separately labeled stage suggestions that require user confirmation */
             200: {
                 headers: {
                     [name: string]: unknown;
