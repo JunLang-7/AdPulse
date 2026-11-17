@@ -307,6 +307,14 @@ export default function MarketEventsPage() {
 		return r.data;
 	} });
 	const detail = useQuery({ queryKey: ["market-events", eventId], enabled: !!eventId, queryFn: async () => { const r = await consoleClient.GET("/api/market-events/{eventId}", { params: { path: { eventId: eventId! } } }); if (!r.data) throw new Error(r.response.status === 404 ? "事件不存在或无权访问" : "无法读取事件"); return r.data; } });
+	const remove = useMutation({ mutationFn: async (event: EventVersion) => {
+		const result = await consoleClient.DELETE("/api/market-events/{eventId}", { params: { path: { eventId: event.eventId }, query: { expectedVersion: event.version } } });
+		if (!result.data) throw new Error(result.response.status === 409 ? "这条事件刚被改过，请刷新后再删除。" : "删除失败，请稍后重试。");
+		return result.data;
+	}, onSuccess: async () => {
+		await queryClient.invalidateQueries({ queryKey: ["market-events"] });
+		navigate("/market-events", { state: { marketEventNotice: "事件已删除，任务与提醒里不再显示它的内容。" } });
+	} });
 	const saved = async (id: string, status: components["schemas"]["MarketEventWriteResult"]["status"]) => {
 		setEditing(false);
 		setSelectedLeads([]);
@@ -330,13 +338,25 @@ export default function MarketEventsPage() {
 					{lifecycle.data
 						? <p className="text-xs text-muted-foreground">保留至 {formatRetention(lifecycle.data.expiresAt)}。查看与投递不会顺延，每次修订会重新计时。</p>
 						: null}
-					<Button variant="outline" onClick={() => setEditing(!editing)}>{editing ? "取消编辑" : "修订事件 / 补充转载"}</Button>
+					<div className="flex flex-wrap items-center gap-2">
+						<Button variant="outline" onClick={() => setEditing(!editing)}>{editing ? "取消编辑" : "修订事件 / 补充转载"}</Button>
+						<Button
+							variant="outline"
+							disabled={remove.isPending}
+							onClick={() => {
+								if (!window.confirm("删除后这条事件立即不可查看、不再进入提醒，任务与记录里只保留「已删除」状态。确定删除？")) return;
+								remove.mutate(detail.data!.current);
+							}}
+						>{remove.isPending ? "正在删除…" : "删除事件"}</Button>
+					</div>
+					{remove.error ? <p role="alert" className="text-sm text-red-600">{remove.error.message}</p> : null}
 					{editing && <EventForm key={detail.data.current.id} current={detail.data.current} attach={attachLead ?? undefined} saved={(id, status) => { void saved(id, status); }} />}
 					<h2 className="font-semibold">历史版本</h2>{detail.data.versions.slice(1).map(v => <details key={v.id} className="rounded-md border p-4"><summary>第 {v.version} 版 · {v.changeReason} · {formatBeijing(v.createdAt)}</summary><Summary version={v} /></details>)}
 				</>}
 			</>}
 	</div>;
 	return <div className="p-6 space-y-8"><div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-bold">市场与竞品事件</h1><Button onClick={() => setEditing(!editing)}>{editing ? "收起录入" : "录入事件"}</Button></div>
+		{notice && <p role="status" className="rounded-md border p-3 text-sm">{notice}</p>}
 		{editing && <EventForm key={mergeDraftState?.key ?? leadDraftState?.key ?? "manual"} prefill={mergeDraftState ? mergeLeadDraft(mergeDraftState.leads) : leadDraftState ? leadDraft(leadDraftState.lead) : undefined} saved={(id, status) => { setLeadDraftState(null); setMergeDraftState(null); void saved(id, status); }} />}
 		<Section title={`已记录的事件${list.data ? `（${list.data.length}）` : ""}`} hint="依据齐备才会进入通知筛选；保存不会发消息">
 			{list.isLoading && <p>正在读取事件…</p>}

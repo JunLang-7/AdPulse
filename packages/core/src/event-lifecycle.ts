@@ -7,7 +7,7 @@ import { MS_PER_DAY, RETENTION_DAYS } from "./lifecycle.js";
 import type { MarketEventHead } from "./market-events.js";
 import type { Transaction } from "./ports/storage.js";
 
-export type EventLifecycleState = "active" | "expired";
+export type EventLifecycleState = "active" | "expired" | "deleted";
 
 export interface EventLifecycle {
 	eventId: string;
@@ -18,8 +18,10 @@ export interface EventLifecycle {
 	lastBusinessUpdate: string;
 	expiresAt: string;
 	retentionDays: number;
-	/** 当前是否已到期；与 state 同源，便于直接断言「到期即限访」。 */
+	/** 当前是否已到期或已删除；与 state 同源，便于直接断言「到期即限访」。 */
 	expired: boolean;
+	/** 本人确认删除的时刻；未删除时为 null。删除优先于到期。 */
+	deletedAt: string | null;
 }
 
 const iso = (value: string | null | undefined): string | null => {
@@ -59,6 +61,7 @@ export function eventLifecycleOf(
 		expiresAt: new Date(Date.parse(anchor) + RETENTION_DAYS * MS_PER_DAY).toISOString(),
 		retentionDays: RETENTION_DAYS,
 		expired: false,
+		deletedAt: null,
 	};
 }
 
@@ -70,8 +73,13 @@ export async function eventLifecycleIn(
 ): Promise<EventLifecycle> {
 	const lastBusinessUpdate = await eventLastBusinessUpdateIn(tx, head.id, head.createdAt);
 	const lifecycle = eventLifecycleOf(head, lastBusinessUpdate);
+	// 删除优先于到期：删了就立即不可访问，不再等保留期。
+	if (head.deletion) {
+		const at = new Date(head.deletion.at).toISOString();
+		return { ...lifecycle, state: "deleted", expired: true, deletedAt: at };
+	}
 	const expired = Date.parse(lifecycle.expiresAt) <= now.getTime();
-	return { ...lifecycle, state: expired ? "expired" : "active", expired };
+	return { ...lifecycle, state: expired ? "expired" : "active", expired, deletedAt: null };
 }
 
 /** 到期即限访：返回 false 表示不可读、不可修订、不可参与通知。 */

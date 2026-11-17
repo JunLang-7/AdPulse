@@ -71,7 +71,9 @@ export class LifecycleCleanupService {
 	private async scheduleExpiredIn(at: string): Promise<number> {
 		const now = new Date(at);
 		const candidates = await this.storage.transaction(async (tx) => {
-			const existing = new Set((await tx.lifecycleDeletions.all()).map((row) => `${row.ownerId}:${row.taskId}`));
+			const existing = new Set((await tx.lifecycleDeletions.all())
+				.filter((row) => typeof row.taskId === "string")
+				.map((row) => `${row.ownerId}:${row.taskId}`));
 			const out: Array<{ id: string; ownerId: string; taskId: string; requestedAt: string; deadlineAt: string; status: "pending"; reason: "retention_expired" }> = [];
 			for (const task of await tx.tasks.all()) {
 				if (existing.has(`${task.ownerId}:${task.id}`)) continue;
@@ -132,12 +134,12 @@ export class LifecycleCleanupService {
 
 	private async cleanIn(
 		tx: Transaction,
-		manifest: LifecycleDeletion,
+		manifest: LifecycleDeletion & { taskId: string },
 		at: string,
 	): Promise<Record<string, number> | null> {
 		const current = await tx.lifecycleDeletions.get(manifest.id);
-		if (!current || current.status !== "pending") return null;
-		const { ownerId, taskId } = current;
+		if (!current || current.status !== "pending" || typeof current.taskId !== "string") return null;
+		const { ownerId, taskId } = current as LifecycleDeletion & { taskId: string };
 
 		// 归属检索：先算出本任务的全部引用 id，再按依赖顺序批量删除。
 		// 归属检索走 listByOwner（PG 上是 data->>'ownerId' + 索引），不做整表扫描。
@@ -278,12 +280,14 @@ export class LifecycleCleanupService {
 /** 读取到期清单（独立小类，避免清理服务依赖查询实现细节）。 */
 class LifecycleCleanupReader {
 	constructor(private readonly storage: Storage) {}
-	async due(at: string): Promise<LifecycleDeletion[]> {
+	async due(at: string): Promise<Array<LifecycleDeletion & { taskId: string }>> {
 		return this.storage.transaction(async (tx) =>
 			(await tx.lifecycleDeletions.all())
 				.filter((row) => row.status === "pending"
+					// 事件删除清单由 #144 S4 处理，不混进任务清理。
+					&& typeof row.taskId === "string"
 					&& Date.parse(row.deadlineAt) <= Date.parse(at))
-				.sort((a, b) => a.deadlineAt.localeCompare(b.deadlineAt)),
+				.sort((a, b) => a.deadlineAt.localeCompare(b.deadlineAt)) as Array<LifecycleDeletion & { taskId: string }>,
 		);
 	}
 }

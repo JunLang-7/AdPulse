@@ -270,7 +270,7 @@ export interface AuditRecord {
 	id: string;
 	/** UTC 绝对时刻。 */
 	at: string;
-	kind: "task_deleted" | "task_purged" | "audit_purged" | "backup_evicted";
+	kind: "task_deleted" | "task_purged" | "event_deleted" | "event_purged" | "audit_purged" | "backup_evicted";
 	/** 触发者：本人 id；系统清理为 "system"。 */
 	actorId: string;
 	objectId?: string;
@@ -282,7 +282,9 @@ export interface AuditRecord {
 export interface LifecycleDeletion {
 	id: string;
 	ownerId: string;
-	taskId: string;
+	/** 任务删除清单带 taskId；事件删除清单带 marketEventId，两者恰有一（#144 S2）。 */
+	taskId?: string;
+	marketEventId?: string;
 	/** 本人确认删除，还是 365 天保留期到期触发；历史记录缺省按本人删除处理。 */
 	reason?: "owner_request" | "retention_expired";
 	requestedAt: string;

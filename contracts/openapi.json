@@ -195,6 +195,143 @@
         }
       }
     },
+    "/api/market-events/{eventId}": {
+      "parameters": [
+        {
+          "name": "eventId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getMarketEvent",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "current": {
+                      "$ref": "#/components/schemas/MarketEventVersion"
+                    },
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MarketEventVersion"
+                      }
+                    }
+                  },
+                  "required": [
+                    "current",
+                    "versions"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Event not found, not owned, or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMarketEvent",
+        "summary": "本人确认删除事件（#144 S2）",
+        "description": "同一事务内建立立即不可访问状态、取消尚未发送的提醒条目，并写入删除清单（请求起 7 天在线清理截止）。幂等：重复提交返回同一清单。物理清理与备份重放在 S4 实现。",
+        "security": [
+          {
+            "sessionCookie": [],
+            "sameOriginOrigin": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted or already deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketEventDeletionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid expectedVersion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Event not found or not owned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version conflict or deletion in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/market-events/{eventId}/lifecycle": {
       "parameters": [
         {
@@ -242,73 +379,6 @@
             }
           }
         }
-      }
-    },
-    "/api/market-events/{eventId}": {
-      "get": {
-        "operationId": "getMarketEvent",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MarketEventDetail"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Temporarily unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "in": "path",
-            "name": "eventId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
       }
     },
     "/api/market-events/{eventId}/revisions": {
@@ -2195,7 +2265,24 @@
           "provenance"
         ]
       },
-      "MarketEventLifecycle": {
+      "MarketEventDeletionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "manifest": {
+          "$ref": "#/components/schemas/LifecycleDeletion"
+        },
+        "created": {
+          "type": "boolean",
+          "description": "true 表示本次真正写入；false 表示此前已删除"
+        }
+      },
+      "required": [
+        "manifest",
+        "created"
+      ]
+    },
+    "MarketEventLifecycle": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -3234,13 +3321,15 @@
         "properties": {
           "id": { "type": "string" },
           "ownerId": { "type": "string" },
-          "taskId": { "type": "string" },
+          "taskId": { "type": "string", "description": "任务删除清单带 taskId；事件删除清单带 marketEventId，两者恰有一" },
+          "marketEventId": { "type": "string", "description": "事件删除清单的对象（#144 S2）" },
           "requestedAt": { "type": "string", "format": "date-time" },
           "deadlineAt": { "type": "string", "format": "date-time", "description": "在线清理截止：请求起 7 天" },
+          "reason": { "type": "string", "enum": ["owner_request", "retention_expired"] },
           "status": { "type": "string", "enum": ["pending", "cleaned"] },
           "cleanedAt": { "type": "string", "format": "date-time" }
         },
-        "required": ["id", "ownerId", "taskId", "requestedAt", "deadlineAt", "status"],
+        "required": ["id", "ownerId", "requestedAt", "deadlineAt", "status"],
         "additionalProperties": false
       },
       "TaskDeletionResult": {

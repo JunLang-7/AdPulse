@@ -287,3 +287,22 @@ test("市场事件页：曾成功加载的详情在到期后不再继续渲染�
 	assert.equal(screen.queryByText(/还缺这几处的原文引用/), null, "不渲染正文详情");
 	assert.equal(screen.queryByRole("button", { name: "修订事件 / 补充转载" }), null, "不提供修订入口");
 });
+
+test("市场事件页：删除事件需确认，成功后回到列表并提示", async t => {
+	t.after(cleanup);
+	let deleted = false;
+	const confirmations: boolean[] = [];
+	const originalConfirm = window.confirm;
+	window.confirm = (message?: string) => { confirmations.push(Boolean(message)); return true; };
+	t.after(() => { window.confirm = originalConfirm; });
+	serve(defaults, {
+		"GET /api/market-events/event-1": () => json({ current: version(), versions: [version()] }),
+		"DELETE /api/market-events/event-1": () => { deleted = true; return json({ manifest: { id: "m1", ownerId: "owner", marketEventId: "event-1", requestedAt: "2026-11-17T00:00:00Z", deadlineAt: "2026-11-24T00:00:00Z", status: "pending" }, created: true }); },
+		"GET /api/market-events": () => json({ items: [] }),
+	});
+	mount("/market-events/event-1");
+	fireEvent.click(await screen.findByRole("button", { name: "删除事件" }));
+	await waitFor(() => assert.equal(deleted, true), { timeout: 2000 });
+	assert.equal(confirmations.length, 1, "删除前必须确认");
+	assert.ok(await screen.findByText(/事件已删除，任务与提醒里不再显示它的内容/), "回到列表并提示");
+});

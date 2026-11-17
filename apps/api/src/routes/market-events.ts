@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Runtime } from "@adpluse/runtime";
+import { MarketEventError } from "@adpluse/core";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
 
@@ -48,6 +49,16 @@ export async function handleMarketEvents(req: IncomingMessage, res: ServerRespon
 		return true;
 	}
 	const detail = path.match(/^\/api\/market-events\/([^/]+)$/);
+	if (detail?.[1] && req.method === "DELETE") {
+		const expectedVersion = Number(new URL(req.url ?? "/", "http://localhost").searchParams.get("expectedVersion"));
+		try {
+			json(res, 200, await runtime.marketEvents.delete(ownerId, decodeURIComponent(detail[1]), expectedVersion));
+		} catch (error) {
+			if (error instanceof MarketEventError) throw new HttpError(error.status, error.message);
+			throw error;
+		}
+		return true;
+	}
 	if (detail?.[1] && req.method === "GET") {
 		const result = await runtime.marketEvents.detail(ownerId, decodeURIComponent(detail[1]));
 		if (!result) throw new HttpError(404, "event not found");

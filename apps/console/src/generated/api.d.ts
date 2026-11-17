@@ -20,6 +20,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/market-events/{eventId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getMarketEvent"];
+        put?: never;
+        post?: never;
+        /**
+         * 本人确认删除事件（#144 S2）
+         * @description 同一事务内建立立即不可访问状态、取消尚未发送的提醒条目，并写入删除清单（请求起 7 天在线清理截止）。幂等：重复提交返回同一清单。物理清理与备份重放在 S4 实现。
+         */
+        delete: operations["deleteMarketEvent"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market-events/{eventId}/lifecycle": {
         parameters: {
             query?: never;
@@ -34,22 +56,6 @@ export interface paths {
          * @description 返回计时锚点、到期时刻与当前状态。锚点取最后业务更新（首次录入或最后一次修订），365 天按 UTC 绝对时刻计算；普通查看、筛选、投递重试都不续期。到期后事件按不可访问处理：不出现在列表、详情返回 404、不可修订、不参与通知。删除入口、任务引用清理、在线清理与备份重放在后续切片实现。
          */
         get: operations["getMarketEventLifecycle"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/market-events/{eventId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getMarketEvent"];
         put?: never;
         post?: never;
         delete?: never;
@@ -879,6 +885,11 @@ export interface components {
                 transformation: string | null;
             };
         };
+        MarketEventDeletionResult: {
+            manifest: components["schemas"]["LifecycleDeletion"];
+            /** @description true 表示本次真正写入；false 表示此前已删除 */
+            created: boolean;
+        };
         MarketEventLifecycle: {
             eventId: string;
             /** @enum {string} */
@@ -1485,7 +1496,10 @@ export interface components {
         LifecycleDeletion: {
             id: string;
             ownerId: string;
-            taskId: string;
+            /** @description 任务删除清单带 taskId；事件删除清单带 marketEventId，两者恰有一 */
+            taskId?: string;
+            /** @description 事件删除清单的对象（#144 S2） */
+            marketEventId?: string;
             /** Format: date-time */
             requestedAt: string;
             /**
@@ -1493,6 +1507,8 @@ export interface components {
              * @description 在线清理截止：请求起 7 天
              */
             deadlineAt: string;
+            /** @enum {string} */
+            reason?: "owner_request" | "retention_expired";
             /** @enum {string} */
             status: "pending" | "cleaned";
             /** Format: date-time */
@@ -2292,6 +2308,109 @@ export interface operations {
             };
         };
     };
+    getMarketEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        current: components["schemas"]["MarketEventVersion"];
+                        versions: components["schemas"]["MarketEventVersion"][];
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event not found, not owned, or expired */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteMarketEvent: {
+        parameters: {
+            query: {
+                expectedVersion: number;
+            };
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted or already deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketEventDeletionResult"];
+                };
+            };
+            /** @description Invalid expectedVersion */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event not found or not owned */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version conflict or deletion in progress */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getMarketEventLifecycle: {
         parameters: {
             query?: never;
@@ -2323,64 +2442,6 @@ export interface operations {
             };
             /** @description Event not found or not owned */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    getMarketEvent: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                eventId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MarketEventDetail"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Temporarily unavailable */
-            503: {
                 headers: {
                     [name: string]: unknown;
                 };
