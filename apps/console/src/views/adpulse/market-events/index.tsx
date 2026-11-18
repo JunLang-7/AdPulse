@@ -24,12 +24,13 @@ function failure(status: number): Error {
 /** 后端给的是结构化判断原因，界面只挑对用户有意义的说法，不把字段名和防御性表述直接摊开。 */
 const FIELD_LABELS = { subject: "公告主体", eventTime: "事件时间", conditions: "适用条件" };
 
-/** 用户站点操作的失败文案：409=重复登记，400=地址或字段不合法，其余通用。 */
+/** 用户站点操作的失败文案：409=重复登记，400=地址或字段不合法，429=搜索额度用完。 */
 const addStatusText = (error: unknown): string => {
 	const status = (error as { status?: number } | null)?.status ?? 0;
 	if (status === 409) return "这个网站已经添加过，不需要重复登记。";
-	if (status === 400) return "地址或填写内容不合法：列表页必须是 https 的站点地址，企业名称与关注对象名称不能为空。";
+	if (status === 400) return "地址或填写内容不合法：企业名称与关注对象名称不能为空。";
 	if (status === 404) return "站点不存在或刚被删除，请刷新后重试。";
+	if (status === 429) return "今日搜索额度已用完：次日 00:00（北京时间）自动恢复。也可以现在直接填写官网新闻列表页地址。";
 	if (status === 422) return "没能自动找到这家企业的官网新闻页：请补填列表页地址，或换一个更明确的企业名称。";
 	return "操作失败，请稍后重试。";
 };
@@ -402,9 +403,13 @@ export default function MarketEventsPage() {
 	const [siteForm, setSiteForm] = useState({ label: "", listUrl: "", kind: "brand", name: "" });
 	const [siteError, setSiteError] = useState<string | null>(null);
 	const userSources = useQuery({ queryKey: ["user-sources"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/me/user-sources"); if (!r.data) throw new Error("无法读取站点列表"); return r.data.items; } });
+	// 搜索源额度：付费源用完即停，界面必须提前告知，不要让用户白点。
+	const searchProviders = useQuery({ queryKey: ["search-providers"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/me/search-providers"); if (!r.data) return []; return r.data.items; } });
+	const allQuotaExhausted = (searchProviders.data ?? []).length > 0 && (searchProviders.data ?? []).every((p) => p.exhausted);
 	const invalidateSources = () => Promise.all([
 		queryClient.invalidateQueries({ queryKey: ["user-sources"] }),
 		queryClient.invalidateQueries({ queryKey: ["source-leads"] }),
+		queryClient.invalidateQueries({ queryKey: ["search-providers"] }),
 	]);
 	const addSite = useMutation({ mutationFn: async () => {
 		const r = await consoleClient.POST("/api/me/user-sources", { body: { label: siteForm.label, listUrl: siteForm.listUrl, subject: { kind: siteForm.kind === "competitor" ? "competitor" : "brand", name: siteForm.name } } });
@@ -546,6 +551,17 @@ export default function MarketEventsPage() {
 				<details className="text-xs">
 					<summary className="cursor-pointer text-muted-foreground">添加任意企业官网（不限内置两家）</summary>
 					<div className="mt-2 space-y-2">
+						{/* 搜索源额度状态：让用户在点之前就知道今天还能不能用。 */}
+						{(searchProviders.data ?? []).length > 0 ? <div className="space-y-1 rounded-md border bg-muted/30 p-2">
+							<p className="text-muted-foreground">搜索源（今日额度）</p>
+							<ul className="space-y-0.5">
+								{(searchProviders.data ?? []).map((p) => <li key={p.provider} className={p.exhausted ? "text-amber-700" : "text-muted-foreground"}>
+									{p.label}{p.metered ? "（付费）" : ""}：
+									{p.dailyLimit === null ? `已用 ${p.used} 次` : p.exhausted ? `今日已用完（${p.used}/${p.dailyLimit}），次日 00:00 恢复` : `剩余 ${p.remaining} / ${p.dailyLimit} 次`}
+								</li>)}
+							</ul>
+							{allQuotaExhausted ? <p className="text-amber-700">今天的搜索额度已全部用完；你仍可以直接填写官网新闻列表页地址，其余链路不受影响。</p> : null}
+						</div> : null}
 						<div className="grid gap-2 sm:grid-cols-2">
 							<input aria-label="站点企业名称" placeholder="企业名称，如：海尔" maxLength={200} value={siteForm.label} onChange={e => setSiteForm({ ...siteForm, label: e.target.value })} className={control} />
 							<input aria-label="站点新闻列表页地址" placeholder="可留空：按企业名称自动查找官网新闻页" maxLength={2000} value={siteForm.listUrl} onChange={e => setSiteForm({ ...siteForm, listUrl: e.target.value })} className={control} />

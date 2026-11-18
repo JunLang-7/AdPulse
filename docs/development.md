@@ -727,7 +727,26 @@ bun run sources discover weichai_news campaigns
 
 `discover` 现在可加 `--persist <operator>`：把发现结果写入 `discoveryLeads` 暂存表（含 operator、发现时间、原始查询词，URL 归一化后与现有 source items 及历史线索去重），供控制台「发现线索待审核」接受/拒绝/保留；接受后作为 source item 入库，拒绝后同 URL 不再出现。也可用 `discover xiaohongshu <查询词> --subject brand:名称|competitor:名称` 走 Agent-Reach 的小红书笔记搜索（需登录态，返回 unverified 笔记，仅测试/比赛用途，未做真机签核）。
 
-## 7.1 任务生命周期（#40 S1：到期与限访）
+## 7.1 搜索源聚合与额度（付费源用完即停）
+
+「只给企业名称」的官网自动发现由多个搜索源聚合完成。每个源按北京时自然日单独记额度，**用满即停**，不静默降级；控制台会直接显示每个源今日已用/剩余。
+
+| 源 | 启用条件 | 默认日额度 | 环境变量 |
+| --- | --- | --- | --- |
+| Bing 网页检索（RSS） | 总是启用 | 200 | `SEARCH_DAILY_LIMITS=bing:N` |
+| Exa 语义检索 | `AGENT_REACH_BIN` 已配 | 50 | `SEARCH_DAILY_LIMITS=exa:N` |
+| Serper（Google，付费） | `SERPER_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=serper:N` |
+| Brave 搜索（付费） | `BRAVE_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=brave:N` |
+
+调用顺序：免费源优先（Bing → Exa），结果不够时才用付费源兑底；已够则不消耗付费额度。额度用完时：
+
+- `POST /api/me/user-sources` 在留空 `listUrl` 且所有源都无额度时返回 **429** `search_quota_exhausted`；
+- `GET /api/me/search-providers` 返回每个源的 `used`/`remaining`/`exhausted`/`day`，供界面提示「次日 00:00 恢复」；
+- 用户仍可直接填写官网新闻列表页地址，采集、转事件与推送链路不受额度影响。
+
+额度记录在 `searchQuotas`（迁移 21），按 `provider + day` 唯一；内存存储重启即清零，PostgreSQL 持久保存。
+
+## 7.2 任务生命周期（#40 S1：到期与限访）
 
 只做到期判定与读取限访；物理清理、删除确认、180 天审计与备份策略在后续切片实现。
 

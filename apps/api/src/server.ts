@@ -20,13 +20,14 @@ import {
 	UserSourceService,
 	SourceLeadError,
 	SourceLeadService,
+	SearchAggregator,
 	NotificationService,
 	SubscriptionError,
 	SubscriptionService,
 	TaskInputValidationError,
 } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
-import { agentReachReadFallback, discoverCompanySite, UserSiteFetcher } from "@adpluse/runtime";
+import { agentReachReadFallback, discoverCompanySite, providersFromEnvironment, SearchQuotaExhaustedError, UserSiteFetcher } from "@adpluse/runtime";
 import { ZodError } from "zod";
 import type { IdentityProvider } from "./feishu-auth.js";
 import { HttpError, json, readJson } from "./http.js";
@@ -162,6 +163,11 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 	const sourceLeads = new SourceLeadService(runtime.storage);
 	const discoveryLeads = new DiscoveryLeadService(runtime.storage);
 	const userSources = new UserSourceService(runtime.storage);
+	// 搜索源聚合：免费源优先、付费源兑底，每源按日额度用完即停。
+	const searchAggregator = new SearchAggregator(
+		runtime.storage,
+		providersFromEnvironment(process.env),
+	);
 	const lifecycleDeletions = new LifecycleDeletionService(runtime.storage);
 	const subscriptions = new SubscriptionService(runtime.storage);
 	const subscriptionErrorStatus = (reason: SubscriptionError["reason"]): number => {
@@ -659,6 +665,8 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						throw error;
 					}
 				}
+				if (path === "/api/me/search-providers" && req.method === "GET")
+					return json(res, 200, { items: await searchAggregator.quotas() });
 				if (path === "/api/me/user-sources" && req.method === "GET")
 					return json(res, 200, { items: await userSources.list(session.userId) });
 				if (path === "/api/me/user-sources" && req.method === "POST") {
@@ -675,9 +683,14 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						// 鍙粰浼佷笟鍚嶇О鏃讹細鐢?agent-reach 鎼滅储瀹樼綉骞跺畾浣嶆柊闂诲垪琛ㄩ〉銆?
 						if (!listUrl.trim()) {
 							try {
-								const found = await discoverCompanySite(label, process.env.AGENT_REACH_BIN);
+								const found = await discoverCompanySite(label, process.env.AGENT_REACH_BIN, {
+									aggregator: searchAggregator,
+								});
 								listUrl = found.listUrl;
-							} catch {
+							} catch (error) {
+								// 额度用完要如实告知，不当作普通“没找到”。
+								if (error instanceof SearchQuotaExhaustedError)
+									throw new HttpError(429, "search_quota_exhausted");
 								throw new HttpError(422, "site_discovery_failed");
 							}
 						}

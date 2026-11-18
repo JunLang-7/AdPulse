@@ -336,6 +336,15 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (20)",
 				);
 			}
+			if (!current.has(21)) {
+				// 搜索源额度：按源 + 北京时间自然日计；用完即停。
+				await this.createEntityTable(client, "searchQuotas");
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_search_quota_key
+					ON adpulse_searchQuotas ((data->>'provider'), (data->>'day'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (21)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

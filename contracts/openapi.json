@@ -2125,7 +2125,50 @@
         }
       }
     },
-      "/api/me/user-sources": {
+      "/api/me/search-providers": {
+      "get": {
+        "operationId": "listSearchProviders",
+        "summary": "本人可用的搜索源与今日额度",
+        "description": "按北京时间自然日计额度；额度用完的源会标记 exhausted，调用会暂停到次日。",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "provider": { "type": "string" },
+                          "label": { "type": "string" },
+                          "metered": { "type": "boolean" },
+                          "dailyLimit": { "type": ["integer", "null"] },
+                          "used": { "type": "integer" },
+                          "remaining": { "type": ["integer", "null"] },
+                          "exhausted": { "type": "boolean" },
+                          "day": { "type": "string" },
+                          "detail": { "type": ["string", "null"] }
+                        },
+                        "required": ["provider", "label", "metered", "dailyLimit", "used", "remaining", "exhausted", "day", "detail"]
+                      }
+                    }
+                  },
+                  "required": ["items"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/me/user-sources": {
         "get": {
           "operationId": "listUserSources",
           "summary": "本人登记的企业站点",
@@ -2235,6 +2278,9 @@
             },
             "409": {
               "description": "Host already added"
+            },
+            "429": {
+              "description": "Search quota exhausted for today"
             }
           }
         }
