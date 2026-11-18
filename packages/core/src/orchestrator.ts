@@ -302,6 +302,13 @@ export class Orchestrator {
 				version,
 				strategy: next,
 				changes: candidate.changes,
+				// 假设/验证说明随快照冻结：事后能核对“当时为什么改、准备怎么验证”。
+				...(candidate.hypothesis
+					? { hypothesis: candidate.hypothesis }
+					: {}),
+				...(candidate.validationPlan
+					? { validationPlan: candidate.validationPlan }
+					: {}),
 				createdAt: this.now(),
 			});
 			await tx.sessions.put({

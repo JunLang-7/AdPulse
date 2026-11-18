@@ -2078,6 +2078,8 @@ export interface components {
             version: number;
             strategy: components["schemas"]["Strategy"];
             changes: components["schemas"]["Change"][];
+            hypothesis?: string;
+            validationPlan?: string;
             createdAt: string;
         };
         JobTask: {

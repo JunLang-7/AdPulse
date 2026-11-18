@@ -57,6 +57,8 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 			actions: [], inbox: [], deliveries: [],
 			snapshots: [
 				{ id: "snap-1", sessionId: "session-1", version: 1, createdAt: "2026-11-16T02:00:00Z",
+					hypothesis: "节前备货需求上升",
+					validationPlan: "观察 7 天咨询成本是否回落",
 					strategy: {
 						objective: "提升咨询量",
 						audience: ["装修业主", "旧人群"],
@@ -99,6 +101,10 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 	assert.ok(screen.getByText("卖点移除：免费样品"), "卖点增删");
 	assert.ok(screen.getByText("内容方向新增：产地溯源短视频"), "内容方向增删");
 	assert.ok(screen.getByText("合作对象新增：本地生活达人"), "合作对象增删");
+	assert.ok(
+		screen.getByText("假设：节前备货需求上升；验证：观察 7 天咨询成本是否回落"),
+		"已应用版本的假设与验证方式",
+	);
 	// 长渠道名（无空格 token）完整渲染并强制断词，不能被卡片的 overflow-hidden 裁掉。
 	const longRow = screen.getByText(new RegExp(longChannel));
 	assert.equal(longRow.textContent, `预算（${longChannel}）：100 → 200`, "完整渠道名与原值新值都在文本里");

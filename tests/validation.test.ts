@@ -271,6 +271,23 @@ test("candidate hypothesis and validation plan are bounded, persisted, and shown
 	assert.ok(delivery && "options" in delivery.card);
 	assert.equal(delivery.card.options[0]?.detail, expectedDetail);
 
+	const action = (
+		await f.storage.transaction((tx) => tx.actions.all())
+	)[0];
+	assert.ok(action);
+	const inbox = await decisions.receiveChoice({
+		sourceId: "console:owner",
+		eventId: "rationale-accept",
+		actionRef: action.id,
+		actor: { kind: "console", userId: "owner" },
+	});
+	await decisions.processInbox(inbox.id);
+	const applied = await f.storage.transaction((tx) =>
+		tx.snapshots.get(`${session.id}:1`),
+	);
+	assert.equal(applied?.hypothesis, "节前备货需求上升");
+	assert.equal(applied?.validationPlan, "观察 7 天咨询成本是否回落");
+
 	for (const value of [
 		{ hypothesis: " 前后空格 " },
 		{ validationPlan: "a".repeat(301) },
