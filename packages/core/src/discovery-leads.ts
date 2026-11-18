@@ -67,6 +67,16 @@ const itemKeyHash = (sourceKey: string, dedupKey: string): string =>
 const clean = (value: unknown, max: number): string =>
 	typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : "";
 
+/**
+ * 索引日期只接受真实的 YYYY-MM-DD；其余一律当未知，不把任意字符串写进条目。
+ * 与事件/证据侧的日期校验保持同一口径（连 2026-02-30 这种格式合法但不存在的日期也拒绝）。
+ */
+const indexedDate = (value: unknown): string | null => {
+	if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+	const parsed = new Date(value);
+	return Number.isFinite(parsed.getTime()) && parsed.toISOString().startsWith(value) ? value : null;
+};
+
 export class DiscoveryLeadService {
 	constructor(private readonly storage: Storage) {}
 
@@ -117,7 +127,7 @@ export class DiscoveryLeadService {
 					url: candidate.url,
 					dedupKey: key,
 					author: candidate.author ? clean(candidate.author, 200) || null : null,
-					indexedPublishedAt: candidate.indexedPublishedAt,
+					indexedPublishedAt: indexedDate(candidate.indexedPublishedAt),
 					verification: "unverified",
 					status: "pending",
 					discoveredAt: now,
@@ -159,6 +169,12 @@ export class DiscoveryLeadService {
 		review: { operator: string; correctedPublishedAt?: string | null },
 		now: string,
 	): Promise<DiscoveryLead> {
+		// 人工修正的日期同样必须真实：格式合法但不存在的日期（2 月 30 日）不得入库。
+		const corrected = review.correctedPublishedAt === undefined || review.correctedPublishedAt === null
+			? null
+			: indexedDate(review.correctedPublishedAt);
+		if (review.correctedPublishedAt !== undefined && review.correctedPublishedAt !== null && corrected === null)
+			throw new DiscoveryLeadError(400, "invalid_date", "发布日期必须是真实的 YYYY-MM-DD");
 		return this.storage.transaction(async (tx) => {
 			const lead = await this.requireReviewable(tx.discoveryLeads.get(leadId), ownerId);
 			const itemId = `${lead.sourceKey}:${itemKeyHash(lead.sourceKey, lead.dedupKey)}`;
@@ -172,7 +188,7 @@ export class DiscoveryLeadService {
 				itemKey: lead.dedupKey,
 				title: lead.title,
 				itemUrl: lead.url,
-				publishedAt: review.correctedPublishedAt ?? lead.indexedPublishedAt,
+				publishedAt: corrected ?? lead.indexedPublishedAt,
 				firstSeenAt: previous?.firstSeenAt ?? lead.discoveredAt,
 				lastSeenAt: now,
 				titleUpdatedAt: null,

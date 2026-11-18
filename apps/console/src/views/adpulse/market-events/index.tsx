@@ -24,10 +24,11 @@ function failure(status: number): Error {
 /** 后端给的是结构化判断原因，界面只挑对用户有意义的说法，不把字段名和防御性表述直接摊开。 */
 const FIELD_LABELS = { subject: "公告主体", eventTime: "事件时间", conditions: "适用条件" };
 
-/** 用户站点操作的失败文案：409=重复登记，400=地址或字段不合法，其余通用。 */
+/** 用户站点操作的失败文案：409=重复登记，429=采集冷却中，400=地址或字段不合法，其余通用。 */
 const addStatusText = (error: unknown): string => {
 	const status = (error as { status?: number } | null)?.status ?? 0;
 	if (status === 409) return "这个网站已经添加过，不需要重复登记。";
+	if (status === 429) return "刚刚采集过这个站点，5 分钟内不重复采集，请稍后再试。";
 	if (status === 400) return "地址或填写内容不合法：列表页必须是 https 的站点地址，企业名称与关注对象名称不能为空。";
 	if (status === 404) return "站点不存在或刚被删除，请刷新后重试。";
 	if (status === 422) return "没能自动找到这家企业的官网新闻页：请补填列表页地址，或换一个更明确的企业名称。";
