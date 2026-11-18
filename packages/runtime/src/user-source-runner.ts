@@ -1,7 +1,7 @@
 // 用户自加站点的定时采集：与内置来源共用 08/12/16/20 槽位。
 // 每站点每次槽位最多一轮（robots + 列表页）；失败记录在来源状态上，下个槽位重试。
 import { UserSourceService, isSlotPending, latestDueSlot, type SourceFetcher, type Storage } from "@adpluse/core";
-import { HttpSourceFetcher } from "./source-fetch.js";
+import { UserSiteFetcher } from "./source-fetch.js";
 
 const TICK_MS = 60_000;
 
@@ -29,6 +29,7 @@ export async function runUserSources(
 		tickMs?: number;
 		now?: () => string;
 		fetcherFor?: (host: string) => SourceFetcher;
+		readFallback?: ((url: string) => Promise<Array<{ itemKey: string; title: string; itemUrl: string }> | null | undefined>) | undefined;
 	} = {},
 ): Promise<void> {
 	const now = options.now ?? (() => new Date().toISOString());
@@ -42,9 +43,15 @@ export async function runUserSources(
 			if (source.status !== "active") continue;
 			if (!isSlotPending(source.lastRefreshAt, slot)) continue;
 			try {
-				const fetcher = options.fetcherFor?.(source.host) ?? new HttpSourceFetcher([source.host]);
+				const fetcher = options.fetcherFor?.(source.host) ?? new UserSiteFetcher([source.host]);
 				await storage.runExclusive(`user-source:${source.id}`, () =>
-					service.refresh(source.ownerId, source.id, fetcher, stamp),
+					service.refresh(
+						source.ownerId,
+						source.id,
+						fetcher,
+						stamp,
+						options.readFallback ? { readFallback: options.readFallback } : {},
+					),
 				);
 			} catch {
 				// refresh 已把失败写进来源状态；这里只兜住意外异常，下个槽位自动重试。

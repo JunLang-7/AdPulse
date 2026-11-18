@@ -45,12 +45,7 @@ test("resolveNewsListPage：站内锚文本含新闻词则跳到列表页；原 
 	assert.equal(direct, "https://www.some-shandong.com/news", "本身已是新闻路径不再二次跳");
 });
 
-test("discoverCompanySite：搜索→挑站→定位列表页；没配 AGENT_REACH_BIN 明确报错", async () => {
-	await assert.rejects(
-		discoverCompanySite("某企业", undefined, {}),
-		/AGENT_REACH_BIN/,
-	);
-
+test("discoverCompanySite：搜索→挑站→定位列表页；无 Exa 时走 Bing 兑底", async () => {
 	const calls: string[][] = [];
 	const runReach = async (_executable: string, args: string[]) => {
 		calls.push(args);
@@ -60,7 +55,10 @@ test("discoverCompanySite：搜索→挑站→定位列表页；没配 AGENT_REA
 		]), exitCode: 0 };
 	};
 	const fetcher: SourceFetcher = {
-		async fetchText() {
+		async fetchText(url: string) {
+			// 首页必须写清企业名（验证防假冒）；新闻页返回列表链接。
+			if (new URL(url).pathname === "/")
+				return { status: 200, bytes: 80, body: `<title>某企业官方网站</title><a href="/news/index.html">新闻动态</a>` };
 			return { status: 200, bytes: 50, body: `<a href="/news/index.html">新闻动态</a>` };
 		},
 	};
@@ -74,8 +72,27 @@ test("discoverCompanySite：搜索→挑站→定位列表页；没配 AGENT_REA
 		stdout: JSON.stringify({ schema_version: 1, ok: false, channel: "web", action: "search", backend: null, items: [], error: { code: "RATE_LIMITED" } }),
 		exitCode: 0,
 	});
-	await assert.rejects(
-		discoverCompanySite("某企业", fakeBin, { runReach: upstream }),
-		/RATE_LIMITED/,
-	);
+	// Exa 限流 → 转 Bing 兑底（注入 RSS 响应，不访问真实网络）。
+	const bingFetcher = (): SourceFetcher => ({
+		async fetchText() {
+			return {
+				status: 200,
+				bytes: 100,
+				body: `<rss><channel><item><title>某企业官网</title><link>https://www.fallback-example.com/</link></item></channel></rss>`,
+			};
+		},
+	});
+	const fallbackFetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			if (new URL(url).pathname === "/")
+				return { status: 200, bytes: 80, body: `<title>某企业官方网站</title><a href="/news/list.html">集团新闻</a>` };
+			return { status: 200, bytes: 50, body: `<a href="/news/list.html">集团新闻</a>` };
+		},
+	};
+	const viaBing = await discoverCompanySite("某企业", fakeBin, {
+		runReach: upstream,
+		fetcher: fallbackFetcher,
+		bingFetcherFor: bingFetcher,
+	});
+	assert.equal(viaBing.host, "www.fallback-example.com");
 });

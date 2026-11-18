@@ -1,15 +1,15 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
-import { HttpSourceFetcher, type Runtime } from "@adpluse/runtime";
+﻿import type { IncomingMessage, ServerResponse } from "node:http";
+import { UserSiteFetcher, type Runtime } from "@adpluse/runtime";
 import { MarketEventError, SOURCE_DEFINITIONS } from "@adpluse/core";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
 
-/** 允许读取原文的主机：与采集 allowlist 双向一致，不新增范围。 */
+/** 鍏佽璇诲彇鍘熸枃鐨勪富鏈猴細涓庨噰闆?allowlist 鍙屽悜涓€鑷达紝涓嶆柊澧炶寖鍥淬€?*/
 const SOURCE_HOSTS = [
 	...new Set(Object.values(SOURCE_DEFINITIONS).flatMap((s) => s.allowedHosts)),
 ];
 
-/** 从官网 HTML 提取可读正文：去脚本/样式/标签，折叠空白；只用于预填，不替代本人核对。 */
+/** 浠庡畼缃?HTML 鎻愬彇鍙姝ｆ枃锛氬幓鑴氭湰/鏍峰紡/鏍囩锛屾姌鍙犵┖鐧斤紱鍙敤浜庨濉紝涓嶆浛浠ｆ湰浜烘牳瀵广€?*/
 function htmlToText(html: string): string {
 	const cleaned = html
 		.replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, " ")
@@ -61,14 +61,14 @@ export async function handleMarketEvents(req: IncomingMessage, res: ServerRespon
 		} catch {
 			throw new HttpError(400, "invalid url");
 		}
-		// 内置 allowlist + 本人已登记的用户站点主机；他人登记的主机不在这份名单里。
+		// 鍐呯疆 allowlist + 鏈汉宸茬櫥璁扮殑鐢ㄦ埛绔欑偣涓绘満锛涗粬浜虹櫥璁扮殑涓绘満涓嶅湪杩欎唤鍚嶅崟閲屻€?
 		const userHosts = await runtime.storage.transaction((tx) =>
 			tx.userSources.listByOwner(ownerId),
 		);
 		const allowed = new Set([...SOURCE_HOSTS, ...userHosts.map((s) => s.host)]);
 		if (!allowed.has(target.host)) throw new HttpError(403, "host not allowed");
 		try {
-			const fetched = await new HttpSourceFetcher([target.host]).fetchText(url, {
+			const fetched = await new UserSiteFetcher([target.host]).fetchText(url, {
 				maxBytes: 512 * 1024,
 				timeoutMs: 15_000,
 			});

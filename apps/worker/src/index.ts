@@ -1,4 +1,4 @@
-import { createSourceService, fromEnvironment, runSources, runUserSources, runWorker } from "@adpluse/runtime";
+import { agentReachReadFallback, createSourceService, fromEnvironment, runSources, runUserSources, runWorker } from "@adpluse/runtime";
 
 if (!process.env.DATABASE_URL)
 	throw new Error("standalone worker requires shared PostgreSQL storage");
@@ -11,6 +11,8 @@ await Promise.all([
 	runWorker(runtime.worker, controller.signal),
 	// Returns immediately when SOURCES_ENABLED is not 1.
 	runSources(sources, controller.signal),
-	runUserSources(runtime.storage, controller.signal),
+	runUserSources(runtime.storage, controller.signal, {
+		...(process.env.AGENT_REACH_BIN ? { readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN) } : {}),
+	}),
 ]);
 await runtime.close();

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+﻿import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { WebhookError } from "@adpluse/channels";
 import {
@@ -23,7 +23,7 @@ import {
 	SubscriptionService,
 	TaskInputValidationError,
 } from "@adpluse/core";
-import { discoverCompanySite, HttpSourceFetcher, type Runtime } from "@adpluse/runtime";
+import { agentReachReadFallback, discoverCompanySite, UserSiteFetcher, type Runtime } from "@adpluse/runtime";;
 import { ZodError } from "zod";
 import type { IdentityProvider } from "./feishu-auth.js";
 import { HttpError, json, readJson } from "./http.js";
@@ -37,7 +37,7 @@ const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const COOKIE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MUTATING_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
-/** 登录/会话被拒的结构化留痕：只含原因与请求形状，不含凭据、外部标识或原始参数。 */
+/** 鐧诲綍/浼氳瘽琚嫆鐨勭粨鏋勫寲鐣欑棔锛氬彧鍚師鍥犱笌璇锋眰褰㈢姸锛屼笉鍚嚟鎹€佸閮ㄦ爣璇嗘垨鍘熷鍙傛暟銆?*/
 export type AuthAuditReason =
 	| "login_request_invalid"
 	| "login_transaction_invalid"
@@ -53,7 +53,7 @@ export interface AuthAuditEvent {
 	path: string;
 }
 
-/** 通知目的地/授权的操作留痕：只有动作与结果，不含 open_id 等外部标识。 */
+/** 閫氱煡鐩殑鍦?鎺堟潈鐨勬搷浣滅暀鐥曪細鍙湁鍔ㄤ綔涓庣粨鏋滐紝涓嶅惈 open_id 绛夊閮ㄦ爣璇嗐€?*/
 export interface NotificationAuditEvent {
 	event:
 		| "notification.destination.verified"
@@ -66,8 +66,8 @@ export interface NotificationAuditEvent {
 }
 
 /**
- * 模型配置的最小审计：只记动作、内部对象、版本与结果代码。
- * 不记密钥、密文、请求头、请求体、模型原文或上游错误文本。
+ * 妯″瀷閰嶇疆鐨勬渶灏忓璁★細鍙鍔ㄤ綔銆佸唴閮ㄥ璞°€佺増鏈笌缁撴灉浠ｇ爜銆?
+ * 涓嶈瀵嗛挜銆佸瘑鏂囥€佽姹傚ご銆佽姹備綋銆佹ā鍨嬪師鏂囨垨涓婃父閿欒鏂囨湰銆?
  */
 export interface ModelAuditEvent {
 	event:
@@ -95,8 +95,8 @@ export interface ApiAuthentication {
 	publicOrigin: string;
 	now?: () => Date;
 	/**
-	 * 拒绝留痕的落点。默认写一行 JSON 到 stdout，便于验收脚本与日志检索断言；
-	 * 参数已裁剪为原因/方法/路径，调用方不得补充 cookie、code、state、open_id 等。
+	 * 鎷掔粷鐣欑棔鐨勮惤鐐广€傞粯璁ゅ啓涓€琛?JSON 鍒?stdout锛屼究浜庨獙鏀惰剼鏈笌鏃ュ織妫€绱㈡柇瑷€锛?
+	 * 鍙傛暟宸茶鍓负鍘熷洜/鏂规硶/璺緞锛岃皟鐢ㄦ柟涓嶅緱琛ュ厖 cookie銆乧ode銆乻tate銆乷pen_id 绛夈€?
 	 */
 	audit?: (event: AuditEvent) => void;
 }
@@ -216,7 +216,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 		req: import("node:http").IncomingMessage,
 		path: string,
 	) =>
-		// 只记录路径本身：查询串可能带 state/code，记录会把一次性凭据写进日志。
+		// 鍙褰曡矾寰勬湰韬細鏌ヨ涓插彲鑳藉甫 state/code锛岃褰曚細鎶婁竴娆℃€у嚟鎹啓杩涙棩蹇椼€?
 		audit({ event: "auth.reject", reason, method: req.method ?? "GET", path });
 
 	const server = createServer(async (req, res) => {
@@ -476,7 +476,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					return json(res, 200, { sessionExpiresAt: touched.expiresAt });
 				}
 				if (path === "/api/me/subscription" && req.method === "GET") {
-					// 只返回本人配置；是否可投递由 /api/me/notification-status 决定，不在这里冒充。
+					// 鍙繑鍥炴湰浜洪厤缃紱鏄惁鍙姇閫掔敱 /api/me/notification-status 鍐冲畾锛屼笉鍦ㄨ繖閲屽啋鍏呫€?
 					return json(res, 200, await subscriptions.view(session.userId));
 				}
 				if (
@@ -583,11 +583,11 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					return json(res, 200, await notifications.status(session.userId));
 				}
 				if (path === "/api/me/source-status" && req.method === "GET") {
-					// 只返回本人已开启来源的采集状态；未开启即空，不暴露全局运维信息。
+					// 鍙繑鍥炴湰浜哄凡寮€鍚潵婧愮殑閲囬泦鐘舵€侊紱鏈紑鍚嵆绌猴紝涓嶆毚闇插叏灞€杩愮淮淇℃伅銆?
 					return json(res, 200, { items: await sourceLeads.status(session.userId) });
 				}
 				if (path === "/api/me/lifecycle-deletions" && req.method === "GET") {
-					// 只读：本人删除请求的清理进度（pending / cleaned），不含业务正文。
+					// 鍙锛氭湰浜哄垹闄よ姹傜殑娓呯悊杩涘害锛坧ending / cleaned锛夛紝涓嶅惈涓氬姟姝ｆ枃銆?
 					return json(res, 200, { items: await lifecycleDeletions.list(session.userId) });
 				}
 				if (path === "/api/me/source-leads" && req.method === "GET") {
@@ -618,7 +618,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					try {
 						const label = String(body?.label ?? "");
 						let listUrl = String(body?.listUrl ?? "");
-						// 只给企业名称时：用 agent-reach 搜索官网并定位新闻列表页。
+						// 鍙粰浼佷笟鍚嶇О鏃讹細鐢?agent-reach 鎼滅储瀹樼綉骞跺畾浣嶆柊闂诲垪琛ㄩ〉銆?
 						if (!listUrl.trim()) {
 							try {
 								const found = await discoverCompanySite(
@@ -645,16 +645,11 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 							},
 							new Date().toISOString(),
 						);
-						// 添加后立即采集一次；失败不影响登记成功，状态在条目上可见。
+						// 娣诲姞鍚庣珛鍗抽噰闆嗕竴娆★紱澶辫触涓嶅奖鍝嶇櫥璁版垚鍔燂紝鐘舵€佸湪鏉＄洰涓婂彲瑙併€?
 						try {
-							await userSources.refresh(
-								session.userId,
-								source.id,
-								new HttpSourceFetcher([source.host]),
-								new Date().toISOString(),
-							);
+							await userSources.refresh(session.userId, source.id, new UserSiteFetcher([source.host]), new Date().toISOString(), { readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN) });
 						} catch {
-							// 刷新失败只记录在来源上；用户可手动重试。
+							// 鍒锋柊澶辫触鍙褰曞湪鏉ユ簮涓婏紱鐢ㄦ埛鍙墜鍔ㄩ噸璇曘€?
 						}
 						const items = await userSources.list(session.userId);
 						return json(res, 201, { source: items.find((s) => s.id === source.id) ?? source });
@@ -678,8 +673,9 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 							const result = await userSources.refresh(
 								session.userId,
 								sourceId,
-								new HttpSourceFetcher([target.host]),
+								new UserSiteFetcher([target.host]),
 								new Date().toISOString(),
+								{ readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN) },
 							);
 							return json(res, 200, result);
 						} catch (error) {
@@ -719,7 +715,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					}
 				}
 				if (path === "/api/me/notifications" && req.method === "GET") {
-					// 只读投影：本人批次/条目/投递回执。不按 id 直取，跨用户无入口。
+					// 鍙鎶曞奖锛氭湰浜烘壒娆?鏉＄洰/鎶曢€掑洖鎵с€備笉鎸?id 鐩村彇锛岃法鐢ㄦ埛鏃犲叆鍙ｃ€?
 					const limitParam = requestUrl.searchParams.get("limit");
 					const before = requestUrl.searchParams.get("before") ?? undefined;
 					let limit: number | undefined;
@@ -748,7 +744,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					path === "/api/me/notification-destination" &&
 					req.method === "PUT"
 				) {
-					// 身份来自当前会话绑定的作用域，不接受请求体传入 externalId。
+					// 韬唤鏉ヨ嚜褰撳墠浼氳瘽缁戝畾鐨勪綔鐢ㄥ煙锛屼笉鎺ュ彈璇锋眰浣撲紶鍏?externalId銆?
 					if (!session.identity)
 						throw new HttpError(403, "session has no verified identity");
 					try {
@@ -783,7 +779,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					const expectedVersion = parsed.expectedVersion;
 					if (action !== "grant" && action !== "revoke")
 						throw new HttpError(400, "invalid action");
-					// 版本是必填的：没有它就无法区分「用户再次确认」与「旧请求重放」。
+					// 鐗堟湰鏄繀濉殑锛氭病鏈夊畠灏辨棤娉曞尯鍒嗐€岀敤鎴峰啀娆＄‘璁ゃ€嶄笌銆屾棫璇锋眰閲嶆斁銆嶃€?
 					if (
 						typeof expectedVersion !== "number" ||
 						!Number.isInteger(expectedVersion) ||
@@ -855,8 +851,8 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 			}
 			throw new HttpError(404, "route not found");
 		} catch (error) {
-			// 模型配置的失败也要有最小审计：只记不含查询串的路径与状态码，
-			// 不记错误正文、上游文本或任何一次性凭据。
+			// 妯″瀷閰嶇疆鐨勫け璐ヤ篃瑕佹湁鏈€灏忓璁★細鍙涓嶅惈鏌ヨ涓茬殑璺緞涓庣姸鎬佺爜锛?
+			// 涓嶈閿欒姝ｆ枃銆佷笂娓告枃鏈垨浠讳綍涓€娆℃€у嚟鎹€?
 			const rejectedPath = (req.url ?? "/").split("?")[0] ?? "/";
 			if (rejectedPath.startsWith("/api/me/model-connections") ||
 				rejectedPath === "/api/me/model-preferences")
