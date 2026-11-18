@@ -353,41 +353,68 @@ export class ModelConnectionService {
 			});
 		} catch (error) {
 			if (error instanceof ModelConnectionError) throw error;
+			const code = (error as { code?: string }).code;
 			// 唯一约束命中：直接视为冲突。
-			if ((error as { code?: string }).code === "23505")
+			if (code === "23505")
 				throw new ModelConnectionError("connection_conflict", "providerId already exists");
-			// 并发下可能先通过预查、再撞唯一索引；也可能在 SERIALIZABLE 下拿到 40001，
-			// 而赢家事务此时尚未提交，立刻复查会查不到。SERIALIZABLE 的标准做法是重试一次：
-			// 重试时预查能看到已提交的赢家，从而稳定返回同一个冲突错误（而不是驱动异常）。
-			if ((error as { code?: string }).code === "40001") {
-				const raced = await this.storage.transaction(async (tx) =>
-					(await tx.userModelConnections.all()).some(
-						(candidate) => candidate.ownerId === ownerId && candidate.providerId === providerId,
-					),
-				);
-				if (raced)
+			// SERIALIZABLE 下并发创建同一 providerId，输家可能拿到 40001/40P01，
+			// 且 storage 层的重试已耗尽。复查赢家是否落地；复查本身再次冲突也说明
+			// 存在并发写入，同样映射为领域冲突，不把驱动异常直接漏给调用方。
+			if (code === "40001" || code === "40P01") {
+				if (await this.providerIdExists(ownerId, providerId))
 					throw new ModelConnectionError("connection_conflict", "providerId already exists");
-				return this.storage.transaction(async (tx) => {
-					const existing = (await tx.userModelConnections.all()).find(
-						(candidate) => candidate.ownerId === ownerId && candidate.providerId === providerId,
-					);
-					if (existing)
-						throw new ModelConnectionError("connection_conflict", "providerId already exists");
-					await tx.userModelConnections.put(connection);
-					await tx.userModelCredentials.put(credential);
-					return project(connection, true);
-				});
+				try {
+					return await this.insertConnection(connection, credential);
+				} catch (retryError) {
+					throw this.conflictOrOriginal(retryError);
+				}
 			}
-			// 其余错误：仍然复查一次，能确定是并发重复就映射成冲突，否则原样抛出。
-			const raced = await this.storage.transaction(async (tx) =>
+			// 其余错误：复查确认是并发重复就映射为冲突，否则原样抛出。
+			if (await this.providerIdExists(ownerId, providerId))
+				throw new ModelConnectionError("connection_conflict", "providerId already exists");
+			throw error;
+		}
+	}
+
+	/** 并发冲突的兜底判定：只有确认是非并发错误时才保留原异常。 */
+	private conflictOrOriginal(error: unknown): unknown {
+		if (error instanceof ModelConnectionError) return error;
+		const code = (error as { code?: string }).code;
+		if (["23505", "40001", "40P01"].includes(String(code)))
+			return new ModelConnectionError("connection_conflict", "providerId already exists");
+		return error;
+	}
+
+	/** 复查赢家是否已落地；复查在 SERIALIZABLE 下再次冲突时按「存在并发」处理。 */
+	private async providerIdExists(ownerId: string, providerId: string): Promise<boolean> {
+		try {
+			return await this.storage.transaction(async (tx) =>
 				(await tx.userModelConnections.all()).some(
 					(candidate) => candidate.ownerId === ownerId && candidate.providerId === providerId,
 				),
 			);
-			if (raced)
-				throw new ModelConnectionError("connection_conflict", "providerId already exists");
-			throw error;
+		} catch {
+			return true;
 		}
+	}
+
+	/** 并发重试时复用同一份连接与凭据实体。 */
+	private async insertConnection(
+		connection: UserModelConnection,
+		credential: UserModelCredential,
+	): Promise<ModelConnectionView> {
+		return this.storage.transaction(async (tx) => {
+			const existing = (await tx.userModelConnections.all()).find(
+				(candidate) =>
+					candidate.ownerId === connection.ownerId &&
+					candidate.providerId === connection.providerId,
+			);
+			if (existing)
+				throw new ModelConnectionError("connection_conflict", "providerId already exists");
+			await tx.userModelConnections.put(connection);
+			await tx.userModelCredentials.put(credential);
+			return project(connection, true);
+		});
 	}
 
 	async update(
