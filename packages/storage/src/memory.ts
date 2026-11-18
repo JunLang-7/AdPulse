@@ -45,6 +45,7 @@ export const tableNames = [
 	"rounds",
 	"actions",
 	"snapshots",
+	"validationChecks",
 	"inbox",
 	"deliveries",
 	"jobs",

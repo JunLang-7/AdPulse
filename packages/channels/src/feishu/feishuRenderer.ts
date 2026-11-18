@@ -30,6 +30,20 @@ export function toFeishuCard(delivery: CardDelivery): Record<string, unknown> {
 					tag: "div",
 					text: { tag: "plain_text", content: `${e.label}：${e.value}` },
 				})),
+				// 每个候选的假设/验证说明放在按钮前，按选项标签对齐，不塞进按钮文本。
+				...card.options.flatMap((option) =>
+					option.detail
+						? [
+								{
+									tag: "div",
+									text: {
+										tag: "plain_text",
+										content: `${option.label}：${option.detail}`,
+									},
+								},
+							]
+						: [],
+				),
 				...buttons,
 				...(card.detailUrl
 					? [

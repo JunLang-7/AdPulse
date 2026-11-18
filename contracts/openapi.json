@@ -5000,6 +5000,18 @@
             "items": {
               "type": "string"
             }
+          },
+          "contentDirections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "partners": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -5140,6 +5152,9 @@
                 },
                 "label": {
                   "type": "string"
+                },
+                "detail": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -5243,6 +5258,114 @@
               "to"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "audience"
+                ]
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              },
+              "item": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "op",
+              "item"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "sellingPoint"
+                ]
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              },
+              "item": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "op",
+              "item"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "contentDirection"
+                ]
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              },
+              "item": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "op",
+              "item"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "partner"
+                ]
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              },
+              "item": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "op",
+              "item"
+            ],
+            "additionalProperties": false
           }
         ]
       },
@@ -5263,6 +5386,14 @@
           },
           "complete": {
             "type": "boolean"
+          },
+          "hypothesis": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "validationPlan": {
+            "type": "string",
+            "maxLength": 300
           }
         },
         "required": [
@@ -5703,6 +5834,14 @@
               "$ref": "#/components/schemas/Change"
             }
           },
+          "hypothesis": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "validationPlan": {
+            "type": "string",
+            "maxLength": 300
+          },
           "createdAt": {
             "type": "string"
           }
@@ -5713,6 +5852,42 @@
           "version",
           "strategy",
           "changes",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "ValidationCheck": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "ownerId": { "type": "string" },
+          "taskId": { "type": "string" },
+          "taskVersion": { "type": "integer" },
+          "sessionId": { "type": "string" },
+          "snapshotVersion": { "type": "integer" },
+          "hypothesis": { "type": "string" },
+          "validationPlan": { "type": "string" },
+          "metricKey": { "type": "string", "enum": ["cost_per_consultation"] },
+          "dueAt": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "observed", "inconclusive", "cancelled"] },
+          "comparisonResultId": { "type": "string" },
+          "evidenceRef": { "$ref": "#/components/schemas/EvidenceRef" },
+          "observedOutcome": { "type": "string", "enum": ["below_threshold", "above_threshold"] },
+          "reason": { "type": "string" },
+          "createdAt": { "type": "string" },
+          "observedAt": { "type": "string" }
+        },
+        "required": [
+          "id",
+          "ownerId",
+          "taskId",
+          "taskVersion",
+          "sessionId",
+          "snapshotVersion",
+          "validationPlan",
+          "metricKey",
+          "dueAt",
+          "status",
           "createdAt"
         ],
         "additionalProperties": false
@@ -5792,6 +5967,25 @@
             "required": [
               "kind",
               "deliveryId"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "evaluate_validation_check"
+                ]
+              },
+              "checkId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "checkId"
             ],
             "additionalProperties": false
           }
@@ -5881,6 +6075,12 @@
             "items": {
               "$ref": "#/components/schemas/Snapshot"
             }
+          },
+          "validationChecks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ValidationCheck"
+            }
           }
         },
         "required": [
@@ -5890,7 +6090,8 @@
           "inbox",
           "deliveries",
           "jobs",
-          "snapshots"
+          "snapshots",
+          "validationChecks"
         ],
         "additionalProperties": false
       },

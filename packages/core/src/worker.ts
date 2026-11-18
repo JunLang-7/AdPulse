@@ -22,6 +22,7 @@ import type { SubscriptionService } from "./subscriptions.js";
 import { notificationInputsStillCurrentIn } from "./notifications-selection.js";
 import { RecipientUnreachableError, type OutboundChannel } from "./ports/channel.js";
 import type { Storage, Transaction } from "./ports/storage.js";
+import type { ValidationCheckService } from "./validation-checks.js";
 import type { Job } from "./state/model.js";
 
 /** Reusable worker; the same instance can be embedded in API or run in a separate process. */
@@ -56,6 +57,8 @@ export class Worker {
 				{ kind: "prepare_hypothesis_verdicts" }
 			>["source"]) => Promise<void>;
 		},
+		/** 验证检查点到期评估；未注入时遇到该任务直接报错，不静默丢弃。 */
+		private validationChecks?: ValidationCheckService,
 	) {}
 
 	/** 上一次日汇总调度的时间戳，用于在没有任务可领时按间隔触发。 */
@@ -129,6 +132,11 @@ export class Worker {
 				case "send_investigation_decision":
 				case "send_delivery":
 					await this.send(job);
+					break;
+				case "evaluate_validation_check":
+					if (!this.validationChecks)
+						throw new Error("validation check service is not configured");
+					await this.validationChecks.evaluate(job.task.checkId);
 					break;
 			}
 			await this.storage.transaction(async (tx) => {
