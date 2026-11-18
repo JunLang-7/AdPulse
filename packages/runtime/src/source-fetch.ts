@@ -98,7 +98,7 @@ function once(
 	url: URL,
 	address: string,
 	limits: { maxBytes: number; timeoutMs: number },
-	options_override: { userAgent: string; referer?: string } = { userAgent: USER_AGENT },
+	options_override: { userAgent: string; referer?: string; browserHeaders?: boolean } = { userAgent: USER_AGENT },
 ): Promise<{ status: number; bytes: number; body: string; location: string | null }> {
 	return new Promise((resolve, reject) => {
 		const options = {
@@ -111,9 +111,22 @@ function once(
 			headers: {
 				Host: url.host,
 				"User-Agent": options_override.userAgent,
-				Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
-				"Accept-Language": "zh-CN,zh;q=0.9",
+				Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.1",
+				"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.6",
 				"Accept-Encoding": "identity",
+				// WAF（CloudWAF/长亭等）常看这几个头判断是否浏览器：缺了直接给 412/403。
+				...(options_override.browserHeaders
+					? {
+						"Cache-Control": "no-cache",
+						Pragma: "no-cache",
+						"Upgrade-Insecure-Requests": "1",
+						"Sec-Fetch-Dest": "document",
+						"Sec-Fetch-Mode": "navigate",
+						"Sec-Fetch-Site": "none",
+						"Sec-Fetch-User": "?1",
+						Connection: "keep-alive",
+					}
+					: {}),
 			},
 		};
 		const create = url.protocol === "http:" ? httpRequest : httpsRequest;
@@ -181,7 +194,7 @@ export class UserSiteFetcher implements SourceFetcher {
 			if (!this.allows(url.hostname.toLowerCase()))
 				throw new SourceFetchError("blocked", "host not allowlisted");
 			const address = await resolvePublicAddress(url.hostname);
-			const result = await once(url, address, limits, { userAgent: BROWSER_USER_AGENT });
+			const result = await once(url, address, limits, { userAgent: BROWSER_USER_AGENT, browserHeaders: true });
 			if (result.location && result.status && REDIRECT_STATUS.has(result.status)) {
 				if (hop === MAX_REDIRECTS)
 					throw new SourceFetchError("redirect", "too many redirects");
