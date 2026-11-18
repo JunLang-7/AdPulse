@@ -227,7 +227,7 @@ test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse
 	);
 	assert.deepEqual(
 		migrations.rows.map((row) => Number(row.version)),
-		[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+		[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
 	);
 	const indexes = await admin.query(
 		`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()
@@ -237,7 +237,7 @@ test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse
 		'adpulse_subscription_target_ref', 'adpulse_notification_batch_key',
 		'adpulse_notification_item_key', 'adpulse_notification_item_batch',
 		'adpulse_model_connection_provider', 'adpulse_model_credential_connection',
-		'adpulse_model_preference_owner') ORDER BY indexname`,
+		'adpulse_model_preference_owner', 'adpulse_user_source_host') ORDER BY indexname`,
 	);
 	assert.deepEqual(
 		indexes.rows.map((row) => row.indexname),
@@ -254,6 +254,7 @@ test("PostgreSQL: auth migration is idempotent and concurrent first logins reuse
 			"adpulse_notification_item_key",
 			"adpulse_subscription_settings_user",
 			"adpulse_subscription_target_ref",
+			"adpulse_user_source_host",
 			"adpulse_web_sessions_user",
 		],
 	);
@@ -342,7 +343,7 @@ test("PostgreSQL: a failed auth migration rolls back atomically and can be retri
 		);
 		assert.deepEqual(
 			versions.rows.map((row) => Number(row.version)),
-			[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+			[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
 		);
 	} finally {
 		await check.end();
