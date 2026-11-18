@@ -174,6 +174,51 @@ export default function SessionDetailPage() {
 
 			<Card>
 				<CardHeader>
+					<CardTitle>验证检查点</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-2 text-sm">
+					{(data.validationChecks ?? []).length === 0 ? (
+						<p className="text-muted-foreground">
+							暂无验证检查点；需要任务具备完整度量口径，且建议附带验证计划。
+						</p>
+					) : null}
+					{(data.validationChecks ?? []).map((check) => (
+						<div
+							key={check.id}
+							className="space-y-1 border-b border-border pb-2 last:border-0 last:pb-0"
+						>
+							<div className="flex flex-wrap items-center gap-2">
+								<Badge variant={validationVariant(check.status)}>
+									{validationStatusLabel(check.status)}
+								</Badge>
+								<span>第 {check.snapshotVersion} 版</span>
+								<span className="text-xs text-muted-foreground">
+									到期 {formatTime(check.dueAt)}
+								</span>
+							</div>
+							<p className="text-xs">{check.validationPlan}</p>
+							{check.hypothesis ? (
+								<p className="text-xs text-muted-foreground">
+									假设：{check.hypothesis}
+								</p>
+							) : null}
+							{check.observedOutcome ? (
+								<p className="text-xs">
+									{validationOutcomeLabel(check.observedOutcome)}
+								</p>
+							) : null}
+							{check.reason ? (
+								<p className="text-xs text-muted-foreground">
+									{validationReasonLabel(check.reason)}
+								</p>
+							) : null}
+						</div>
+					))}
+				</CardContent>
+			</Card>
+
+			<Card>
+				<CardHeader>
 					<CardTitle>轮次时间线</CardTitle>
 				</CardHeader>
 				<CardContent className="space-y-3">
@@ -369,6 +414,39 @@ export default function SessionDetailPage() {
 }
 
 /** 策略变更的人话描述：渠道数值用「原值 → 新值」，列表字段用增删。 */
+const VALIDATION_STATUS_LABELS: Record<string, string> = {
+	pending: "待验证",
+	observed: "已观察",
+	inconclusive: "无法判定",
+	cancelled: "已取消",
+};
+
+function validationStatusLabel(status: string): string {
+	return VALIDATION_STATUS_LABELS[status] ?? status;
+}
+
+function validationVariant(
+	status: string,
+): "default" | "secondary" | "outline" {
+	if (status === "observed") return "default";
+	if (status === "pending") return "secondary";
+	return "outline";
+}
+
+function validationOutcomeLabel(outcome: string): string {
+	return outcome === "above_threshold" ? "指标高于阈值" : "指标低于阈值";
+}
+
+function validationReasonLabel(reason: string): string {
+	const labels: Record<string, string> = {
+		no_comparable_evidence: "到期时没有可比证据",
+		task_version_changed: "任务规则版本已变更",
+		task_deleted: "任务已删除",
+		task_not_found: "任务不存在",
+	};
+	return labels[reason] ?? reason;
+}
+
 type StrategyView = {
 	objective?: string;
 	audience?: string[];

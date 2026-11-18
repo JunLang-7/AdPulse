@@ -2082,6 +2082,28 @@ export interface components {
             validationPlan?: string;
             createdAt: string;
         };
+        ValidationCheck: {
+            id: string;
+            ownerId: string;
+            taskId: string;
+            taskVersion: number;
+            sessionId: string;
+            snapshotVersion: number;
+            hypothesis?: string;
+            validationPlan: string;
+            /** @enum {string} */
+            metricKey: "cost_per_consultation";
+            dueAt: string;
+            /** @enum {string} */
+            status: "pending" | "observed" | "inconclusive" | "cancelled";
+            comparisonResultId?: string;
+            evidenceRef?: components["schemas"]["EvidenceRef"];
+            /** @enum {string} */
+            observedOutcome?: "below_threshold" | "above_threshold";
+            reason?: string;
+            createdAt: string;
+            observedAt?: string;
+        };
         JobTask: {
             /** @enum {string} */
             kind: "process_inbox";
@@ -2099,6 +2121,10 @@ export interface components {
             /** @enum {string} */
             kind: "send_delivery" | "send_investigation_decision";
             deliveryId: string;
+        } | {
+            /** @enum {string} */
+            kind: "evaluate_validation_check";
+            checkId: string;
         };
         Job: {
             id: string;
@@ -2119,6 +2145,7 @@ export interface components {
             deliveries: components["schemas"]["Delivery"][];
             jobs: components["schemas"]["Job"][];
             snapshots: components["schemas"]["Snapshot"][];
+            validationChecks: components["schemas"]["ValidationCheck"][];
         };
         EvidenceImportInput: {
             /** @enum {integer} */

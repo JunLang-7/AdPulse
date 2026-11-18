@@ -714,6 +714,32 @@ export interface Delivery extends CardDelivery {
 	/** suppressed 的原因：未授权 / 目的地失效 / 身份绑定失效。 */
 	suppressionReason?: string;
 }
+export type ValidationCheckStatus =
+	| "pending"
+	| "observed"
+	| "inconclusive"
+	| "cancelled";
+export type ValidationOutcome = "below_threshold" | "above_threshold";
+/** 已应用变更的验证检查点：只记录观察结果，不推断因果、不自动改方案。 */
+export interface ValidationCheck {
+	id: string;
+	ownerId: string;
+	taskId: string;
+	taskVersion: number;
+	sessionId: string;
+	snapshotVersion: number;
+	hypothesis?: string;
+	validationPlan: string;
+	metricKey: "cost_per_consultation";
+	dueAt: string;
+	status: ValidationCheckStatus;
+	comparisonResultId?: string;
+	evidenceRef?: EvidenceRef;
+	observedOutcome?: ValidationOutcome;
+	reason?: string;
+	createdAt: string;
+	observedAt?: string;
+}
 export type JobTask =
 	| { kind: "process_inbox"; inboxId: string }
 	| { kind: "prepare_round"; sessionId: string; version: number }
@@ -727,7 +753,8 @@ export type JobTask =
 		source:
 			| { kind: "market_event"; eventId: string; version: number }
 			| { kind: "comparison"; comparisonResultId: string };
-	};
+	}
+	| { kind: "evaluate_validation_check"; checkId: string };
 export interface Job {
 	id: string;
 	task: JobTask;
@@ -987,6 +1014,7 @@ export interface Entities {
 	rounds: Round;
 	actions: ActionRef;
 	snapshots: StrategySnapshot;
+	validationChecks: ValidationCheck;
 	inbox: Inbox;
 	deliveries: Delivery;
 	jobs: Job;

@@ -32,4 +32,5 @@ export * from "./ports/channel.js";
 export * from "./ports/policyEngine.js";
 export * from "./ports/storage.js";
 export * from "./state/model.js";
+export * from "./validation-checks.js";
 export * from "./worker.js";

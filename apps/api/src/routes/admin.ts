@@ -381,6 +381,8 @@ async function sessionForJob(
 		return (await tx.deliveries.get(job.task.deliveryId))?.sessionId ?? null;
 	if (job.task.kind === "prepare_investigation_alert_session")
 		return (await tx.investigationAlerts.get(job.task.alertId))?.sessionId ?? null;
+	if (job.task.kind === "evaluate_validation_check")
+		return (await tx.validationChecks.get(job.task.checkId))?.sessionId ?? null;
 	// 日汇总与假设初判不属于任何会话。
 	if (job.task.kind === "send_digest") return null;
 	if (job.task.kind === "prepare_hypothesis_verdicts") return null;
@@ -912,6 +914,10 @@ export async function handleAdmin(
 				(d) => d.sessionId === id,
 			);
 			const deliveryIds = new Set(deliveries.map((d) => d.id));
+			const validationChecks = (await tx.validationChecks.listByOwner(userId))
+				.filter((check) => check.sessionId === id)
+				.sort((a, b) => a.snapshotVersion - b.snapshotVersion);
+			const checkIds = new Set(validationChecks.map((check) => check.id));
 			const jobs = (await tx.jobs.all()).filter((j) =>
 				j.task.kind === "prepare_round"
 					? j.task.sessionId === id
@@ -919,9 +925,11 @@ export async function handleAdmin(
 						? inboxIds.has(j.task.inboxId)
 						: j.task.kind === "send_delivery" || j.task.kind === "send_investigation_decision"
 							? deliveryIds.has(j.task.deliveryId)
-							: j.task.kind === "send_digest" || j.task.kind === "prepare_hypothesis_verdicts"
-								? false
-								: j.task.alertId === session.investigationAlertId,
+							: j.task.kind === "evaluate_validation_check"
+								? checkIds.has(j.task.checkId)
+								: j.task.kind === "send_digest" || j.task.kind === "prepare_hypothesis_verdicts"
+									? false
+									: j.task.alertId === session.investigationAlertId,
 			);
 			return {
 				session,
@@ -930,6 +938,7 @@ export async function handleAdmin(
 				inbox,
 				deliveries,
 				jobs,
+				validationChecks,
 				snapshots: (await tx.snapshots.all())
 					.filter((s) => s.sessionId === id)
 					.sort((a, b) => a.version - b.version),
