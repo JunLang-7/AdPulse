@@ -2,7 +2,7 @@ import { json, serve } from "./harness.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import SessionDetailPage from "../src/views/adpulse/session-detail/index.tsx";
 
@@ -24,7 +24,7 @@ function mount(path = "/sessions/session-1") {
 
 test("会话详情：策略变更展开显示 原值 → 新值，无变更显示「无变更」", async t => {
 	t.after(cleanup);
-	serve({
+	const { calls } = serve({
 		"GET /api/sessions/session-1": () => json({
 			session: {
 				id: "session-1", ownerId: "owner", version: 1, roundNo: 1, status: "completed",
@@ -96,6 +96,14 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 				{ id: "snap-empty", sessionId: "session-1", version: 3, createdAt: "2026-11-16T04:00:00Z", changes: [] },
 			],
 		}),
+		"POST /api/validation-checks/check-2/reevaluate": () => json({
+			id: "check-2", ownerId: "owner", taskId: "task-1", taskVersion: 1,
+			sessionId: "session-1", snapshotVersion: 1,
+			validationPlan: "观察 3 天咨询成本",
+			metricKey: "cost_per_consultation", dueAt: "2026-11-20T02:00:00Z",
+			status: "inconclusive", reason: "no_comparable_evidence",
+			createdAt: "2026-11-16T02:00:00Z",
+		}),
 	});
 	mount();
 	assert.ok(await screen.findByText("当前方案"));
@@ -113,6 +121,10 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 	assert.ok(screen.getByText("待验证"));
 	assert.ok(screen.getAllByText("观察 3 天咨询成本").length > 0);
 	assert.ok(screen.getByText("到期时没有可比证据"));
+	fireEvent.click(screen.getByRole("button", { name: "补证后重新评估" }));
+	await waitFor(() =>
+		assert.ok(calls.includes("POST /api/validation-checks/check-2/reevaluate")),
+	);
 	assert.ok(await screen.findByText("策略变更记录"));
 	// from/to 明细（#11 的明确规格）：字段 + 渠道 + 原值 → 新值。
 	assert.ok(screen.getByText("预算（channel-a）：1000 → 1500"), "预算 from/to");

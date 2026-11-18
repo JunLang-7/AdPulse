@@ -2693,6 +2693,46 @@
         }
       }
     },
+    "/api/validation-checks/{checkId}/reevaluate": {
+      "post": {
+        "operationId": "reevaluateValidationCheck",
+        "security": [{ "sessionCookie": [], "sameOriginOrigin": [] }],
+        "parameters": [
+          {
+            "name": "checkId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ValidationCheck" }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failed",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "401": {
+            "description": "Request failed",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "404": {
+            "description": "Request failed",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "409": {
+            "description": "Request failed",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
     "/api/choices": {
       "post": {
         "operationId": "submitChoice",

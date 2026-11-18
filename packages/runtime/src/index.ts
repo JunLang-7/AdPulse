@@ -155,6 +155,7 @@ export function compose(
 		marketEvents: new MarketEventService(storage),
 		hypotheses: new HypothesisService(storage),
 		comparisons,
+		validationChecks,
 		investigationAlerts,
 		notifications,
 		worker: new Worker(

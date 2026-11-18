@@ -641,15 +641,46 @@ test("session detail exposes validation checks only to the owner", async (t) => 
     status: "pending",
     createdAt: "2026-01-01T00:00:00.000Z",
   }));
+  await runtime.storage.transaction((tx) => tx.validationChecks.put({
+    id: `${session.id}:2`,
+    ownerId: ownerUserId,
+    taskId: "task-1",
+    taskVersion: 1,
+    sessionId: session.id,
+    snapshotVersion: 2,
+    validationPlan: "观察 3 天咨询成本",
+    metricKey: "cost_per_consultation",
+    dueAt: "2026-01-08T00:00:00.000Z",
+    status: "inconclusive",
+    reason: "no_comparable_evidence",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  }));
   const detail = await (
     await fetch(`${url}/api/sessions/${session.id}`, { headers })
   ).json();
-  assert.equal(detail.validationChecks.length, 1);
+  assert.equal(detail.validationChecks.length, 2);
   assert.equal(detail.validationChecks[0].validationPlan, "观察 7 天咨询成本");
   const denied = await fetch(`${url}/api/sessions/${session.id}`, {
     headers: strangerHeaders,
   });
   assert.equal(denied.status, 404);
+
+  const reevaluated = await fetch(
+    `${url}/api/validation-checks/${encodeURIComponent(`${session.id}:2`)}/reevaluate`,
+    { method: "POST", headers },
+  );
+  assert.equal(reevaluated.status, 200);
+  assert.equal((await reevaluated.json()).status, "inconclusive");
+  const deniedPost = await fetch(
+    `${url}/api/validation-checks/${encodeURIComponent(`${session.id}:2`)}/reevaluate`,
+    { method: "POST", headers: strangerHeaders },
+  );
+  assert.equal(deniedPost.status, 404);
+  const conflict = await fetch(
+    `${url}/api/validation-checks/${encodeURIComponent(`${session.id}:1`)}/reevaluate`,
+    { method: "POST", headers },
+  );
+  assert.equal(conflict.status, 409);
 });
 
 test("HTTP validates cookie authentication, same-origin mutations, unknown accounts and payloads", async (t) => {
