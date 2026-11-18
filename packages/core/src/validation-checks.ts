@@ -94,6 +94,16 @@ export async function createValidationCheckIn(
 	return check;
 }
 
+export class ValidationCheckError extends Error {
+	constructor(
+		readonly status: 404 | 409,
+		message: string,
+	) {
+		super(message);
+		this.name = "ValidationCheckError";
+	}
+}
+
 /**
  * 到期评估：只把「同一任务版本、接受之后产生、可评估」的最新比较结果关联到检查点。
  * 不推断因果，也不修改策略；没有可比证据就如实记为 inconclusive。
@@ -103,6 +113,46 @@ export class ValidationCheckService {
 		private readonly storage: Storage,
 		private readonly now: () => string = () => new Date().toISOString(),
 	) {}
+
+	/**
+	 * 补证后的人工重评：只允许 owner 对 inconclusive 检查点重试，
+	 * 重新查找接受之后的比较结果；observed 是终态，不回退。
+	 */
+	async reevaluate(ownerId: string, checkId: string): Promise<ValidationCheck> {
+		const pending = await this.storage.transaction(async (tx) => {
+			const current = await tx.validationChecks.get(checkId);
+			if (!current || current.ownerId !== ownerId)
+				throw new ValidationCheckError(404, "validation check not found");
+			if (current.status !== "inconclusive")
+				throw new ValidationCheckError(
+					409,
+					"only inconclusive checks can be re-evaluated",
+				);
+			const next: ValidationCheck = {
+				id: current.id,
+				ownerId: current.ownerId,
+				taskId: current.taskId,
+				taskVersion: current.taskVersion,
+				sessionId: current.sessionId,
+				snapshotVersion: current.snapshotVersion,
+				...(current.hypothesis ? { hypothesis: current.hypothesis } : {}),
+				validationPlan: current.validationPlan,
+				metricKey: current.metricKey,
+				dueAt: current.dueAt,
+				status: "pending",
+				createdAt: current.createdAt,
+			};
+			await tx.validationChecks.put(next);
+			return next;
+		});
+		await this.evaluate(pending.id);
+		const result = await this.storage.transaction((tx) =>
+			tx.validationChecks.get(pending.id),
+		);
+		if (!result)
+			throw new ValidationCheckError(404, "validation check not found");
+		return result;
+	}
 
 	async evaluate(checkId: string): Promise<void> {
 		await this.storage.transaction(async (tx) => {

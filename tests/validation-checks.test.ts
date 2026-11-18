@@ -233,6 +233,57 @@ test("missing or stale comparison evidence is recorded as inconclusive with a re
 	assert.equal(check.reason, "task_version_changed");
 });
 
+test("owner can re-evaluate an inconclusive check after new evidence", async () => {
+	const fixture = setup();
+	const { task, session } = await fixture.start();
+	fixture.advanceToDue();
+	const checkId = `${session.id}:1`;
+	await fixture.checks.evaluate(checkId);
+	let check = await fixture.storage.transaction((tx) =>
+		tx.validationChecks.get(checkId),
+	);
+	assert.equal(check?.status, "inconclusive");
+	await assert.rejects(
+		fixture.checks.reevaluate("someone-else", checkId),
+		/not found/,
+	);
+
+	await fixture.storage.transaction((tx) =>
+		tx.comparisonResults.put({
+			id: "comparison-late",
+			ownerId: "owner",
+			taskId: task.taskId,
+			current: {
+				evidenceId: "evidence-late",
+				version: 1,
+				taskId: task.taskId,
+				taskVersion: task.version,
+			},
+			rulesRef: { taskId: task.taskId, version: task.version },
+			evaluatorVersion: 1,
+			status: "comparable",
+			canComparePeriods: false,
+			canEvaluateCurrentThreshold: true,
+			comparisons: {},
+			thresholdEvaluation: {
+				status: "not_exceeded",
+				metricKey: "cost_per_consultation",
+			},
+			reasons: [],
+			followUpIds: [],
+			createdAt: DUE,
+		}),
+	);
+	check = await fixture.checks.reevaluate("owner", checkId);
+	assert.equal(check.status, "observed");
+	assert.equal(check.observedOutcome, "below_threshold");
+	assert.equal(check.comparisonResultId, "comparison-late");
+	await assert.rejects(
+		fixture.checks.reevaluate("owner", checkId),
+		/only inconclusive/,
+	);
+});
+
 test("the worker evaluates due checks and next round receives them as read-only context", async () => {
 	const storage = new MemoryStorage();
 	let clock = START;

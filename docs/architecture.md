@@ -98,7 +98,7 @@ version 是决策版本，每次成功处理选择都会递增，即使 changes 
 
 接受带 `validationPlan` 的候选且任务口径完整（指标、窗口、阈值、最低样本）时，在同一事务创建 `pending` 检查点，并在 `dueAt`（接受时间 + `statWindowDays`）排入 `evaluate_validation_check` 任务。没有验证计划、没有实际变更或口径不完整时不建，避免制造假验证。
 
-到期评估只读取同一任务版本、接受之后产生、可评估的比较结果，记录 `observedOutcome`（指标低于/高于阈值）与证据引用；没有可比证据、任务已删除或规则版本已变更时记为 `inconclusive` 并写原因。它不推断因果、不修改策略、不触发广告平台操作。检查点随会话详情返回，仅 owner 可见；任务清理时一并删除。下一轮 `PolicyEngine` 可选收到同一任务最近 5 条检查点作为只读上下文，默认策略忽略。
+到期评估只读取同一任务版本、接受之后产生、可评估的比较结果，记录 `observedOutcome`（指标低于/高于阈值）与证据引用；没有可比证据、任务已删除或规则版本已变更时记为 `inconclusive` 并写原因。`inconclusive` 可由 owner 在新证据导入后手动重评一次；`observed` 是终态，不回退。它不推断因果、不修改策略、不触发广告平台操作。检查点随会话详情返回，仅 owner 可见；任务清理时一并删除。下一轮 `PolicyEngine` 可选收到同一任务最近 5 条检查点作为只读上下文，默认策略忽略。
 
 模型见 [model.ts](../packages/core/src/state/model.ts)，实际 DDL 与索引见 [postgres.ts](../packages/storage/src/postgres.ts)。
 当前为 49 张 id + jsonb 表，采用应用层引用关系。结构变更走 `initialize()` 内的版本化迁移（版本 1–18，顺序、加法式，在 advisory lock 下执行）。存储端口仍采用全表读取，通知记录与筛选记录接口提供分页，面向小规模验证。

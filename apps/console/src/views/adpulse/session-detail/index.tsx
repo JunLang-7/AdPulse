@@ -212,6 +212,9 @@ export default function SessionDetailPage() {
 									{validationReasonLabel(check.reason)}
 								</p>
 							) : null}
+							{check.status === "inconclusive" ? (
+								<ReevaluateButton checkId={check.id} />
+							) : null}
 						</div>
 					))}
 				</CardContent>
@@ -636,6 +639,45 @@ function OptionChip({
 			) : null}
 		</div>
 	);
+}
+
+function ReevaluateButton({ checkId }: { checkId: string }) {
+	const { mutate, isPending, error } = useReevaluate(checkId);
+	return (
+		<div className="flex flex-col gap-1">
+			<button
+				type="button"
+				disabled={isPending}
+				onClick={() => mutate()}
+				className={cn(
+					"inline-flex w-fit items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition",
+					isPending
+						? "cursor-default text-muted-foreground"
+						: "cursor-pointer hover:border-emerald-500/40 hover:bg-emerald-500/5",
+				)}
+			>
+				{isPending ? "重新评估中…" : "补证后重新评估"}
+			</button>
+			{error ? (
+				<span className="text-xs text-red-600">{String(error)}</span>
+			) : null}
+		</div>
+	);
+}
+
+function useReevaluate(checkId: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: async () => {
+			const result = await consoleClient.POST(
+				"/api/validation-checks/{checkId}/reevaluate",
+				{ params: { path: { checkId } } },
+			);
+			if (!result.data) throw new Error(JSON.stringify(result.error));
+			return result.data;
+		},
+		onSuccess: () => queryClient.invalidateQueries(),
+	});
 }
 
 function useChoice(actionRef: string) {

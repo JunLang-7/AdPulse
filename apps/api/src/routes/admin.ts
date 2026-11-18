@@ -9,7 +9,7 @@ import type {
 	TaskInput,
 	Transaction,
 } from "@adpluse/core";
-import { LifecycleDeletionError, ModelConnectionError, modelConnectionProtocols, taskLifecycleIn, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
+import { LifecycleDeletionError, ModelConnectionError, ValidationCheckError, modelConnectionProtocols, taskLifecycleIn, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
 import { findCatalogModel, taskDraftBriefMaxLength, taskDraftStages, type Runtime, type TaskDraftSelection } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
@@ -38,8 +38,16 @@ const strategy = z
 				})),
 		),
 		sellingPoints: z.array(z.string()).max(100),
+		contentDirections: z.array(z.string()).max(100).optional(),
+		partners: z.array(z.string()).max(100).optional(),
 	})
-	.strict();
+	.strict()
+	// exactOptionalPropertyTypes：显式 undefined 不能传给内核的可选字段，统一在边界剔除。
+	.transform(({ contentDirections, partners, ...rest }) => ({
+		...rest,
+		...(contentDirections === undefined ? {} : { contentDirections }),
+		...(partners === undefined ? {} : { partners }),
+	}));
 const sessionInput = z
 	.object({
 		taskRef: z
@@ -955,6 +963,19 @@ export async function handleAdmin(
 			actor: { kind: "console", userId },
 		});
 		return json(res, 202, { inboxId: inbox.id, status: inbox.status });
+	}
+	const reevaluate = path.match(
+		/^\/api\/validation-checks\/([^/]+)\/reevaluate$/,
+	);
+	if (reevaluate?.[1] && req.method === "POST") {
+		const id = decodeURIComponent(reevaluate[1]);
+		try {
+			return json(res, 200, await runtime.validationChecks.reevaluate(userId, id));
+		} catch (error) {
+			if (error instanceof ValidationCheckError)
+				throw new HttpError(error.status, error.message);
+			throw error;
+		}
 	}
 	if (path.startsWith("/api/choices/") && req.method === "GET") {
 		const id = decodeURIComponent(path.slice("/api/choices/".length));
