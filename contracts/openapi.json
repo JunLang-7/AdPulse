@@ -195,6 +195,69 @@
         }
       }
     },
+    "/api/market-events/read-source": {
+      "post": {
+        "operationId": "readMarketEventSource",
+        "summary": "读取线索原文（限内置与本人登记站点）",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "url"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "content": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "content"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Host not allowed"
+          },
+          "502": {
+            "description": "Source read failed"
+          }
+        }
+      }
+    },
     "/api/market-events/{eventId}": {
       "parameters": [
         {
@@ -2111,7 +2174,8 @@
                     },
                     "listUrl": {
                       "type": "string",
-                      "maxLength": 2000
+                      "maxLength": 2000,
+                      "description": "官网新闻列表页；留空时按企业名称自动发现"
                     },
                     "subject": {
                       "type": "object",
@@ -2137,7 +2201,6 @@
                   },
                   "required": [
                     "label",
-                    "listUrl",
                     "subject"
                   ]
                 }

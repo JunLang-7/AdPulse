@@ -9,6 +9,11 @@ import type { SourceItem, UserSource } from "./state/model.js";
 
 const MAX_ITEMS = 20;
 const FETCH_LIMITS = { maxBytes: 512 * 1024, timeoutMs: 15_000 };
+/** 自动找列表页的常见路径兑底：每个站点最多多打 6 个请求，都在每日配额内。 */
+const COMMON_NEWS_PATHS = [
+	"/news", "/news/index.html", "/xwzx/index.html", "/news/list.shtml",
+	"/media/index.html", "/news/gh.htm",
+] as const;
 const MIN_TITLE = 8;
 const NAV_NOISE = /^(首页|网站首页|新闻中心|更多|详情|查看更多|更多动态|浏览更多|read more|more|next|prev)$/i;
 
@@ -38,7 +43,12 @@ export class UserSourceError extends Error {
 }
 
 const clean = (value: unknown, max: number): string =>
-	typeof value === "string" ? value.replace(/[\u0000-\u001f]/g, " ").trim().slice(0, max) : "";
+	typeof value === "string"
+		? value
+				.replace(/[\u0000-\u001f\u{e000}-\u{f8ff}]/gu, " ")
+				.trim()
+				.slice(0, max)
+		: "";
 
 /** 列表 URL 必须是 https 的站点页面；返回 host 供唯一性检查。 */
 function parseListUrl(raw: string): { host: string; listUrl: string } {
@@ -48,10 +58,30 @@ function parseListUrl(raw: string): { host: string; listUrl: string } {
 	} catch {
 		throw new UserSourceError(400, "invalid_url", "列表页地址不合法");
 	}
-	if (url.protocol !== "https:" || !url.host || url.username || url.password)
-		throw new UserSourceError(400, "invalid_url", "必须是 https 的站点地址");
+	if (url.protocol !== "https:" && url.protocol !== "http:")
+		throw new UserSourceError(400, "invalid_url", "必须是站点地址");
+	if (!url.host || url.username || url.password)
+		throw new UserSourceError(400, "invalid_url", "必须是站点地址");
 	url.hash = "";
 	return { host: url.host.toLowerCase(), listUrl: url.toString() };
+}
+
+/** 从首页找“新闻中心”类入口（锚文本优先），最多返回两个候选列表页。 */
+export function findNewsEntry(html: string, base: string, host: string): string[] {
+	const found = new Map<string, number>();
+	const anchor = /<a\b[^>]*href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]{0,150}?)<\/a>/giu;
+	let match: RegExpExecArray | null;
+	while ((match = anchor.exec(html))) {
+		const href = match[2] ?? match[3] ?? match[4] ?? "";
+		const text = (match[5] ?? "").replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim();
+		if (!href || href.startsWith("#") || href.startsWith("javascript")) continue;
+		const score = (/news|xinwen|xwzx|press|media/iu.test(href) ? 2 : 0) + (/新闻中心|集团新闻|公司新闻|新闻报道|新闻|动态|资讯|媒体中心/iu.test(text) ? 3 : 0);
+		if (score === 0) continue;
+		const target = normalizeItemUrl(href, base, [host]);
+		if (!target || target === base) continue;
+		found.set(target, Math.max(found.get(target) ?? 0, score));
+	}
+	return [...found.entries()].sort((a, b) => b[1] - a[1]).map(([url]) => url).slice(0, 2);
 }
 
 /** 从列表页 HTML 抽取站内文章链接与标题；只挑能当新闻标题用的锚文本。 */
@@ -147,6 +177,9 @@ export class UserSourceService {
 		sourceId: string,
 		fetcher: SourceFetcher,
 		now: string,
+		options: {
+			readFallback?: (url: string) => Promise<Array<{ itemKey: string; title: string; itemUrl: string }> | null | undefined>;
+		} = {},
 	): Promise<UserSourceRefreshResult> {
 		const source = await this.storage.transaction(async (tx) => {
 			const found = await tx.userSources.get(sourceId);
@@ -186,8 +219,54 @@ export class UserSourceService {
 		}
 		if (page.status >= 400) return await failure(`列表页返回 ${page.status}`);
 
-		const parsed = parseUserListPage(page.body, source.listUrl, source.host);
-		if (parsed.length === 0) return await failure("列表页没有解析出条目");
+		let listUrl = source.listUrl;
+		let parsed = parseUserListPage(page.body, listUrl, source.host);
+		// 列表页可能是 JS 渲染或选错了页面：条目过少也可疑，退回官网首页与常见新闻路径比一比，谁多用谁。
+		if (parsed.length < 3) {
+			const candidates = [`https://${source.host}/`, ...COMMON_NEWS_PATHS.map((path) => `https://${source.host}${path}`)]
+				.filter((url) => url.replace(/\/+$/u, "") !== listUrl.replace(/\/+$/u, ""));
+			for (const candidate of candidates) {
+				try {
+					const probe = await fetcher.fetchText(candidate, FETCH_LIMITS);
+					if (probe.status >= 400) continue;
+					const fromProbe = parseUserListPage(probe.body, candidate, source.host);
+					if (fromProbe.length > parsed.length) {
+						parsed = fromProbe;
+						listUrl = candidate;
+						if (parsed.length >= 3) break;
+					}
+					// 官网站内常有“新闻中心”入口：沿着它深入一层再试，比首页更能拿到文章列表。
+					for (const entry of findNewsEntry(probe.body, candidate, source.host)) {
+						if (entry === candidate) continue;
+						try {
+							const listPage = await fetcher.fetchText(entry, FETCH_LIMITS);
+							if (listPage.status >= 400) continue;
+							const fromList = parseUserListPage(listPage.body, entry, source.host);
+							if (fromList.length > parsed.length) {
+								parsed = fromList;
+								listUrl = entry;
+								if (parsed.length >= 3) break;
+							}
+						} catch {
+							// 单个入口失败继续下一个。
+						}
+					}
+					if (parsed.length >= 3) break;
+				} catch {
+					// 单个探测失败不阻塞其余候选。
+				}
+			}
+		}
+		// 静态手段全部失败：交给注入的渲染读取兑底（jina 可渲染 JS 页），仍不行才报失败。
+		if (parsed.length < 3 && options.readFallback) {
+			try {
+				const fromRead = await options.readFallback(listUrl);
+				if (fromRead && fromRead.length > parsed.length) parsed = fromRead;
+			} catch {
+				// 兑底失败（如限流）维持原结论，不冒充成功。
+			}
+		}
+		if (parsed.length === 0) return await failure("列表页没有解析出条目（可能是 JS 渲染站点）");
 
 		const result = await this.storage.transaction(async (tx) => {
 			const existing = new Map(

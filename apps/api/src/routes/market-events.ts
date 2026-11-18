@@ -1,8 +1,38 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Runtime } from "@adpluse/runtime";
-import { MarketEventError } from "@adpluse/core";
+﻿import type { IncomingMessage, ServerResponse } from "node:http";
+import { UserSiteFetcher, type Runtime } from "@adpluse/runtime";
+import { MarketEventError, SOURCE_DEFINITIONS } from "@adpluse/core";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
+
+/** 鍏佽璇诲彇鍘熸枃鐨勪富鏈猴細涓庨噰闆?allowlist 鍙屽悜涓€鑷达紝涓嶆柊澧炶寖鍥淬€?*/
+const SOURCE_HOSTS = [
+	...new Set(Object.values(SOURCE_DEFINITIONS).flatMap((s) => s.allowedHosts)),
+];
+
+/** 浠庡畼缃?HTML 鎻愬彇鍙姝ｆ枃锛氬幓鑴氭湰/鏍峰紡/鏍囩锛屾姌鍙犵┖鐧斤紱鍙敤浜庨濉紝涓嶆浛浠ｆ湰浜烘牳瀵广€?*/
+function htmlToText(html: string): string {
+	const cleaned = html
+		.replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, " ")
+		.replace(/<style\b[^>]*>[\s\S]*?<\/style>/giu, " ")
+		.replace(/<!--[^-]*-->/gu, " ")
+		.replace(/<[^>]+>/gu, " ")
+		.replace(/&nbsp;/giu, " ")
+		.replace(/&amp;/giu, "&")
+		.replace(/&lt;/giu, "<")
+		.replace(/&gt;/giu, ">")
+		.replace(/&quot;/giu, '"')
+		.replace(/&#39;/gu, "'");
+	return cleaned.replace(/\s+/gu, " ").trim().slice(0, 30_000);
+}
+
+function htmlTitle(html: string): string | null {
+	const match = /<title[^>]*>([\s\S]*?)<\/title>/iu.exec(html);
+	if (!match) return null;
+	const title = htmlToText(match[1] ?? "");
+	return title ? title.slice(0, 200) : null;
+}
+
+const readSourceInput = z.object({ url: z.string().max(2000) }).strict();
 
 const nonBlank = (max: number) => z.string().trim().min(1).max(max);
 const citation = z.object({ sourceIndex: z.number().int().min(0).max(9), quote: nonBlank(2000) }).strict().nullable();
@@ -23,6 +53,31 @@ const input = z.object({
 const revision = z.object({ expectedVersion: z.number().int().min(1), event: input, changeReason: nonBlank(1000) }).strict();
 
 export async function handleMarketEvents(req: IncomingMessage, res: ServerResponse, runtime: Runtime, ownerId: string, path: string): Promise<boolean> {
+	if (path === "/api/market-events/read-source" && req.method === "POST") {
+		const { url } = readSourceInput.parse(await readJson(req));
+		let target: URL;
+		try {
+			target = new URL(url);
+		} catch {
+			throw new HttpError(400, "invalid url");
+		}
+		// 鍐呯疆 allowlist + 鏈汉宸茬櫥璁扮殑鐢ㄦ埛绔欑偣涓绘満锛涗粬浜虹櫥璁扮殑涓绘満涓嶅湪杩欎唤鍚嶅崟閲屻€?
+		const userHosts = await runtime.storage.transaction((tx) =>
+			tx.userSources.listByOwner(ownerId),
+		);
+		const allowed = new Set([...SOURCE_HOSTS, ...userHosts.map((s) => s.host)]);
+		if (!allowed.has(target.host)) throw new HttpError(403, "host not allowed");
+		try {
+			const fetched = await new UserSiteFetcher([target.host]).fetchText(url, {
+				maxBytes: 512 * 1024,
+				timeoutMs: 15_000,
+			});
+			json(res, 200, { title: htmlTitle(fetched.body), content: htmlToText(fetched.body) });
+		} catch {
+			throw new HttpError(502, "source read failed");
+		}
+		return true;
+	}
 	if (path === "/api/market-events" && req.method === "GET") {
 		json(res, 200, { items: await runtime.marketEvents.list(ownerId) });
 		return true;

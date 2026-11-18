@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+﻿import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { WebhookError } from "@adpluse/channels";
 import {
@@ -26,7 +26,7 @@ import {
 	TaskInputValidationError,
 } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
-import { HttpSourceFetcher } from "@adpluse/runtime";
+import { agentReachReadFallback, discoverCompanySite, UserSiteFetcher } from "@adpluse/runtime";
 import { ZodError } from "zod";
 import type { IdentityProvider } from "./feishu-auth.js";
 import { HttpError, json, readJson } from "./http.js";
@@ -40,7 +40,7 @@ const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const COOKIE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MUTATING_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
-/** 鐧诲綍/浼氳瘽琚嫆鐨勭粨鏋勫寲鐣欑棔锛氬彧鍚師鍥犱笌璇锋眰褰㈢姸锛屼笉鍚嚟鎹€佸閮ㄦ爣璇嗘垨鍘熷鍙傛暟銆?*/
+/** 閻ц缍?娴兼俺鐦界悮顐ｅ珕閻ㄥ嫮绮ㄩ弸鍕閻ｆ瑧妫旈敍姘涧閸氼偄甯崶鐘辩瑢鐠囬攱鐪拌ぐ銏㈠Ц閿涘奔绗夐崥顐㈠殶閹诡喓鈧礁顦婚柈銊︾垼鐠囧棙鍨ㄩ崢鐔奉潗閸欏倹鏆熼妴?*/
 export type AuthAuditReason =
 	| "login_request_invalid"
 	| "login_transaction_invalid"
@@ -56,7 +56,7 @@ export interface AuthAuditEvent {
 	path: string;
 }
 
-/** 閫氱煡鐩殑鍦?鎺堟潈鐨勬搷浣滅暀鐥曪細鍙湁鍔ㄤ綔涓庣粨鏋滐紝涓嶅惈 open_id 绛夊閮ㄦ爣璇嗐€?*/
+/** 闁氨鐓￠惄顔炬畱閸?閹哄牊娼堥惃鍕惙娴ｆ粎鏆€閻ユ洩绱伴崣顏呮箒閸斻劋缍旀稉搴ｇ波閺嬫粣绱濇稉宥呮儓 open_id 缁涘顦婚柈銊︾垼鐠囧棎鈧?*/
 export interface NotificationAuditEvent {
 	event:
 		| "notification.destination.verified"
@@ -69,8 +69,8 @@ export interface NotificationAuditEvent {
 }
 
 /**
- * 妯″瀷閰嶇疆鐨勬渶灏忓璁★細鍙鍔ㄤ綔銆佸唴閮ㄥ璞°€佺増鏈笌缁撴灉浠ｇ爜銆?
- * 涓嶈瀵嗛挜銆佸瘑鏂囥€佽姹傚ご銆佽姹備綋銆佹ā鍨嬪師鏂囨垨涓婃父閿欒鏂囨湰銆?
+ * 濡€崇€烽柊宥囩枂閻ㄥ嫭娓剁亸蹇擃吀鐠佲槄绱伴崣顏囶唶閸斻劋缍旈妴浣稿敶闁劌顕挒掳鈧胶澧楅張顑跨瑢缂佹挻鐏夋禒锝囩垳閵?
+ * 娑撳秷顔囩€靛棝鎸滈妴浣哥槕閺傚洢鈧浇顕Ч鍌氥仈閵嗕浇顕Ч鍌欑秼閵嗕焦膩閸ㄥ甯弬鍥ㄥ灗娑撳﹥鐖堕柨娆掝嚖閺傚洦婀伴妴?
  */
 export interface ModelAuditEvent {
 	event:
@@ -98,8 +98,8 @@ export interface ApiAuthentication {
 	publicOrigin: string;
 	now?: () => Date;
 	/**
-	 * 鎷掔粷鐣欑棔鐨勮惤鐐广€傞粯璁ゅ啓涓€琛?JSON 鍒?stdout锛屼究浜庨獙鏀惰剼鏈笌鏃ュ織妫€绱㈡柇瑷€锛?
-	 * 鍙傛暟宸茶鍓负鍘熷洜/鏂规硶/璺緞锛岃皟鐢ㄦ柟涓嶅緱琛ュ厖 cookie銆乧ode銆乻tate銆乷pen_id 绛夈€?
+	 * 閹锋帞绮烽悾娆戞閻ㄥ嫯鎯ら悙骞库偓鍌炵帛鐠併倕鍟撴稉鈧悰?JSON 閸?stdout閿涘奔绌舵禍搴ㄧ崣閺€鎯板壖閺堫兛绗岄弮銉ョ箶濡偓缁便垺鏌囩懛鈧敍?
+	 * 閸欏倹鏆熷鑼额梿閸擃亙璐熼崢鐔锋礈/閺傝纭?鐠侯垰绶為敍宀冪殶閻劍鏌熸稉宥呯繁鐞涖儱鍘?cookie閵嗕恭ode閵嗕够tate閵嗕狗pen_id 缁涘鈧?
 	 */
 	audit?: (event: AuditEvent) => void;
 }
@@ -220,7 +220,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 		req: import("node:http").IncomingMessage,
 		path: string,
 	) =>
-		// 鍙褰曡矾寰勬湰韬細鏌ヨ涓插彲鑳藉甫 state/code锛岃褰曚細鎶婁竴娆℃€у嚟鎹啓杩涙棩蹇椼€?
+		// 閸欘亣顔囪ぐ鏇＄熅瀵板嫭婀伴煬顐窗閺屻儴顕楁稉鎻掑讲閼宠棄鐢?state/code閿涘矁顔囪ぐ鏇氱窗閹跺﹣绔村▎鈩冣偓褍鍤熼幑顔煎晸鏉╂稒妫╄箛妞尖偓?
 		audit({ event: "auth.reject", reason, method: req.method ?? "GET", path });
 
 	const server = createServer(async (req, res) => {
@@ -480,7 +480,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					return json(res, 200, { sessionExpiresAt: touched.expiresAt });
 				}
 				if (path === "/api/me/subscription" && req.method === "GET") {
-					// 鍙繑鍥炴湰浜洪厤缃紱鏄惁鍙姇閫掔敱 /api/me/notification-status 鍐冲畾锛屼笉鍦ㄨ繖閲屽啋鍏呫€?
+					// 閸欘亣绻戦崶鐐存拱娴滄椽鍘ょ純顕嗙幢閺勵垰鎯侀崣顖涘闁帞鏁?/api/me/notification-status 閸愬啿鐣鹃敍灞肩瑝閸︺劏绻栭柌灞藉晪閸忓懌鈧?
 					return json(res, 200, await subscriptions.view(session.userId));
 				}
 				if (
@@ -587,11 +587,11 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					return json(res, 200, await notifications.status(session.userId));
 				}
 				if (path === "/api/me/source-status" && req.method === "GET") {
-					// 鍙繑鍥炴湰浜哄凡寮€鍚潵婧愮殑閲囬泦鐘舵€侊紱鏈紑鍚嵆绌猴紝涓嶆毚闇插叏灞€杩愮淮淇℃伅銆?
+					// 閸欘亣绻戦崶鐐存拱娴滃搫鍑″鈧崥顖涙降濠ф劗娈戦柌鍥肠閻樿埖鈧緤绱遍張顏勭磻閸氼垰宓嗙粚鐚寸礉娑撳秵姣氶棁鎻掑弿鐏炩偓鏉╂劗娣穱鈩冧紖閵?
 					return json(res, 200, { items: await sourceLeads.status(session.userId) });
 				}
 				if (path === "/api/me/lifecycle-deletions" && req.method === "GET") {
-					// 鍙锛氭湰浜哄垹闄よ姹傜殑娓呯悊杩涘害锛坧ending / cleaned锛夛紝涓嶅惈涓氬姟姝ｆ枃銆?
+					// 閸欘亣顕伴敍姘拱娴滃搫鍨归梽銈堫嚞濮瑰倻娈戝〒鍛倞鏉╂稑瀹抽敍鍧nding / cleaned閿涘绱濇稉宥呮儓娑撴艾濮熷锝嗘瀮閵?
 					return json(res, 200, { items: await lifecycleDeletions.list(session.userId) });
 				}
 				if (path === "/api/me/source-leads" && req.method === "GET") {
@@ -670,11 +670,22 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						| { kind?: unknown; name?: unknown }
 						| undefined;
 					try {
+						const label = String(body?.label ?? "");
+						let listUrl = String(body?.listUrl ?? "");
+						// 鍙粰浼佷笟鍚嶇О鏃讹細鐢?agent-reach 鎼滅储瀹樼綉骞跺畾浣嶆柊闂诲垪琛ㄩ〉銆?
+						if (!listUrl.trim()) {
+							try {
+								const found = await discoverCompanySite(label, process.env.AGENT_REACH_BIN);
+								listUrl = found.listUrl;
+							} catch {
+								throw new HttpError(422, "site_discovery_failed");
+							}
+						}
 						const source = await userSources.add(
 							session.userId,
 							{
-								label: String(body?.label ?? ""),
-								listUrl: String(body?.listUrl ?? ""),
+								label,
+								listUrl,
 								subject: {
 									kind: subject?.kind === "competitor" ? "competitor" : "brand",
 									name: String(subject?.name ?? ""),
@@ -682,16 +693,17 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 							},
 							new Date().toISOString(),
 						);
-						// 娣诲姞鍚庣珛鍗抽噰闆嗕竴娆★紱澶辫触涓嶅奖鍝嶇櫥璁版垚鍔燂紝鐘舵€佸湪鏉＄洰涓婂彲瑙併€?
+						// 濞ｈ濮為崥搴ｇ彌閸楁娊鍣伴梿鍡曠濞嗏槄绱辨径杈Е娑撳秴濂栭崫宥囨鐠佺増鍨氶崝鐕傜礉閻樿埖鈧礁婀弶锛勬窗娑撳﹤褰茬憴浣碘偓?
 						try {
 							await userSources.refresh(
 								session.userId,
 								source.id,
-								new HttpSourceFetcher([source.host]),
+								new UserSiteFetcher([source.host]),
 								new Date().toISOString(),
+								{ readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN) },
 							);
 						} catch {
-							// 鍒锋柊澶辫触鍙褰曞湪鏉ユ簮涓婏紱鐢ㄦ埛鍙墜鍔ㄩ噸璇曘€?
+							// 閸掗攱鏌婃径杈Е閸欘亣顔囪ぐ鏇炴躬閺夈儲绨稉濠忕幢閻劍鍩涢崣顖涘閸斻劑鍣哥拠鏇樷偓?
 						}
 						const items = await userSources.list(session.userId);
 						return json(res, 201, { source: items.find((s) => s.id === source.id) ?? source });
@@ -715,8 +727,9 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 							const result = await userSources.refresh(
 								session.userId,
 								sourceId,
-								new HttpSourceFetcher([target.host]),
+								new UserSiteFetcher([target.host]),
 								new Date().toISOString(),
+								{ readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN) },
 							);
 							return json(res, 200, result);
 						} catch (error) {
@@ -756,7 +769,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					}
 				}
 				if (path === "/api/me/notifications" && req.method === "GET") {
-					// 鍙鎶曞奖锛氭湰浜烘壒娆?鏉＄洰/鎶曢€掑洖鎵с€備笉鎸?id 鐩村彇锛岃法鐢ㄦ埛鏃犲叆鍙ｃ€?
+					// 閸欘亣顕伴幎鏇炲閿涙碍婀版禍鐑樺濞?閺夛紕娲?閹舵洟鈧帒娲栭幍褋鈧倷绗夐幐?id 閻╂潙褰囬敍宀冩硶閻劍鍩涢弮鐘插弳閸欙絻鈧?
 					const limitParam = requestUrl.searchParams.get("limit");
 					const before = requestUrl.searchParams.get("before") ?? undefined;
 					let limit: number | undefined;
@@ -785,7 +798,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					path === "/api/me/notification-destination" &&
 					req.method === "PUT"
 				) {
-					// 韬唤鏉ヨ嚜褰撳墠浼氳瘽缁戝畾鐨勪綔鐢ㄥ煙锛屼笉鎺ュ彈璇锋眰浣撲紶鍏?externalId銆?
+					// 闊偂鍞ら弶銉ㄥ殰瑜版挸澧犳导姘崇樈缂佹垵鐣鹃惃鍕稊閻劌鐓欓敍灞肩瑝閹恒儱褰堢拠閿嬬湴娴ｆ挷绱堕崗?externalId閵?
 					if (!session.identity)
 						throw new HttpError(403, "session has no verified identity");
 					try {
@@ -820,7 +833,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					const expectedVersion = parsed.expectedVersion;
 					if (action !== "grant" && action !== "revoke")
 						throw new HttpError(400, "invalid action");
-					// 鐗堟湰鏄繀濉殑锛氭病鏈夊畠灏辨棤娉曞尯鍒嗐€岀敤鎴峰啀娆＄‘璁ゃ€嶄笌銆屾棫璇锋眰閲嶆斁銆嶃€?
+					// 閻楀牊婀伴弰顖氱箑婵夘偆娈戦敍姘梾閺堝鐣犵亸杈ㄦ￥濞夋洖灏崚鍡愨偓宀€鏁ら幋宄板晙濞嗭紕鈥樼拋銈冣偓宥勭瑢閵嗗本妫拠閿嬬湴闁插秵鏂侀妴宥冣偓?
 					if (
 						typeof expectedVersion !== "number" ||
 						!Number.isInteger(expectedVersion) ||
@@ -892,8 +905,8 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 			}
 			throw new HttpError(404, "route not found");
 		} catch (error) {
-			// 妯″瀷閰嶇疆鐨勫け璐ヤ篃瑕佹湁鏈€灏忓璁★細鍙涓嶅惈鏌ヨ涓茬殑璺緞涓庣姸鎬佺爜锛?
-			// 涓嶈閿欒姝ｆ枃銆佷笂娓告枃鏈垨浠讳綍涓€娆℃€у嚟鎹€?
+			// 濡€崇€烽柊宥囩枂閻ㄥ嫬銇戠拹銉ょ瘍鐟曚焦婀侀張鈧亸蹇擃吀鐠佲槄绱伴崣顏囶唶娑撳秴鎯堥弻銉嚄娑撹尙娈戠捄顖氱窞娑撳海濮搁幀浣虹垳閿?
+			// 娑撳秷顔囬柨娆掝嚖濮濓絾鏋冮妴浣风瑐濞撳憡鏋冮張顒佸灗娴犺缍嶆稉鈧▎鈩冣偓褍鍤熼幑顔衡偓?
 			const rejectedPath = (req.url ?? "/").split("?")[0] ?? "/";
 			if (rejectedPath.startsWith("/api/me/model-connections") ||
 				rejectedPath === "/api/me/model-preferences")

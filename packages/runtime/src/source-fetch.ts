@@ -17,6 +17,9 @@ export function isAllowedContentType(value: string | undefined): boolean {
 
 const USER_AGENT =
 	"AdPulseSourceBot/0.1 (+https://github.com/JunLang-7/AdPulse)";
+/** 用户站点的官访常被简单 UA 过滤拦截：这里用浏览器形态 UA，#41 合规抓取器不受影响。 */
+const BROWSER_USER_AGENT =
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const MAX_REDIRECTS = 3;
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 
@@ -95,6 +98,7 @@ function once(
 	url: URL,
 	address: string,
 	limits: { maxBytes: number; timeoutMs: number },
+	options_override: { userAgent: string; referer?: string } = { userAgent: USER_AGENT },
 ): Promise<{ status: number; bytes: number; body: string; location: string | null }> {
 	return new Promise((resolve, reject) => {
 		const options = {
@@ -106,8 +110,9 @@ function once(
 			method: "GET",
 			headers: {
 				Host: url.host,
-				"User-Agent": USER_AGENT,
+				"User-Agent": options_override.userAgent,
 				Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
+				"Accept-Language": "zh-CN,zh;q=0.9",
 				"Accept-Encoding": "identity",
 			},
 		};
@@ -148,6 +153,45 @@ function once(
 		);
 		req.end();
 	});
+}
+
+/**
+ * 用户自加站点专用：允许 http 与 https（老牌企业官网常无 https），
+ * 重定向限在注册域内；公网地址校验、大小/超时/类型限制与 #41 抓取器完全一致。
+ */
+export class UserSiteFetcher implements SourceFetcher {
+	constructor(private readonly allowedHosts: string[]) {}
+
+	private allows(hostname: string): boolean {
+		const host = hostname.toLowerCase();
+		if (this.allowedHosts.includes(host)) return true;
+		// 允许同一注册域内的 www/apex 跳转：wlovol.com ↔ www.wlovol.com。
+		return this.allowedHosts.some((registered) =>
+			host.endsWith(`.${registered}`) || registered.endsWith(`.${host}`));
+	}
+
+	async fetchText(
+		rawUrl: string,
+		limits: { maxBytes: number; timeoutMs: number },
+	): Promise<FetchedResource> {
+		let url = new URL(rawUrl);
+		if (url.protocol !== "http:" && url.protocol !== "https:")
+			throw new SourceFetchError("blocked", "unsupported scheme");
+		for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+			if (!this.allows(url.hostname.toLowerCase()))
+				throw new SourceFetchError("blocked", "host not allowlisted");
+			const address = await resolvePublicAddress(url.hostname);
+			const result = await once(url, address, limits, { userAgent: BROWSER_USER_AGENT });
+			if (result.location && result.status && REDIRECT_STATUS.has(result.status)) {
+				if (hop === MAX_REDIRECTS)
+					throw new SourceFetchError("redirect", "too many redirects");
+				url = new URL(result.location, url);
+				continue;
+			}
+			return { status: result.status, bytes: result.bytes, body: result.body };
+		}
+		throw new SourceFetchError("redirect", "too many redirects");
+	}
 }
 
 /** HTTPS-only client pinned to pre-resolved public addresses. */

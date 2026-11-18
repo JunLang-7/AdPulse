@@ -239,11 +239,13 @@ export { catalogForClient, findCatalogModel, findCatalogProvider, modelCatalogPr
 export type { ModelCatalogModel, ModelCatalogProvider } from "./model-catalog.js";
 
 export {
-	HttpSourceFetcher,
-	isAllowedContentType,
-	isPublicAddress,
-} from "./source-fetch.js";
+HttpSourceFetcher,
+UserSiteFetcher,
+isAllowedContentType,
+isPublicAddress,} from "./source-fetch.js";
 export { runSources } from "./source-runner.js";
+export { runUserSources } from "./user-source-runner.js";
+export { discoverCompanySite, pickCompanySite, resolveNewsListPage, searchBing, readViaAgentReach, parseMarkdownLinks, agentReachReadFallback, AgentReachLimitError } from "./site-discovery.js";
 export { discoverSource } from "./source-discovery.js";
 export { discoverXiaohongshu } from "./xiaohongshu-discovery.js";
 export type { XiaohongshuNoteCandidate, RunXiaohongshu } from "./xiaohongshu-discovery.js";

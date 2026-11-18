@@ -1,5 +1,5 @@
 import { AuthenticationService } from "@adpluse/core";
-import { createSourceService, fromEnvironment, runSources, runWorker } from "@adpluse/runtime";
+import { agentReachReadFallback, createSourceService, fromEnvironment, runSources, runUserSources, runWorker } from "@adpluse/runtime";
 import { FeishuIdentityProvider } from "./feishu-auth.js";
 import { createApi } from "./server.js";
 
@@ -40,9 +40,16 @@ const loop =
 // 这样试点不必再单独部署一个 worker 进程。SOURCE_TICK_MS 仅用于测试/演练。
 const sourcesLoop =
 	process.env.SOURCES_ENABLED === "1"
-		? runSources(createSourceService(runtime.storage), controller.signal, {
-			...(process.env.SOURCE_TICK_MS ? { tickMs: Number(process.env.SOURCE_TICK_MS) } : {}),
-		})
+		? Promise.all([
+				runSources(createSourceService(runtime.storage), controller.signal, {
+					...(process.env.SOURCE_TICK_MS ? { tickMs: Number(process.env.SOURCE_TICK_MS) } : {}),
+				}),
+				// 用户自加站点与内置来源共用槽位；各自独立锁定，互不阻塞。
+				runUserSources(runtime.storage, controller.signal, {
+					...(process.env.SOURCE_TICK_MS ? { tickMs: Number(process.env.SOURCE_TICK_MS) } : {}),
+					...(process.env.AGENT_REACH_BIN ? { readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN) } : {}),
+				}),
+			])
 		: Promise.resolve();
 let stopping = false;
 async function stop() {

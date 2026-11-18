@@ -20,6 +20,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/market-events/read-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 读取线索原文（限内置与本人登记站点） */
+        post: operations["readMarketEventSource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market-events/{eventId}": {
         parameters: {
             query?: never;
@@ -2846,6 +2863,56 @@ export interface operations {
             };
         };
     };
+    readMarketEventSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    url: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        title: string | null;
+                        content: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Host not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Source read failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     getMarketEvent: {
         parameters: {
             query?: never;
@@ -5204,7 +5271,8 @@ export interface operations {
             content: {
                 "application/json": {
                     label: string;
-                    listUrl: string;
+                    /** @description 官网新闻列表页；留空时按企业名称自动发现 */
+                    listUrl?: string;
                     subject: {
                         /** @enum {string} */
                         kind: "brand" | "competitor";

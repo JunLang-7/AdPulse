@@ -38,6 +38,7 @@ export const tableNames = [
 	"userSources",
 	"lifecycleDeletions",
 	"auditEvents",
+	"userSources",
 	"sourceStates",
 	"sourceRuns",
 	"sourceSnapshots",

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useLocation } from "react-router";
 import { consoleClient, type components } from "../../../adpulse-client";
@@ -23,6 +23,16 @@ function failure(status: number): Error {
 }
 /** 后端给的是结构化判断原因，界面只挑对用户有意义的说法，不把字段名和防御性表述直接摊开。 */
 const FIELD_LABELS = { subject: "公告主体", eventTime: "事件时间", conditions: "适用条件" };
+
+/** 用户站点操作的失败文案：409=重复登记，400=地址或字段不合法，其余通用。 */
+const addStatusText = (error: unknown): string => {
+	const status = (error as { status?: number } | null)?.status ?? 0;
+	if (status === 409) return "这个网站已经添加过，不需要重复登记。";
+	if (status === 400) return "地址或填写内容不合法：列表页必须是 https 的站点地址，企业名称与关注对象名称不能为空。";
+	if (status === 404) return "站点不存在或刚被删除，请刷新后重试。";
+	if (status === 422) return "没能自动找到这家企业的官网新闻页：请补填列表页地址，或换一个更明确的企业名称。";
+	return "操作失败，请稍后重试。";
+};
 
 function plainReasons(reasons: string[]): { gaps: string[]; notes: string[] } {
 	const gaps: string[] = [];
@@ -165,6 +175,14 @@ export function leadSource(lead: Lead): Source {
 	};
 }
 
+/** 把正文切成句子，用于自动摘取逐字引用；必须是原文的连续片段。 */
+export function splitSentences(text: string): string[] {
+	return text
+		.split(/(?<=[。！？!?])\s*/)
+		.map(s => s.trim())
+		.filter(s => s.length >= 8);
+}
+
 /** 线索转事件：只预填标题、主体声明与那条标题+链接，引用/类型仍需本人补。 */
 export function leadDraft(lead: Lead): EventInput {
 	return {
@@ -192,7 +210,7 @@ export function mergeLeadDraft(leads: Lead[]): EventInput {
 		},
 	};
 }
-function EventForm({ current, prefill, attach, saved }: { current?: EventVersion; prefill?: EventInput; attach?: Lead; saved: (id: string, status: components["schemas"]["MarketEventWriteResult"]["status"]) => void }) {
+function EventForm({ current, prefill, attach, autoLead, saved }: { current?: EventVersion; prefill?: EventInput; attach?: Lead; autoLead?: Lead | null; saved: (id: string, status: components["schemas"]["MarketEventWriteResult"]["status"]) => void }) {
 	const attachAlreadyIn = !!(current && attach && current.input.sources.some(s => s.url === attach.url));
 	const [draft, setDraft] = useState<EventInput>(() => {
 		const base = current ? structuredClone(current.input) : (prefill ?? blank());
@@ -202,7 +220,43 @@ function EventForm({ current, prefill, attach, saved }: { current?: EventVersion
 	});
 	const [reason, setReason] = useState("");
 	const [taskId, setTaskId] = useState("");
+	const [autoReadNote, setAutoReadNote] = useState<string | null>(null);
 	const operation = useRef<{ body: string; key: string } | null>(null);
+	const autoReadStarted = useRef(false);
+	// 线索转事件时自动读取官网原文并预填材料与引用；失败静默回退到手动填写。
+	useEffect(() => {
+		if (!autoLead || autoReadStarted.current) return;
+		autoReadStarted.current = true;
+		void (async () => {
+			try {
+				const result = await consoleClient.POST("/api/market-events/read-source", {
+					body: { url: autoLead.url },
+				});
+				const content = result.data?.content ?? "";
+				if (!content) throw new Error("empty content");
+				const sentences = splitSentences(content);
+				const subjectQuote = (sentences[0] ?? content.slice(0, 500)).slice(0, 2000);
+				const timeQuote = (sentences.find(s => /20\d{2}/.test(s)) ?? sentences[1] ?? subjectQuote).slice(0, 2000);
+				const conditionsQuote = (sentences[2] ?? subjectQuote).slice(0, 2000);
+				setDraft(d => ({
+					...d,
+					eventTime: d.eventTime ?? autoLead.publishedAt,
+					conditions: d.conditions ?? "以官网公告为准",
+					sources: d.sources.map((s, index) => index === 0 && s.url === autoLead.url
+						? { ...s, content, scope: "excerpt" as const, origin: "official" as const }
+						: s),
+					citations: {
+						subject: { sourceIndex: 0, quote: subjectQuote },
+						eventTime: { sourceIndex: 0, quote: timeQuote },
+						conditions: { sourceIndex: 0, quote: conditionsQuote },
+					},
+				}));
+				setAutoReadNote(`已自动读取官网原文（${content.length} 字），引用已从原文逐字摘取，核对后保存。`);
+			} catch {
+				setAutoReadNote("原文自动读取失败，请手动粘贴材料文字。" );
+			}
+		})();
+	}, [autoLead]);
 	const tasks = useQuery({ queryKey: ["tasks"], queryFn: async () => { const r = await consoleClient.GET("/api/tasks"); if (!r.data) throw new Error("无法读取任务"); return r.data.items; } });
 	const mutation = useMutation({ mutationFn: async () => {
 		const event: EventInput = { ...draft, citations: {
@@ -228,6 +282,7 @@ function EventForm({ current, prefill, attach, saved }: { current?: EventVersion
 			{attach && (attachAlreadyIn
 				? <p className="text-sm text-amber-700">这条链接已经在本事件来源里，没有重复添加。</p>
 				: <p className="text-sm text-muted-foreground">已把线索「{attach.title}」加入下方来源列表，核对后填写修订说明并保存。</p>)}
+			{autoReadNote && <p role="status" className="text-sm text-muted-foreground">{autoReadNote}</p>}
 			<div className="grid gap-3 md:grid-cols-2">
 				<label>事件标题<Input required maxLength={200} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} /></label>
 				<label>类别<select className={control} value={draft.type} onChange={e => { const type = (Object.keys(types) as Array<keyof typeof types>).find(k => k === e.target.value); if (type) setDraft({ ...draft, type }); }}>{Object.entries(types).map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></label>
@@ -343,6 +398,38 @@ export default function MarketEventsPage() {
 		if (!r.data) throw new Error("无法读取来源状态");
 		return r.data.items;
 	} });
+	// 用户自加企业站点：登记即采，失败可见，可手动重采或删除。
+	const [siteForm, setSiteForm] = useState({ label: "", listUrl: "", kind: "brand", name: "" });
+	const [siteError, setSiteError] = useState<string | null>(null);
+	const userSources = useQuery({ queryKey: ["user-sources"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/me/user-sources"); if (!r.data) throw new Error("无法读取站点列表"); return r.data.items; } });
+	const invalidateSources = () => Promise.all([
+		queryClient.invalidateQueries({ queryKey: ["user-sources"] }),
+		queryClient.invalidateQueries({ queryKey: ["source-leads"] }),
+	]);
+	const addSite = useMutation({ mutationFn: async () => {
+		const r = await consoleClient.POST("/api/me/user-sources", { body: { label: siteForm.label, listUrl: siteForm.listUrl, subject: { kind: siteForm.kind === "competitor" ? "competitor" : "brand", name: siteForm.name } } });
+		if (r.error) throw Object.assign(new Error("add failed"), { status: r.response.status });
+		return r.data;
+	}, onSuccess: async () => {
+		setSiteForm({ label: "", listUrl: "", kind: "brand", name: "" });
+		setSiteError(null);
+		await invalidateSources();
+	} });
+	const refreshSite = useMutation({ mutationFn: async (id: string) => {
+		const r = await consoleClient.POST("/api/me/user-sources/{sourceId}/refresh", { params: { path: { sourceId: id } } });
+		if (!r.data) throw Object.assign(new Error("refresh failed"), { status: r.response.status });
+		return r.data;
+	}, onSuccess: async () => {
+		setSiteError(null);
+		await invalidateSources();
+	} });
+	const removeSite = useMutation({ mutationFn: async (id: string) => {
+		const r = await consoleClient.DELETE("/api/me/user-sources/{sourceId}", { params: { path: { sourceId: id } } });
+		if (!r.data) throw Object.assign(new Error("remove failed"), { status: r.response.status });
+		return r.data;
+	}, onSuccess: async () => {
+		await invalidateSources();
+	} });
 	const leadGroups = (() => {
 		const groups = new Map<string, { key: string; label: string; count: number }>();
 		for (const lead of leads.data?.leads ?? []) {
@@ -413,7 +500,7 @@ export default function MarketEventsPage() {
 	</div>;
 	return <div className="p-6 space-y-8"><div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-bold">市场与竞品事件</h1><Button onClick={() => setEditing(!editing)}>{editing ? "收起录入" : "录入事件"}</Button></div>
 		{notice && <p role="status" className="rounded-md border p-3 text-sm">{notice}</p>}
-		{editing && <EventForm key={mergeDraftState?.key ?? leadDraftState?.key ?? "manual"} prefill={mergeDraftState ? mergeLeadDraft(mergeDraftState.leads) : leadDraftState ? leadDraft(leadDraftState.lead) : undefined} saved={(id, status) => { setLeadDraftState(null); setMergeDraftState(null); void saved(id, status); }} />}
+		{editing && <EventForm key={mergeDraftState?.key ?? leadDraftState?.key ?? "manual"} prefill={mergeDraftState ? mergeLeadDraft(mergeDraftState.leads) : leadDraftState ? leadDraft(leadDraftState.lead) : undefined} autoLead={leadDraftState?.lead ?? null} saved={(id, status) => { setLeadDraftState(null); setMergeDraftState(null); void saved(id, status); }} />}
 		<Section title={`已记录的事件${list.data ? `（${list.data.length}）` : ""}`} hint="依据齐备才会进入通知筛选；保存不会发消息">
 			{list.isLoading && <p>正在读取事件…</p>}
 			{list.error && <p role="alert">{list.error.message}</p>}
@@ -456,6 +543,37 @@ export default function MarketEventsPage() {
 					</li>)}
 				</ul> : null}
 				{feedStatus.error ? <p role="alert" className="text-xs text-red-600">读取来源状态失败，不影响线索列表。</p> : null}
+				<details className="text-xs">
+					<summary className="cursor-pointer text-muted-foreground">添加任意企业官网（不限内置两家）</summary>
+					<div className="mt-2 space-y-2">
+						<div className="grid gap-2 sm:grid-cols-2">
+							<input aria-label="站点企业名称" placeholder="企业名称，如：海尔" maxLength={200} value={siteForm.label} onChange={e => setSiteForm({ ...siteForm, label: e.target.value })} className={control} />
+							<input aria-label="站点新闻列表页地址" placeholder="可留空：按企业名称自动查找官网新闻页" maxLength={2000} value={siteForm.listUrl} onChange={e => setSiteForm({ ...siteForm, listUrl: e.target.value })} className={control} />
+							<select aria-label="站点对象类型" value={siteForm.kind} onChange={e => setSiteForm({ ...siteForm, kind: e.target.value })} className={control}><option value="brand">品牌</option><option value="competitor">竞品</option></select>
+							<input aria-label="站点关注对象名称" placeholder="关注对象名称，如：海尔" maxLength={200} value={siteForm.name} onChange={e => setSiteForm({ ...siteForm, name: e.target.value })} className={control} />
+						</div>
+						<div className="flex flex-wrap items-center gap-2">
+							<Button type="button" disabled={addSite.isPending} onClick={() => {
+								if (!siteForm.label.trim() || !siteForm.name.trim()) { setSiteError("请填写企业名称与关注对象名称；列表页地址可留空，自动按名称查找。"); return; }
+								setSiteError(null);
+								addSite.mutate();
+							}}>{addSite.isPending ? "添加并采集中…" : "添加并采集"}</Button>
+							<span className="text-muted-foreground">登记后立即抓一次列表页；之后每个时段自动重采，也可手动重采。</span>
+						</div>
+						{siteError ? <p role="alert" className="text-red-600">{siteError}</p> : null}
+						{addSite.error ? <p role="alert" className="text-red-600">{addStatusText(addSite.error)}</p> : null}
+						{(userSources.data ?? []).map(s => <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
+							<span className="font-medium">{s.label}</span>
+							<span className="text-muted-foreground">{s.host}</span>
+							<span className="text-muted-foreground">{s.lastOutcome === "ok" ? "上次采集成功" : s.lastOutcome === "failed" ? `上次失败：${s.lastReason ?? "未知原因"}` : "还没采集过"}</span>
+							<Button type="button" variant="outline" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => refreshSite.mutate(s.id)}>{refreshSite.variables === s.id && refreshSite.isPending ? "采集中…" : "采集"}</Button>
+							<Button type="button" variant="outline" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => removeSite.mutate(s.id)}>删除</Button>
+						</div>)}
+						{refreshSite.data ? <p role="status">本次采集：新增 {refreshSite.data.created} 条，更新 {refreshSite.data.updated} 条{refreshSite.data.reason ? `（${refreshSite.data.reason}）` : ""}</p> : null}
+						{refreshSite.error ? <p role="alert" className="text-red-600">{addStatusText(refreshSite.error)}</p> : null}
+						{removeSite.error ? <p role="alert" className="text-red-600">删除失败，请稍后重试。</p> : null}
+					</div>
+				</details>
 				{leadGroups.length > 1 ? <div className="flex flex-wrap items-center gap-2" role="group" aria-label="按来源筛选线索">
 					<button
 						type="button"
@@ -493,7 +611,7 @@ export default function MarketEventsPage() {
 										checked={selectedLeads.includes(lead.itemId)}
 										onChange={() => setSelectedLeads(ids => ids.includes(lead.itemId) ? ids.filter(id => id !== lead.itemId) : [...ids, lead.itemId])}
 									/> : null}
-									<a className="block font-medium break-all hover:underline" href={lead.url} target="_blank" rel="noreferrer">{lead.title}</a>
+									<a className="block font-medium break-all text-blue-600 underline underline-offset-2 hover:text-blue-800" href={lead.url} target="_blank" rel="noreferrer" title="在新标签页打开原文">{lead.title}</a>
 								</div>
 								<p className="text-xs text-muted-foreground">
 									来自 {lead.sourceLabel} · 关联{lead.subject.kind === "brand" ? "品牌" : "竞品"}：{lead.subject.name}
