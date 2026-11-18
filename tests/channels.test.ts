@@ -368,7 +368,13 @@ test("Feishu JSON 2.0 contains opaque references, not mutable strategy data", ()
 			title: "title",
 			summary: "summary",
 			evidence: [],
-			options: [{ id: "a", label: "A" }],
+			options: [
+				{
+					id: "a",
+					label: "A",
+					detail: "假设：需求上升；验证：看 7 天成本",
+				},
+			],
 		},
 		actions: [{ optionId: "a", actionRef: "opaque" }],
 	};
@@ -386,6 +392,10 @@ test("Feishu JSON 2.0 contains opaque references, not mutable strategy data", ()
 		{ type: "callback", value: { actionRef: "opaque" } },
 	]);
 	assert.ok(!JSON.stringify(card).includes("sessionId"));
+	assert.ok(
+		JSON.stringify(card).includes("A：假设：需求上升；验证：看 7 天成本"),
+		"candidate detail is rendered next to its option",
+	);
 	assert.ok(
 		!card.body.elements.some((x) => x.tag === "action" || x.tag === "note"),
 	);

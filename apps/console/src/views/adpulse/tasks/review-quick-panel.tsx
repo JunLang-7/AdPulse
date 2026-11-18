@@ -21,14 +21,17 @@ const selectClass = "w-full rounded-md border bg-background px-2 py-1.5";
 type QuickEstimate = ReturnType<typeof estimateReview>;
 type Workbook = Awaited<ReturnType<typeof readReviewWorkbook>>;
 
-export function QuickReviewPanel({ rules, startOpen }: {
+export function QuickReviewPanel({ rules, placementType, startOpen }: {
 	rules: components["schemas"]["TaskRules"];
+	placementType?: components["schemas"]["TaskRules"]["placementType"];
 	startOpen: boolean;
 }) {
 	const [values, setValues] = useState(emptyInput);
 	const [estimate, setEstimate] = useState<QuickEstimate | null>(null);
 	const [error, setError] = useState("");
 	const workbookSection = useRef<HTMLDetailsElement>(null);
+	// 快速试算按付费广告的咨询成本设计；达人 / 种草口径不同时不展示，避免把互动量当咨询。
+	const paidAds = placementType === undefined || placementType === "paid_ads";
 
 	function update(input: QuickReviewInput) {
 		setValues(input);
@@ -45,6 +48,19 @@ export function QuickReviewPanel({ rules, startOpen }: {
 			setError(cause instanceof Error ? cause.message : "请检查填写的数字。");
 		}
 	}
+
+	if (!paidAds)
+		return (
+			<details open={startOpen || undefined} className="group rounded-lg border bg-muted/25">
+				<summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold marker:hidden">
+					<ChevronRight aria-hidden="true" className="size-4 shrink-0 group-open:rotate-90" />
+					快速看看
+				</summary>
+				<p className="border-t px-4 py-4 text-sm text-muted-foreground">
+					这个任务按达人合作 / 内容种草的互动口径衡量，手填试算只针对付费广告的咨询成本，暂不适用。请用下方报表导入后查看。
+				</p>
+			</details>
+		);
 
 	return (
 		<details open={startOpen || undefined} className="group rounded-lg border bg-muted/25">

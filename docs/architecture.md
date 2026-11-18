@@ -11,7 +11,7 @@
 
 - 飞书：已实现原生 HTTP 出入站代码，尚未完成真实应用真机联调。
 - 企微 / 钉钉：尚未实现原生接入；可通过相同契约扩展。
-- Web：已有 API、OpenAPI、类型化客户端和最小控制台：会话列表、详情、选项提交、轮次/投递/快照摘要。尚无创建表单、完整证据追溯、策略差异及失败任务恢复界面。
+- Web：已有 API、OpenAPI、类型化客户端和控制台：会话列表、详情、选项提交、轮次/投递/快照摘要、任务编辑与效果证据。会话详情已提供当前方案摘要、逐版变更记录及最早快照到当前的结构化对比；尚无完整证据追溯界面与失败任务恢复界面。
 - 任务规则版本与效果证据：已实现固定 JSON 导入、不可变证据版本与幂等操作（#7、#8）。
 - 期次比较与阈值判定：已实现显式选择当前/基线证据、严格可比性校验与补证跟进（#9）。
 - 调查告警：已实现逻辑缺口告警、冻结期限与失效处理（#10、#55）；新候选可经 #83 的独立确认和部署闸门进入飞书单聊 outbox，默认关闭，不补历史。受控真机验收与试验实例迁移尚未执行，见开发指南 §5.4。
@@ -24,6 +24,7 @@
   **生产备份目标、加密、RPO/RTO 与受控备份仍未实现**（目前只有手工备份 + 一次性演练库验证不复活）；
   恢复重放会撤销恢复库中的全部会话，清理进度可在任务页按人查看。
 - 受限来源采集：已实现两站列表页的标题/链接采集，**默认关闭**，见下文「受限来源采集」（#41）；
+- 主动发现线索（#39 方案 A 之后）：`discover --persist` 把小梅书/Exa 搜索结果写入 `discoveryLeads`，一律 `unverified`，不直接入库、不推送；控制台逐条接受/拒绝/保留，接受才生成 source item；可用 `discover xiaohongshu` 走 Agent-Reach 笔记搜索（需登录态，未真机签核）。本人还可登记企业站点（`userSources`），采集仍只取标题与链接。
   #39 方案 A 只把条目作为「待确认线索」按本人逐来源开关展示，不自动建事件、不自动推送；
   来源清单与许可登记见 [sources/registry.md](sources/registry.md)（登记不等于合规结论）。
 - 主动通知（#37）：已实现批次/去重、09:30 调度与发送前重检、退订取消、记录与解释（PR1/PR2/PR4）；
@@ -51,6 +52,23 @@
 
 编译期依赖：channels/storage → core；runtime → core/channels/storage；应用入口 → runtime。
 core 不依赖具体 IM、HTTP、数据库驱动或应用入口。依赖边界由 [测试](../tests/boundaries.test.ts) 检查。
+
+## 投放方式与分口径效果衡量
+
+[placement.ts](../packages/core/src/domain/placement.ts) 是唯一口径来源：`paid_ads`（付费广告）、`influencer`（达人合作）、`seeding`（内容种草）。每种方式定义自己的投入指标键、结果计数键、派生单位成本键、展示标签与归因局限。旧数据没有 `placementType`，读取时一律归一为 `paid_ads`，不需要数据迁移。
+
+| 投放方式 | 投入键 | 结果键 | 派生成本 | 出价旋钮 |
+| --- | --- | --- | --- | --- |
+| `paid_ads` | `spendMinor` | `consultations` | `cost_per_consultation` | 支持 |
+| `influencer` | `feeMinor` | `engagement` | `cost_per_engagement` | 不支持 |
+| `seeding` | `contentCostMinor` | `engagement` | `cost_per_engagement` | 不支持 |
+
+- 策略渠道带可选 `type`；`validateStrategy` 与 `applyChanges` 在冻结候选和提交选择时重复校验，达人/种草渠道出现 `bidCpc` 一律拒绝，不静默降级。预算与开关三类通用。
+- 效果证据带 `placementType`；`metricsContract` 与 `values` 是按口径的指标字典。证据导入只允许本口径的键，但允许缺某个键或值为空——比较引擎会给出 `VALUE_MISSING` / `VALUE_NULL` 并等待补证，不在导入时编造数值。
+- 任务规则带 `placementType`，`metricKey` 必须与该口径的派生成本一致。口径不一致时产生 `RULE_PLACEMENT_MISMATCH`，不产出阈值结论。
+- 比较引擎按证据口径选指标键；两期投放方式不同时产生 `PLACEMENT_TYPE_MISMATCH`，判为不可比。比较结果的字段名沿用历史契约作为通用投影，另附 `placementType` 与 `metricKeys`，展示层按口径标注真实名称。
+- 归因局限随比较结果与排查提醒一起保留：互动量不等于咨询或成交，不能换算成单次咨询成本。
+- 指标集是探索假设，集中在 registry，访谈结论出来后可调整；达人清单（合作对象）与内容方向仍未建模，不在本机制内。
 
 ## 出入站适配
 
@@ -81,12 +99,39 @@ PostgreSQL 使用 SERIALIZABLE、行锁、唯一索引与冲突重试。
 
 version 是决策版本，每次成功处理选择都会递增，即使 changes 为空；快照版本增加不等于预算或其他策略字段发生变化。
 
+## 策略变更词表
+
+变更只能通过 `StrategyChange` 表达，并由内核在冻结候选和提交选择时重复校验；PolicyEngine 的声明不被信任。
+
+- 渠道：`budget`、`bidCpc`、`enabled`，带 `from` 做过期检查，数值受 `Limits` 比例限幅。
+- 列表：`audience`、`sellingPoint`、`contentDirection`、`partner`，`op` 为 `add`/`remove`。单候选最多 6 条变更，列表最多 8 项，单项不超过 80 字符，且不允许首尾空白或控制字符；`add` 要求当前不含该项、`remove` 要求当前含该项，否则视为过期。
+- 语义边界：`contentDirections` 与 `partners` 只是站内基线名称，不代表已发布、已联系或已投放；不记录合作阶段、费用或效果指标。
+- 未支持：投放方式类型（付费广告/达人/种草）、合作阶段与达人/种草效果指标尚未建模，**不支持即拒绝**，不做静默降级。
+
+`isMonetaryChange()` 区分花钱变更（预算/出价）。任务货币口径未确认时只能提议非货币变更，人群、卖点、内容方向、合作对象与开关不受限。变更随快照以 JSONB 保存，旧版三类变更按宽化后的联合类型原样读取，无需迁移。
+
+候选可带可选的 `hypothesis` 与 `validationPlan`（各不超过 300 字、单行、不带首尾空白），内核校验后随轮次冻结；卡片把它们作为选项补充说明展示，不塞进按钮文本。用户接受候选时，这两个字段同时写入策略快照，事后可核对「当时为什么改、准备怎么验证」。缺省表示未确定，不编造。
+
+## 验证检查点
+
+接受带 `validationPlan` 的候选且任务口径完整（指标、窗口、阈值、最低样本）时，在同一事务创建 `pending` 检查点，并在 `dueAt`（接受时间 + `statWindowDays`）排入 `evaluate_validation_check` 任务。没有验证计划、没有实际变更或口径不完整时不建，避免制造假验证。
+
+到期评估只读取同一任务版本、接受之后产生、可评估的比较结果，记录 `observedOutcome`（指标低于/高于阈值）与证据引用；没有可比证据、任务已删除或规则版本已变更时记为 `inconclusive` 并写原因。`inconclusive` 可由 owner 在新证据导入后手动重评一次；`observed` 是终态，不回退。它不推断因果、不修改策略、不触发广告平台操作。检查点随会话详情返回，仅 owner 可见；任务清理时一并删除。下一轮 `PolicyEngine` 可选收到同一任务最近 5 条检查点作为只读上下文，默认策略忽略。
+
 模型见 [model.ts](../packages/core/src/state/model.ts)，实际 DDL 与索引见 [postgres.ts](../packages/storage/src/postgres.ts)。
-当前为 41 张 id + jsonb 表，采用应用层引用关系。结构变更走 `initialize()` 内的版本化迁移（版本 1–14，顺序、加法式，在 advisory lock 下执行）。存储端口仍采用全表读取，通知记录与筛选记录接口提供分页，面向小规模验证。
+当前为 51 张 id + jsonb 表，采用应用层引用关系。结构变更走 `initialize()` 内的版本化迁移（版本 1–20，顺序、加法式，在 advisory lock 下执行）。存储端口仍采用全表读取，通知记录与筛选记录接口提供分页，面向小规模验证。
 
 迁移 13 由 #86 PR1 新增 `userModelConnections`、`userModelCredentials` 与 `userModelPreferences`，分别保存连接信息、AES-256-GCM 密文和默认模型。唯一索引分别约束 `(ownerId, providerId)`、`(ownerId, connectionId)` 与 `ownerId`。加密端口在 core，实现在 runtime。AAD 绑定 owner、连接、凭据版本、目标地址和协议。服务只在主密钥配置有效时装配，主密钥由部署侧配置。
 
 迁移 14 新增 `userModelRevocations`，记录 owner、连接 ID、凭据版本、原因与时间。恢复备份后先用 `bun run models:revocations --replay` 重放删除记录再对外服务。撤销记录版本不低于凭据版本时拒绝解密。
+
+迁移 17 新增假设偏差的四张表（假设、版本、判定与幂等操作），随 #161 落地。
+
+迁移 18 新增 `validationChecks`，保存已应用变更的验证状态与证据引用；不改变策略、证据与投放记录。
+
+迁移 19 新增 `discoveryLeads`，暂存主动发现（Agent-Reach / 小红书搜索）返回的未核验线索；同一人同一归一化 URL 唯一，拒绝后不再复活。
+
+迁移 20 新增 `userSources`，保存本人登记的企业站点与列表页位置（同一人同一 host 唯一）；不改动 #41 的 allowlist，采集纪律一致（只取标题与链接）。
 
 模型额度分两层：按 owner（6 次/分钟、并发 1）与实例总量（8 次/分钟、并发 2），测试、发现与抽取共用计数，均在网络请求前判定；`createUserRequestBudgets()` 只约束单进程，不是分布式限流。
 

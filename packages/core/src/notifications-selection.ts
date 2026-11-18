@@ -14,6 +14,7 @@ import type {
 	NotificationSelection,
 	SubscriptionTarget,
 } from "./state/model.js";
+import type { Hypothesis, HypothesisVerdict } from "./state/model.js";
 
 /** 第一阶段仅接受服务端已经证明的本人任务关联，绝不匹配展示文字或域名。 */
 export function matchEffectTargets(
@@ -21,6 +22,16 @@ export function matchEffectTargets(
 ): SubscriptionTarget[] {
 	return targets.filter((target) => target.userId === ownerId && target.kind === "task"
 		&& target.refId === taskId && target.status === "active" && target.categories.includes("effect"));
+}
+
+/**
+ * 假设偏差类别的关注项分解：只按显式任务关联（同效果告警），不做文本匹配。
+ */
+export function matchHypothesisTargets(
+	targets: SubscriptionTarget[], ownerId: string, taskId: string,
+): SubscriptionTarget[] {
+	return targets.filter((target) => target.userId === ownerId && target.kind === "task"
+		&& target.refId === taskId && target.status === "active" && target.categories.includes("hypothesis"));
 }
 
 /**
@@ -218,6 +229,66 @@ export class NotificationSelectionService {
 	}
 
 	/**
+	 * 假设判定入队：只在用户确认判定且状态变更为 supported/challenged 的同一事务中调用。
+	 * 模拟事件来源不推送（状态仍变更）；unclear 判定不会改变状态，也不入队。
+	 */
+	async selectHypothesisVerdictIn(tx: Transaction, verdict: HypothesisVerdict, hypothesis: Hypothesis): Promise<void> {
+		const ownerId = verdict.ownerId;
+		const task = await tx.tasks.get(hypothesis.taskId);
+		if (!task || task.ownerId !== ownerId || !(await taskActiveIn(tx, task, new Date(this.now())))) return;
+		const id = createHash("sha256").update(JSON.stringify([ownerId, verdict.id])).digest("hex");
+		if (await tx.notificationSelections.get(id)) return; // 重试不改写历史判断。
+		const settings = await tx.subscriptionSettings.get(ownerId);
+		const targets = (await tx.subscriptionTargets.all()).filter((target) => target.userId === ownerId);
+		const matched = matchHypothesisTargets(targets, ownerId, hypothesis.taskId);
+		const associated = targets.filter((target) => target.kind === "task" && target.refId === hypothesis.taskId);
+		let reason: NotificationSelection["reason"] = "matched";
+		const eventVersion = verdict.subject.kind === "market_event"
+			? await tx.marketEventVersions.get(`${verdict.subject.eventId}:${verdict.subject.version}`)
+			: null;
+		if (eventVersion?.input.provenance.simulated) reason = "simulated_input";
+		else if (!settings?.proactiveEnabled) reason = "push_disabled";
+		// 用确认时刻判定「开启前/后」：初判可能早于开启，但用户确认晚于开启。
+		else if (!settings.enabledAt || (verdict.confirmedAt ?? verdict.createdAt) <= settings.enabledAt) reason = "before_enabled";
+		else if (associated.length === 0) reason = "no_target";
+		else if (!associated.some((target) => target.status === "active")) reason = "target_muted";
+		else if (matched.length === 0) reason = "category_excluded";
+		else if (!(await canSendProactiveIn(tx, ownerId))) reason = "not_authorized";
+
+		const ref = { hypothesisId: hypothesis.id, verdictId: verdict.id, hypothesisVersion: verdict.hypothesisVersion };
+		const record: NotificationSelection = {
+			id, ownerId, input: "hypothesis", taskId: hypothesis.taskId,
+			hypothesisRef: ref,
+			revision: 1, settingsVersion: settings?.version ?? 0,
+			matchedTargetIds: matched.map((target) => target.id).sort(),
+			outcome: "not_queued", reason, evaluatedAt: this.now(),
+		};
+		if (reason === "matched" && settings) {
+			const product = (await tx.taskVersions.get(`${task.id}:${task.currentVersion}`))?.product ?? "本人任务";
+			const clean = (value: string) => value.replace(/[\u0000-\u001f]/g, " ");
+			const judgmentLabel = verdict.judgment === "supports" ? "假设获支持" : "假设被挑战";
+			const subjectLabel = verdict.subject.kind === "market_event"
+				? `市场事件 ${verdict.subject.eventId} v${verdict.subject.version}`
+				: verdict.subject.kind === "comparison"
+					? `效果比较 ${verdict.subject.comparisonResultId}`
+					: `来源条目 ${verdict.subject.sourceItemId}`;
+			const queued = await this.queue.queueIn(tx, ownerId, {
+				logicalKey: `hypothesis:${hypothesis.id}:${verdict.id}`, kind: "hypothesis_verdict", taskId: hypothesis.taskId,
+				hypothesisRef: ref,
+				title: `${judgmentLabel}：${clean(verdict.explanation).slice(0, 40)}`,
+				summary: `依据 ${subjectLabel}。${clean(verdict.explanation).slice(0, 160)}。该判定由你确认；本信息不执行广告操作。`,
+				relevance: `与你关注的任务「${clean(product).slice(0, 40)}」的假设偏差订阅相关。`,
+				sources: [{ label: subjectLabel, publishedAt: null, observedAt: verdict.createdAt }],
+				revision: 1,
+			}, { settingsVersion: settings.version, enabled: true });
+			record.outcome = queued.outcome;
+			record.reason = queued.outcome === "queued" ? "matched" : queued.outcome === "duplicate" ? "duplicate" : "previously_cancelled";
+			if (queued.item) record.itemId = queued.item.id;
+		}
+		await tx.notificationSelections.put(record);
+	}
+
+	/**
 	 * 事件卡片内容：标题、摘要、为什么相关与来源引用。
 	 * 事件时间/适用条件未知时保持未知；正文与原文引用不复制进卡片。
 	 */
@@ -307,10 +378,14 @@ export class NotificationSelectionService {
 			const evidence = new Set((await tx.evidenceVersions.all()).filter((version) => version.ownerId === ownerId && tasks.has(version.taskId)).map((version) => version.id));
 			// 事件引用只能指向本人事件；事件可以没有任务关联，因此不强制 taskId。
 			const events = new Set((await tx.marketEvents.all()).filter((head) => head.ownerId === ownerId).map((head) => head.id));
+			const hypotheses = new Set((await tx.hypotheses.listByOwner(ownerId)).map((head) => head.id));
 			const records = (await tx.notificationSelections.all()).filter((record) => record.ownerId === ownerId
 				&& (record.input === "event"
 					? Boolean(record.marketEventRef) && events.has(record.marketEventRef!.eventId)
 						&& (!record.taskId || tasks.has(record.taskId))
+					: record.input === "hypothesis"
+						? Boolean(record.hypothesisRef) && hypotheses.has(record.hypothesisRef!.hypothesisId)
+							&& record.taskId !== undefined && tasks.has(record.taskId)
 					: Boolean(record.taskId) && tasks.has(record.taskId!) && Boolean(record.alertId) && alerts.has(record.alertId!)
 						&& Boolean(record.evidenceRef) && evidence.has(`${record.evidenceRef!.evidenceId}:${record.evidenceRef!.version}`))
 				&& (!query.taskId || record.taskId === query.taskId)
@@ -398,7 +473,29 @@ export async function marketEventNotificationCurrentIn(
 export async function notificationInputsStillCurrentIn(
 	tx: Transaction, item: NotificationItem, now: Date = new Date(),
 ): Promise<boolean> {
+	if (item.hypothesisRef) return hypothesisNotificationCurrentIn(tx, item, now);
 	return item.marketEventRef
 		? marketEventNotificationCurrentIn(tx, item, now)
 		: effectNotificationCurrentIn(tx, item, now);
+}
+
+/**
+ * 假设条目的发送前复检：任务仍活跃、假设仍非停用、判定仍确认且假设版本一致。
+ * 假设被修订到新版本或停用后取消旧待发，不把旧判定冒充当前判断。
+ */
+export async function hypothesisNotificationCurrentIn(
+	tx: Transaction, item: NotificationItem, now: Date = new Date(),
+): Promise<boolean> {
+	const ref = item.hypothesisRef;
+	if (!ref) return true;
+	const head = await tx.hypotheses.get(ref.hypothesisId);
+	if (!head || head.ownerId !== item.ownerId || head.status === "retired"
+		|| head.currentVersion !== ref.hypothesisVersion) return false;
+	const task = await tx.tasks.get(head.taskId);
+	if (!task || task.ownerId !== item.ownerId || !(await taskActiveIn(tx, task, now))) return false;
+	const verdict = await tx.hypothesisVerdicts.get(ref.verdictId);
+	return Boolean(verdict && verdict.ownerId === item.ownerId
+		&& verdict.hypothesisId === head.id
+		&& verdict.hypothesisVersion === ref.hypothesisVersion
+		&& verdict.stage === "confirmed");
 }

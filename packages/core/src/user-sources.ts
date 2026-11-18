@@ -58,8 +58,10 @@ function parseListUrl(raw: string): { host: string; listUrl: string } {
 	} catch {
 		throw new UserSourceError(400, "invalid_url", "列表页地址不合法");
 	}
-	if (url.protocol !== "https:" || !url.host || url.username || url.password)
-		throw new UserSourceError(400, "invalid_url", "必须是 https 的站点地址");
+	if (url.protocol !== "https:" && url.protocol !== "http:")
+		throw new UserSourceError(400, "invalid_url", "必须是站点地址");
+	if (!url.host || url.username || url.password)
+		throw new UserSourceError(400, "invalid_url", "必须是站点地址");
 	url.hash = "";
 	return { host: url.host.toLowerCase(), listUrl: url.toString() };
 }

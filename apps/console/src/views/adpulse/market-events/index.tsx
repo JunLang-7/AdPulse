@@ -114,6 +114,7 @@ function Summary({ version }: { version: EventVersion }) {
 	</div>;
 }
 type Lead = components["schemas"]["SourceLead"];
+type DiscoveryLead = components["schemas"]["DiscoveryLead"];
 
 /** 「并入已有事件」时从路由 state 里取线索；state 不在或形状不对就当没有。 */
 function stateLead(state: unknown): Lead | null {
@@ -325,6 +326,39 @@ function EventForm({ current, prefill, attach, autoLead, saved }: { current?: Ev
 		</fieldset>
 	</form>;
 }
+function DiscoveryLeadItem({ lead, busy, onReview }: {
+	lead: DiscoveryLead;
+	busy: boolean;
+	onReview: (action: "accept" | "reject" | "keep", body: { correctedPublishedAt?: string; reason?: string }) => void;
+}) {
+	const [mode, setMode] = useState<"accept" | "reject" | null>(null);
+	const [correctedDate, setCorrectedDate] = useState("");
+	const [reason, setReason] = useState("");
+	return <li className="space-y-2 rounded-md border p-3">
+		<div className="min-w-0 space-y-1">
+			<a className="block break-all font-medium text-blue-600 underline underline-offset-2 hover:text-blue-800" href={lead.url} target="_blank" rel="noreferrer" title="在新标签页打开原文">{lead.title}</a>
+			<p className="text-xs text-muted-foreground">
+				来源 {lead.sourceKey} · {lead.topic} · {lead.provider}
+				{lead.subject ? ` · 关联${lead.subject.kind === "brand" ? "品牌" : "竞品"}：${lead.subject.name}` : ""}
+				{lead.author ? ` · 作者 ${lead.author}` : ""}
+				{" · "}索引日期 {formatLeadDate(lead.indexedPublishedAt)}（未核验）
+			</p>
+		</div>
+		{mode === null ? <div className="flex flex-wrap items-center gap-2">
+			<Button variant="outline" disabled={busy} onClick={() => setMode("accept")}>接受</Button>
+			<Button variant="outline" disabled={busy} onClick={() => setMode("reject")}>拒绝</Button>
+			<Button variant="outline" disabled={busy} onClick={() => onReview("keep", {})}>保留</Button>
+		</div> : mode === "accept" ? <div className="flex flex-wrap items-end gap-2">
+			<label className="text-xs">发布日期（可选修正）<input className={control} placeholder={lead.indexedPublishedAt ?? "YYYY-MM-DD"} value={correctedDate} onChange={e => setCorrectedDate(e.target.value)} /></label>
+			<Button disabled={busy} onClick={() => onReview("accept", correctedDate.trim() ? { correctedPublishedAt: correctedDate.trim() } : {})}>确认接受并入库</Button>
+			<Button variant="outline" disabled={busy} onClick={() => setMode(null)}>取消</Button>
+		</div> : <div className="flex flex-wrap items-end gap-2">
+			<label className="text-xs">拒绝理由<input className={control} placeholder="例如：非官方发布 / 重复" value={reason} onChange={e => setReason(e.target.value)} /></label>
+			<Button disabled={busy} onClick={() => onReview("reject", { reason: reason.trim() })}>确认拒绝</Button>
+			<Button variant="outline" disabled={busy} onClick={() => setMode(null)}>取消</Button>
+		</div>}
+	</li>;
+}
 export default function MarketEventsPage() {
 	const { eventId } = useParams();
 	const navigate = useNavigate();
@@ -340,6 +374,24 @@ export default function MarketEventsPage() {
 	const [mergeDraftState, setMergeDraftState] = useState<{ leads: Lead[]; key: string } | null>(null);
 	const list = useQuery({ queryKey: ["market-events"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/market-events"); if (!r.data) throw new Error("无法读取事件列表"); return r.data.items; } });
 	const leads = useQuery({ queryKey: ["source-leads"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/me/source-leads"); if (!r.data) throw new Error("无法读取来源线索"); return r.data; } });
+	const discoveryLeads = useQuery({ queryKey: ["discovery-leads"], enabled: !eventId, queryFn: async () => {
+		const r = await consoleClient.GET("/api/me/discovery-leads", { params: { query: { status: "pending" } } });
+		if (!r.data) throw new Error("无法读取发现线索");
+		return r.data.items;
+	} });
+	const reviewLead = useMutation({ mutationFn: async ({ leadId, action, body }: { leadId: string; action: "accept" | "reject" | "keep"; body: { correctedPublishedAt?: string; reason?: string } }) => {
+		const r = await consoleClient.POST("/api/me/discovery-leads/{leadId}/{action}", { params: { path: { leadId, action } }, body });
+		if (!r.data) {
+			const status = r.response.status;
+			throw new Error(status === 409 ? "这条线索已经处理过了。" : status === 404 ? "线索不存在或已被删除。" : status === 400 ? "日期格式应为 YYYY-MM-DD，或填写内容不合法。" : "操作失败，请稍后重试。");
+		}
+		return r.data;
+	}, onSuccess: async () => {
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: ["discovery-leads"] }),
+			queryClient.invalidateQueries({ queryKey: ["source-leads"] }),
+		]);
+	} });
 	const [leadDraftState, setLeadDraftState] = useState<{ lead: Lead; key: string } | null>(null);
 	const feedStatus = useQuery({ queryKey: ["source-status"], enabled: !eventId, queryFn: async () => {
 		const r = await consoleClient.GET("/api/me/source-status");
@@ -455,6 +507,21 @@ export default function MarketEventsPage() {
 			{list.data?.length === 0 && <p className="rounded-md border border-dashed p-6">还没有录入事件。可先保存链接，缺失信息保持未知。</p>}
 			<div className="grid gap-4 md:grid-cols-2">{list.data?.map(v => <Link key={v.eventId} to={`/market-events/${v.eventId}`}><Card className="h-full transition hover:ring-foreground/25"><CardHeader><CardTitle>{v.input.provenance.simulated ? "【模拟】" : ""}{v.input.title}</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><p>{types[v.input.type]} · {v.input.subject.name} · 第 {v.version} 版</p><p>{v.candidate.status === "evidence_ready" ? "依据齐备" : "还缺依据"}</p><p>{v.input.taskRefs.length ? `关联 ${v.input.taskRefs.length} 个任务` : "未关联任务"}</p></CardContent></Card></Link>)}</div>
 		</Section>
+		{discoveryLeads.data && discoveryLeads.data.length > 0 && <Section
+			collapsible
+			defaultOpen
+			title={`发现线索待审核（${discoveryLeads.data.length}）`}
+			hint="discover 命令的搜索索引结果，未核验；接受才入库，拒绝后不再出现"
+		>
+			<div className="space-y-2 text-sm">
+				<p className="text-xs text-muted-foreground">下面是搜索索引发现的结果，日期未对照原文核验。请先核对标题与日期再接受；接受会把「标题+链接」入库为来源线索，拒绝要写理由。</p>
+				{discoveryLeads.error ? <p role="alert">{discoveryLeads.error.message}</p> : null}
+				{reviewLead.error ? <p role="alert" className="text-red-600">{reviewLead.error.message}</p> : null}
+				<ul className="space-y-2">
+					{discoveryLeads.data.map(lead => <DiscoveryLeadItem key={lead.id} lead={lead} busy={reviewLead.isPending} onReview={(action, body) => reviewLead.mutate({ leadId: lead.id, action, body })} />)}
+				</ul>
+			</div>
+		</Section>}
 		{leads.error && <p role="alert">{leads.error.message}</p>}
 		{leads.data && leads.data.leads.length > 0 && <Section
 			collapsible

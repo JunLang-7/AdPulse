@@ -284,6 +284,48 @@ export class PostgresStorage implements Storage {
 				);
 			}
 			if (!current.has(17)) {
+				// 假设偏差（README 第三类信号）：假设、版本、判定与幂等操作。
+				for (const name of [
+					"hypotheses",
+					"hypothesisVersions",
+					"hypothesisVerdicts",
+					"hypothesisOperations",
+				]) await this.createEntityTable(client, name);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_hypothesis_version
+					ON adpulse_hypothesisVersions ((data->>'hypothesisId'), (data->>'version'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_hypothesis_task
+					ON adpulse_hypotheses ((data->>'ownerId'), (data->>'taskId'), (data->>'createdAt'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_hypothesis_verdict_hypothesis
+					ON adpulse_hypothesisVerdicts ((data->>'ownerId'), (data->>'hypothesisId'), (data->>'createdAt'))`);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_hypothesis_verdict_subject
+					ON adpulse_hypothesisVerdicts ((data->>'ownerId'), (data->>'dedupKey'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (17)",
+				);
+			}
+			if (!current.has(18)) {
+				// 验证检查点：已应用变更与后续证据的关联，不改变策略与广告平台状态。
+				await this.createEntityTable(client, "validationChecks");
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_validation_check_session
+					ON adpulse_validationChecks ((data->>'ownerId'), (data->>'sessionId'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_validation_check_due
+					ON adpulse_validationChecks ((data->>'status'), (data->>'dueAt'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (18)",
+				);
+			}
+			if (!current.has(19)) {
+				// 主动发现线索暂存：同一人同一归一化 URL 唯一，堵住重复发现写入。
+				await this.createEntityTable(client, "discoveryLeads");
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_discovery_lead_dedup
+					ON adpulse_discoveryLeads ((data->>'ownerId'), (data->>'dedupKey'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_discovery_lead_status
+					ON adpulse_discoveryLeads ((data->>'ownerId'), (data->>'status'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (19)",
+				);
+			}
+			if (!current.has(20)) {
 				// 用户自加的企业站点（每人多个；同一人同一 host 唯一）。
 				await this.createEntityTable(client, "userSources");
 				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_user_source_host
@@ -291,7 +333,7 @@ export class PostgresStorage implements Storage {
 				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_user_source_owner
 					ON adpulse_userSources ((data->>'ownerId'))`);
 				await client.query(
-					"INSERT INTO adpulse_schema_migrations(version) VALUES (17)",
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (20)",
 				);
 			}
 			await client.query("COMMIT");

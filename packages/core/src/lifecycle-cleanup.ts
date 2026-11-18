@@ -278,6 +278,11 @@ export class LifecycleCleanupService {
 				.filter((row) => row.taskId === taskId)
 				.map((row) => row.id),
 		);
+		const validationCheckIds = new Set(
+			(await tx.validationChecks.listByOwner(ownerId))
+				.filter((row) => row.taskId === taskId)
+				.map((row) => row.id),
+		);
 		// S3 的引用清理会去掉已写回的 taskRef 指针，但清理定位需要它：
 		// 先按清单上的 taskId 找回全部相关会话（含 taskRef 已被清掉的），
 		// 再按 alertId 补充。找不到 taskRef 的会话靠删除清单兜底（见下方 or 条件）。
@@ -314,6 +319,8 @@ export class LifecycleCleanupService {
 				if (task.kind === "prepare_investigation_alert_session") return alertIds.has(task.alertId);
 				if (task.kind === "send_delivery" || task.kind === "send_investigation_decision")
 					return deliveryIds.has(task.deliveryId);
+				if (task.kind === "evaluate_validation_check")
+					return validationCheckIds.has(task.checkId);
 				return false;
 			})
 			.map((row) => row.id);
@@ -366,6 +373,7 @@ export class LifecycleCleanupService {
 		await remove("snapshots", (await tx.snapshots.all())
 			.filter((row) => sessionIds.has(row.sessionId)).map((row) => row.id));
 		await remove("sessions", [...sessionIds]);
+		await remove("validationChecks", [...validationCheckIds]);
 		await remove("notificationItems", itemIds);
 		await remove("notificationSelections", selectionIds);
 		await remove("investigationAlerts", [...alertIds]);
@@ -393,6 +401,17 @@ export class LifecycleCleanupService {
 			.map((row) => row.id));
 		await remove("taskOperations", (await tx.taskOperations.all())
 			.filter((row) => row.ownerId === ownerId && row.taskId === taskId).map((row) => row.id));
+		const hypothesisIds = new Set((await tx.hypotheses.listByOwner(ownerId))
+			.filter((row) => row.taskId === taskId).map((row) => row.id));
+		await remove("hypothesisOperations", (await tx.hypothesisOperations.all())
+			.filter((row) => row.ownerId === ownerId
+				&& row.resultRef.hypothesisId !== undefined && hypothesisIds.has(row.resultRef.hypothesisId))
+			.map((row) => row.id));
+		await remove("hypothesisVerdicts", (await tx.hypothesisVerdicts.all())
+			.filter((row) => row.ownerId === ownerId && hypothesisIds.has(row.hypothesisId)).map((row) => row.id));
+		await remove("hypothesisVersions", (await tx.hypothesisVersions.all())
+			.filter((row) => row.ownerId === ownerId && hypothesisIds.has(row.hypothesisId)).map((row) => row.id));
+		await remove("hypotheses", [...hypothesisIds]);
 		await remove("taskVersions", (await tx.taskVersions.all())
 			.filter((row) => row.taskId === taskId).map((row) => row.id));
 		await remove("tasks", [taskId]);

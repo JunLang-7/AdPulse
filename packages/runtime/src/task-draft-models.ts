@@ -1,11 +1,13 @@
 import { createModelEgressFetch } from "./model-egress.js";
 import { catalogForClient, catalogModelLabel, findCatalogModel, findCatalogProvider } from "./model-catalog.js";
 import {
+	createCatalogJsonCaller,
 	createCatalogTaskDraftExtractor,
 	createTaskDraftExtractor,
 	createTaskDraftRequestLimit,
 	createUserRequestBudgets,
 	getTaskDraftGateway,
+	type JsonCaller,
 	type TaskDraftExtractor,
 	type TaskDraftStage,
 } from "./task-draft-extractor.js";
@@ -20,6 +22,8 @@ type StoredConnection = {
 	selection: TaskDraftSelection;
 	label: string;
 	extract: TaskDraftExtractor;
+	/** 假设草案/初判等扩展用例的 JSON 补全出口；与 extract 同源同限流。 */
+	json: JsonCaller;
 	until: number;
 	timer: NodeJS.Timeout;
 	connectedAt: number;
@@ -29,6 +33,7 @@ type SharedRoute = {
 	selection: TaskDraftSelection;
 	label: string;
 	extract: TaskDraftExtractor;
+	json: JsonCaller;
 };
 
 const connectionLifetimeMs = 8 * 60 * 60 * 1000;
@@ -39,13 +44,31 @@ const testBrief = "产品：连接测试";
 function sharedRoutes(env: Record<string, string | undefined>, fetchImpl: typeof fetch, limit: ReturnType<typeof createTaskDraftRequestLimit>): SharedRoute[] {
 	const routes: SharedRoute[] = [];
 	const deepseek = createTaskDraftExtractor({ ...env, TASK_DRAFT_PROVIDER: "deepseek" }, fetchImpl, limit);
-	if (deepseek) routes.push({ selection: { provider: "deepseek", model: "deepseek-flash" }, label: "DeepSeek（部署提供）", extract: deepseek });
+	if (deepseek) routes.push({ selection: { provider: "deepseek", model: "deepseek-flash" }, label: "DeepSeek（部署提供）", extract: deepseek, json: createSharedJsonCaller(env, { provider: "deepseek", model: "deepseek-flash" }, fetchImpl, limit) });
 	const gateway = getTaskDraftGateway(env);
 	if (gateway) {
 		const extract = createTaskDraftExtractor({ ...env, TASK_DRAFT_PROVIDER: "openai-compatible" }, fetchImpl, limit);
-		if (extract) routes.push({ selection: { provider: "openai-compatible", model: gateway.modelId }, label: "兼容网关（部署提供）", extract });
+		const selection = { provider: "openai-compatible", model: gateway.modelId };
+		if (extract) routes.push({ selection, label: "兼容网关（部署提供）", extract, json: createSharedJsonCaller(env, selection, fetchImpl, limit) });
 	}
 	return routes;
+}
+
+function createSharedJsonCaller(
+	env: Record<string, string | undefined>,
+	selection: TaskDraftSelection,
+	fetchImpl: typeof fetch,
+	limit: ReturnType<typeof createTaskDraftRequestLimit>,
+): JsonCaller {
+	// 共享路由没有个人 Key：从部署环境解析同源密钥，解析不到就返回不可用。
+	if (selection.provider === "deepseek") {
+		const key = env.DEEPSEEK_API_KEY?.trim();
+		if (!key) return async () => null;
+		return createCatalogJsonCaller("deepseek", selection.model, key, fetchImpl, limit) ?? (async () => null);
+	}
+	const key = env.TASK_DRAFT_GATEWAY_API_KEY?.trim();
+	if (!key) return async () => null;
+	return createCatalogJsonCaller(selection.provider, selection.model, key, fetchImpl, limit) ?? (async () => null);
 }
 
 export function createTaskDraftModels(
@@ -109,6 +132,10 @@ export function createTaskDraftModels(
 		return createCatalogTaskDraftExtractor(selection.provider, selection.model, apiKey, fetchImpl, limit);
 	}
 
+	function createJsonFor(selection: TaskDraftSelection, apiKey: string): JsonCaller {
+		return createCatalogJsonCaller(selection.provider, selection.model, apiKey, fetchImpl, limit) ?? (async () => null);
+	}
+
 	return {
 		list(ownerId: string) {
 			return {
@@ -150,6 +177,7 @@ export function createTaskDraftModels(
 				const timer = setTimeout(() => remove(key), connectionLifetimeMs).unref();
 				connections.set(key, {
 					ownerId, selection, label: labelFor(selection), extract,
+					json: createJsonFor(selection, secret),
 					until: now() + connectionLifetimeMs, timer, connectedAt: now(),
 				});
 				return true;
@@ -187,6 +215,23 @@ export function createTaskDraftModels(
 			const sharedRoute = shared.find((route) =>
 				route.selection.provider === chosen.provider && route.selection.model === chosen.model);
 			return sharedRoute ? userLimitFor(ownerId)(() => sharedRoute.extract(brief, stage)) : null;
+		},
+		/** 假设草案/初判用：与连接共用个人限流；无连接或共享路由时返回 null。 */
+		async completeJson(
+			ownerId: string,
+			systemPrompt: string,
+			brief: string,
+			selection?: TaskDraftSelection,
+			maxTokens?: number,
+		): Promise<string | null> {
+			prune();
+			const chosen = selection ?? defaultSelection(ownerId);
+			if (!chosen) return null;
+			const connection = connections.get(connectionKey(ownerId, chosen));
+			const caller = connection?.json ?? shared.find((route) =>
+				route.selection.provider === chosen.provider && route.selection.model === chosen.model)?.json;
+			if (!caller) return null;
+			return userLimitFor(ownerId)(() => caller(systemPrompt, brief, maxTokens));
 		},
 	};
 }

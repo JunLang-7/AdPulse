@@ -1,6 +1,12 @@
 import type { MarketEventHead, MarketEventVersion, MarketEventAlias, MarketEventOperation } from "../market-events.js";
 import type { DecisionCard } from "../domain/decisionCard.js";
 import type {
+	MetricDefinition,
+	MetricKey,
+	PlacementMetricKey,
+	PlacementType,
+} from "../domain/placement.js";
+import type {
 	Limits,
 	Signal,
 	Strategy,
@@ -67,8 +73,8 @@ export interface NotificationConsent {
 
 /** 关注对象：本人任务，或本人录入的品牌/竞品名称（#38 出现实体后再关联）。 */
 export type SubscriptionTargetKind = "task" | "brand" | "competitor";
-/** 首期三维筛选里的「类别」：效果排查、明确事件、补证/待处理。 */
-export type SubscriptionCategory = "effect" | "event" | "evidence";
+/** 首期三维筛选里的「类别」：效果排查、明确事件、补证/待处理、假设偏差。 */
+export type SubscriptionCategory = "effect" | "event" | "evidence" | "hypothesis";
 /** 「关联范围」：只关联该对象所在任务，或也接收该对象的一般动态。 */
 export type SubscriptionScope = "task_only" | "include_general";
 
@@ -153,7 +159,7 @@ export interface NotificationBatch {
 }
 
 /** 单条待发信息；logicalKey 保证同一逻辑事件不因重试/换标题/转载重复通知。 */
-export type NotificationItemKind = "effect_alert" | "market_event";
+export type NotificationItemKind = "effect_alert" | "market_event" | "hypothesis_verdict";
 export type NotificationItemStatus = "queued" | "sent" | "cancelled" | "expired";
 
 export interface NotificationItem {
@@ -181,6 +187,8 @@ export interface NotificationItem {
 	effectRef?: { alertId: string; evidenceId: string; evidenceVersion: number; taskVersion: number };
 	/** 生产入队的市场/竞品事件引用；发送前重检事件仍是当前证据版本。 */
 	marketEventRef?: { eventId: string; version: number; evidenceRevision: number };
+	/** 生产入队的假设判定引用；发送前重检假设仍非停用且判定仍确认。 */
+	hypothesisRef?: { hypothesisId: string; verdictId: string; hypothesisVersion: number };
 	status: NotificationItemStatus;
 	/** 复用 Delivery：不另建投递状态机。 */
 	deliveryId?: string;
@@ -192,8 +200,8 @@ export interface NotificationItem {
 export interface NotificationSelection {
 	id: string;
 	ownerId: string;
-	/** 输入类别：effect = #10 效果告警；event = #38 市场/竞品事件。 */
-	input: "effect" | "event";
+	/** 输入类别：effect = #10 效果告警；event = #38 市场/竞品事件；hypothesis = 假设偏差判定。 */
+	input: "effect" | "event" | "hypothesis";
 	/** effect 输入专用引用；event 输入不填。 */
 	alertId?: string;
 	/** 事件可无任务关联，因此 taskId 对 event 输入是可选的。 */
@@ -202,6 +210,8 @@ export interface NotificationSelection {
 	evidenceRef?: EvidenceRef;
 	/** event 输入专用引用；发送前与事件当前版本比对。 */
 	marketEventRef?: { eventId: string; version: number; evidenceRevision: number };
+	/** hypothesis 输入专用引用；发送前重检假设与判定状态。 */
+	hypothesisRef?: { hypothesisId: string; verdictId: string; hypothesisVersion: number };
 	revision: number;
 	settingsVersion: number;
 	matchedTargetIds: string[];
@@ -305,13 +315,17 @@ export interface TaskVersion {
 		endsAt?: string;
 	};
 	rules: {
+		/** 本任务的效果告警口径；缺省 paid_ads。一个任务只用一套口径，避免混算。 */
+		placementType?: PlacementType;
 		metricDefinition?: string;
-		metricKey?: "cost_per_consultation";
+		metricKey?: PlacementMetricKey;
 		currency?: string;
 		unit?: string;
 		statWindowDays?: number;
 		alertThresholdMinor?: number;
+		/** 最小投入门槛（付费广告为花费，达人/种草为费用或内容成本）。 */
 		minimumSpendMinor?: number;
+		/** 最小结果计数门槛（付费广告为咨询次数，达人/种草为互动量）。 */
 		minimumConsultations?: number;
 		handlingDeadlineHours?: number;
 		maxPushRounds?: number;
@@ -338,6 +352,8 @@ export interface EvidenceImportRecord {
 		reportRef: string;
 		sourceUri?: string;
 	};
+	/** 缺省 paid_ads；键集合必须与口径一致，由领域层校验。 */
+	placementType?: PlacementType;
 	scope: { planRef: string; campaignRefs: string[] };
 	period: {
 		startsAt: string;
@@ -345,27 +361,20 @@ export interface EvidenceImportRecord {
 		timeZone: string;
 		completeness: "complete" | "partial";
 	};
-	metricsContract: {
-		spendMinor: { definition: string; formula: string; sourceField: string };
-		consultations: { definition: string; formula: string; sourceField: string };
-	};
+	/** 按投放方式使用不同的指标键，不把达人/种草塞进付费广告的口径。 */
+	metricsContract: Record<string, MetricDefinition>;
 	currency: { code: string; minorUnit: string; minorUnitsPerMajor: number };
 	attribution: { model: string; windowDays?: number };
 	callbackStatus: "complete" | "pending" | "not_applicable" | "unknown";
-	rawValues: {
-		spend?: string | number | null;
-		consultations?: string | number | null;
-	};
+	rawValues: Record<string, string | number | null>;
 	values: EvidenceValues;
 }
 export interface EvidenceSourceInput {
 	source: EvidenceImportRecord["source"];
 	rawValues: EvidenceImportRecord["rawValues"];
 }
-export interface EvidenceValues {
-	spendMinor?: number | null;
-	consultations?: number | null;
-}
+/** 键由 placementSpec 决定；旧快照的 spendMinor/consultations 仍是合法键。 */
+export type EvidenceValues = Record<string, number | null>;
 export interface EvidenceHead {
 	id: string;
 	ownerId: string;
@@ -383,6 +392,8 @@ export interface EvidenceVersion {
 	version: number;
 	businessKey: string;
 	contentDigest: string;
+	/** 读取时归一；旧版本缺省 paid_ads，不需要数据迁移。 */
+	placementType: PlacementType;
 	scope: { planRef: string; campaignRefs: string[] };
 	period: {
 		startsAt: string;
@@ -390,10 +401,7 @@ export interface EvidenceVersion {
 		timeZone: string;
 		completeness: "complete" | "partial";
 	};
-	metricsContract: {
-		spendMinor: { definition: string; formula: string; sourceField: string };
-		consultations: { definition: string; formula: string; sourceField: string };
-	};
+	metricsContract: Record<string, MetricDefinition>;
 	currency: { code: string; minorUnit: string; minorUnitsPerMajor: number };
 	attribution: { model: string; windowDays?: number };
 	callbackStatus: "complete" | "pending" | "not_applicable" | "unknown";
@@ -412,10 +420,7 @@ export interface EvidenceSource {
 		reportRef: string;
 		sourceUri?: string;
 	};
-	rawValues: {
-		spend?: string | number | null;
-		consultations?: string | number | null;
-	};
+	rawValues: Record<string, string | number | null>;
 	digest: string;
 	createdAt: string;
 }
@@ -439,6 +444,8 @@ export type ComparisonReasonCode =
 	| "ACCOUNT_MISMATCH"
 	| "SOURCE_MISSING"
 	| "SCOPE_MISMATCH"
+	| "PLACEMENT_TYPE_MISMATCH"
+	| "RULE_PLACEMENT_MISMATCH"
 	| "METRICS_CONTRACT_MISMATCH"
 	| "CURRENCY_MISMATCH"
 	| "ATTRIBUTION_MISMATCH"
@@ -466,10 +473,7 @@ export type ComparisonReasonCode =
 	| "SAMPLE_BELOW_MINIMUM"
 	| "ZERO_DENOMINATOR";
 export type ComparisonAxis = "period_comparison" | "current_threshold" | "both";
-export type ComparisonMetric =
-	| "spendMinor"
-	| "consultations"
-	| "cost_per_consultation";
+export type ComparisonMetric = MetricKey;
 export type RemediationAction =
 	| "provide_evidence"
 	| "revise_task_rules"
@@ -506,7 +510,12 @@ export interface ComparisonResult {
 	status: ComparisonStatus;
 	canComparePeriods: boolean;
 	canEvaluateCurrentThreshold: boolean;
+	/** 该次比较使用的投放方式口径；旧结果缺省按 paid_ads 读取。 */
+	placementType?: PlacementType;
+	/** 结构化口径投影；前端按它标注指标名称，不用历史字段名字面理解。 */
+	metricKeys?: { spend: string; count: string; derived: string };
 	comparisons: {
+		/** 通用投影，字段名沿用历史契约；含义由 metricKeys / placementType 决定。 */
 		spendMinor?: { baseline: number; current: number; delta: number };
 		consultations?: { baseline: number; current: number; delta: number };
 		costPerConsultation?: {
@@ -517,7 +526,7 @@ export interface ComparisonResult {
 	};
 	thresholdEvaluation: {
 		status: "exceeded" | "not_exceeded" | "not_evaluated";
-		metricKey?: "cost_per_consultation";
+		metricKey?: PlacementMetricKey;
 		value?: { numeratorMinor: number; denominatorConsultations: number };
 		thresholdMinor?: number;
 		currency?: string;
@@ -577,7 +586,10 @@ export interface InvestigationAlertEvidence {
 	source: { platform: string; accountRef: string };
 	scope: EvidenceVersion["scope"];
 	period: EvidenceVersion["period"];
-	metric: "cost_per_consultation";
+	metric: PlacementMetricKey;
+	placementType?: PlacementType;
+	/** 该口径的归因局限，随告警一起保留，不得换算掉。 */
+	attributionNote?: string;
 	metricDefinition: string;
 	metricFormula: string;
 	spendMinor?: number | null;
@@ -669,6 +681,9 @@ export interface StrategySnapshot {
 	version: number;
 	strategy: Strategy;
 	changes: StrategyChange[];
+	/** 当时被选中候选的假设/验证说明，用于事后核对；缺省表示未提供。 */
+	hypothesis?: string;
+	validationPlan?: string;
 	createdAt: string;
 }
 export interface Inbox {
@@ -707,13 +722,47 @@ export interface Delivery extends CardDelivery {
 	/** suppressed 的原因：未授权 / 目的地失效 / 身份绑定失效。 */
 	suppressionReason?: string;
 }
+export type ValidationCheckStatus =
+	| "pending"
+	| "observed"
+	| "inconclusive"
+	| "cancelled";
+export type ValidationOutcome = "below_threshold" | "above_threshold";
+/** 已应用变更的验证检查点：只记录观察结果，不推断因果、不自动改方案。 */
+export interface ValidationCheck {
+	id: string;
+	ownerId: string;
+	taskId: string;
+	taskVersion: number;
+	sessionId: string;
+	snapshotVersion: number;
+	hypothesis?: string;
+	validationPlan: string;
+	metricKey: "cost_per_consultation";
+	dueAt: string;
+	status: ValidationCheckStatus;
+	comparisonResultId?: string;
+	evidenceRef?: EvidenceRef;
+	observedOutcome?: ValidationOutcome;
+	reason?: string;
+	createdAt: string;
+	observedAt?: string;
+}
 export type JobTask =
 	| { kind: "process_inbox"; inboxId: string }
 	| { kind: "prepare_round"; sessionId: string; version: number }
 	| { kind: "prepare_investigation_alert_session"; alertId: string }
 	| { kind: "send_delivery"; deliveryId: string }
 	| { kind: "send_investigation_decision"; deliveryId: string }
-	| { kind: "send_digest"; batchId: string };
+	| { kind: "send_digest"; batchId: string }
+/** 假设偏差初判：新证据到达后为关联任务的非停用假设生成待确认初判。 */
+| {
+		kind: "prepare_hypothesis_verdicts";
+		source:
+			| { kind: "market_event"; eventId: string; version: number }
+			| { kind: "comparison"; comparisonResultId: string };
+	}
+	| { kind: "evaluate_validation_check"; checkId: string };
 export interface Job {
 	id: string;
 	task: JobTask;
@@ -785,6 +834,37 @@ export interface SourceState {
 	resumedAt: string | null;
 	resumedBy: string | null;
 	lastPrunedAt: string | null;
+}
+/**
+ * 主动发现线索（discovery-lead-intake）：手动 discovery 命令的暂存结果。
+ * 一律 `unverified`，不直接入库/推送；接受后作为 source item 入库，拒绝后同 URL 不再出现。
+ */
+export type DiscoveryLeadStatus = "pending" | "accepted" | "rejected" | "kept";
+export interface DiscoveryLead {
+	id: string;
+	ownerId: string;
+	sourceKey: string;
+	topic: string;
+	provider: "agent-reach/exa" | "agent-reach/xiaohongshu";
+	/** 原始查询词，保留给审核者理解发现来源。 */
+	query: string;
+	/** 操作人声明的关注对象；发现侧不做标题/域名推断。 */
+	subject: { kind: "brand" | "competitor"; name: string } | null;
+	title: string;
+	/** 访问用原文链接；小红书保留 xsec_token，不截断。 */
+	url: string;
+	/** 归一化身份：与现有 source items 及历史 leads 去重用，不用于访问。 */
+	dedupKey: string;
+	author: string | null;
+	/** 来自搜索索引的日期，未核验；对照原文后由审核者修正。 */
+	indexedPublishedAt: string | null;
+	verification: "unverified";
+	status: DiscoveryLeadStatus;
+	discoveredAt: string;
+	reviewedAt: string | null;
+	reviewedBy: string | null;
+	reviewReason: string | null;
+	convertedItemId: string | null;
 }
 /**
  * 个人模型连接（#86）：只存非敏感投影。密钥单独放在 UserModelCredential 的密文记录里，
@@ -865,7 +945,91 @@ export interface UserModelPreference {
 	updatedAt: string;
 }
 
+/**
+ * 假设偏差（README 第三类信号）：当前方案依赖的判断被新证据支持或挑战。
+ * 只有用户确认的判定能改变状态；模型初判只进入待确认队列。
+ */
+export type HypothesisStatus =
+	| "draft"
+	| "open"
+	| "supported"
+	| "challenged"
+	| "retired";
+export type HypothesisOrigin = "manual" | "model_draft_accepted";
+export interface Hypothesis {
+	id: string;
+	ownerId: string;
+	taskId: string;
+	/** 挂靠的任务版本（策略基线）；策略推进后旧假设保留原归属。 */
+	taskVersion: number;
+	currentVersion: number;
+	status: HypothesisStatus;
+	createdAt: string;
+}
+export interface HypothesisVersion {
+	id: string;
+	hypothesisId: string;
+	ownerId: string;
+	version: number;
+	/** 假设陈述：可被证据支持或挑战的一条判断，不包装为事实。 */
+	statement: string;
+	/** 当前方案为什么依赖这条判断。 */
+	rationale: string;
+	/** 什么样的证据会支持/挑战它；缺失表示尚未定义判定标准。 */
+	testable?: string;
+	origin: HypothesisOrigin;
+	/** 由模型草案接受而来时留痕；manual 判定缺省。 */
+	draftRef?: { modelRef: string; generatedAt: string; iterations: number };
+	createdAt: string;
+}
+export type HypothesisSubjectRef =
+	| { kind: "market_event"; eventId: string; version: number }
+	| { kind: "source_item"; sourceItemId: string }
+	| { kind: "comparison"; comparisonResultId: string };
+export type HypothesisJudgment = "supports" | "challenges" | "unclear";
+export type HypothesisVerdictStage = "preliminary" | "confirmed" | "rejected";
+export interface HypothesisVerdict {
+	id: string;
+	/** 同一假设对同一证据主体只保留一条未驳回判定；重试/驳回后重判靠它去重。 */
+	dedupKey: string;
+	ownerId: string;
+	hypothesisId: string;
+	/** 判定挂靠的假设版本。 */
+	hypothesisVersion: number;
+	subject: HypothesisSubjectRef;
+	judgment: HypothesisJudgment;
+	/** 判定依据；自动初判由模型生成并须引用证据原文。 */
+	explanation: string;
+	/** 初判引用的关键原文（逐字），可为空。 */
+	quote?: string;
+	stage: HypothesisVerdictStage;
+	/** 自动初判留痕；人工判定缺省。 */
+	preliminary?: { modelRef: string; generatedAt: string };
+	confirmedAt?: string;
+	createdAt: string;
+}
+export interface HypothesisOperation {
+	id: string;
+	ownerId: string;
+	digest: string;
+	kind: "create" | "revise" | "retire" | "verdict";
+	resultRef: { hypothesisId?: string; versionId?: string; verdictId?: string };
+	status:
+		| "created"
+		| "duplicate"
+		| "revised"
+		| "unchanged"
+		| "retired"
+		| "verdict_recorded"
+		| "verdict_duplicate";
+	createdAt: string;
+}
+
 export interface Entities {
+	hypotheses: Hypothesis;
+	hypothesisVersions: HypothesisVersion;
+	hypothesisVerdicts: HypothesisVerdict;
+	hypothesisOperations: HypothesisOperation;
 	marketEvents: MarketEventHead;
 	marketEventVersions: MarketEventVersion;
 	marketEventAliases: MarketEventAlias;
@@ -901,12 +1065,14 @@ export interface Entities {
 	sourceRuns: SourceRun;
 	sourceSnapshots: SourceSnapshot;
 	sourceItems: SourceItem;
+	discoveryLeads: DiscoveryLead;
 	lifecycleDeletions: LifecycleDeletion;
 	auditEvents: AuditRecord;
 	sessions: Session;
 	rounds: Round;
 	actions: ActionRef;
 	snapshots: StrategySnapshot;
+	validationChecks: ValidationCheck;
 	inbox: Inbox;
 	deliveries: Delivery;
 	jobs: Job;

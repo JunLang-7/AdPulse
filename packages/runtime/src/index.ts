@@ -7,6 +7,7 @@
 import {
 	ComparisonService,
 	EvidenceService,
+	HypothesisService,
 	MarketEventService,
 	DigestScheduler,
 	InvestigationAlertService,
@@ -16,6 +17,7 @@ import {
 	ModelConnectionService,
 	Orchestrator,
 	SubscriptionService,
+	ValidationCheckService,
 	resolveActiveIdentity,
 	SOURCE_DEFINITIONS,
 	SourceService,
@@ -39,6 +41,21 @@ import {
 	type ModelRouteInput,
 } from "./task-draft-extractor.js";
 import { createTaskDraftModels } from "./task-draft-models.js";
+import {
+	createHypothesisVerdictJobHandler,
+	type HypothesisVerdictSource,
+} from "./hypothesis-jobs.js";
+import { createHypothesisReasoning } from "./hypothesis-reasoning.js";
+
+export { createHypothesisReasoning };
+export type {
+	HypothesisDraftRequest,
+	HypothesisDraftSuggestion,
+	HypothesisJudgeRequest,
+	HypothesisJudgmentSuggestion,
+	HypothesisReasoning,
+} from "./hypothesis-reasoning.js";
+export type { HypothesisVerdictSource } from "./hypothesis-jobs.js";
 
 export const reviewPolicy: PolicyEngine = {
 	async propose({ signal, roundNo }) {
@@ -62,7 +79,14 @@ export function compose(
 	storage: Storage,
 	accounts: ChannelAccount[],
 	policy: PolicyEngine = reviewPolicy,
-	options: { detailUrlBase?: string; decisionCardsEnabled?: boolean } = {},
+	options: {
+		detailUrlBase?: string;
+		decisionCardsEnabled?: boolean;
+		/** 假设偏差初判处理器；未注入时初判 job 失败（独立 worker 场景需自行装配）。 */
+		hypothesisVerdicts?: {
+			prepare: (source: HypothesisVerdictSource) => Promise<void>;
+		};
+	} = {},
 ) {
 	const channels = new ChannelRegistry(accounts);
 	// 站内详情链接只在 HTTPS 控制台 origin 下生成：卡片渲染强制 https，
@@ -116,6 +140,7 @@ export function compose(
 	const notificationQueue = new NotificationQueue(storage);
 	const digestScheduler = new DigestScheduler(storage, subscriptions, notificationQueue);
 	const lifecycleCleanup = new LifecycleCleanupService(storage);
+	const validationChecks = new ValidationCheckService(storage);
 	// 目的地平台 → 渠道账号：只匹配声明了同一身份作用域的连接，避免把飞书消息发到别的账号。
 	const platformAccounts = new Map<string, string>();
 	for (const account of accounts)
@@ -128,7 +153,9 @@ export function compose(
 		tasks,
 		evidence,
 		marketEvents: new MarketEventService(storage),
+		hypotheses: new HypothesisService(storage),
 		comparisons,
+		validationChecks,
 		investigationAlerts,
 		notifications,
 		worker: new Worker(
@@ -149,6 +176,9 @@ export function compose(
 			30_000,
 			decisionAccountFor,
 			lifecycleCleanup,
+			3_600_000,
+			options.hypothesisVerdicts,
+			validationChecks,
 		),
 	};
 }
@@ -217,6 +247,8 @@ export { runSources } from "./source-runner.js";
 export { runUserSources } from "./user-source-runner.js";
 export { discoverCompanySite, pickCompanySite, resolveNewsListPage, searchBing, readViaAgentReach, parseMarkdownLinks, agentReachReadFallback, AgentReachLimitError } from "./site-discovery.js";
 export { discoverSource } from "./source-discovery.js";
+export { discoverXiaohongshu } from "./xiaohongshu-discovery.js";
+export type { XiaohongshuNoteCandidate, RunXiaohongshu } from "./xiaohongshu-discovery.js";
 export { discoverModels, isDiscoveryProtocolWired, modelDiscoveryMaxModels } from "./model-discovery.js";
 export { geminiEndpoint, isGeminiModelId, requestGeminiText } from "./model-gemini.js";
 export type { ModelDiscoveryInput } from "./model-discovery.js";
@@ -292,10 +324,21 @@ export async function fromEnvironment(
 	const taskDraftModels = createTaskDraftModels(env);
 	const storage = postgres ?? new MemoryStorage();
 	const modelConnections = createModelConnections(storage, env);
+	// 假设偏差初判：与任务草案共用同一套模型连接与限流；未配置模型时初判跳过。
+	const hypothesisVerdicts = createHypothesisVerdictJobHandler(
+		storage,
+		(ownerId, systemPrompt, brief, maxTokens) =>
+			taskDraftModels.completeJson(ownerId, systemPrompt, brief, undefined, maxTokens),
+		(ownerId) => {
+			const selection = taskDraftModels.list(ownerId).defaultSelection;
+			return selection ? `${selection.provider}/${selection.model}` : null;
+		},
+	);
 	return {
 		...compose(storage, accounts, reviewPolicy, {
 			decisionCardsEnabled: env.DECISION_CARDS_ENABLED === "1",
 			...(env.PUBLIC_ORIGIN ? { detailUrlBase: env.PUBLIC_ORIGIN } : {}),
+			hypothesisVerdicts,
 		}),
 		taskDraftModels,
 		modelConnections,

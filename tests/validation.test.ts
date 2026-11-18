@@ -2,16 +2,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	applyChanges,
+	isMonetaryChange,
+	MAX_STRATEGY_CHANGES,
 	Orchestrator,
+	TaskService,
 	Worker,
 } from "../packages/core/dist/index.js";
 import type {
 	ChoiceCommand,
 	Limits,
 	OutboundChannel,
+	PolicyEngine,
 	Strategy,
 	StrategyChange,
 } from "../packages/core/dist/index.js";
+import { MemoryStorage } from "../packages/storage/dist/memory.js";
 import { fixture, proposal } from "./helpers.ts";
 
 const strategy: Strategy = {
@@ -47,6 +52,264 @@ test("model changes cannot bypass limits through repeated fields or unsupported 
 			applyChanges(strategy, [change as StrategyChange], limits),
 		);
 	assert.equal(strategy.channels.ads.budget, 100);
+});
+
+test("audience and sellingPoint changes are list operations with their own limits", () => {
+	const base: Strategy = {
+		objective: "leads",
+		audience: ["装修业主"],
+		channels: {},
+		sellingPoints: ["免费样品"],
+	};
+	const applied = applyChanges(
+		base,
+		[
+			{ kind: "audience", op: "add", item: "春节备货家庭" },
+			{ kind: "audience", op: "remove", item: "装修业主" },
+			{ kind: "sellingPoint", op: "add", item: "产地可参观" },
+			{ kind: "contentDirection", op: "add", item: "产地溯源短视频" },
+			{ kind: "partner", op: "add", item: "本地生活达人" },
+		],
+		limits,
+	);
+	assert.deepEqual(applied.audience, ["春节备货家庭"]);
+	assert.deepEqual(applied.sellingPoints, ["免费样品", "产地可参观"]);
+	assert.deepEqual(applied.contentDirections, ["产地溯源短视频"]);
+	assert.deepEqual(applied.partners, ["本地生活达人"]);
+	// 旧方案没有这两个可选字段：移除即视为过期，而不是抛 TypeError。
+	assert.throws(
+		() => applyChanges(base, [{ kind: "partner", op: "remove", item: "不存在" }], limits),
+		/stale/,
+	);
+	assert.throws(
+		() =>
+			applyChanges(
+				{ ...base, partners: "不是数组" } as unknown as Strategy,
+				[],
+				limits,
+			),
+		/invalid strategy/,
+	);
+	assert.deepEqual(base.audience, ["装修业主"], "input strategy is not mutated");
+
+	const rejected: Array<[StrategyChange, RegExp]> = [
+		[{ kind: "audience", op: "add", item: "装修业主" }, /stale/],
+		[{ kind: "audience", op: "remove", item: "不存在" }, /stale/],
+		[{ kind: "sellingPoint", op: "add", item: " 前后空格 " }, /invalid/],
+		[{ kind: "audience", op: "add", item: "a".repeat(81) }, /invalid/],
+		[{ kind: "audience", op: "add", item: "带\n换行" }, /invalid/],
+		[
+			{ kind: "audience", op: "toggle", item: "x" } as unknown as StrategyChange,
+			/invalid/,
+		],
+	];
+	for (const [change, pattern] of rejected)
+		assert.throws(() => applyChanges(base, [change], limits), pattern);
+
+	assert.throws(
+		() =>
+			applyChanges(
+				base,
+				[
+					{ kind: "audience", op: "add", item: "新人群" },
+					{ kind: "audience", op: "add", item: "新人群" },
+				],
+				limits,
+			),
+		/duplicate/,
+	);
+	const full: Strategy = {
+		...base,
+		audience: Array.from({ length: 8 }, (_, index) => `人群${index}`),
+	};
+	assert.throws(
+		() => applyChanges(full, [{ kind: "audience", op: "add", item: "第九项" }], limits),
+		/list is full/,
+	);
+	const tooMany = Array.from({ length: MAX_STRATEGY_CHANGES + 1 }, (_, index) => ({
+		kind: "audience" as const,
+		op: "add" as const,
+		item: `新人群${index}`,
+	}));
+	assert.throws(() => applyChanges(base, tooMany, limits), /too many/);
+});
+
+test("only budget and bid changes count as monetary", () => {
+	assert.equal(isMonetaryChange({ kind: "budget", channelId: "ads", from: 1, to: 2 }), true);
+	assert.equal(isMonetaryChange({ kind: "bidCpc", channelId: "ads", from: 1, to: 2 }), true);
+	assert.equal(isMonetaryChange({ kind: "enabled", channelId: "ads", from: true, to: false }), false);
+	assert.equal(isMonetaryChange({ kind: "audience", op: "add", item: "人群" }), false);
+	assert.equal(isMonetaryChange({ kind: "sellingPoint", op: "remove", item: "卖点" }), false);
+	assert.equal(isMonetaryChange({ kind: "contentDirection", op: "add", item: "内容" }), false);
+	assert.equal(isMonetaryChange({ kind: "partner", op: "add", item: "达人" }), false);
+});
+
+test("unconfirmed task rules allow audience suggestions but reject monetary ones", async () => {
+	const storage = new MemoryStorage();
+	const now = () => "2026-01-01T00:00:00.000Z";
+	const task = await new TaskService(storage, now).create("owner", "task-key", {
+		product: "测试产品",
+		strategy: structuredClone(strategy),
+		observation: {},
+		rules: {},
+	});
+	const baseInput = {
+		ownerId: "owner",
+		taskRef: { taskId: task.taskId, taskVersion: task.version },
+		recipient: { accountId: "account-a", kind: "user" as const, externalId: "user-a" },
+		allowedActorIds: ["user-a"],
+		strategy: structuredClone(strategy),
+		limits,
+		signal: {
+			id: "sig",
+			title: "成本变化",
+			summary: "需要复核",
+			evidence: [{ label: "CPC", value: "2 → 2.4" }],
+		},
+		expiresAt: "2026-01-02T00:00:00.000Z",
+	};
+	const card = {
+		title: "复核",
+		summary: "仅调整方案草案",
+		evidence: [{ label: "CPC", value: "2 → 2.4" }],
+	};
+	const budgetPolicy: PolicyEngine = {
+		async propose() {
+			return {
+				card,
+				candidates: [
+					{
+						id: "budget",
+						label: "上调预算",
+						changes: [{ kind: "budget", channelId: "ads", from: 100, to: 110 }],
+						complete: true,
+					},
+				],
+			};
+		},
+	};
+	const budget = new Orchestrator(storage, budgetPolicy, now);
+	const budgetSession = await budget.startSession({
+		...baseInput,
+		requestId: crypto.randomUUID(),
+	});
+	await assert.rejects(
+		budget.prepareRound(budgetSession.id, 0),
+		/unconfirmed task rules prohibit monetary suggestions/,
+	);
+	assert.equal((await storage.transaction((tx) => tx.rounds.all())).length, 0);
+
+	const audiencePolicy: PolicyEngine = {
+		async propose() {
+			return {
+				card,
+				candidates: [
+					{
+						id: "audience",
+						label: "补充人群",
+						changes: [{ kind: "audience", op: "add", item: "春节备货的家庭" }],
+						complete: true,
+					},
+				],
+			};
+		},
+	};
+	const audience = new Orchestrator(storage, audiencePolicy, now);
+	const audienceSession = await audience.startSession({
+		...baseInput,
+		requestId: crypto.randomUUID(),
+	});
+	await audience.prepareRound(audienceSession.id, 0);
+	const rounds = await storage.transaction((tx) => tx.rounds.all());
+	assert.equal(rounds.length, 1);
+	assert.deepEqual(rounds[0]?.candidates[0]?.changes, [
+		{ kind: "audience", op: "add", item: "春节备货的家庭" },
+	]);
+});
+
+test("candidate hypothesis and validation plan are bounded, persisted, and shown on the card", async () => {
+	const f = fixture();
+	const card = {
+		title: "复核",
+		summary: "仅调整方案草案",
+		evidence: [{ label: "CPC", value: "2 → 2.4" }],
+	};
+	const policy: PolicyEngine = {
+		async propose() {
+			return {
+				card,
+				candidates: [
+					{
+						id: "adjust",
+						label: "补充人群",
+						changes: [{ kind: "audience", op: "add", item: "春节备货家庭" }],
+						complete: true,
+						hypothesis: "节前备货需求上升",
+						validationPlan: "观察 7 天咨询成本是否回落",
+					},
+				],
+			};
+		},
+	};
+	const decisions = new Orchestrator(f.storage, policy, f.now);
+	const session = await f.start();
+	await decisions.prepareRound(session.id, 0);
+	const round = await f.storage.transaction((tx) =>
+		tx.rounds.get(`${session.id}:1`),
+	);
+	assert.equal(round?.candidates[0]?.hypothesis, "节前备货需求上升");
+	const expectedDetail =
+		"假设：节前备货需求上升；验证：观察 7 天咨询成本是否回落";
+	assert.deepEqual(round?.card.options[0], {
+		id: "adjust",
+		label: "补充人群",
+		detail: expectedDetail,
+	});
+	const delivery = (
+		await f.storage.transaction((tx) => tx.deliveries.all())
+	)[0];
+	assert.ok(delivery && "options" in delivery.card);
+	assert.equal(delivery.card.options[0]?.detail, expectedDetail);
+
+	const action = (
+		await f.storage.transaction((tx) => tx.actions.all())
+	)[0];
+	assert.ok(action);
+	const inbox = await decisions.receiveChoice({
+		sourceId: "console:owner",
+		eventId: "rationale-accept",
+		actionRef: action.id,
+		actor: { kind: "console", userId: "owner" },
+	});
+	await decisions.processInbox(inbox.id);
+	const applied = await f.storage.transaction((tx) =>
+		tx.snapshots.get(`${session.id}:1`),
+	);
+	assert.equal(applied?.hypothesis, "节前备货需求上升");
+	assert.equal(applied?.validationPlan, "观察 7 天咨询成本是否回落");
+
+	for (const value of [
+		{ hypothesis: " 前后空格 " },
+		{ validationPlan: "a".repeat(301) },
+		{ hypothesis: "带\n换行" },
+	]) {
+		const invalidPolicy = {
+			async propose() {
+				return {
+					card,
+					candidates: [
+						{ id: "x", label: "x", changes: [], complete: true, ...value },
+					],
+				};
+			},
+		} as PolicyEngine;
+		const invalid = new Orchestrator(f.storage, invalidPolicy, f.now);
+		const target = await f.start();
+		await assert.rejects(
+			invalid.prepareRound(target.id, 0),
+			/invalid candidate rationale/,
+		);
+	}
 });
 
 test("inbox event identity is scoped to each connection", async () => {

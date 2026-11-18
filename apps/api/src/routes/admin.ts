@@ -9,11 +9,12 @@ import type {
 	TaskInput,
 	Transaction,
 } from "@adpluse/core";
-import { LifecycleDeletionError, ModelConnectionError, modelConnectionProtocols, taskLifecycleIn, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
+import { LifecycleDeletionError, ModelConnectionError, ValidationCheckError, modelConnectionProtocols, placementTypes, taskLifecycleIn, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
 import { findCatalogModel, taskDraftBriefMaxLength, taskDraftStages, type Runtime, type TaskDraftSelection } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
 import { handleMarketEvents } from "./market-events.js";
+import { handleHypotheses } from "./hypotheses.js";
 import type { AuditEvent, ModelAuditEvent } from "../server.js";
 
 const amount = z.number().finite().nonnegative();
@@ -25,20 +26,30 @@ const strategy = z
 			z.string().min(1).max(128),
 			z
 				.object({
+					type: z.enum(placementTypes).optional(),
 					budget: amount.optional(),
 					bidCpc: amount.optional(),
 					enabled: z.boolean().optional(),
 				})
 				.strict()
-				.transform(({ budget, bidCpc, enabled }) => ({
+				.transform(({ type, budget, bidCpc, enabled }) => ({
+					...(type === undefined ? {} : { type }),
 					...(budget === undefined ? {} : { budget }),
 					...(bidCpc === undefined ? {} : { bidCpc }),
 					...(enabled === undefined ? {} : { enabled }),
 				})),
 		),
 		sellingPoints: z.array(z.string()).max(100),
+		contentDirections: z.array(z.string()).max(100).optional(),
+		partners: z.array(z.string()).max(100).optional(),
 	})
-	.strict();
+	.strict()
+	// exactOptionalPropertyTypes：显式 undefined 不能传给内核的可选字段，统一在边界剔除。
+	.transform(({ contentDirections, partners, ...rest }) => ({
+		...rest,
+		...(contentDirections === undefined ? {} : { contentDirections }),
+		...(partners === undefined ? {} : { partners }),
+	}));
 const sessionInput = z
 	.object({
 		taskRef: z
@@ -221,8 +232,9 @@ const taskInput = z
 			.strict(),
 		rules: z
 			.object({
+				placementType: z.enum(placementTypes).optional(),
 				metricDefinition: z.string().trim().min(1).max(500).optional(),
-				metricKey: z.enum(["cost_per_consultation"]).optional(),
+				metricKey: z.enum(["cost_per_consultation", "cost_per_engagement"]).optional(),
 				currency: z.string().trim().min(1).max(16).optional(),
 				unit: z.string().trim().min(1).max(32).optional(),
 				statWindowDays: z.number().int().nonnegative().optional(),
@@ -251,6 +263,13 @@ const normalizedMetricValue = z
 	.refine(Number.isSafeInteger)
 	.nonnegative()
 	.nullable();
+const metricDefinitionInput = z
+	.object({
+		definition: nonBlank(500),
+		formula: nonBlank(1000),
+		sourceField: nonBlank(256),
+	})
+	.strict();
 const evidenceRecordInput = z
 	.object({
 		source: z
@@ -261,6 +280,7 @@ const evidenceRecordInput = z
 				sourceUri: z.url().optional(),
 			})
 			.strict(),
+		placementType: z.enum(placementTypes).optional(),
 		scope: z
 			.object({
 				planRef: nonBlank(256),
@@ -275,24 +295,10 @@ const evidenceRecordInput = z
 				completeness: z.enum(["complete", "partial"]),
 			})
 			.strict(),
+		// 键集合由投放方式口径决定，领域层再校验；这里只限制形状与规模。
 		metricsContract: z
-			.object({
-				spendMinor: z
-					.object({
-						definition: nonBlank(500),
-						formula: nonBlank(1000),
-						sourceField: nonBlank(256),
-					})
-					.strict(),
-				consultations: z
-					.object({
-						definition: nonBlank(500),
-						formula: nonBlank(1000),
-						sourceField: nonBlank(256),
-					})
-					.strict(),
-			})
-			.strict(),
+			.record(z.string().min(1).max(64), metricDefinitionInput)
+			.refine((value) => Object.keys(value).length <= 8),
 		currency: z
 			.object({
 				code: nonBlank(16),
@@ -308,17 +314,11 @@ const evidenceRecordInput = z
 			.strict(),
 		callbackStatus: z.enum(["complete", "pending", "not_applicable", "unknown"]),
 		rawValues: z
-			.object({
-				spend: rawMetricValue.optional(),
-				consultations: rawMetricValue.optional(),
-			})
-			.strict(),
+			.record(z.string().min(1).max(128), rawMetricValue.optional())
+			.refine((value) => Object.keys(value).length <= 8),
 		values: z
-			.object({
-				spendMinor: normalizedMetricValue.optional(),
-				consultations: normalizedMetricValue.optional(),
-			})
-			.strict(),
+			.record(z.string().min(1).max(64), normalizedMetricValue.optional())
+			.refine((value) => Object.keys(value).length <= 8),
 	})
 	.strict();
 const evidenceImportInput = z
@@ -380,8 +380,11 @@ async function sessionForJob(
 		return (await tx.deliveries.get(job.task.deliveryId))?.sessionId ?? null;
 	if (job.task.kind === "prepare_investigation_alert_session")
 		return (await tx.investigationAlerts.get(job.task.alertId))?.sessionId ?? null;
-	// 日汇总投递与批次绑定，不属于任何会话。
+	if (job.task.kind === "evaluate_validation_check")
+		return (await tx.validationChecks.get(job.task.checkId))?.sessionId ?? null;
+	// 日汇总与假设初判不属于任何会话。
 	if (job.task.kind === "send_digest") return null;
+	if (job.task.kind === "prepare_hypothesis_verdicts") return null;
 	const inbox = await tx.inbox.get(job.task.inboxId);
 	const action = inbox && (await tx.actions.get(inbox.command.actionRef));
 	return action
@@ -411,6 +414,7 @@ export async function handleAdmin(
 	audit?: (event: AuditEvent) => void,
 ): Promise<void> {
 	if (await handleMarketEvents(req, res, runtime, userId, path)) return;
+	if (await handleHypotheses(req, res, runtime, userId, path)) return;
 	if (path.startsWith("/api/me/model-connections") || path === "/api/me/model-preferences") {
 		res.setHeader("Cache-Control", "no-store");
 		const modelApi = runtime.modelConnections;
@@ -691,7 +695,7 @@ export async function handleAdmin(
 	if (path === "/api/evidence/imports" && req.method === "POST") {
 		let input: EvidenceImportInput;
 		try {
-			input = evidenceImportInput.parse(await readJson(req)) as EvidenceImportInput;
+			input = evidenceImportInput.parse(await readJson(req)) as unknown as EvidenceImportInput;
 		} catch (error) {
 			if (error instanceof z.ZodError) {
 				const field = error.issues[0]?.path.join(".") || "body";
@@ -779,7 +783,7 @@ export async function handleAdmin(
 	if (evidenceRevision?.[1] && req.method === "POST") {
 		let input: EvidenceRevisionInput;
 		try {
-			input = evidenceRevisionInput.parse(await readJson(req)) as EvidenceRevisionInput;
+			input = evidenceRevisionInput.parse(await readJson(req)) as unknown as EvidenceRevisionInput;
 		} catch (error) {
 			if (error instanceof z.ZodError) {
 				const field = error.issues[0]?.path.join(".") || "body";
@@ -909,6 +913,10 @@ export async function handleAdmin(
 				(d) => d.sessionId === id,
 			);
 			const deliveryIds = new Set(deliveries.map((d) => d.id));
+			const validationChecks = (await tx.validationChecks.listByOwner(userId))
+				.filter((check) => check.sessionId === id)
+				.sort((a, b) => a.snapshotVersion - b.snapshotVersion);
+			const checkIds = new Set(validationChecks.map((check) => check.id));
 			const jobs = (await tx.jobs.all()).filter((j) =>
 				j.task.kind === "prepare_round"
 					? j.task.sessionId === id
@@ -916,9 +924,11 @@ export async function handleAdmin(
 						? inboxIds.has(j.task.inboxId)
 						: j.task.kind === "send_delivery" || j.task.kind === "send_investigation_decision"
 							? deliveryIds.has(j.task.deliveryId)
-							: j.task.kind === "send_digest"
-								? false
-								: j.task.alertId === session.investigationAlertId,
+							: j.task.kind === "evaluate_validation_check"
+								? checkIds.has(j.task.checkId)
+								: j.task.kind === "send_digest" || j.task.kind === "prepare_hypothesis_verdicts"
+									? false
+									: j.task.alertId === session.investigationAlertId,
 			);
 			return {
 				session,
@@ -927,6 +937,7 @@ export async function handleAdmin(
 				inbox,
 				deliveries,
 				jobs,
+				validationChecks,
 				snapshots: (await tx.snapshots.all())
 					.filter((s) => s.sessionId === id)
 					.sort((a, b) => a.version - b.version),
@@ -943,6 +954,19 @@ export async function handleAdmin(
 			actor: { kind: "console", userId },
 		});
 		return json(res, 202, { inboxId: inbox.id, status: inbox.status });
+	}
+	const reevaluate = path.match(
+		/^\/api\/validation-checks\/([^/]+)\/reevaluate$/,
+	);
+	if (reevaluate?.[1] && req.method === "POST") {
+		const id = decodeURIComponent(reevaluate[1]);
+		try {
+			return json(res, 200, await runtime.validationChecks.reevaluate(userId, id));
+		} catch (error) {
+			if (error instanceof ValidationCheckError)
+				throw new HttpError(error.status, error.message);
+			throw error;
+		}
 	}
 	if (path.startsWith("/api/choices/") && req.method === "GET") {
 		const id = decodeURIComponent(path.slice("/api/choices/".length));

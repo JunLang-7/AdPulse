@@ -119,5 +119,5 @@ export async function discoverSource(
 		if (!url || candidates.has(url)) continue;
 		candidates.set(url, { title, url, indexedPublishedAt: indexDate(item.published_at) });
 	}
-	return { sourceKey, topic, provider: "agent-reach/exa", verification: "unverified", candidates: [...candidates.values()] };
+	return { sourceKey, topic, provider: "agent-reach/exa", verification: "unverified", query, candidates: [...candidates.values()] };
 }

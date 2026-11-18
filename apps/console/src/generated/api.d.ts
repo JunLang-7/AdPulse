@@ -29,6 +29,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** 读取线索原文（限内置与本人登记站点） */
         post: operations["readMarketEventSource"];
         delete?: never;
         options?: never;
@@ -90,6 +91,150 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["reviseMarketEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{taskId}/hypotheses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listTaskHypotheses"];
+        put?: never;
+        post: operations["createHypothesis"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{taskId}/hypotheses/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["generateHypothesisDrafts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hypotheses/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listPendingHypothesisVerdicts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hypotheses/{hypothesisId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getHypothesisDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hypotheses/{hypothesisId}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reviseHypothesis"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hypotheses/{hypothesisId}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retireHypothesis"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hypotheses/{hypothesisId}/verdicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createHypothesisVerdict"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hypotheses/verdicts/{verdictId}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["confirmHypothesisVerdict"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hypotheses/verdicts/{verdictId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rejectHypothesisVerdict"];
         delete?: never;
         options?: never;
         head?: never;
@@ -388,6 +533,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/source-leads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 本人已开启来源的待确认线索（#39 方案 A）
+         * @description 只返回本人已开启来源的公开列表条目（标题+链接）；关联依据是声明的站点→主体映射，不是标题或域名推断。不自动建事件、不自动推送。
+         */
+        get: operations["listSourceLeads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/discovery-leads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 主动发现线索（discover 暂存）
+         * @description 只返回本人范围内的发现线索（unverified）；接受才入库，拒绝后同 URL 不再出现。
+         */
+        get: operations["listDiscoveryLeads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/discovery-leads/{leadId}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 接受 / 拒绝 / 保留主动发现线索 */
+        post: operations["reviewDiscoveryLead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/user-sources": {
         parameters: {
             query?: never;
@@ -435,26 +637,6 @@ export interface paths {
         post?: never;
         /** 删除登记的站点及其条目 */
         delete: operations["deleteUserSource"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/me/source-leads": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 本人已开启来源的待确认线索（#39 方案 A）
-         * @description 只返回本人已开启来源的公开列表条目（标题+链接）；关联依据是声明的站点→主体映射，不是标题或域名推断。不自动建事件、不自动推送。
-         */
-        get: operations["listSourceLeads"];
-        put?: never;
-        post?: never;
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -854,6 +1036,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/validation-checks/{checkId}/reevaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reevaluateValidationCheck"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/choices": {
         parameters: {
             query?: never;
@@ -923,6 +1121,137 @@ export interface components {
             /** Format: date-time */
             acquiredAt: string;
             limitations: string;
+        };
+        Hypothesis: {
+            id: string;
+            ownerId: string;
+            taskId: string;
+            taskVersion: number;
+            currentVersion: number;
+            /** @enum {string} */
+            status: "draft" | "open" | "supported" | "challenged" | "retired";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        HypothesisVersion: {
+            id: string;
+            hypothesisId: string;
+            ownerId: string;
+            version: number;
+            statement: string;
+            rationale: string;
+            testable?: string;
+            /** @enum {string} */
+            origin: "manual" | "model_draft_accepted";
+            draftRef?: {
+                modelRef: string;
+                /** Format: date-time */
+                generatedAt: string;
+                iterations: number;
+            };
+            /** Format: date-time */
+            createdAt: string;
+        };
+        HypothesisSubject: {
+            /** @enum {string} */
+            kind: "market_event";
+            eventId: string;
+            version: number;
+        } | {
+            /** @enum {string} */
+            kind: "source_item";
+            sourceItemId: string;
+        } | {
+            /** @enum {string} */
+            kind: "comparison";
+            comparisonResultId: string;
+        };
+        HypothesisVerdict: {
+            id: string;
+            dedupKey: string;
+            ownerId: string;
+            hypothesisId: string;
+            hypothesisVersion: number;
+            subject: components["schemas"]["HypothesisSubject"];
+            /** @enum {string} */
+            judgment: "supports" | "challenges" | "unclear";
+            explanation: string;
+            quote?: string;
+            /** @enum {string} */
+            stage: "preliminary" | "confirmed" | "rejected";
+            preliminary?: {
+                modelRef: string;
+                /** Format: date-time */
+                generatedAt: string;
+            };
+            /** Format: date-time */
+            confirmedAt?: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        HypothesisSummary: {
+            head: components["schemas"]["Hypothesis"];
+            current: components["schemas"]["HypothesisVersion"];
+        };
+        HypothesisDetail: {
+            head: components["schemas"]["Hypothesis"];
+            current: components["schemas"]["HypothesisVersion"];
+            versions: components["schemas"]["HypothesisVersion"][];
+            verdicts: components["schemas"]["HypothesisVerdict"][];
+        };
+        HypothesisWriteResult: {
+            /** @enum {string} */
+            status: "created" | "duplicate" | "revised" | "unchanged" | "retired";
+            hypothesis: components["schemas"]["Hypothesis"];
+            version: components["schemas"]["HypothesisVersion"];
+        };
+        HypothesisVerdictResult: {
+            verdict: components["schemas"]["HypothesisVerdict"];
+            hypothesis: components["schemas"]["Hypothesis"];
+        };
+        HypothesisDraftSuggestion: {
+            statement: string;
+            rationale: string;
+            testable?: string;
+            evidenceHint?: string;
+        };
+        HypothesisCreateRequest: {
+            statement: string;
+            rationale: string;
+            testable?: string;
+            /** @enum {string} */
+            origin: "manual" | "model_draft_accepted";
+            draftRef?: {
+                modelRef: string;
+                /** Format: date-time */
+                generatedAt: string;
+                iterations: number;
+            };
+        };
+        HypothesisRevisionRequest: {
+            expectedVersion: number;
+            statement: string;
+            rationale: string;
+            testable?: string;
+        };
+        HypothesisRetireRequest: {
+            expectedVersion: number;
+        };
+        HypothesisVerdictRequest: {
+            subject: components["schemas"]["HypothesisSubject"];
+            /** @enum {string} */
+            judgment: "supports" | "challenges" | "unclear";
+            explanation: string;
+            quote?: string;
+        };
+        HypothesisDraftsRequest: {
+            materials?: string;
+            feedback?: string;
+            previous?: {
+                statement: string;
+                /** @enum {string} */
+                outcome: "accepted" | "rejected" | "revised";
+            }[];
         };
         MarketEventInput: {
             occurrenceKey: string;
@@ -1114,23 +1443,6 @@ export interface components {
             /** @description 本人已录入同 URL 事件时给出；不表示已采纳或已核验 */
             convertedEventId?: string;
         };
-        UserSource: {
-            id: string;
-            ownerId: string;
-            label: string;
-            host: string;
-            listUrl: string;
-            subject: components["schemas"]["SourceLeadSubject"];
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            lastRefreshAt: string | null;
-            /** @enum {string|null} */
-            lastOutcome: "ok" | "failed" | null;
-            lastReason: string | null;
-            /** @enum {string} */
-            status: "active" | "stopped";
-        };
         SourceFeedStatus: {
             key: string;
             label: string;
@@ -1148,6 +1460,58 @@ export interface components {
         SourceLeadPage: {
             leads: components["schemas"]["SourceLead"][];
             sources: components["schemas"]["SourceLeadSource"][];
+        };
+        DiscoveryLead: {
+            id: string;
+            ownerId: string;
+            sourceKey: string;
+            topic: string;
+            /** @enum {string} */
+            provider: "agent-reach/exa" | "agent-reach/xiaohongshu";
+            query: string;
+            subject: components["schemas"]["SourceLeadSubject"] | null;
+            title: string;
+            url: string;
+            dedupKey: string;
+            author: string | null;
+            indexedPublishedAt: string | null;
+            /** @enum {string} */
+            verification: "unverified";
+            /** @enum {string} */
+            status: "pending" | "accepted" | "rejected" | "kept";
+            /** Format: date-time */
+            discoveredAt: string;
+            /** Format: date-time */
+            reviewedAt: string | null;
+            reviewedBy: string | null;
+            reviewReason: string | null;
+            convertedItemId: string | null;
+        };
+        DiscoveryLeadPage: {
+            items: components["schemas"]["DiscoveryLead"][];
+        };
+        DiscoveryLeadReview: {
+            /** @description accept 时可选修正发布日期 */
+            correctedPublishedAt?: string | null;
+            /** @description reject 时填写拒绝理由 */
+            reason?: string;
+        };
+        UserSource: {
+            id: string;
+            ownerId: string;
+            label: string;
+            host: string;
+            listUrl: string;
+            subject: components["schemas"]["SourceLeadSubject"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastRefreshAt: string | null;
+            /** @enum {string|null} */
+            lastOutcome: "ok" | "failed" | null;
+            lastReason: string | null;
+            /** @enum {string} */
+            status: "active" | "stopped";
         };
         SubscriptionSchedule: {
             /**
@@ -1203,7 +1567,7 @@ export interface components {
             label: string;
             /** Format: uri */
             sourceUrl?: string;
-            categories: ("effect" | "event" | "evidence")[];
+            categories: ("effect" | "event" | "evidence" | "hypothesis")[];
             /** @enum {string} */
             scope: "task_only" | "include_general";
             /**
@@ -1222,10 +1586,10 @@ export interface components {
         NotificationSelectionRecord: {
             id: string;
             /**
-             * @description 筛选输入类别：effect = 效果告警，event = 市场/竞品事件
+             * @description 筛选输入类别：effect = 效果告警，event = 市场/竞品事件，hypothesis = 假设偏差判定
              * @enum {string}
              */
-            input: "effect" | "event";
+            input: "effect" | "event" | "hypothesis";
             alertId?: string;
             taskId?: string;
             comparisonResultId?: string;
@@ -1363,13 +1727,13 @@ export interface components {
             label?: string;
             /** Format: uri */
             sourceUrl?: string;
-            categories: ("effect" | "event" | "evidence")[];
+            categories: ("effect" | "event" | "evidence" | "hypothesis")[];
             /** @enum {string} */
             scope: "task_only" | "include_general";
         };
         SubscriptionTargetUpdate: {
             expectedVersion: number;
-            categories?: ("effect" | "event" | "evidence")[];
+            categories?: ("effect" | "event" | "evidence" | "hypothesis")[];
             /** @enum {string} */
             scope?: "task_only" | "include_general";
             /** @enum {string} */
@@ -1386,9 +1750,14 @@ export interface components {
             endsAt?: string;
         };
         TaskRules: {
+            /**
+             * @description 本任务的效果告警口径；一个任务只用一套口径。
+             * @enum {string}
+             */
+            placementType?: "paid_ads" | "influencer" | "seeding";
             metricDefinition?: string;
             /** @enum {string} */
-            metricKey?: "cost_per_consultation";
+            metricKey?: "cost_per_consultation" | "cost_per_engagement";
             currency?: string;
             unit?: string;
             statWindowDays?: number;
@@ -1488,6 +1857,7 @@ export interface components {
         };
         TaskDraftExtractionInput: {
             brief: string;
+            /** @description 限制只整理某一阶段。省略时一次返回全部字段的建议。 */
             stage?: components["schemas"]["TaskDraftStage"];
             provider?: components["schemas"]["TaskDraftProvider"];
             model?: components["schemas"]["TaskDraftModelId"];
@@ -1561,7 +1931,7 @@ export interface components {
             audience?: string[];
             sellingPoints?: string[];
             channels?: string[];
-            /** @description Stage suggestions that require user confirmation. Values may be normalized rather than verbatim. */
+            /** @description Suggestions that require user confirmation. Values may be normalized rather than verbatim. Every field may appear when stage is omitted. */
             recommendations?: {
                 product?: {
                     value: string;
@@ -1572,6 +1942,8 @@ export interface components {
                 audience?: string[];
                 sellingPoints?: string[];
                 channels?: string[];
+                /** @description 投放方式参考建议，需用户核对，不自动写入表单。 */
+                placementTypes?: ("paid_ads" | "influencer" | "seeding")[];
             };
         };
         TaskInput: {
@@ -1655,12 +2027,19 @@ export interface components {
             audience: string[];
             channels: {
                 [key: string]: {
+                    /**
+                     * @description 投放方式；缺省按 paid_ads 读取。
+                     * @enum {string}
+                     */
+                    type?: "paid_ads" | "influencer" | "seeding";
                     budget?: number;
                     bidCpc?: number;
                     enabled?: boolean;
                 };
             };
             sellingPoints: string[];
+            contentDirections?: string[];
+            partners?: string[];
         };
         Limits: {
             maxBudgetChangeRatio: number;
@@ -1695,6 +2074,7 @@ export interface components {
             options: {
                 id: string;
                 label: string;
+                detail?: string;
             }[];
             detailUrl?: string;
         };
@@ -1716,12 +2096,38 @@ export interface components {
             channelId: string;
             from: boolean;
             to: boolean;
+        } | {
+            /** @enum {string} */
+            kind: "audience";
+            /** @enum {string} */
+            op: "add" | "remove";
+            item: string;
+        } | {
+            /** @enum {string} */
+            kind: "sellingPoint";
+            /** @enum {string} */
+            op: "add" | "remove";
+            item: string;
+        } | {
+            /** @enum {string} */
+            kind: "contentDirection";
+            /** @enum {string} */
+            op: "add" | "remove";
+            item: string;
+        } | {
+            /** @enum {string} */
+            kind: "partner";
+            /** @enum {string} */
+            op: "add" | "remove";
+            item: string;
         };
         Candidate: {
             id: string;
             label: string;
             changes: components["schemas"]["Change"][];
             complete: boolean;
+            hypothesis?: string;
+            validationPlan?: string;
         };
         Actor: {
             /** @enum {string} */
@@ -1858,7 +2264,31 @@ export interface components {
             version: number;
             strategy: components["schemas"]["Strategy"];
             changes: components["schemas"]["Change"][];
+            hypothesis?: string;
+            validationPlan?: string;
             createdAt: string;
+        };
+        ValidationCheck: {
+            id: string;
+            ownerId: string;
+            taskId: string;
+            taskVersion: number;
+            sessionId: string;
+            snapshotVersion: number;
+            hypothesis?: string;
+            validationPlan: string;
+            /** @enum {string} */
+            metricKey: "cost_per_consultation";
+            dueAt: string;
+            /** @enum {string} */
+            status: "pending" | "observed" | "inconclusive" | "cancelled";
+            comparisonResultId?: string;
+            evidenceRef?: components["schemas"]["EvidenceRef"];
+            /** @enum {string} */
+            observedOutcome?: "below_threshold" | "above_threshold";
+            reason?: string;
+            createdAt: string;
+            observedAt?: string;
         };
         JobTask: {
             /** @enum {string} */
@@ -1877,6 +2307,10 @@ export interface components {
             /** @enum {string} */
             kind: "send_delivery" | "send_investigation_decision";
             deliveryId: string;
+        } | {
+            /** @enum {string} */
+            kind: "evaluate_validation_check";
+            checkId: string;
         };
         Job: {
             id: string;
@@ -1897,6 +2331,7 @@ export interface components {
             deliveries: components["schemas"]["Delivery"][];
             jobs: components["schemas"]["Job"][];
             snapshots: components["schemas"]["Snapshot"][];
+            validationChecks: components["schemas"]["ValidationCheck"][];
         };
         EvidenceImportInput: {
             /** @enum {integer} */
@@ -1909,6 +2344,11 @@ export interface components {
             taskVersion: number;
         };
         EvidenceRecordInput: {
+            /**
+             * @description 缺省 paid_ads；指标键集合必须与该口径一致。
+             * @enum {string}
+             */
+            placementType?: "paid_ads" | "influencer" | "seeding";
             source: components["schemas"]["EvidenceSourceInput"];
             scope: components["schemas"]["EvidenceScope"];
             period: components["schemas"]["EvidencePeriod"];
@@ -1945,9 +2385,9 @@ export interface components {
             formula: string;
             sourceField: string;
         };
+        /** @description 键由投放方式口径决定：付费广告 spendMinor/consultations；达人 feeMinor/engagement；种草 contentCostMinor/engagement。不得混用。 */
         EvidenceMetricsContract: {
-            spendMinor: components["schemas"]["EvidenceMetricDefinition"];
-            consultations: components["schemas"]["EvidenceMetricDefinition"];
+            [key: string]: components["schemas"]["EvidenceMetricDefinition"];
         };
         EvidenceCurrency: {
             code: string;
@@ -1958,13 +2398,13 @@ export interface components {
             model: string;
             windowDays?: number;
         };
+        /** @description 报表原始字段，键名由该投放方式的报表决定。 */
         EvidenceRawValues: {
-            spend?: string | number | null;
-            consultations?: string | number | null;
+            [key: string]: string | number | null;
         };
+        /** @description 计算用值，键名严格等于该投放方式口径的两个指标键。 */
         EvidenceValues: {
-            spendMinor?: number | null;
-            consultations?: number | null;
+            [key: string]: number | null;
         };
         EvidenceVersion: {
             id: string;
@@ -1975,6 +2415,8 @@ export interface components {
             version: number;
             businessKey: string;
             contentDigest: string;
+            /** @enum {string} */
+            placementType?: "paid_ads" | "influencer" | "seeding";
             scope: components["schemas"]["EvidenceScope"];
             period: components["schemas"]["EvidencePeriod"];
             metricsContract: components["schemas"]["EvidenceMetricsContract"];
@@ -2040,11 +2482,11 @@ export interface components {
         };
         ComparisonReason: {
             /** @enum {string} */
-            code: "NO_BASELINE" | "TASK_MISMATCH" | "ACCOUNT_MISMATCH" | "SOURCE_MISSING" | "SCOPE_MISMATCH" | "METRICS_CONTRACT_MISMATCH" | "CURRENCY_MISMATCH" | "ATTRIBUTION_MISMATCH" | "TIME_ZONE_MISMATCH" | "PERIOD_INVALID" | "PERIOD_OVERLAP" | "PERIOD_NOT_ADJACENT" | "DURATION_MISMATCH" | "PERIOD_INCOMPLETE" | "CALLBACK_PENDING" | "CALLBACK_UNKNOWN" | "VALUE_MISSING" | "VALUE_NULL" | "VALUE_INVALID" | "RULE_METRIC_MISSING" | "RULE_METRIC_UNSUPPORTED" | "RULE_THRESHOLD_MISSING" | "RULE_CURRENCY_MISSING" | "RULE_UNIT_MISSING" | "RULE_WINDOW_MISSING" | "RULE_MINIMUMS_MISSING" | "RULE_CURRENCY_MISMATCH" | "RULE_UNIT_MISMATCH" | "WINDOW_MISMATCH" | "SAMPLE_BELOW_MINIMUM" | "ZERO_DENOMINATOR";
+            code: "NO_BASELINE" | "TASK_MISMATCH" | "ACCOUNT_MISMATCH" | "SOURCE_MISSING" | "SCOPE_MISMATCH" | "PLACEMENT_TYPE_MISMATCH" | "RULE_PLACEMENT_MISMATCH" | "METRICS_CONTRACT_MISMATCH" | "CURRENCY_MISMATCH" | "ATTRIBUTION_MISMATCH" | "TIME_ZONE_MISMATCH" | "PERIOD_INVALID" | "PERIOD_OVERLAP" | "PERIOD_NOT_ADJACENT" | "DURATION_MISMATCH" | "PERIOD_INCOMPLETE" | "CALLBACK_PENDING" | "CALLBACK_UNKNOWN" | "VALUE_MISSING" | "VALUE_NULL" | "VALUE_INVALID" | "RULE_METRIC_MISSING" | "RULE_METRIC_UNSUPPORTED" | "RULE_THRESHOLD_MISSING" | "RULE_CURRENCY_MISSING" | "RULE_UNIT_MISSING" | "RULE_WINDOW_MISSING" | "RULE_MINIMUMS_MISSING" | "RULE_CURRENCY_MISMATCH" | "RULE_UNIT_MISMATCH" | "WINDOW_MISMATCH" | "SAMPLE_BELOW_MINIMUM" | "ZERO_DENOMINATOR";
             /** @enum {string} */
             axis: "period_comparison" | "current_threshold" | "both";
             /** @enum {string} */
-            metric?: "spendMinor" | "consultations" | "cost_per_consultation";
+            metric?: "spendMinor" | "consultations" | "feeMinor" | "contentCostMinor" | "engagement" | "cost_per_consultation" | "cost_per_engagement";
             evidenceRef?: components["schemas"]["EvidenceRef"];
             details?: {
                 [key: string]: string | number | boolean;
@@ -2072,6 +2514,13 @@ export interface components {
             status: "comparable" | "incomparable" | "awaiting_supplementation" | "missing_baseline" | "temporarily_uncomputable";
             canComparePeriods: boolean;
             canEvaluateCurrentThreshold: boolean;
+            /** @enum {string} */
+            placementType?: "paid_ads" | "influencer" | "seeding";
+            metricKeys?: {
+                spend: string;
+                count: string;
+                derived: string;
+            };
             comparisons: {
                 spendMinor?: {
                     baseline: number;
@@ -2094,7 +2543,7 @@ export interface components {
                 /** @enum {string} */
                 status: "exceeded" | "not_exceeded" | "not_evaluated";
                 /** @enum {string} */
-                metricKey?: "cost_per_consultation";
+                metricKey?: "cost_per_consultation" | "cost_per_engagement";
                 value?: components["schemas"]["RatioValue"];
                 thresholdMinor?: number;
                 currency?: string;
@@ -2118,11 +2567,11 @@ export interface components {
             taskVersion: number;
             dedupKey: string;
             /** @enum {string} */
-            reasonCode: "NO_BASELINE" | "TASK_MISMATCH" | "ACCOUNT_MISMATCH" | "SOURCE_MISSING" | "SCOPE_MISMATCH" | "METRICS_CONTRACT_MISMATCH" | "CURRENCY_MISMATCH" | "ATTRIBUTION_MISMATCH" | "TIME_ZONE_MISMATCH" | "PERIOD_INVALID" | "PERIOD_OVERLAP" | "PERIOD_NOT_ADJACENT" | "DURATION_MISMATCH" | "PERIOD_INCOMPLETE" | "CALLBACK_PENDING" | "CALLBACK_UNKNOWN" | "VALUE_MISSING" | "VALUE_NULL" | "VALUE_INVALID" | "RULE_METRIC_MISSING" | "RULE_METRIC_UNSUPPORTED" | "RULE_THRESHOLD_MISSING" | "RULE_CURRENCY_MISSING" | "RULE_UNIT_MISSING" | "RULE_WINDOW_MISSING" | "RULE_MINIMUMS_MISSING" | "RULE_CURRENCY_MISMATCH" | "RULE_UNIT_MISMATCH" | "WINDOW_MISMATCH" | "SAMPLE_BELOW_MINIMUM" | "ZERO_DENOMINATOR";
+            reasonCode: "NO_BASELINE" | "TASK_MISMATCH" | "ACCOUNT_MISMATCH" | "SOURCE_MISSING" | "SCOPE_MISMATCH" | "PLACEMENT_TYPE_MISMATCH" | "RULE_PLACEMENT_MISMATCH" | "METRICS_CONTRACT_MISMATCH" | "CURRENCY_MISMATCH" | "ATTRIBUTION_MISMATCH" | "TIME_ZONE_MISMATCH" | "PERIOD_INVALID" | "PERIOD_OVERLAP" | "PERIOD_NOT_ADJACENT" | "DURATION_MISMATCH" | "PERIOD_INCOMPLETE" | "CALLBACK_PENDING" | "CALLBACK_UNKNOWN" | "VALUE_MISSING" | "VALUE_NULL" | "VALUE_INVALID" | "RULE_METRIC_MISSING" | "RULE_METRIC_UNSUPPORTED" | "RULE_THRESHOLD_MISSING" | "RULE_CURRENCY_MISSING" | "RULE_UNIT_MISSING" | "RULE_WINDOW_MISSING" | "RULE_MINIMUMS_MISSING" | "RULE_CURRENCY_MISMATCH" | "RULE_UNIT_MISMATCH" | "WINDOW_MISMATCH" | "SAMPLE_BELOW_MINIMUM" | "ZERO_DENOMINATOR";
             /** @enum {string} */
             axis: "period_comparison" | "current_threshold" | "both";
             /** @enum {string} */
-            metric?: "spendMinor" | "consultations" | "cost_per_consultation";
+            metric?: "spendMinor" | "consultations" | "feeMinor" | "contentCostMinor" | "engagement" | "cost_per_consultation" | "cost_per_engagement";
             remediation: {
                 /** @enum {string} */
                 action: "provide_evidence" | "revise_task_rules" | "verify_source" | "none";
@@ -2183,7 +2632,11 @@ export interface components {
             scope: components["schemas"]["EvidenceScope"];
             period: components["schemas"]["EvidencePeriod"];
             /** @enum {string} */
-            metric: "cost_per_consultation";
+            metric: "cost_per_consultation" | "cost_per_engagement";
+            /** @enum {string} */
+            placementType?: "paid_ads" | "influencer" | "seeding";
+            /** @description 该口径的归因局限，必须随结论保留。 */
+            attributionNote?: string;
             metricDefinition: string;
             metricFormula: string;
             spendMinor?: number | null;
@@ -2442,27 +2895,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
+                content?: never;
             };
             /** @description Host not allowed */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
+                content?: never;
             };
             /** @description Source read failed */
             502: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
+                content?: never;
             };
         };
     };
@@ -2691,6 +3138,816 @@ export interface operations {
             };
             /** @description JSON required */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listTaskHypotheses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["HypothesisSummary"][];
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Origin rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version or idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createHypothesis: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HypothesisCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HypothesisWriteResult"];
+                };
+            };
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HypothesisWriteResult"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Origin rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version or idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    generateHypothesisDrafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HypothesisDraftsRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        drafts: components["schemas"]["HypothesisDraftSuggestion"][];
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Origin rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version or idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listPendingHypothesisVerdicts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["HypothesisVerdict"][];
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Origin rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version or idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getHypothesisDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hypothesisId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HypothesisDetail"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Origin rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version or idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviseHypothesis: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                hypothesisId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HypothesisRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HypothesisWriteResult"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Origin rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version or idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    retireHypothesis: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                hypothesisId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HypothesisRetireRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HypothesisWriteResult"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Origin rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version or idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createHypothesisVerdict: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                hypothesisId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HypothesisVerdictRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HypothesisVerdictResult"];
+                };
+            };
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HypothesisVerdictResult"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Origin rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version or idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    confirmHypothesisVerdict: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                verdictId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HypothesisVerdictResult"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Origin rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version or idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    rejectHypothesisVerdict: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                verdictId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HypothesisVerdictResult"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Origin rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Version or idempotency conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3844,6 +5101,136 @@ export interface operations {
             };
         };
     };
+    listSourceLeads: {
+        parameters: {
+            query?: {
+                /** @description 只看已开启的来源 */
+                sourceKey?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own enabled-source leads only */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceLeadPage"];
+                };
+            };
+            /** @description Invalid query or source feed not enabled */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listDiscoveryLeads: {
+        parameters: {
+            query?: {
+                status?: "pending" | "accepted" | "rejected" | "kept";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own discovery leads */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryLeadPage"];
+                };
+            };
+            /** @description Invalid query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reviewDiscoveryLead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                leadId: string;
+                action: "accept" | "reject" | "keep";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscoveryLeadReview"];
+            };
+        };
+        responses: {
+            /** @description Reviewed lead */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryLead"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lead not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Already reviewed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     listUserSources: {
         parameters: {
             query?: never;
@@ -3927,13 +5314,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Site discovery failed; provide listUrl manually */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
         };
     };
     refreshUserSource: {
@@ -4009,44 +5389,6 @@ export interface operations {
             };
             /** @description Not found */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    listSourceLeads: {
-        parameters: {
-            query?: {
-                /** @description 只看已开启的来源 */
-                sourceKey?: string;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Own enabled-source leads only */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SourceLeadPage"];
-                };
-            };
-            /** @description Invalid query or source feed not enabled */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized */
-            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5432,6 +6774,64 @@ export interface operations {
             };
             /** @description Request failed */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reevaluateValidationCheck: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                checkId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationCheck"];
+                };
+            };
+            /** @description Request failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request failed */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request failed */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request failed */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

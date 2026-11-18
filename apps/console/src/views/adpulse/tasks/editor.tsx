@@ -253,9 +253,17 @@ export default function TaskEditorPage() {
 											<Field label="渠道名称">
 												<Input maxLength={128} placeholder="例如：小红书" value={channel.name} onChange={(e) => editChannel(index, { name: e.target.value })} />
 											</Field>
+											<Field label="投放方式" hint="决定用哪套效果指标衡量">
+												<select className={selectClass} value={channel.type} onChange={(e) => editChannel(index, { type: e.target.value as ChannelForm["type"] })}>
+													<option value="">平台付费广告（默认）</option>
+													<option value="paid_ads">平台付费广告</option>
+													<option value="influencer">达人合作</option>
+													<option value="seeding">内容种草</option>
+												</select>
+											</Field>
 											{creating ? null : <>
 											<OptionalField label="预算金额" inputMode="decimal" value={channel.budget} onChange={(value) => editChannel(index, { budget: value })} />
-											<OptionalField label="每次点击出价" inputMode="decimal" value={channel.bidCpc} onChange={(value) => editChannel(index, { bidCpc: value })} />
+											{channel.type === "influencer" || channel.type === "seeding" ? null : <OptionalField label="每次点击出价" inputMode="decimal" value={channel.bidCpc} onChange={(value) => editChannel(index, { bidCpc: value })} />}
 											<Field label="投放状态">
 												<select className={selectClass} value={channel.enabled} onChange={(e) => editChannel(index, {
 													enabled: e.target.value === "active" ? "active" : e.target.value === "paused" ? "paused" : "unknown",
@@ -289,12 +297,26 @@ export default function TaskEditorPage() {
 
 						<OptionalSection title="成本提醒条件" summary={rulesEntered ? "已填写部分或全部条件" : "选填 · 有明确标准再设"}>
 							<div className="space-y-4">
-								<p className="text-sm text-muted-foreground">先记任务也可以。等拿到第一份效果报表、确定每次咨询能花多少，再回来设置提醒。</p>
+								<p className="text-sm text-muted-foreground">先记任务也可以。等拿到第一份效果报表再回来设置。达人合作与内容种草按互动量衡量，曝光与互动不等于成交。</p>
 								<div className="grid gap-4 sm:grid-cols-2">
+									<Field label="效果衡量口径" hint="一个任务只用一套口径">
+										<select className={selectClass} value={form.placementType} onChange={(e) => {
+											const type = e.target.value as FormState["placementType"];
+											set("placementType", type);
+											if (type === "influencer" || type === "seeding") set("metricKey", "cost_per_engagement");
+											else if (form.metricKey === "cost_per_engagement") set("metricKey", "cost_per_consultation");
+										}}>
+											<option value="">平台付费广告（默认）</option>
+											<option value="paid_ads">平台付费广告</option>
+											<option value="influencer">达人合作</option>
+											<option value="seeding">内容种草</option>
+										</select>
+									</Field>
 									<Field label="想关注什么成本？">
-										<select className={selectClass} value={form.metricKey} onChange={(e) => set("metricKey", e.target.value === "cost_per_consultation" ? "cost_per_consultation" : "")}>
+										<select className={selectClass} value={form.metricKey} onChange={(e) => set("metricKey", e.target.value as FormState["metricKey"])}>
 											<option value="">暂不设置</option>
 											<option value="cost_per_consultation">单次咨询成本</option>
+											<option value="cost_per_engagement">单次互动成本</option>
 										</select>
 									</Field>
 									<Field label="金额填写方式">

@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import {
+	normalizePlacementType,
+	placementSpec,
+} from "./domain/placement.js";
 import { taskActiveIn } from "./lifecycle.js";
 import { NotificationSelectionService } from "./notifications-selection.js";
 import type { Storage, Transaction } from "./ports/storage.js";
@@ -70,21 +74,24 @@ function makeAlertEvidence(
 	source: EvidenceSource["source"],
 	rules: TaskVersion,
 ): InvestigationAlertEvidence {
+	const spec = placementSpec(evidence.placementType);
 	return {
 		comparisonResultId: result.id,
 		evidence: evidenceRef(evidence),
 		source: { platform: source.platform, accountRef: source.accountRef },
 		scope: evidence.scope,
 		period: evidence.period,
-		metric: "cost_per_consultation",
-		metricDefinition: rules.rules.metricDefinition ?? "单次咨询成本",
-		metricFormula: `${evidence.metricsContract.spendMinor.formula} / ${evidence.metricsContract.consultations.formula}`,
-		...(evidence.values.spendMinor === undefined
+		metric: spec.derivedKey,
+		placementType: spec.type,
+		attributionNote: spec.attributionNote,
+		metricDefinition: rules.rules.metricDefinition ?? spec.labels.derived,
+		metricFormula: `${evidence.metricsContract[spec.spendKey]?.formula ?? "?"} / ${evidence.metricsContract[spec.countKey]?.formula ?? "?"}`,
+		...(evidence.values[spec.spendKey] === undefined
 			? {}
-			: { spendMinor: evidence.values.spendMinor }),
-		...(evidence.values.consultations === undefined
+			: { spendMinor: evidence.values[spec.spendKey] }),
+		...(evidence.values[spec.countKey] === undefined
 			? {}
-			: { consultations: evidence.values.consultations }),
+			: { consultations: evidence.values[spec.countKey] }),
 		currency: evidence.currency,
 		...(result.thresholdEvaluation.thresholdMinor === undefined
 			? {}
@@ -115,7 +122,8 @@ function alertIdentity(
 			endsAt: new Date(evidence.period.endsAt).toISOString(),
 			timeZone: evidence.period.timeZone,
 		},
-		metric: "cost_per_consultation",
+		metric: placementSpec(evidence.placementType).derivedKey,
+		placementType: normalizePlacementType(evidence.placementType),
 	});
 }
 
@@ -129,21 +137,23 @@ function signalFor(alert: InvestigationAlert): Session["signal"] {
 		: current.canComparePeriods
 			? "历史期间可比较；比较不代表因果关系。"
 			: "历史期间不可比较；不作跨期结论。";
+	const spec = placementSpec(current.placementType);
 	const summary = [
-		`当期单次咨询成本超过已确认警戒线（${current.currency.code}/${current.currency.minorUnit}）。`,
-		`计算式：消耗 ${amount(current.spendMinor)} ÷ 咨询 ${amount(current.consultations)}；警戒线 ${current.thresholdMinor ?? "未知"}。`,
+		`当期${spec.labels.derived}超过已确认警戒线（${current.currency.code}/${current.currency.minorUnit}）。`,
+		`计算式：${spec.labels.spend} ${amount(current.spendMinor)} ÷ ${spec.labels.count} ${amount(current.consultations)}；警戒线 ${current.thresholdMinor ?? "未知"}。`,
 		history,
+		current.attributionNote ?? spec.attributionNote,
 		"该提醒不推断原因，不代表扩大预算或执行广告操作。",
 	].join(" ");
 	return {
 		id: `web-alert:${alert.id}:${alert.logicalRounds + 1}`,
-		title: "当期咨询成本越线排查",
+		title: `当期${spec.labels.derived}越线排查`,
 		summary,
 		evidence: [
 			{ label: "期间", value: `${current.period.startsAt} – ${current.period.endsAt} (${current.period.timeZone})` },
-			{ label: "消耗（最小货币单位）", value: amount(current.spendMinor) },
-			{ label: "咨询数", value: amount(current.consultations) },
-			{ label: "单次咨询成本公式", value: current.metricFormula },
+			{ label: `${spec.labels.spend}（最小货币单位）`, value: amount(current.spendMinor) },
+			{ label: spec.labels.count, value: amount(current.consultations) },
+			{ label: `${spec.labels.derived}公式`, value: current.metricFormula },
 			{ label: "警戒线", value: `${current.thresholdMinor ?? "未知"} ${current.currency.code}/${current.currency.minorUnit}` },
 			{ label: "依据", value: `${current.evidence.evidenceId} v${current.evidence.version} · 规则 v${current.evidence.taskVersion} · 比较 ${value}` },
 			{ label: "比较范围", value: history },
@@ -295,7 +305,7 @@ export class InvestigationAlertService {
 			const qualifies =
 				result.canEvaluateCurrentThreshold &&
 				result.thresholdEvaluation.status === "exceeded" &&
-				result.thresholdEvaluation.metricKey === "cost_per_consultation" &&
+				result.thresholdEvaluation.metricKey === placementSpec(current.placementType).derivedKey &&
 				result.thresholdEvaluation.thresholdMinor !== undefined;
 			const at = this.now();
 			if (!alert) {

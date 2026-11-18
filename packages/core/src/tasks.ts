@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import {
+	isMetricKeyForPlacement,
+	normalizePlacementType,
+} from "./domain/placement.js";
 import { validateStrategy, type Strategy } from "./domain/strategy.js";
 import type { Storage } from "./ports/storage.js";
 import { invalidateAlertsForTaskVersion } from "./investigation-alerts.js";
@@ -75,11 +79,19 @@ function validateInput(input: TaskInput): void {
 		)
 			throw new Error(`invalid task rule ${key}`);
 	}
+	try {
+		normalizePlacementType(input.rules.placementType);
+	} catch {
+		throw new Error("invalid task rule placementType");
+	}
 	if (
 		input.rules.metricKey !== undefined &&
-		input.rules.metricKey !== "cost_per_consultation"
+		!isMetricKeyForPlacement(
+			input.rules.metricKey,
+			normalizePlacementType(input.rules.placementType),
+		)
 	)
-		throw new Error("invalid task rule metricKey");
+		throw new Error("invalid task rule metricKey for placementType");
 	for (const key of ["metricDefinition", "currency", "unit"] as const) {
 		const value = input.rules[key];
 		if (value !== undefined && (typeof value !== "string" || !value.trim()))

@@ -48,6 +48,18 @@ export default function SessionDetailPage() {
 	const session = data.session;
 	const status = sessionStatus(session.status);
 	const expired = isExpired(session.expiresAt) || isExpired(expiresAt);
+	const baselineSnapshot = [...data.snapshots].sort(
+		(a, b) => a.version - b.version,
+	)[0];
+	const baselineStrategy = baselineSnapshot?.strategy as
+		| StrategyView
+		| undefined;
+	const diffs = baselineStrategy
+		? describeStrategyDiff(
+				baselineStrategy,
+				session.strategy as StrategyView,
+			)
+		: [];
 
 	return (
 		<div className="p-6 space-y-4">
@@ -93,6 +105,123 @@ export default function SessionDetailPage() {
 
 			<Card>
 				<CardHeader>
+					<CardTitle>当前方案</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-2">
+					<p className="text-sm">
+						推广目标：{session.strategy.objective || "未填写"}
+					</p>
+					<StrategyValues label="人群" values={session.strategy.audience} />
+					<StrategyValues
+						label="卖点"
+						values={session.strategy.sellingPoints}
+					/>
+					<StrategyValues
+						label="内容方向"
+						values={session.strategy.contentDirections}
+					/>
+					<StrategyValues
+						label="合作对象"
+						values={session.strategy.partners}
+					/>
+					<div className="space-y-1">
+						<p className="text-sm text-muted-foreground">渠道：</p>
+						{Object.keys(session.strategy.channels ?? {}).length === 0 ? (
+							<p className="text-sm text-muted-foreground">未填写</p>
+						) : (
+							Object.entries(session.strategy.channels ?? {}).map(
+								([name, channel]) => (
+									<p
+										key={name}
+										className="break-all text-xs text-muted-foreground"
+									>
+										{name}：预算 {channel.budget ?? "未设置"} · 出价{" "}
+										{channel.bidCpc ?? "未设置"} ·{" "}
+										{channel.enabled === undefined
+											? "启停未设置"
+											: channel.enabled
+												? "启用"
+												: "暂停"}
+									</p>
+								),
+							)
+						)}
+					</div>
+				</CardContent>
+			</Card>
+
+			{baselineStrategy ? (
+				<Card>
+					<CardHeader>
+						<CardTitle>与最早快照相比</CardTitle>
+					</CardHeader>
+					<CardContent className="space-y-2">
+						{diffs.length ? (
+							diffs.map((row) => (
+								<p
+									key={row}
+									className="break-all text-xs text-muted-foreground"
+								>
+									{row}
+								</p>
+							))
+						) : (
+							<p className="text-sm text-muted-foreground">方案无变化</p>
+						)}
+					</CardContent>
+				</Card>
+			) : null}
+
+			<Card>
+				<CardHeader>
+					<CardTitle>验证检查点</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-2 text-sm">
+					{(data.validationChecks ?? []).length === 0 ? (
+						<p className="text-muted-foreground">
+							暂无验证检查点；需要任务具备完整度量口径，且建议附带验证计划。
+						</p>
+					) : null}
+					{(data.validationChecks ?? []).map((check) => (
+						<div
+							key={check.id}
+							className="space-y-1 border-b border-border pb-2 last:border-0 last:pb-0"
+						>
+							<div className="flex flex-wrap items-center gap-2">
+								<Badge variant={validationVariant(check.status)}>
+									{validationStatusLabel(check.status)}
+								</Badge>
+								<span>第 {check.snapshotVersion} 版</span>
+								<span className="text-xs text-muted-foreground">
+									到期 {formatTime(check.dueAt)}
+								</span>
+							</div>
+							<p className="text-xs">{check.validationPlan}</p>
+							{check.hypothesis ? (
+								<p className="text-xs text-muted-foreground">
+									假设：{check.hypothesis}
+								</p>
+							) : null}
+							{check.observedOutcome ? (
+								<p className="text-xs">
+									{validationOutcomeLabel(check.observedOutcome)}
+								</p>
+							) : null}
+							{check.reason ? (
+								<p className="text-xs text-muted-foreground">
+									{validationReasonLabel(check.reason)}
+								</p>
+							) : null}
+							{check.status === "inconclusive" ? (
+								<ReevaluateButton checkId={check.id} />
+							) : null}
+						</div>
+					))}
+				</CardContent>
+			</Card>
+
+			<Card>
+				<CardHeader>
 					<CardTitle>轮次时间线</CardTitle>
 				</CardHeader>
 				<CardContent className="space-y-3">
@@ -103,6 +232,8 @@ export default function SessionDetailPage() {
 						const candidates = (round.candidates ?? []) as Array<{
 							id: string;
 							label: string;
+							hypothesis?: string;
+							validationPlan?: string;
 						}>;
 						const actions = (data.actions ?? []).filter(
 							(a) => a.roundId === round.id,
@@ -175,6 +306,23 @@ export default function SessionDetailPage() {
 										);
 									})}
 								</div>
+
+								{candidates.map((candidate) => {
+									const detail = [
+										candidate.hypothesis ? `假设：${candidate.hypothesis}` : "",
+										candidate.validationPlan ? `验证：${candidate.validationPlan}` : "",
+									]
+										.filter(Boolean)
+										.join("；");
+									return detail ? (
+										<p
+											key={`${candidate.id}:detail`}
+											className="text-xs text-muted-foreground"
+										>
+											{candidate.label}：{detail}
+										</p>
+									) : null;
+								})}
 							</div>
 						);
 					})}
@@ -216,6 +364,9 @@ export default function SessionDetailPage() {
 				<Card>
 					<CardHeader>
 						<CardTitle>策略变更记录</CardTitle>
+						<p className="text-xs text-muted-foreground">
+							当前可记录：渠道预算/出价/开关，以及人群、卖点、内容方向、合作对象的增删；不记录合作阶段与效果指标。
+						</p>
 					</CardHeader>
 					<CardContent className="space-y-3 text-sm">
 						{data.snapshots.map((snapshot) => (
@@ -242,6 +393,20 @@ export default function SessionDetailPage() {
 										{changeLabel(change)}
 									</p>
 								))}
+								{snapshot.hypothesis || snapshot.validationPlan ? (
+									<p className="text-xs text-muted-foreground">
+										{[
+											snapshot.hypothesis
+												? `假设：${snapshot.hypothesis}`
+												: "",
+											snapshot.validationPlan
+												? `验证：${snapshot.validationPlan}`
+												: "",
+										]
+											.filter(Boolean)
+											.join("；")}
+									</p>
+								) : null}
 							</div>
 						))}
 					</CardContent>
@@ -251,15 +416,172 @@ export default function SessionDetailPage() {
 	);
 }
 
-/** 策略变更的人话描述：渠道 × 字段 × 原值 → 新值。 */
+/** 策略变更的人话描述：渠道数值用「原值 → 新值」，列表字段用增删。 */
+const VALIDATION_STATUS_LABELS: Record<string, string> = {
+	pending: "待验证",
+	observed: "已观察",
+	inconclusive: "无法判定",
+	cancelled: "已取消",
+};
+
+function validationStatusLabel(status: string): string {
+	return VALIDATION_STATUS_LABELS[status] ?? status;
+}
+
+function validationVariant(
+	status: string,
+): "default" | "secondary" | "outline" {
+	if (status === "observed") return "default";
+	if (status === "pending") return "secondary";
+	return "outline";
+}
+
+function validationOutcomeLabel(outcome: string): string {
+	return outcome === "above_threshold" ? "指标高于阈值" : "指标低于阈值";
+}
+
+function validationReasonLabel(reason: string): string {
+	const labels: Record<string, string> = {
+		no_comparable_evidence: "到期时没有可比证据",
+		task_version_changed: "任务规则版本已变更",
+		task_deleted: "任务已删除",
+		task_not_found: "任务不存在",
+	};
+	return labels[reason] ?? reason;
+}
+
+type StrategyView = {
+	objective?: string;
+	audience?: string[];
+	sellingPoints?: string[];
+	contentDirections?: string[];
+	partners?: string[];
+	channels?: Record<
+		string,
+		{ budget?: number; bidCpc?: number; enabled?: boolean }
+	>;
+};
+
+/** 只列变化项：列表看增删，渠道看数值/开关，不把未变字段铺满界面。 */
+function describeStrategyDiff(
+	before: StrategyView,
+	after: StrategyView,
+): string[] {
+	const rows: string[] = [];
+	if ((before.objective ?? "") !== (after.objective ?? ""))
+		rows.push(
+			`推广目标：${before.objective ?? "未填写"} → ${after.objective ?? "未填写"}`,
+		);
+	const lists: Array<[string[] | undefined, string[] | undefined, string]> = [
+		[before.audience, after.audience, "人群"],
+		[before.sellingPoints, after.sellingPoints, "卖点"],
+		[before.contentDirections, after.contentDirections, "内容方向"],
+		[before.partners, after.partners, "合作对象"],
+	];
+	for (const [oldValues, newValues, label] of lists) {
+		const oldList = oldValues ?? [];
+		const newList = newValues ?? [];
+		const added = newList.filter((value) => !oldList.includes(value));
+		const removed = oldList.filter((value) => !newList.includes(value));
+		if (!added.length && !removed.length) continue;
+		rows.push(
+			`${label}：${[
+				added.length ? `新增 ${added.join("、")}` : "",
+				removed.length ? `移除 ${removed.join("、")}` : "",
+			]
+				.filter(Boolean)
+				.join("；")}`,
+		);
+	}
+	const channelIds = new Set([
+		...Object.keys(before.channels ?? {}),
+		...Object.keys(after.channels ?? {}),
+	]);
+	for (const channelId of channelIds) {
+		const oldChannel = before.channels?.[channelId] ?? {};
+		const newChannel = after.channels?.[channelId] ?? {};
+		const changes: string[] = [];
+		if (oldChannel.budget !== newChannel.budget)
+			changes.push(
+				`预算 ${oldChannel.budget ?? "未设置"} → ${newChannel.budget ?? "未设置"}`,
+			);
+		if (oldChannel.bidCpc !== newChannel.bidCpc)
+			changes.push(
+				`出价 ${oldChannel.bidCpc ?? "未设置"} → ${newChannel.bidCpc ?? "未设置"}`,
+			);
+		if (oldChannel.enabled !== newChannel.enabled)
+			changes.push(
+				`启停 ${enabledLabel(oldChannel.enabled)} → ${enabledLabel(newChannel.enabled)}`,
+			);
+		if (changes.length) rows.push(`渠道 ${channelId}：${changes.join("；")}`);
+	}
+	return rows;
+}
+
+function enabledLabel(value: boolean | undefined): string {
+	return value === undefined ? "未设置" : value ? "启用" : "暂停";
+}
+
+function StrategyValues({
+	label,
+	values,
+}: {
+	label: string;
+	values?: string[];
+}) {
+	return (
+		<div className="flex flex-wrap items-center gap-1.5 text-sm">
+			<span className="text-muted-foreground">{label}：</span>
+			{values?.length ? (
+				values.map((value, index) => (
+					<Badge key={`${value}:${index}`} variant="outline">
+						{value}
+					</Badge>
+				))
+			) : (
+				<span className="text-muted-foreground">未填写</span>
+			)}
+		</div>
+	);
+}
+
+const LIST_LABELS = {
+	audience: "人群",
+	sellingPoint: "卖点",
+	contentDirection: "内容方向",
+	partner: "合作对象",
+} as const;
+
 function changeLabel(change: {
-	kind: "budget" | "bidCpc" | "enabled";
-	channelId: string;
-	from: number | boolean;
-	to: number | boolean;
+	kind:
+		| "budget"
+		| "bidCpc"
+		| "enabled"
+		| "audience"
+		| "sellingPoint"
+		| "contentDirection"
+		| "partner";
+	channelId?: string;
+	from?: number | boolean;
+	to?: number | boolean;
+	op?: "add" | "remove";
+	item?: string;
 }): string {
-	const field = change.kind === "budget" ? "预算" : change.kind === "bidCpc" ? "出价" : "启用状态";
-	return `${field}（${change.channelId}）：${String(change.from)} → ${String(change.to)}`;
+	switch (change.kind) {
+		case "budget":
+			return `预算（${change.channelId}）：${String(change.from)} → ${String(change.to)}`;
+		case "bidCpc":
+			return `出价（${change.channelId}）：${String(change.from)} → ${String(change.to)}`;
+		case "enabled":
+			return `启用状态（${change.channelId}）：${String(change.from)} → ${String(change.to)}`;
+		case "audience":
+		case "sellingPoint":
+		case "contentDirection":
+		case "partner":
+			return `${LIST_LABELS[change.kind]}${change.op === "remove" ? "移除" : "新增"}：${change.item}`;
+	}
+	// 服务端先上线新 kind 时，旧控制台也要显示一行而不是空白。
+	return `未知变更：${(change as { kind: string }).kind}`;
 }
 
 function deliveryLabel(status: string): string {
@@ -317,6 +639,45 @@ function OptionChip({
 			) : null}
 		</div>
 	);
+}
+
+function ReevaluateButton({ checkId }: { checkId: string }) {
+	const { mutate, isPending, error } = useReevaluate(checkId);
+	return (
+		<div className="flex flex-col gap-1">
+			<button
+				type="button"
+				disabled={isPending}
+				onClick={() => mutate()}
+				className={cn(
+					"inline-flex w-fit items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition",
+					isPending
+						? "cursor-default text-muted-foreground"
+						: "cursor-pointer hover:border-emerald-500/40 hover:bg-emerald-500/5",
+				)}
+			>
+				{isPending ? "重新评估中…" : "补证后重新评估"}
+			</button>
+			{error ? (
+				<span className="text-xs text-red-600">{String(error)}</span>
+			) : null}
+		</div>
+	);
+}
+
+function useReevaluate(checkId: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: async () => {
+			const result = await consoleClient.POST(
+				"/api/validation-checks/{checkId}/reevaluate",
+				{ params: { path: { checkId } } },
+			);
+			if (!result.data) throw new Error(JSON.stringify(result.error));
+			return result.data;
+		},
+		onSuccess: () => queryClient.invalidateQueries(),
+	});
 }
 
 function useChoice(actionRef: string) {
