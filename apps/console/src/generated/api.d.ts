@@ -1592,9 +1592,14 @@ export interface components {
             endsAt?: string;
         };
         TaskRules: {
+            /**
+             * @description 本任务的效果告警口径；一个任务只用一套口径。
+             * @enum {string}
+             */
+            placementType?: "paid_ads" | "influencer" | "seeding";
             metricDefinition?: string;
             /** @enum {string} */
-            metricKey?: "cost_per_consultation";
+            metricKey?: "cost_per_consultation" | "cost_per_engagement";
             currency?: string;
             unit?: string;
             statWindowDays?: number;
@@ -1779,6 +1784,8 @@ export interface components {
                 audience?: string[];
                 sellingPoints?: string[];
                 channels?: string[];
+                /** @description 投放方式参考建议，需用户核对，不自动写入表单。 */
+                placementTypes?: ("paid_ads" | "influencer" | "seeding")[];
             };
         };
         TaskInput: {
@@ -1862,6 +1869,11 @@ export interface components {
             audience: string[];
             channels: {
                 [key: string]: {
+                    /**
+                     * @description 投放方式；缺省按 paid_ads 读取。
+                     * @enum {string}
+                     */
+                    type?: "paid_ads" | "influencer" | "seeding";
                     budget?: number;
                     bidCpc?: number;
                     enabled?: boolean;
@@ -2174,6 +2186,11 @@ export interface components {
             taskVersion: number;
         };
         EvidenceRecordInput: {
+            /**
+             * @description 缺省 paid_ads；指标键集合必须与该口径一致。
+             * @enum {string}
+             */
+            placementType?: "paid_ads" | "influencer" | "seeding";
             source: components["schemas"]["EvidenceSourceInput"];
             scope: components["schemas"]["EvidenceScope"];
             period: components["schemas"]["EvidencePeriod"];
@@ -2210,9 +2227,9 @@ export interface components {
             formula: string;
             sourceField: string;
         };
+        /** @description 键由投放方式口径决定：付费广告 spendMinor/consultations；达人 feeMinor/engagement；种草 contentCostMinor/engagement。不得混用。 */
         EvidenceMetricsContract: {
-            spendMinor: components["schemas"]["EvidenceMetricDefinition"];
-            consultations: components["schemas"]["EvidenceMetricDefinition"];
+            [key: string]: components["schemas"]["EvidenceMetricDefinition"];
         };
         EvidenceCurrency: {
             code: string;
@@ -2223,13 +2240,13 @@ export interface components {
             model: string;
             windowDays?: number;
         };
+        /** @description 报表原始字段，键名由该投放方式的报表决定。 */
         EvidenceRawValues: {
-            spend?: string | number | null;
-            consultations?: string | number | null;
+            [key: string]: string | number | null;
         };
+        /** @description 计算用值，键名严格等于该投放方式口径的两个指标键。 */
         EvidenceValues: {
-            spendMinor?: number | null;
-            consultations?: number | null;
+            [key: string]: number | null;
         };
         EvidenceVersion: {
             id: string;
@@ -2240,6 +2257,8 @@ export interface components {
             version: number;
             businessKey: string;
             contentDigest: string;
+            /** @enum {string} */
+            placementType?: "paid_ads" | "influencer" | "seeding";
             scope: components["schemas"]["EvidenceScope"];
             period: components["schemas"]["EvidencePeriod"];
             metricsContract: components["schemas"]["EvidenceMetricsContract"];
@@ -2305,11 +2324,11 @@ export interface components {
         };
         ComparisonReason: {
             /** @enum {string} */
-            code: "NO_BASELINE" | "TASK_MISMATCH" | "ACCOUNT_MISMATCH" | "SOURCE_MISSING" | "SCOPE_MISMATCH" | "METRICS_CONTRACT_MISMATCH" | "CURRENCY_MISMATCH" | "ATTRIBUTION_MISMATCH" | "TIME_ZONE_MISMATCH" | "PERIOD_INVALID" | "PERIOD_OVERLAP" | "PERIOD_NOT_ADJACENT" | "DURATION_MISMATCH" | "PERIOD_INCOMPLETE" | "CALLBACK_PENDING" | "CALLBACK_UNKNOWN" | "VALUE_MISSING" | "VALUE_NULL" | "VALUE_INVALID" | "RULE_METRIC_MISSING" | "RULE_METRIC_UNSUPPORTED" | "RULE_THRESHOLD_MISSING" | "RULE_CURRENCY_MISSING" | "RULE_UNIT_MISSING" | "RULE_WINDOW_MISSING" | "RULE_MINIMUMS_MISSING" | "RULE_CURRENCY_MISMATCH" | "RULE_UNIT_MISMATCH" | "WINDOW_MISMATCH" | "SAMPLE_BELOW_MINIMUM" | "ZERO_DENOMINATOR";
+            code: "NO_BASELINE" | "TASK_MISMATCH" | "ACCOUNT_MISMATCH" | "SOURCE_MISSING" | "SCOPE_MISMATCH" | "PLACEMENT_TYPE_MISMATCH" | "RULE_PLACEMENT_MISMATCH" | "METRICS_CONTRACT_MISMATCH" | "CURRENCY_MISMATCH" | "ATTRIBUTION_MISMATCH" | "TIME_ZONE_MISMATCH" | "PERIOD_INVALID" | "PERIOD_OVERLAP" | "PERIOD_NOT_ADJACENT" | "DURATION_MISMATCH" | "PERIOD_INCOMPLETE" | "CALLBACK_PENDING" | "CALLBACK_UNKNOWN" | "VALUE_MISSING" | "VALUE_NULL" | "VALUE_INVALID" | "RULE_METRIC_MISSING" | "RULE_METRIC_UNSUPPORTED" | "RULE_THRESHOLD_MISSING" | "RULE_CURRENCY_MISSING" | "RULE_UNIT_MISSING" | "RULE_WINDOW_MISSING" | "RULE_MINIMUMS_MISSING" | "RULE_CURRENCY_MISMATCH" | "RULE_UNIT_MISMATCH" | "WINDOW_MISMATCH" | "SAMPLE_BELOW_MINIMUM" | "ZERO_DENOMINATOR";
             /** @enum {string} */
             axis: "period_comparison" | "current_threshold" | "both";
             /** @enum {string} */
-            metric?: "spendMinor" | "consultations" | "cost_per_consultation";
+            metric?: "spendMinor" | "consultations" | "feeMinor" | "contentCostMinor" | "engagement" | "cost_per_consultation" | "cost_per_engagement";
             evidenceRef?: components["schemas"]["EvidenceRef"];
             details?: {
                 [key: string]: string | number | boolean;
@@ -2337,6 +2356,13 @@ export interface components {
             status: "comparable" | "incomparable" | "awaiting_supplementation" | "missing_baseline" | "temporarily_uncomputable";
             canComparePeriods: boolean;
             canEvaluateCurrentThreshold: boolean;
+            /** @enum {string} */
+            placementType?: "paid_ads" | "influencer" | "seeding";
+            metricKeys?: {
+                spend: string;
+                count: string;
+                derived: string;
+            };
             comparisons: {
                 spendMinor?: {
                     baseline: number;
@@ -2359,7 +2385,7 @@ export interface components {
                 /** @enum {string} */
                 status: "exceeded" | "not_exceeded" | "not_evaluated";
                 /** @enum {string} */
-                metricKey?: "cost_per_consultation";
+                metricKey?: "cost_per_consultation" | "cost_per_engagement";
                 value?: components["schemas"]["RatioValue"];
                 thresholdMinor?: number;
                 currency?: string;
@@ -2383,11 +2409,11 @@ export interface components {
             taskVersion: number;
             dedupKey: string;
             /** @enum {string} */
-            reasonCode: "NO_BASELINE" | "TASK_MISMATCH" | "ACCOUNT_MISMATCH" | "SOURCE_MISSING" | "SCOPE_MISMATCH" | "METRICS_CONTRACT_MISMATCH" | "CURRENCY_MISMATCH" | "ATTRIBUTION_MISMATCH" | "TIME_ZONE_MISMATCH" | "PERIOD_INVALID" | "PERIOD_OVERLAP" | "PERIOD_NOT_ADJACENT" | "DURATION_MISMATCH" | "PERIOD_INCOMPLETE" | "CALLBACK_PENDING" | "CALLBACK_UNKNOWN" | "VALUE_MISSING" | "VALUE_NULL" | "VALUE_INVALID" | "RULE_METRIC_MISSING" | "RULE_METRIC_UNSUPPORTED" | "RULE_THRESHOLD_MISSING" | "RULE_CURRENCY_MISSING" | "RULE_UNIT_MISSING" | "RULE_WINDOW_MISSING" | "RULE_MINIMUMS_MISSING" | "RULE_CURRENCY_MISMATCH" | "RULE_UNIT_MISMATCH" | "WINDOW_MISMATCH" | "SAMPLE_BELOW_MINIMUM" | "ZERO_DENOMINATOR";
+            reasonCode: "NO_BASELINE" | "TASK_MISMATCH" | "ACCOUNT_MISMATCH" | "SOURCE_MISSING" | "SCOPE_MISMATCH" | "PLACEMENT_TYPE_MISMATCH" | "RULE_PLACEMENT_MISMATCH" | "METRICS_CONTRACT_MISMATCH" | "CURRENCY_MISMATCH" | "ATTRIBUTION_MISMATCH" | "TIME_ZONE_MISMATCH" | "PERIOD_INVALID" | "PERIOD_OVERLAP" | "PERIOD_NOT_ADJACENT" | "DURATION_MISMATCH" | "PERIOD_INCOMPLETE" | "CALLBACK_PENDING" | "CALLBACK_UNKNOWN" | "VALUE_MISSING" | "VALUE_NULL" | "VALUE_INVALID" | "RULE_METRIC_MISSING" | "RULE_METRIC_UNSUPPORTED" | "RULE_THRESHOLD_MISSING" | "RULE_CURRENCY_MISSING" | "RULE_UNIT_MISSING" | "RULE_WINDOW_MISSING" | "RULE_MINIMUMS_MISSING" | "RULE_CURRENCY_MISMATCH" | "RULE_UNIT_MISMATCH" | "WINDOW_MISMATCH" | "SAMPLE_BELOW_MINIMUM" | "ZERO_DENOMINATOR";
             /** @enum {string} */
             axis: "period_comparison" | "current_threshold" | "both";
             /** @enum {string} */
-            metric?: "spendMinor" | "consultations" | "cost_per_consultation";
+            metric?: "spendMinor" | "consultations" | "feeMinor" | "contentCostMinor" | "engagement" | "cost_per_consultation" | "cost_per_engagement";
             remediation: {
                 /** @enum {string} */
                 action: "provide_evidence" | "revise_task_rules" | "verify_source" | "none";
@@ -2448,7 +2474,11 @@ export interface components {
             scope: components["schemas"]["EvidenceScope"];
             period: components["schemas"]["EvidencePeriod"];
             /** @enum {string} */
-            metric: "cost_per_consultation";
+            metric: "cost_per_consultation" | "cost_per_engagement";
+            /** @enum {string} */
+            placementType?: "paid_ads" | "influencer" | "seeding";
+            /** @description 该口径的归因局限，必须随结论保留。 */
+            attributionNote?: string;
             metricDefinition: string;
             metricFormula: string;
             spendMinor?: number | null;

@@ -9,7 +9,7 @@ import type {
 	TaskInput,
 	Transaction,
 } from "@adpluse/core";
-import { LifecycleDeletionError, ModelConnectionError, ValidationCheckError, modelConnectionProtocols, taskLifecycleIn, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
+import { LifecycleDeletionError, ModelConnectionError, ValidationCheckError, modelConnectionProtocols, placementTypes, taskLifecycleIn, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
 import { findCatalogModel, taskDraftBriefMaxLength, taskDraftStages, type Runtime, type TaskDraftSelection } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
@@ -26,12 +26,14 @@ const strategy = z
 			z.string().min(1).max(128),
 			z
 				.object({
+					type: z.enum(placementTypes).optional(),
 					budget: amount.optional(),
 					bidCpc: amount.optional(),
 					enabled: z.boolean().optional(),
 				})
 				.strict()
-				.transform(({ budget, bidCpc, enabled }) => ({
+				.transform(({ type, budget, bidCpc, enabled }) => ({
+					...(type === undefined ? {} : { type }),
 					...(budget === undefined ? {} : { budget }),
 					...(bidCpc === undefined ? {} : { bidCpc }),
 					...(enabled === undefined ? {} : { enabled }),
@@ -230,8 +232,9 @@ const taskInput = z
 			.strict(),
 		rules: z
 			.object({
+				placementType: z.enum(placementTypes).optional(),
 				metricDefinition: z.string().trim().min(1).max(500).optional(),
-				metricKey: z.enum(["cost_per_consultation"]).optional(),
+				metricKey: z.enum(["cost_per_consultation", "cost_per_engagement"]).optional(),
 				currency: z.string().trim().min(1).max(16).optional(),
 				unit: z.string().trim().min(1).max(32).optional(),
 				statWindowDays: z.number().int().nonnegative().optional(),
@@ -260,6 +263,13 @@ const normalizedMetricValue = z
 	.refine(Number.isSafeInteger)
 	.nonnegative()
 	.nullable();
+const metricDefinitionInput = z
+	.object({
+		definition: nonBlank(500),
+		formula: nonBlank(1000),
+		sourceField: nonBlank(256),
+	})
+	.strict();
 const evidenceRecordInput = z
 	.object({
 		source: z
@@ -270,6 +280,7 @@ const evidenceRecordInput = z
 				sourceUri: z.url().optional(),
 			})
 			.strict(),
+		placementType: z.enum(placementTypes).optional(),
 		scope: z
 			.object({
 				planRef: nonBlank(256),
@@ -284,24 +295,10 @@ const evidenceRecordInput = z
 				completeness: z.enum(["complete", "partial"]),
 			})
 			.strict(),
+		// 键集合由投放方式口径决定，领域层再校验；这里只限制形状与规模。
 		metricsContract: z
-			.object({
-				spendMinor: z
-					.object({
-						definition: nonBlank(500),
-						formula: nonBlank(1000),
-						sourceField: nonBlank(256),
-					})
-					.strict(),
-				consultations: z
-					.object({
-						definition: nonBlank(500),
-						formula: nonBlank(1000),
-						sourceField: nonBlank(256),
-					})
-					.strict(),
-			})
-			.strict(),
+			.record(z.string().min(1).max(64), metricDefinitionInput)
+			.refine((value) => Object.keys(value).length <= 8),
 		currency: z
 			.object({
 				code: nonBlank(16),
@@ -317,17 +314,11 @@ const evidenceRecordInput = z
 			.strict(),
 		callbackStatus: z.enum(["complete", "pending", "not_applicable", "unknown"]),
 		rawValues: z
-			.object({
-				spend: rawMetricValue.optional(),
-				consultations: rawMetricValue.optional(),
-			})
-			.strict(),
+			.record(z.string().min(1).max(128), rawMetricValue.optional())
+			.refine((value) => Object.keys(value).length <= 8),
 		values: z
-			.object({
-				spendMinor: normalizedMetricValue.optional(),
-				consultations: normalizedMetricValue.optional(),
-			})
-			.strict(),
+			.record(z.string().min(1).max(64), normalizedMetricValue.optional())
+			.refine((value) => Object.keys(value).length <= 8),
 	})
 	.strict();
 const evidenceImportInput = z
@@ -704,7 +695,7 @@ export async function handleAdmin(
 	if (path === "/api/evidence/imports" && req.method === "POST") {
 		let input: EvidenceImportInput;
 		try {
-			input = evidenceImportInput.parse(await readJson(req)) as EvidenceImportInput;
+			input = evidenceImportInput.parse(await readJson(req)) as unknown as EvidenceImportInput;
 		} catch (error) {
 			if (error instanceof z.ZodError) {
 				const field = error.issues[0]?.path.join(".") || "body";
@@ -792,7 +783,7 @@ export async function handleAdmin(
 	if (evidenceRevision?.[1] && req.method === "POST") {
 		let input: EvidenceRevisionInput;
 		try {
-			input = evidenceRevisionInput.parse(await readJson(req)) as EvidenceRevisionInput;
+			input = evidenceRevisionInput.parse(await readJson(req)) as unknown as EvidenceRevisionInput;
 		} catch (error) {
 			if (error instanceof z.ZodError) {
 				const field = error.issues[0]?.path.join(".") || "body";

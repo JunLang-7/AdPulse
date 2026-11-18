@@ -95,6 +95,11 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const attachment = stage ? attached[stage.id] : undefined;
 	const canUseFileStart = remaining < 0 && Boolean(attachment);
 	const suggestionCurrent = suggestion?.brief === brief ? suggestion : undefined;
+	// 投放方式只作为参考提示，不写入表单：材料里的说法不等于已确定的投放安排。
+	const placementIdeas = stage?.id === "channels"
+		? (suggestionCurrent?.data?.recommendations?.placementTypes ?? []).map((value) =>
+			value === "influencer" ? "达人合作" : value === "seeding" ? "内容种草" : "平台付费广告")
+		: [];
 	const allItems = suggestionCurrent?.data ? taskSuggestions(form, suggestionCurrent.data, excluded) : [];
 	// 按阶段整理时只显示本阶段的字段；整表单则一次列出全部。
 	const stageFieldNames = new Set<string>(stage ? stage.fields : []);
@@ -336,6 +341,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 									<p className="text-xs text-muted-foreground">
 										按你的说明一次整理出所有字段。原话摘录默认勾选；标“AI 建议”的是模型整理，默认不勾，请先核对。
 									</p>
+									{placementIdeas.length ? <p className="text-xs text-muted-foreground">投放方式参考建议（请自行核对，不会自动填入）：{placementIdeas.join("、")}。</p> : null}
 									{draftFields.map((field) => ({ field, fieldItems: items.filter((item) => item.field === field) }))
 										.filter(({ fieldItems }) => fieldItems.length > 0)
 										.map(({ field, fieldItems }) => (

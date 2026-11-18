@@ -6,13 +6,14 @@ type TaskRules = components["schemas"]["TaskRules"];
 
 export type ChannelForm = {
 	name: string;
+	type: "" | "paid_ads" | "influencer" | "seeding";
 	budget: string;
 	bidCpc: string;
 	enabled: "unknown" | "active" | "paused";
 };
 
 export const emptyChannel: ChannelForm = {
-	name: "", budget: "", bidCpc: "", enabled: "unknown",
+	name: "", type: "", budget: "", bidCpc: "", enabled: "unknown",
 };
 
 const ruleCounts = {
@@ -32,7 +33,9 @@ export type FormState = {
 	startsAt: string;
 	endsAt: string;
 	metricDefinition: string;
-	metricKey: "" | "cost_per_consultation";
+	/** 本任务的效果衡量口径；留空按付费广告处理。 */
+	placementType: "" | "paid_ads" | "influencer" | "seeding";
+	metricKey: "" | "cost_per_consultation" | "cost_per_engagement";
 	moneyMode: "" | "cny" | "report";
 	currency: string;
 	unit: string;
@@ -42,7 +45,7 @@ export type FormState = {
 
 export const emptyForm: FormState = {
 	product: "", objective: "", audience: "", sellingPoints: "", channels: [],
-	scope: "", startsAt: "", endsAt: "", metricDefinition: "", metricKey: "",
+	scope: "", startsAt: "", endsAt: "", metricDefinition: "", placementType: "", metricKey: "",
 	moneyMode: "", currency: "", unit: "", alertThreshold: "", minimumSpend: "",
 	statWindowDays: "", minimumConsultations: "", handlingDeadlineHours: "", maxPushRounds: "",
 };
@@ -95,6 +98,7 @@ export function fromVersion(task: TaskVersion): FormState {
 		sellingPoints: task.strategy.sellingPoints.join("\n"),
 		channels: Object.entries(task.strategy.channels).map(([name, channel]) => ({
 			name,
+			type: channel.type ?? "",
 			budget: channel.budget?.toString() ?? "",
 			bidCpc: channel.bidCpc?.toString() ?? "",
 			enabled: channel.enabled === undefined ? "unknown" : channel.enabled ? "active" : "paused",
@@ -103,6 +107,7 @@ export function fromVersion(task: TaskVersion): FormState {
 		startsAt: toBeijingInput(task.observation.startsAt),
 		endsAt: toBeijingInput(task.observation.endsAt),
 		metricDefinition: rules.metricDefinition ?? "",
+		placementType: rules.placementType ?? "",
 		metricKey: rules.metricKey ?? "",
 		moneyMode: inYuan ? "cny" : hasMoney ? "report" : "",
 		currency: rules.currency ?? "",
@@ -156,8 +161,12 @@ function toChannels(rows: ChannelForm[]): TaskInput["strategy"]["channels"] {
 			throw new Error("请填写有效的投放渠道名称。");
 		if (channels.has(row.name)) throw new Error(`投放渠道“${row.name}”重复了。`);
 		const budget = parseAmount(row.budget, `${row.name}的预算`);
+		// 出价只属于付费广告；达人合作与内容种草不提交这个字段。
+		if (row.type && row.type !== "paid_ads" && row.bidCpc.trim())
+			throw new Error(`${row.name}是达人/种草投放，没有每次点击出价。`);
 		const bidCpc = parseAmount(row.bidCpc, `${row.name}的每次点击出价`);
 		channels.set(row.name, {
+			...(row.type ? { type: row.type } : {}),
 			...(budget === undefined ? {} : { budget }),
 			...(bidCpc === undefined ? {} : { bidCpc }),
 			...(row.enabled === "unknown" ? {} : { enabled: row.enabled === "active" }),
@@ -175,6 +184,7 @@ export function toInput(form: FormState): TaskInput {
 		throw new Error("观察结束时间不能早于开始时间。");
 
 	const rules: TaskRules = {};
+	if (form.placementType) rules.placementType = form.placementType;
 	if (form.metricKey) rules.metricKey = form.metricKey;
 	if (form.metricDefinition.trim()) rules.metricDefinition = form.metricDefinition.trim();
 	for (const [key, label] of Object.entries(ruleCounts)) {

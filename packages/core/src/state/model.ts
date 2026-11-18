@@ -1,6 +1,12 @@
 import type { MarketEventHead, MarketEventVersion, MarketEventAlias, MarketEventOperation } from "../market-events.js";
 import type { DecisionCard } from "../domain/decisionCard.js";
 import type {
+	MetricDefinition,
+	MetricKey,
+	PlacementMetricKey,
+	PlacementType,
+} from "../domain/placement.js";
+import type {
 	Limits,
 	Signal,
 	Strategy,
@@ -309,13 +315,17 @@ export interface TaskVersion {
 		endsAt?: string;
 	};
 	rules: {
+		/** 本任务的效果告警口径；缺省 paid_ads。一个任务只用一套口径，避免混算。 */
+		placementType?: PlacementType;
 		metricDefinition?: string;
-		metricKey?: "cost_per_consultation";
+		metricKey?: PlacementMetricKey;
 		currency?: string;
 		unit?: string;
 		statWindowDays?: number;
 		alertThresholdMinor?: number;
+		/** 最小投入门槛（付费广告为花费，达人/种草为费用或内容成本）。 */
 		minimumSpendMinor?: number;
+		/** 最小结果计数门槛（付费广告为咨询次数，达人/种草为互动量）。 */
 		minimumConsultations?: number;
 		handlingDeadlineHours?: number;
 		maxPushRounds?: number;
@@ -342,6 +352,8 @@ export interface EvidenceImportRecord {
 		reportRef: string;
 		sourceUri?: string;
 	};
+	/** 缺省 paid_ads；键集合必须与口径一致，由领域层校验。 */
+	placementType?: PlacementType;
 	scope: { planRef: string; campaignRefs: string[] };
 	period: {
 		startsAt: string;
@@ -349,27 +361,20 @@ export interface EvidenceImportRecord {
 		timeZone: string;
 		completeness: "complete" | "partial";
 	};
-	metricsContract: {
-		spendMinor: { definition: string; formula: string; sourceField: string };
-		consultations: { definition: string; formula: string; sourceField: string };
-	};
+	/** 按投放方式使用不同的指标键，不把达人/种草塞进付费广告的口径。 */
+	metricsContract: Record<string, MetricDefinition>;
 	currency: { code: string; minorUnit: string; minorUnitsPerMajor: number };
 	attribution: { model: string; windowDays?: number };
 	callbackStatus: "complete" | "pending" | "not_applicable" | "unknown";
-	rawValues: {
-		spend?: string | number | null;
-		consultations?: string | number | null;
-	};
+	rawValues: Record<string, string | number | null>;
 	values: EvidenceValues;
 }
 export interface EvidenceSourceInput {
 	source: EvidenceImportRecord["source"];
 	rawValues: EvidenceImportRecord["rawValues"];
 }
-export interface EvidenceValues {
-	spendMinor?: number | null;
-	consultations?: number | null;
-}
+/** 键由 placementSpec 决定；旧快照的 spendMinor/consultations 仍是合法键。 */
+export type EvidenceValues = Record<string, number | null>;
 export interface EvidenceHead {
 	id: string;
 	ownerId: string;
@@ -387,6 +392,8 @@ export interface EvidenceVersion {
 	version: number;
 	businessKey: string;
 	contentDigest: string;
+	/** 读取时归一；旧版本缺省 paid_ads，不需要数据迁移。 */
+	placementType: PlacementType;
 	scope: { planRef: string; campaignRefs: string[] };
 	period: {
 		startsAt: string;
@@ -394,10 +401,7 @@ export interface EvidenceVersion {
 		timeZone: string;
 		completeness: "complete" | "partial";
 	};
-	metricsContract: {
-		spendMinor: { definition: string; formula: string; sourceField: string };
-		consultations: { definition: string; formula: string; sourceField: string };
-	};
+	metricsContract: Record<string, MetricDefinition>;
 	currency: { code: string; minorUnit: string; minorUnitsPerMajor: number };
 	attribution: { model: string; windowDays?: number };
 	callbackStatus: "complete" | "pending" | "not_applicable" | "unknown";
@@ -416,10 +420,7 @@ export interface EvidenceSource {
 		reportRef: string;
 		sourceUri?: string;
 	};
-	rawValues: {
-		spend?: string | number | null;
-		consultations?: string | number | null;
-	};
+	rawValues: Record<string, string | number | null>;
 	digest: string;
 	createdAt: string;
 }
@@ -443,6 +444,8 @@ export type ComparisonReasonCode =
 	| "ACCOUNT_MISMATCH"
 	| "SOURCE_MISSING"
 	| "SCOPE_MISMATCH"
+	| "PLACEMENT_TYPE_MISMATCH"
+	| "RULE_PLACEMENT_MISMATCH"
 	| "METRICS_CONTRACT_MISMATCH"
 	| "CURRENCY_MISMATCH"
 	| "ATTRIBUTION_MISMATCH"
@@ -470,10 +473,7 @@ export type ComparisonReasonCode =
 	| "SAMPLE_BELOW_MINIMUM"
 	| "ZERO_DENOMINATOR";
 export type ComparisonAxis = "period_comparison" | "current_threshold" | "both";
-export type ComparisonMetric =
-	| "spendMinor"
-	| "consultations"
-	| "cost_per_consultation";
+export type ComparisonMetric = MetricKey;
 export type RemediationAction =
 	| "provide_evidence"
 	| "revise_task_rules"
@@ -510,7 +510,12 @@ export interface ComparisonResult {
 	status: ComparisonStatus;
 	canComparePeriods: boolean;
 	canEvaluateCurrentThreshold: boolean;
+	/** 该次比较使用的投放方式口径；旧结果缺省按 paid_ads 读取。 */
+	placementType?: PlacementType;
+	/** 结构化口径投影；前端按它标注指标名称，不用历史字段名字面理解。 */
+	metricKeys?: { spend: string; count: string; derived: string };
 	comparisons: {
+		/** 通用投影，字段名沿用历史契约；含义由 metricKeys / placementType 决定。 */
 		spendMinor?: { baseline: number; current: number; delta: number };
 		consultations?: { baseline: number; current: number; delta: number };
 		costPerConsultation?: {
@@ -521,7 +526,7 @@ export interface ComparisonResult {
 	};
 	thresholdEvaluation: {
 		status: "exceeded" | "not_exceeded" | "not_evaluated";
-		metricKey?: "cost_per_consultation";
+		metricKey?: PlacementMetricKey;
 		value?: { numeratorMinor: number; denominatorConsultations: number };
 		thresholdMinor?: number;
 		currency?: string;
@@ -581,7 +586,10 @@ export interface InvestigationAlertEvidence {
 	source: { platform: string; accountRef: string };
 	scope: EvidenceVersion["scope"];
 	period: EvidenceVersion["period"];
-	metric: "cost_per_consultation";
+	metric: PlacementMetricKey;
+	placementType?: PlacementType;
+	/** 该口径的归因局限，随告警一起保留，不得换算掉。 */
+	attributionNote?: string;
 	metricDefinition: string;
 	metricFormula: string;
 	spendMinor?: number | null;

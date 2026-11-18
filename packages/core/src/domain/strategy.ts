@@ -1,9 +1,15 @@
+import {
+	normalizePlacementType,
+	placementSpec,
+	type PlacementType,
+} from "./placement.js";
+
 export interface Strategy {
 	objective: string;
 	audience: string[];
 	channels: Record<
 		string,
-		{ budget?: number; bidCpc?: number; enabled?: boolean }
+		{ type?: PlacementType; budget?: number; bidCpc?: number; enabled?: boolean }
 	>;
 	sellingPoints: string[];
 	/**
@@ -96,11 +102,16 @@ export function validateStrategy(strategy: Strategy, limits: Limits): void {
 	for (const channel of Object.values(strategy.channels)) {
 		if (!channel || typeof channel !== "object")
 			throw new Error("invalid strategy channel");
+		// 旧快照没有 type，按付费广告读取；非法值一律拒绝，不静默降级。
+		const spec = placementSpec(normalizePlacementType(channel.type));
 		for (const key of ["budget", "bidCpc"] as const) {
 			const value = channel[key];
 			if (value !== undefined && (!Number.isFinite(value) || value < 0))
 				throw new Error("invalid strategy amount");
 		}
+		// 出价只属于付费广告；达人合作与内容种草没有这个旋钮。
+		if (!spec.supportsBidCpc && channel.bidCpc !== undefined)
+			throw new Error("bidCpc is not available for this placement type");
 		if (channel.enabled !== undefined && typeof channel.enabled !== "boolean")
 			throw new Error("invalid enabled flag");
 	}
@@ -173,6 +184,12 @@ function applyChannelChange(
 		throw new Error("unknown channel");
 	const channel = strategy.channels[change.channelId];
 	if (!channel) throw new Error("unknown channel");
+	// 冻结候选与提交选择时重复校验，不信任 PolicyEngine 的声明。
+	if (
+		change.kind === "bidCpc" &&
+		!placementSpec(normalizePlacementType(channel.type)).supportsBidCpc
+	)
+		throw new Error("bidCpc is not available for this placement type");
 	if (change.kind === "enabled") {
 		if (channel.enabled !== change.from)
 			throw new Error("stale strategy change");

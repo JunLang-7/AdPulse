@@ -52,6 +52,23 @@
 编译期依赖：channels/storage → core；runtime → core/channels/storage；应用入口 → runtime。
 core 不依赖具体 IM、HTTP、数据库驱动或应用入口。依赖边界由 [测试](../tests/boundaries.test.ts) 检查。
 
+## 投放方式与分口径效果衡量
+
+[placement.ts](../packages/core/src/domain/placement.ts) 是唯一口径来源：`paid_ads`（付费广告）、`influencer`（达人合作）、`seeding`（内容种草）。每种方式定义自己的投入指标键、结果计数键、派生单位成本键、展示标签与归因局限。旧数据没有 `placementType`，读取时一律归一为 `paid_ads`，不需要数据迁移。
+
+| 投放方式 | 投入键 | 结果键 | 派生成本 | 出价旋钮 |
+| --- | --- | --- | --- | --- |
+| `paid_ads` | `spendMinor` | `consultations` | `cost_per_consultation` | 支持 |
+| `influencer` | `feeMinor` | `engagement` | `cost_per_engagement` | 不支持 |
+| `seeding` | `contentCostMinor` | `engagement` | `cost_per_engagement` | 不支持 |
+
+- 策略渠道带可选 `type`；`validateStrategy` 与 `applyChanges` 在冻结候选和提交选择时重复校验，达人/种草渠道出现 `bidCpc` 一律拒绝，不静默降级。预算与开关三类通用。
+- 效果证据带 `placementType`；`metricsContract` 与 `values` 是按口径的指标字典。证据导入只允许本口径的键，但允许缺某个键或值为空——比较引擎会给出 `VALUE_MISSING` / `VALUE_NULL` 并等待补证，不在导入时编造数值。
+- 任务规则带 `placementType`，`metricKey` 必须与该口径的派生成本一致。口径不一致时产生 `RULE_PLACEMENT_MISMATCH`，不产出阈值结论。
+- 比较引擎按证据口径选指标键；两期投放方式不同时产生 `PLACEMENT_TYPE_MISMATCH`，判为不可比。比较结果的字段名沿用历史契约作为通用投影，另附 `placementType` 与 `metricKeys`，展示层按口径标注真实名称。
+- 归因局限随比较结果与排查提醒一起保留：互动量不等于咨询或成交，不能换算成单次咨询成本。
+- 指标集是探索假设，集中在 registry，访谈结论出来后可调整；达人清单（合作对象）与内容方向仍未建模，不在本机制内。
+
 ## 出入站适配
 
 入站接口见 [contracts.ts](../packages/channels/src/contracts.ts)：

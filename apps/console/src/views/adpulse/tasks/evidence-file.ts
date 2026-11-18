@@ -2,7 +2,7 @@ import type { components } from "../../../generated/api.js";
 
 type EvidenceImportInput = components["schemas"]["EvidenceImportInput"];
 type EvidenceRecordInput = components["schemas"]["EvidenceRecordInput"];
-export type ReportSummary = Pick<EvidenceRecordInput, "period" | "values" | "currency">;
+export type ReportSummary = Pick<EvidenceRecordInput, "period" | "values" | "currency" | "placementType">;
 
 const maxReportBytes = 256 * 1024;
 
@@ -11,12 +11,17 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 
 function isPreviewable(record: unknown): boolean {
 	if (!isObject(record)) return false;
-	const { period, values, currency } = record;
+	const { period, values, currency, placementType } = record;
 	const validNumber = (value: unknown) => value == null ||
 		(typeof value === "number" && Number.isSafeInteger(value) && value >= 0);
+	// 指标键由投放方式决定，这里只校验形状；键集合是否与口径一致由服务端校验。
+	if (placementType != null && !["paid_ads", "influencer", "seeding"].includes(String(placementType)))
+		return false;
+	const entries = isObject(values) ? Object.entries(values) : [];
 	return isObject(period) && typeof period.startsAt === "string" &&
 		typeof period.endsAt === "string" && Date.parse(period.startsAt) < Date.parse(period.endsAt) &&
-		isObject(values) && validNumber(values.spendMinor) && validNumber(values.consultations) &&
+		isObject(values) && entries.length > 0 && entries.length <= 8 &&
+		entries.every(([key, value]) => key.length > 0 && key.length <= 64 && validNumber(value)) &&
 		isObject(currency) && typeof currency.code === "string" && typeof currency.minorUnit === "string" &&
 		typeof currency.minorUnitsPerMajor === "number" &&
 		Number.isSafeInteger(currency.minorUnitsPerMajor) && currency.minorUnitsPerMajor > 0;
@@ -62,7 +67,7 @@ export async function readEvidenceImport(
 			`文件与当前任务或版本不匹配，请选择适用于本任务 v${taskRef.taskVersion} 的报表。`,
 		);
 	if (!report.records.every(isPreviewable))
-		throw new Error("报表中的统计时间、花费或咨询次数无法读取，请核对原文件。");
+		throw new Error("报表中的统计时间、投放方式或指标数值无法读取，请核对原文件。");
 	// The API validates each record and preserves the original fields and values.
 	return report as EvidenceImportInput;
 }
@@ -72,7 +77,7 @@ export async function readEvidenceCorrection(file: File): Promise<EvidenceRecord
 	if (!isObject(report.source) || !isObject(report.period))
 		throw new Error("请选择一份单区间更正文件。");
 	if (!isPreviewable(report))
-		throw new Error("更正文件中的统计时间、花费或咨询次数无法读取，请核对原文件。");
+		throw new Error("更正文件中的统计时间、投放方式或指标数值无法读取，请核对原文件。");
 	// The API validates the record and checks it matches the original evidence.
 	return report as EvidenceRecordInput;
 }

@@ -9,6 +9,7 @@ import {
 	CardTitle,
 } from "../../../components/ui/card";
 import { formatReviewAmount, formatReviewCost, formatReviewCount } from "./review-display";
+import { derivedLabel, placementLabels } from "./placement-display";
 import { formatBeijingPeriod, formatBeijingTime } from "./task-form";
 
 type InvestigationAlert = components["schemas"]["InvestigationAlert"];
@@ -50,6 +51,8 @@ function AlertItem({
 	session?: Session;
 }) {
 	const current = alert.current;
+	const spec = placementLabels(current.placementType);
+	const derived = derivedLabel(current.metric, current.placementType);
 	const cost = current.spendMinor != null && current.consultations != null && current.consultations > 0
 		? formatReviewCost({ numeratorMinor: current.spendMinor, denominatorConsultations: current.consultations }, current.currency)
 		: "暂时无法计算";
@@ -77,7 +80,7 @@ function AlertItem({
 
 			<dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
 				<div>
-					<dt className="text-muted-foreground">每次咨询成本</dt>
+					<dt className="text-muted-foreground">{derived}</dt>
 					<dd className="font-semibold tabular-nums">{cost}</dd>
 				</div>
 				<div>
@@ -85,11 +88,11 @@ function AlertItem({
 					<dd>{formatReviewAmount(current.thresholdMinor, current.currency, true)}</dd>
 				</div>
 				<div>
-					<dt className="text-muted-foreground">投放花费</dt>
+					<dt className="text-muted-foreground">{spec.spend}</dt>
 					<dd>{formatReviewAmount(current.spendMinor, current.currency)}</dd>
 				</div>
 				<div>
-					<dt className="text-muted-foreground">咨询次数</dt>
+					<dt className="text-muted-foreground">{spec.count}</dt>
 					<dd>{formatReviewCount(current.consultations)}</dd>
 				</div>
 				{current.handlingDeadlineHours !== undefined && (
@@ -100,6 +103,7 @@ function AlertItem({
 				)}
 			</dl>
 
+			<p className="text-xs text-muted-foreground">{spec.name} · {current.attributionNote ?? spec.attributionNote}</p>
 			{explanation ? (
 				<p className="text-xs text-muted-foreground">{explanation}</p>
 			) : null}
@@ -147,7 +151,7 @@ export function InvestigationAlertsPanel({ taskId }: { taskId: string }) {
 			<CardHeader>
 				<CardTitle>提醒和处理进度</CardTitle>
 				<p className="text-sm text-muted-foreground">
-					每次咨询成本超过任务设置的提醒线时，会在这里生成提醒。
+					按任务设置的效果口径检查报表；超过提醒线时，会在这里生成提醒。
 				</p>
 			</CardHeader>
 			<CardContent className="space-y-3">
