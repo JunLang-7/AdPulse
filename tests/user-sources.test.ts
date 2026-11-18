@@ -61,17 +61,18 @@ test("refresh：robots 禁止时不写条目，允许时入库并更新 lastOutc
 	const listed = await service.list("owner-1");
 	assert.equal(listed[0]?.lastOutcome, "failed");
 
+	// 刷新有 5 分钟冷却（见 UserSourceService）：后续刷新必须拉开时间，否则会被 429 拦住。
 	const ok = await service.refresh("owner-1", source.id, fakeFetcher({
 		"https://sd-example.com/robots.txt": { status: 200, body: "User-agent: *\nAllow: /\n" },
 		"https://sd-example.com/news": { status: 200, body: HTML },
-	}), "2026-11-18T00:02:00.000Z");
+	}), "2026-11-18T00:10:00.000Z");
 	assert.equal(ok.outcome, "ok");
 	assert.equal(ok.created, 2);
 
 	const again = await service.refresh("owner-1", source.id, fakeFetcher({
 		"https://sd-example.com/robots.txt": { status: 200, body: "User-agent: *\nAllow: /\n" },
 		"https://sd-example.com/news": { status: 200, body: HTML },
-	}), "2026-11-18T00:03:00.000Z");
+	}), "2026-11-18T00:20:00.000Z");
 	assert.equal(again.created, 0);
 	assert.equal(again.updated, 2, "同 URL 二次采集只更新不重复建条目");
 
@@ -94,9 +95,10 @@ test("refresh：robots 5xx 保守放弃；列表页失败不改条目", async ()
 	}), "2026-11-18T00:01:00.000Z");
 	assert.equal(conservative.outcome, "failed");
 
+	// 刷新有 5 分钟冷却：第二次尝试拉开到冷却之后。
 	const pageFail = await service.refresh("owner-1", source.id, fakeFetcher({
 		"https://sd-example.com/robots.txt": { status: 404, body: "not found" },
-	}), "2026-11-18T00:02:00.000Z");
+	}), "2026-11-18T00:10:00.000Z");
 	assert.equal(pageFail.outcome, "failed", "列表页抓不到（fetcher 抛错）也不写条目");
 	const stored = await storage.transaction(async (tx) => (await tx.sourceItems.all()).filter((i) => i.sourceKey.startsWith("user:")));
 	assert.equal(stored.length, 0);
