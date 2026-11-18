@@ -4,6 +4,11 @@ import {
 	evaluateEvidenceComparison,
 	isFollowUpReason,
 } from "./comparisons.js";
+import {
+	isMetricKeyForPlacement,
+	normalizePlacementType,
+	placementSpec,
+} from "./domain/placement.js";
 import { taskActiveIn } from "./lifecycle.js";
 import type { Storage } from "./ports/storage.js";
 import type {
@@ -100,14 +105,15 @@ function validEvidenceForReason(
 			evidence.callbackStatus !== "not_applicable")
 	)
 		return false;
+	const spec = placementSpec(evidence.placementType);
 	const metrics =
-		reason.metric === "spendMinor"
-			? ["spendMinor"]
-			: reason.metric === "consultations"
-				? ["consultations"]
-				: ["spendMinor", "consultations"];
+		reason.metric === spec.spendKey
+			? [spec.spendKey]
+			: reason.metric === spec.countKey
+				? [spec.countKey]
+				: [spec.spendKey, spec.countKey];
 	return metrics.every((key) => {
-		const value = evidence.values[key as "spendMinor" | "consultations"];
+		const value = evidence.values[key];
 		return (
 			Object.hasOwn(evidence.values, key) &&
 				value !== undefined &&
@@ -490,13 +496,18 @@ export class ComparisonService {
 						followUp.period.timeZone !== evidence.period.timeZone)
 				)
 					throw new ComparisonValidationError("evidence period does not satisfy follow-up");
+				const followUpSpec = placementSpec(evidence.placementType);
+				const spend = evidence.values[followUpSpec.spendKey];
+				const count = evidence.values[followUpSpec.countKey];
 				if (
 					(followUp.minimumSpendMinor !== undefined &&
-						evidence.values.spendMinor! < followUp.minimumSpendMinor) ||
+						(spend === null || spend === undefined ||
+							spend < followUp.minimumSpendMinor)) ||
 					(followUp.minimumConsultations !== undefined &&
-						evidence.values.consultations! < followUp.minimumConsultations) ||
+						(count === null || count === undefined ||
+							count < followUp.minimumConsultations)) ||
 					(followUp.remediation.completionCriteria === "source_confirms_zero" &&
-						evidence.values.consultations !== 0)
+						count !== 0)
 				)
 					throw new ComparisonValidationError("evidence sample does not satisfy follow-up");
 				if (followUp.expectedRelation === "same_period" && followUp.evidenceRef) {
@@ -631,7 +642,11 @@ function canResolveRules(
 		evidence.createdAt <= followUp.createdAt &&
 		task.version > followUp.taskVersion &&
 		task.createdAt > followUp.createdAt &&
-		task.rules.metricKey === "cost_per_consultation" &&
+		task.rules.metricKey !== undefined &&
+		isMetricKeyForPlacement(
+			task.rules.metricKey,
+			normalizePlacementType(task.rules.placementType),
+		) &&
 		task.rules.alertThresholdMinor !== undefined &&
 		task.rules.currency === evidence.currency.code &&
 		task.rules.unit === evidence.currency.minorUnit &&

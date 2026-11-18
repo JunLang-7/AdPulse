@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import {
+	normalizePlacementType,
+	placementSpec,
+	validatePlacementMetricKeys,
+} from "./domain/placement.js";
 import { taskActiveIn } from "./lifecycle.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import { invalidateAlertsForEvidenceUpdate } from "./investigation-alerts.js";
@@ -110,22 +115,38 @@ function validateRawValues(
 ): void {
 	if (!values || typeof values !== "object" || Array.isArray(values))
 		throw new EvidenceValidationError(`invalid field: ${field}`);
-	for (const key of ["spend", "consultations"] as const) {
-		const value = values[key];
+	const entries = Object.entries(values);
+	if (entries.length > 8)
+		throw new EvidenceValidationError(`invalid field: ${field}`);
+	for (const [key, value] of entries) {
 		if (
-			value !== undefined &&
-			value !== null &&
-			!(typeof value === "string" && value.length <= 500) &&
-			!(typeof value === "number" && Number.isFinite(value))
+			!key ||
+			key.length > 128 ||
+			(value !== undefined &&
+				value !== null &&
+				!(typeof value === "string" && value.length <= 500) &&
+				!(typeof value === "number" && Number.isFinite(value)))
 		)
 			throw new EvidenceValidationError(`invalid field: ${field}.${key}`);
 	}
 }
 
-function validateValues(values: EvidenceValues): void {
+/** 计算用值必须严格是该口径的两个键，避免把付费广告与达人/种草混进同一份证据。 */
+function validateValues(
+	values: EvidenceValues,
+	placementType: EvidenceImportRecord["placementType"],
+): void {
 	if (!values || typeof values !== "object" || Array.isArray(values))
 		throw new EvidenceValidationError("invalid field: values");
-	for (const key of ["spendMinor", "consultations"] as const) {
+	let keys: readonly string[];
+	try {
+		keys = validatePlacementMetricKeys(placementType, Object.keys(values));
+	} catch {
+		throw new EvidenceValidationError(
+			"invalid field: values (placement metric keys mismatch)",
+		);
+	}
+	for (const key of keys) {
 		const value = values[key];
 		if (
 			value !== undefined &&
@@ -177,7 +198,21 @@ function validateRecord(record: EvidenceImportRecord): void {
 		throw new EvidenceValidationError("invalid field: period.timeZone");
 	if (completeness !== "complete" && completeness !== "partial")
 		throw new EvidenceValidationError("invalid field: period.completeness");
-	for (const key of ["spendMinor", "consultations"] as const) {
+	let placementType: ReturnType<typeof normalizePlacementType>;
+	try {
+		placementType = normalizePlacementType(record.placementType);
+	} catch {
+		throw new EvidenceValidationError("invalid field: placementType");
+	}
+	const contractKeys = Object.keys(record.metricsContract ?? {});
+	try {
+		validatePlacementMetricKeys(placementType, contractKeys);
+	} catch {
+		throw new EvidenceValidationError(
+			"invalid field: metricsContract (placement metric keys mismatch)",
+		);
+	}
+	for (const key of placementSpec(placementType).requiredMetricKeys) {
 		const metric = record.metricsContract?.[key];
 		nonEmpty(metric?.definition, `metricsContract.${key}.definition`);
 		nonEmpty(metric?.formula, `metricsContract.${key}.formula`);
@@ -206,7 +241,7 @@ function validateRecord(record: EvidenceImportRecord): void {
 	)
 		throw new EvidenceValidationError("invalid field: callbackStatus");
 	validateRawValues(record.rawValues, "rawValues");
-	validateValues(record.values);
+	validateValues(record.values, placementType);
 }
 
 function identityFor(
@@ -243,6 +278,7 @@ function contentOf(record: EvidenceImportRecord): unknown {
 			timeZone: record.period.timeZone,
 			completeness: record.period.completeness,
 		},
+		placementType: normalizePlacementType(record.placementType),
 		metricsContract: record.metricsContract,
 		currency: record.currency,
 		attribution: record.attribution,
@@ -275,6 +311,7 @@ function makeVersion(
 		version,
 		businessKey,
 		contentDigest,
+		placementType: normalizePlacementType(record.placementType),
 		scope: structuredClone(record.scope),
 		period: structuredClone(record.period),
 		metricsContract: structuredClone(record.metricsContract),

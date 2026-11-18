@@ -24,6 +24,7 @@ export * from "./source-leads.js";
 export * from "./source-service.js";
 export * from "./investigation-alerts.js";
 export type { DecisionAccountResolver } from "./decision-delivery.js";
+export * from "./domain/placement.js";
 export * from "./domain/strategy.js";
 export * from "./orchestrator.js";
 export * from "./tasks.js";

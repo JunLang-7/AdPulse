@@ -1,3 +1,11 @@
+import {
+	isMetricKeyForPlacement,
+	normalizePlacementType,
+	placementSpec,
+	type MetricKey,
+	type PlacementMetricKey,
+	type PlacementType,
+} from "./domain/placement.js";
 import type {
 	ComparisonAxis,
 	ComparisonMetric,
@@ -22,6 +30,9 @@ export interface ComparisonEvaluation {
 	status: ComparisonStatus;
 	canComparePeriods: boolean;
 	canEvaluateCurrentThreshold: boolean;
+	/** 本次比较使用的口径与指标键；展示层据此标注，不用历史字段名字面理解。 */
+	placementType: PlacementType;
+	metricKeys: { spend: MetricKey; count: MetricKey; derived: PlacementMetricKey };
 	comparisons: {
 		spendMinor?: { baseline: number; current: number; delta: number };
 		consultations?: { baseline: number; current: number; delta: number };
@@ -33,7 +44,7 @@ export interface ComparisonEvaluation {
 	};
 	thresholdEvaluation: {
 		status: "exceeded" | "not_exceeded" | "not_evaluated";
-		metricKey?: "cost_per_consultation";
+		metricKey?: PlacementMetricKey;
 		value?: { numeratorMinor: number; denominatorConsultations: number };
 		thresholdMinor?: number;
 		currency?: string;
@@ -48,6 +59,7 @@ const hardComparisonReasons = new Set<ComparisonReasonCode>([
 	"TASK_MISMATCH",
 	"ACCOUNT_MISMATCH",
 	"SCOPE_MISMATCH",
+	"PLACEMENT_TYPE_MISMATCH",
 	"METRICS_CONTRACT_MISMATCH",
 	"CURRENCY_MISMATCH",
 	"ATTRIBUTION_MISMATCH",
@@ -84,6 +96,9 @@ function remediationFor(code: ComparisonReasonCode): ComparisonReason["remediati
 			action: "provide_evidence",
 			completionCriteria: "matching_complete_evidence_version",
 		};
+	// 不同投放方式的证据根本不是同一套口径，不能靠补证变成可比。
+	if (code === "PLACEMENT_TYPE_MISMATCH")
+		return { action: "none", completionCriteria: "manual_review" };
 	if (code === "TASK_MISMATCH" || code === "ACCOUNT_MISMATCH" || code === "SCOPE_MISMATCH")
 		return { action: "none", completionCriteria: "manual_review" };
 	return {
@@ -118,7 +133,7 @@ function reason(
 
 function metricValue(
 	evidence: EvidenceVersion,
-	key: "spendMinor" | "consultations",
+	key: MetricKey,
 	axis: ComparisonAxis,
 ): { valid: boolean; value?: number; reasons: ComparisonReason[] } {
 	const value = evidence.values[key];
@@ -219,10 +234,18 @@ function comparePeriodMetadata(
 			[...baseline.scope.campaignRefs].sort().join("\u0000")
 	)
 		add("SCOPE_MISMATCH");
-	for (const metric of ["spendMinor", "consultations"] as const) {
+	const spec = placementSpec(current.placementType);
+	if (
+		normalizePlacementType(current.placementType) !==
+		normalizePlacementType(baseline.placementType)
+	)
+		add("PLACEMENT_TYPE_MISMATCH");
+	// 只比较本次口径的两个键；不同口径的键集合本来就不一致，不能混算。
+	for (const metric of spec.requiredMetricKeys) {
 		const left = current.metricsContract[metric];
 		const right = baseline.metricsContract[metric];
 		if (
+			!left || !right ||
 			left.definition !== right.definition ||
 			left.formula !== right.formula ||
 			left.sourceField !== right.sourceField
@@ -303,8 +326,10 @@ function addRequiredValues(
 	axis: ComparisonAxis,
 	reasons: ComparisonReason[],
 ): { spend?: number; consultations?: number; valid: boolean } {
-	const spend = metricValue(evidence, "spendMinor", axis);
-	const consultations = metricValue(evidence, "consultations", axis);
+	const spec = placementSpec(evidence.placementType);
+	// 返回值沿用通用槽位名，实际含义由 placementSpec 决定。
+	const spend = metricValue(evidence, spec.spendKey, axis);
+	const consultations = metricValue(evidence, spec.countKey, axis);
 	reasons.push(...spend.reasons, ...consultations.reasons);
 	return {
 		...(spend.value === undefined ? {} : { spend: spend.value }),
@@ -322,6 +347,8 @@ export function evaluateEvidenceComparison(
 	input: ComparisonEvaluationInput,
 ): ComparisonEvaluation {
 	const { current, baseline, rules } = input;
+	const placementType = normalizePlacementType(current.placementType);
+	const spec = placementSpec(placementType);
 	const reasons: ComparisonReason[] = [];
 	const currentAxis: ComparisonAxis = baseline ? "both" : "current_threshold";
 	addEvidenceQualityReasons(current, currentAxis, reasons);
@@ -352,8 +379,16 @@ export function evaluateEvidenceComparison(
 	) => reasons.push(reason(code, "current_threshold", { details }));
 	const metricKey: unknown = rules.metricKey;
 	if (metricKey === undefined) addRuleReason("RULE_METRIC_MISSING");
-	else if (metricKey !== "cost_per_consultation")
+	else if (
+		typeof metricKey !== "string" ||
+		!isMetricKeyForPlacement(metricKey, placementType)
+	)
 		addRuleReason("RULE_METRIC_UNSUPPORTED", { metricKey: String(metricKey) });
+	// 任务规则与证据必须是同一套口径，否则阈值判定会把互动量当成咨询。
+	if (
+		normalizePlacementType(rules.placementType) !== placementType
+	)
+		addRuleReason("RULE_PLACEMENT_MISMATCH");
 	if (rules.alertThresholdMinor === undefined)
 		addRuleReason("RULE_THRESHOLD_MISSING");
 	if (!rules.currency) addRuleReason("RULE_CURRENCY_MISSING");
@@ -411,7 +446,7 @@ export function evaluateEvidenceComparison(
 	if (currentValues.consultations === 0)
 		reasons.push(
 			reason("ZERO_DENOMINATOR", currentAxis, {
-				metric: "cost_per_consultation",
+				metric: spec.derivedKey,
 				evidence: current,
 				details: { denominator: 0 },
 			}),
@@ -419,7 +454,7 @@ export function evaluateEvidenceComparison(
 	if (baseline && baselineValues?.consultations === 0)
 		reasons.push(
 			reason("ZERO_DENOMINATOR", "period_comparison", {
-				metric: "cost_per_consultation",
+				metric: spec.derivedKey,
 				evidence: baseline,
 				details: { denominator: 0 },
 			}),
@@ -443,7 +478,7 @@ export function evaluateEvidenceComparison(
 			BigInt(currentValues.spend) >
 			BigInt(rules.alertThresholdMinor) * BigInt(currentValues.consultations);
 		thresholdEvaluation.status = exceeded ? "exceeded" : "not_exceeded";
-		thresholdEvaluation.metricKey = "cost_per_consultation";
+		thresholdEvaluation.metricKey = spec.derivedKey;
 		thresholdEvaluation.value = {
 			numeratorMinor: currentValues.spend,
 			denominatorConsultations: currentValues.consultations,
@@ -526,6 +561,12 @@ export function evaluateEvidenceComparison(
 		status,
 		canComparePeriods,
 		canEvaluateCurrentThreshold,
+		placementType,
+		metricKeys: {
+			spend: spec.spendKey,
+			count: spec.countKey,
+			derived: spec.derivedKey,
+		},
 		comparisons,
 		thresholdEvaluation,
 		reasons: sortedReasons,
@@ -585,12 +626,13 @@ export function canResolveWithEvidence(
 			followUp.period.timeZone !== evidence.period.timeZone)
 	)
 		return false;
-	const keys: Array<"spendMinor" | "consultations"> =
-		followUp.metric === "spendMinor"
-			? ["spendMinor"]
-			: followUp.metric === "consultations"
-				? ["consultations"]
-				: ["spendMinor", "consultations"];
+	const spec = placementSpec(evidence.placementType);
+	const keys: MetricKey[] =
+		followUp.metric === spec.spendKey
+			? [spec.spendKey]
+			: followUp.metric === spec.countKey
+				? [spec.countKey]
+				: [spec.spendKey, spec.countKey];
 	return keys.every((key) => {
 		const value = evidence.values[key];
 		return (
@@ -611,7 +653,11 @@ export function canResolveWithTaskVersion(
 		task.taskId === followUp.taskId &&
 		task.version > followUp.taskVersion &&
 		task.createdAt > followUp.createdAt &&
-		task.rules.metricKey === "cost_per_consultation" &&
+		task.rules.metricKey !== undefined &&
+		isMetricKeyForPlacement(
+			task.rules.metricKey,
+			normalizePlacementType(task.rules.placementType),
+		) &&
 		task.rules.alertThresholdMinor !== undefined &&
 		Boolean(task.rules.currency) &&
 		Boolean(task.rules.unit) &&
