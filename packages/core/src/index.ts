@@ -10,6 +10,7 @@ export * from "./domain/decisionCard.js";
 export * from "./domain/infoCard.js";
 export * from "./evidence.js";
 export * from "./event-lifecycle.js";
+export * from "./event-reference-cleanup.js";
 export * from "./lifecycle.js";
 export * from "./lifecycle-backup.js";
 export * from "./lifecycle-cleanup.js";

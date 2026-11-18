@@ -1,6 +1,7 @@
 // 本人确认删除（#40 S2）：
 // 同一事务内建立「立即不可访问」状态、抑制该任务的待发提醒、写入删除清单。
 // 物理清理在 S3；本片只保证删除后旧任务与其历史一律不可访问（含重建同名任务后）。
+import { cleanTaskReferencesIn } from "./event-reference-cleanup.js";
 import { MS_PER_DAY, ONLINE_CLEANUP_DAYS } from "./lifecycle.js";
 import { lifecycleManifestId } from "./lifecycle-cleanup.js";
 import { NotificationQueue } from "./notifications-queue.js";
@@ -60,6 +61,10 @@ export class LifecycleDeletionService {
 
 		// 抑制该任务尚未发出的提醒条目；已发送/已取消是终态，不改写。
 		await this.queue.cancelPendingIn(tx, ownerId, "task_deleted", (item) => item.taskId === taskId);
+
+		// #144 S3：清掉事件 taskRefs 与系统会话 taskRef 里指向该任务的引用；
+		// 事件本体保留，不改证据、不推进版本。
+		await cleanTaskReferencesIn(tx, ownerId, taskId, at, id);
 
 		// 抑制该任务关联的决策卡待发（只动本人、且只动这个任务的告警会话）。
 		const alertIds = new Set(
