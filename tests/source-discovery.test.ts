@@ -35,6 +35,7 @@ test("Agent-Reach discovery returns only scoped, deduplicated index leads", asyn
 		topic: "products",
 		provider: "agent-reach/exa",
 		verification: "unverified",
+		query: "site:www.haier.com 海尔品牌资讯 新品发布 新产品上市",
 		candidates: [
 			{ title: "合成新品发布", url: officialUrl, indexedPublishedAt: "2026-01-02" },
 			{ title: "日期无法确认", url: secondUrl, indexedPublishedAt: null },

@@ -314,6 +314,28 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (18)",
 				);
 			}
+			if (!current.has(19)) {
+				// 主动发现线索暂存：同一人同一归一化 URL 唯一，堵住重复发现写入。
+				await this.createEntityTable(client, "discoveryLeads");
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_discovery_lead_dedup
+					ON adpulse_discoveryLeads ((data->>'ownerId'), (data->>'dedupKey'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_discovery_lead_status
+					ON adpulse_discoveryLeads ((data->>'ownerId'), (data->>'status'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (19)",
+				);
+			}
+			if (!current.has(20)) {
+				// 用户自加的企业站点（每人多个；同一人同一 host 唯一）。
+				await this.createEntityTable(client, "userSources");
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_user_source_host
+					ON adpulse_userSources ((data->>'ownerId'), (data->>'host'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_user_source_owner
+					ON adpulse_userSources ((data->>'ownerId'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (20)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

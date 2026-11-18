@@ -725,6 +725,8 @@ bun run sources discover weichai_news campaigns
 
 命令在临时配置目录内只执行 `web search`。查询最多返回 5 条结果，AdPulse 只输出两家官网新闻链接、去重标题及可解析的索引日期。潍柴搜索限定在 `www.weichai.com` 的新闻与事件栏目，兼容栏目下有分类和无分类两种文章路径。`verification: unverified` 和 `indexedPublishedAt` 表示这些字段来自搜索索引，须对照原文核对。发现结果只输出到终端，采集入库与用户展示仍按 [#41](https://github.com/JunLang-7/AdPulse/issues/41)、[#38](https://github.com/JunLang-7/AdPulse/issues/38) 和 [#37](https://github.com/JunLang-7/AdPulse/issues/37) 分别验收。限流或访问阻断会结束当前命令。
 
+`discover` 现在可加 `--persist <operator>`：把发现结果写入 `discoveryLeads` 暂存表（含 operator、发现时间、原始查询词，URL 归一化后与现有 source items 及历史线索去重），供控制台「发现线索待审核」接受/拒绝/保留；接受后作为 source item 入库，拒绝后同 URL 不再出现。也可用 `discover xiaohongshu <查询词> --subject brand:名称|competitor:名称` 走 Agent-Reach 的小红书笔记搜索（需登录态，返回 unverified 笔记，仅测试/比赛用途，未做真机签核）。
+
 ## 7.1 任务生命周期（#40 S1：到期与限访）
 
 只做到期判定与读取限访；物理清理、删除确认、180 天审计与备份策略在后续切片实现。
