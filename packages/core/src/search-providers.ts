@@ -130,6 +130,18 @@ export class SearchAggregator {
 		});
 	}
 
+	/** 退还一次额度：源调用失败（网络错/上游挂）时不应计费。 */
+	private async refund(provider: SearchProvider): Promise<void> {
+		if (provider.dailyLimit === null) return;
+		const day = quotaDay(this.now());
+		const id = quotaId(provider.id, day);
+		await this.storage.transaction(async (tx) => {
+			const record = await tx.searchQuotas.get(id);
+			if (!record || record.used <= 0) return;
+			await tx.searchQuotas.put({ ...record, used: record.used - 1, updatedAt: this.now().toISOString() });
+		});
+	}
+
 	async search(query: string): Promise<AggregatedSearch> {
 		const enough = this.options.enoughHits ?? 8;
 		const hits = new Map<string, SearchHit>();
@@ -160,6 +172,9 @@ export class SearchAggregator {
 			}
 			try {
 				const result = await provider.search(query);
+				// 上游失败/不可用/限流时未提供价值，退额度；只有真正返回结果才算一次消耗。
+				if (result.status === "failed" || result.status === "unavailable" || result.status === "rate_limited")
+					await this.refund(provider);
 				const fresh = result.hits.filter((hit) => !hits.has(hit.url));
 				for (const hit of fresh) hits.set(hit.url, hit);
 				outcomes.push({
@@ -171,6 +186,8 @@ export class SearchAggregator {
 					detail: result.detail ?? null,
 				});
 			} catch (error) {
+				// 调用失败不应当计费：付费源白扣额度会让用户真的白花钱。
+				await this.refund(provider);
 				outcomes.push({
 					provider: provider.id,
 					label: provider.label,

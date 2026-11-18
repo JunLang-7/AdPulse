@@ -88,6 +88,44 @@ test("额度：不同自然日互不影响", async () => {
 	assert.equal(paid.calls, 2);
 });
 
+test("失败退还额度：抛错、失败、限流、不可用都不扣付费额度", async () => {
+	const storage = new MemoryStorage();
+	const throwing = provider("throw", { metered: true, dailyLimit: 5, fail: true });
+	const failed = provider("failed", { metered: true, dailyLimit: 5 });
+	failed.search = async () => {
+		failed.calls += 1;
+		return { status: "failed" as const, hits: [], detail: "上游 500" };
+	};
+	const unavailable = provider("unavailable", { metered: true, dailyLimit: 5 });
+	unavailable.search = async () => {
+		unavailable.calls += 1;
+		return { status: "unavailable" as const, hits: [], detail: "密钥无效" };
+	};
+	const limited = provider("limited", { metered: true, dailyLimit: 5, rateLimited: true });
+	const aggregator = new SearchAggregator(storage, [throwing, failed, unavailable, limited], { enoughHits: 8 });
+	await aggregator.search("某企业");
+	const quotas = await aggregator.quotas();
+	assert.deepEqual(
+		quotas.map((q) => ({ provider: q.provider, used: q.used })),
+		[
+			{ provider: "throw", used: 0 },
+			{ provider: "failed", used: 0 },
+			{ provider: "unavailable", used: 0 },
+			{ provider: "limited", used: 0 },
+		],
+		"没拿到结果的调用不应消耗额度",
+	);
+});
+
+test("成功调用计入额度：有结果的源正常扣费", async () => {
+	const storage = new MemoryStorage();
+	const paid = provider("paid", { metered: true, dailyLimit: 5, hits: 2 });
+	const aggregator = new SearchAggregator(storage, [paid], { enoughHits: 8 });
+	await aggregator.search("某企业");
+	const quotas = await aggregator.quotas();
+	assert.equal(quotas[0]?.used, 1, "拿到结果的调用要计数");
+});
+
 test("失败与限流：不吞掉，逐源报告给调用方", async () => {
 	const storage = new MemoryStorage();
 	const failing = provider("bad", { fail: true });
