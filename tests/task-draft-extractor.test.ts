@@ -91,8 +91,7 @@ test("per-user budget table evicts the oldest owner instead of growing forever",
 	assert.equal(created, 4);
 });
 
-test("task draft extracts only bounded, distinct excerpts from the submitted brief", async () => {
-	const names = Array.from({ length: 9 }, (_, index) => `人群${index + 1}`);
+test("task draft extracts only bounded, distinct excerpts from the submitted brief", async () => {	const names = Array.from({ length: 9 }, (_, index) => `人群${index + 1}`);
 	const objective = "长".repeat(321);
 	const brief = `新品试用装。增加到店咨询。小红书。方便携带。抖音。${names.join("。")}。${objective}。constructor。预算 300 元。`;
 	const extract = createTaskDraftExtractor(deepseekEnv, async (url, init) => {
@@ -130,6 +129,8 @@ test("task draft extracts only bounded, distinct excerpts from the submitted bri
 		audience: names.slice(0, 8),
 		sellingPoints: ["方便携带"],
 		channels: ["小红书", "抖音"],
+		// 原话对不上的值不丢，转成可勾选的建议；超长目标和预算仍被丢弃。
+		recommendations: { audience: ["陌生人"], sellingPoints: ["耐用"] },
 	});
 });
 
@@ -172,7 +173,8 @@ test("overview separates normalized product names and optional goals from facts"
 	const brief = `我想推广茶叶，是那种${evidence}`;
 	assert.deepEqual(await extract(brief, "overview"), { recommendations: { product, objectives: goals } });
 	assert.deepEqual(await extract(brief, "audience"), {});
-	assert.deepEqual(await extract(brief), {});
+	// 不传 stage 时也要给出全部字段的建议：一次请求就能拿到整份可勾选的草稿。
+	assert.deepEqual(await extract(brief), { recommendations: { product, objectives: goals } });
 
 	reply = { objective: "吸引顾客到店", recommendations: { product, objectives: goals } };
 	assert.deepEqual(await extract(`${brief}，我想吸引顾客到店`, "overview"), {

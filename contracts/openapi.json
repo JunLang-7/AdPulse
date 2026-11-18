@@ -3156,7 +3156,7 @@
         "type": "object",
         "properties": {
           "brief": { "type": "string", "minLength": 1, "maxLength": 2500 },
-          "stage": { "$ref": "#/components/schemas/TaskDraftStage" },
+          "stage": { "$ref": "#/components/schemas/TaskDraftStage", "description": "限制只整理某一阶段。省略时一次返回全部字段的建议。" },
           "provider": { "$ref": "#/components/schemas/TaskDraftProvider" },
           "model": { "$ref": "#/components/schemas/TaskDraftModelId" },
           "connectionId": { "type": "string", "minLength": 1, "maxLength": 64, "description": "Use this personal connection instead of a temporary route." }
@@ -3285,7 +3285,7 @@
           "channels": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 128 } },
           "recommendations": {
             "type": "object",
-            "description": "Stage suggestions that require user confirmation. Values may be normalized rather than verbatim.",
+            "description": "Suggestions that require user confirmation. Values may be normalized rather than verbatim. Every field may appear when stage is omitted.",
             "additionalProperties": false,
             "properties": {
               "product": {
