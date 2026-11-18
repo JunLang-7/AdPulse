@@ -21,6 +21,7 @@ export default function LoginPage() {
 		<main className="min-h-screen flex items-center justify-center p-6 bg-muted/40">
 			<section className="w-full max-w-sm rounded-xl border bg-background p-8 shadow-sm space-y-5">
 				<div className="space-y-2">
+					<img src="/branding/icon-color.svg" alt="AdPulse" className="size-9" />
 					<h1 className="text-xl font-semibold">登录 AdPulse</h1>
 					<p className="text-sm text-muted-foreground">
 						使用已获此飞书应用授权的企业账号继续。
