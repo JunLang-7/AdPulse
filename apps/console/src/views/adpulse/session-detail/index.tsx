@@ -217,20 +217,27 @@ export default function SessionDetailPage() {
 					<CardHeader>
 						<CardTitle>策略变更记录</CardTitle>
 					</CardHeader>
-					<CardContent className="space-y-2 text-sm">
+					<CardContent className="space-y-3 text-sm">
 						{data.snapshots.map((snapshot) => (
 							<div
 								key={snapshot.id}
-								className="flex items-center justify-between gap-2 border-b border-border pb-2 last:border-0 last:pb-0"
+								className="space-y-1 border-b border-border pb-2 last:border-0 last:pb-0"
 							>
-								<span>第 {snapshot.version} 版</span>
-								<span className="text-xs text-muted-foreground">
-									{snapshot.changes.length === 0
-										? "无变更"
-										: `${snapshot.changes.length} 项变更`}
-									{" · "}
-									{formatTime(snapshot.createdAt)}
-								</span>
+								<div className="flex items-center justify-between gap-2">
+									<span>第 {snapshot.version} 版</span>
+									<span className="text-xs text-muted-foreground">
+										{snapshot.changes.length === 0
+											? "无变更"
+											: `${snapshot.changes.length} 项变更`}
+										{" · "}
+										{formatTime(snapshot.createdAt)}
+									</span>
+								</div>
+								{snapshot.changes.map((change, index) => (
+									<p key={`${snapshot.id}:${index}`} className="text-xs text-muted-foreground">
+										{changeLabel(change)}
+									</p>
+								))}
 							</div>
 						))}
 					</CardContent>
@@ -238,6 +245,17 @@ export default function SessionDetailPage() {
 			</div>
 		</div>
 	);
+}
+
+/** 策略变更的人话描述：渠道 × 字段 × 原值 → 新值。 */
+function changeLabel(change: {
+	kind: "budget" | "bidCpc" | "enabled";
+	channelId: string;
+	from: number | boolean;
+	to: number | boolean;
+}): string {
+	const field = change.kind === "budget" ? "预算" : change.kind === "bidCpc" ? "出价" : "启用状态";
+	return `${field}（${change.channelId}）：${String(change.from)} → ${String(change.to)}`;
 }
 
 function deliveryLabel(status: string): string {
