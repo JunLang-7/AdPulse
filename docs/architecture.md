@@ -81,6 +81,17 @@ PostgreSQL 使用 SERIALIZABLE、行锁、唯一索引与冲突重试。
 
 version 是决策版本，每次成功处理选择都会递增，即使 changes 为空；快照版本增加不等于预算或其他策略字段发生变化。
 
+## 策略变更词表
+
+变更只能通过 `StrategyChange` 表达，并由内核在冻结候选和提交选择时重复校验；PolicyEngine 的声明不被信任。
+
+- 渠道：`budget`、`bidCpc`、`enabled`，带 `from` 做过期检查，数值受 `Limits` 比例限幅。
+- 列表：`audience`、`sellingPoint`、`contentDirection`、`partner`，`op` 为 `add`/`remove`。单候选最多 6 条变更，列表最多 8 项，单项不超过 80 字符，且不允许首尾空白或控制字符；`add` 要求当前不含该项、`remove` 要求当前含该项，否则视为过期。
+- 语义边界：`contentDirections` 与 `partners` 只是站内基线名称，不代表已发布、已联系或已投放；不记录合作阶段、费用或效果指标。
+- 未支持：投放方式类型（付费广告/达人/种草）、合作阶段与达人/种草效果指标尚未建模，**不支持即拒绝**，不做静默降级。
+
+`isMonetaryChange()` 区分花钱变更（预算/出价）。任务货币口径未确认时只能提议非货币变更，人群、卖点、内容方向、合作对象与开关不受限。变更随快照以 JSONB 保存，旧版三类变更按宽化后的联合类型原样读取，无需迁移。
+
 模型见 [model.ts](../packages/core/src/state/model.ts)，实际 DDL 与索引见 [postgres.ts](../packages/storage/src/postgres.ts)。
 当前为 41 张 id + jsonb 表，采用应用层引用关系。结构变更走 `initialize()` 内的版本化迁移（版本 1–14，顺序、加法式，在 advisory lock 下执行）。存储端口仍采用全表读取，通知记录与筛选记录接口提供分页，面向小规模验证。
 

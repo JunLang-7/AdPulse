@@ -38,6 +38,10 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 						{ kind: "budget", channelId: "channel-a", from: 1000, to: 1500 },
 						{ kind: "bidCpc", channelId: "channel-a", from: 1.2, to: 1.8 },
 						{ kind: "enabled", channelId: "channel-b", from: true, to: false },
+						{ kind: "audience", op: "add", item: "春节备货的家庭" },
+						{ kind: "sellingPoint", op: "remove", item: "免费样品" },
+						{ kind: "contentDirection", op: "add", item: "产地溯源短视频" },
+						{ kind: "partner", op: "add", item: "本地生活达人" },
 					] },
 				{ id: "snap-long", sessionId: "session-1", version: 2, createdAt: "2026-11-16T03:00:00Z",
 					changes: [{ kind: "budget", channelId: longChannel, from: 100, to: 200 }] },
@@ -51,6 +55,10 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 	assert.ok(screen.getByText("预算（channel-a）：1000 → 1500"), "预算 from/to");
 	assert.ok(screen.getByText("出价（channel-a）：1.2 → 1.8"), "出价 from/to");
 	assert.ok(screen.getByText("启用状态（channel-b）：true → false"), "启停 from/to");
+	assert.ok(screen.getByText("人群新增：春节备货的家庭"), "人群增删");
+	assert.ok(screen.getByText("卖点移除：免费样品"), "卖点增删");
+	assert.ok(screen.getByText("内容方向新增：产地溯源短视频"), "内容方向增删");
+	assert.ok(screen.getByText("合作对象新增：本地生活达人"), "合作对象增删");
 	// 长渠道名（无空格 token）完整渲染并强制断词，不能被卡片的 overflow-hidden 裁掉。
 	const longRow = screen.getByText(new RegExp(longChannel));
 	assert.equal(longRow.textContent, `预算（${longChannel}）：100 → 200`, "完整渠道名与原值新值都在文本里");

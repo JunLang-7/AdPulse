@@ -216,6 +216,9 @@ export default function SessionDetailPage() {
 				<Card>
 					<CardHeader>
 						<CardTitle>策略变更记录</CardTitle>
+						<p className="text-xs text-muted-foreground">
+							当前可记录：渠道预算/出价/开关，以及人群、卖点、内容方向、合作对象的增删；不记录合作阶段与效果指标。
+						</p>
 					</CardHeader>
 					<CardContent className="space-y-3 text-sm">
 						{data.snapshots.map((snapshot) => (
@@ -251,15 +254,44 @@ export default function SessionDetailPage() {
 	);
 }
 
-/** 策略变更的人话描述：渠道 × 字段 × 原值 → 新值。 */
+/** 策略变更的人话描述：渠道数值用「原值 → 新值」，列表字段用增删。 */
+const LIST_LABELS = {
+	audience: "人群",
+	sellingPoint: "卖点",
+	contentDirection: "内容方向",
+	partner: "合作对象",
+} as const;
+
 function changeLabel(change: {
-	kind: "budget" | "bidCpc" | "enabled";
-	channelId: string;
-	from: number | boolean;
-	to: number | boolean;
+	kind:
+		| "budget"
+		| "bidCpc"
+		| "enabled"
+		| "audience"
+		| "sellingPoint"
+		| "contentDirection"
+		| "partner";
+	channelId?: string;
+	from?: number | boolean;
+	to?: number | boolean;
+	op?: "add" | "remove";
+	item?: string;
 }): string {
-	const field = change.kind === "budget" ? "预算" : change.kind === "bidCpc" ? "出价" : "启用状态";
-	return `${field}（${change.channelId}）：${String(change.from)} → ${String(change.to)}`;
+	switch (change.kind) {
+		case "budget":
+			return `预算（${change.channelId}）：${String(change.from)} → ${String(change.to)}`;
+		case "bidCpc":
+			return `出价（${change.channelId}）：${String(change.from)} → ${String(change.to)}`;
+		case "enabled":
+			return `启用状态（${change.channelId}）：${String(change.from)} → ${String(change.to)}`;
+		case "audience":
+		case "sellingPoint":
+		case "contentDirection":
+		case "partner":
+			return `${LIST_LABELS[change.kind]}${change.op === "remove" ? "移除" : "新增"}：${change.item}`;
+	}
+	// 服务端先上线新 kind 时，旧控制台也要显示一行而不是空白。
+	return `未知变更：${(change as { kind: string }).kind}`;
 }
 
 function deliveryLabel(status: string): string {
