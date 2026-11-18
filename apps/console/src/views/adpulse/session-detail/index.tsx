@@ -48,6 +48,18 @@ export default function SessionDetailPage() {
 	const session = data.session;
 	const status = sessionStatus(session.status);
 	const expired = isExpired(session.expiresAt) || isExpired(expiresAt);
+	const baselineSnapshot = [...data.snapshots].sort(
+		(a, b) => a.version - b.version,
+	)[0];
+	const baselineStrategy = baselineSnapshot?.strategy as
+		| StrategyView
+		| undefined;
+	const diffs = baselineStrategy
+		? describeStrategyDiff(
+				baselineStrategy,
+				session.strategy as StrategyView,
+			)
+		: [];
 
 	return (
 		<div className="p-6 space-y-4">
@@ -137,6 +149,28 @@ export default function SessionDetailPage() {
 					</div>
 				</CardContent>
 			</Card>
+
+			{baselineStrategy ? (
+				<Card>
+					<CardHeader>
+						<CardTitle>与最早快照相比</CardTitle>
+					</CardHeader>
+					<CardContent className="space-y-2">
+						{diffs.length ? (
+							diffs.map((row) => (
+								<p
+									key={row}
+									className="break-all text-xs text-muted-foreground"
+								>
+									{row}
+								</p>
+							))
+						) : (
+							<p className="text-sm text-muted-foreground">方案无变化</p>
+						)}
+					</CardContent>
+				</Card>
+			) : null}
 
 			<Card>
 				<CardHeader>
@@ -321,6 +355,78 @@ export default function SessionDetailPage() {
 }
 
 /** 策略变更的人话描述：渠道数值用「原值 → 新值」，列表字段用增删。 */
+type StrategyView = {
+	objective?: string;
+	audience?: string[];
+	sellingPoints?: string[];
+	contentDirections?: string[];
+	partners?: string[];
+	channels?: Record<
+		string,
+		{ budget?: number; bidCpc?: number; enabled?: boolean }
+	>;
+};
+
+/** 只列变化项：列表看增删，渠道看数值/开关，不把未变字段铺满界面。 */
+function describeStrategyDiff(
+	before: StrategyView,
+	after: StrategyView,
+): string[] {
+	const rows: string[] = [];
+	if ((before.objective ?? "") !== (after.objective ?? ""))
+		rows.push(
+			`推广目标：${before.objective ?? "未填写"} → ${after.objective ?? "未填写"}`,
+		);
+	const lists: Array<[string[] | undefined, string[] | undefined, string]> = [
+		[before.audience, after.audience, "人群"],
+		[before.sellingPoints, after.sellingPoints, "卖点"],
+		[before.contentDirections, after.contentDirections, "内容方向"],
+		[before.partners, after.partners, "合作对象"],
+	];
+	for (const [oldValues, newValues, label] of lists) {
+		const oldList = oldValues ?? [];
+		const newList = newValues ?? [];
+		const added = newList.filter((value) => !oldList.includes(value));
+		const removed = oldList.filter((value) => !newList.includes(value));
+		if (!added.length && !removed.length) continue;
+		rows.push(
+			`${label}：${[
+				added.length ? `新增 ${added.join("、")}` : "",
+				removed.length ? `移除 ${removed.join("、")}` : "",
+			]
+				.filter(Boolean)
+				.join("；")}`,
+		);
+	}
+	const channelIds = new Set([
+		...Object.keys(before.channels ?? {}),
+		...Object.keys(after.channels ?? {}),
+	]);
+	for (const channelId of channelIds) {
+		const oldChannel = before.channels?.[channelId] ?? {};
+		const newChannel = after.channels?.[channelId] ?? {};
+		const changes: string[] = [];
+		if (oldChannel.budget !== newChannel.budget)
+			changes.push(
+				`预算 ${oldChannel.budget ?? "未设置"} → ${newChannel.budget ?? "未设置"}`,
+			);
+		if (oldChannel.bidCpc !== newChannel.bidCpc)
+			changes.push(
+				`出价 ${oldChannel.bidCpc ?? "未设置"} → ${newChannel.bidCpc ?? "未设置"}`,
+			);
+		if (oldChannel.enabled !== newChannel.enabled)
+			changes.push(
+				`启停 ${enabledLabel(oldChannel.enabled)} → ${enabledLabel(newChannel.enabled)}`,
+			);
+		if (changes.length) rows.push(`渠道 ${channelId}：${changes.join("；")}`);
+	}
+	return rows;
+}
+
+function enabledLabel(value: boolean | undefined): string {
+	return value === undefined ? "未设置" : value ? "启用" : "暂停";
+}
+
 function StrategyValues({
 	label,
 	values,
