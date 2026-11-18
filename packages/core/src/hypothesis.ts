@@ -212,47 +212,59 @@ export class HypothesisService {
 	/** 确认初判：supports/challenges 在此改变状态（提案 §5.3）。 */
 	async confirmVerdict(ownerId: string, verdictId: string): Promise<{ verdict: HypothesisVerdict; hypothesis: Hypothesis }> {
 		if (!text(ownerId, 256) || !text(verdictId, 256)) fail("invalid owner or verdict");
-		return this.storage.transaction(async tx => {
-			const verdict = await tx.hypothesisVerdicts.get(verdictId);
-			if (!verdict || verdict.ownerId !== ownerId) throw new HypothesisError(404, "verdict not found");
-			if (verdict.stage === "rejected") throw new HypothesisError(409, "verdict already rejected");
-			if (verdict.stage === "confirmed") {
-				const head = await this.activeHeadIn(tx, ownerId, verdict.hypothesisId);
-				if (!head) throw new HypothesisError(404, "hypothesis not found");
-				return { verdict, hypothesis: head };
-			}
+		// 与其他写路径共用 owner 级互斥：确认/驳回不得与修订/停用并发穿插。
+		return this.mutate(ownerId, tx => this.commitConfirmVerdict(tx, ownerId, verdictId));
+	}
+
+	private async commitConfirmVerdict(
+		tx: Transaction, ownerId: string, verdictId: string,
+	): Promise<{ verdict: HypothesisVerdict; hypothesis: Hypothesis }> {
+		const verdict = await tx.hypothesisVerdicts.get(verdictId);
+		if (!verdict || verdict.ownerId !== ownerId) throw new HypothesisError(404, "verdict not found");
+		if (verdict.stage === "rejected") throw new HypothesisError(409, "verdict already rejected");
+		if (verdict.stage === "confirmed") {
 			const head = await this.activeHeadIn(tx, ownerId, verdict.hypothesisId);
 			if (!head) throw new HypothesisError(404, "hypothesis not found");
-			if (head.currentVersion !== verdict.hypothesisVersion) throw new HypothesisError(409, "hypothesis version conflict");
-			const confirmed: HypothesisVerdict = { ...verdict, stage: "confirmed", confirmedAt: this.now() };
-			await tx.hypothesisVerdicts.put(confirmed);
-			const head2 = this.applyJudgment(head, confirmed.judgment);
-			await tx.hypotheses.put(head2);
-			// 状态变更即进本人订阅筛选（S5）：模拟来源与 unclear 不会入队，只留筛选记录。
-			if (head2 !== head && confirmed.judgment !== "unclear")
-				await this.selections.selectHypothesisVerdictIn(tx, confirmed, head2);
-			return { verdict: confirmed, hypothesis: head2 };
-		});
+			return { verdict, hypothesis: head };
+		}
+		const head = await this.activeHeadIn(tx, ownerId, verdict.hypothesisId);
+		if (!head) throw new HypothesisError(404, "hypothesis not found");
+		// 已停用的假设不再接受判定确认：否则会「静默确认但无状态变更、无提醒」。
+		if (head.status === "retired") throw new HypothesisError(409, "hypothesis retired");
+		if (head.currentVersion !== verdict.hypothesisVersion) throw new HypothesisError(409, "hypothesis version conflict");
+		const confirmed: HypothesisVerdict = { ...verdict, stage: "confirmed", confirmedAt: this.now() };
+		await tx.hypothesisVerdicts.put(confirmed);
+		const head2 = this.applyJudgment(head, confirmed.judgment);
+		await tx.hypotheses.put(head2);
+		// 状态变更即进本人订阅筛选（S5）：模拟来源与 unclear 不会入队，只留筛选记录。
+		if (head2 !== head && confirmed.judgment !== "unclear")
+			await this.selections.selectHypothesisVerdictIn(tx, confirmed, head2);
+		return { verdict: confirmed, hypothesis: head2 };
 	}
 
 	/** 驳回初判：终态留痕，不改状态、不提醒。 */
 	async rejectVerdict(ownerId: string, verdictId: string): Promise<{ verdict: HypothesisVerdict; hypothesis: Hypothesis }> {
 		if (!text(ownerId, 256) || !text(verdictId, 256)) fail("invalid owner or verdict");
-		return this.storage.transaction(async tx => {
-			const verdict = await tx.hypothesisVerdicts.get(verdictId);
-			if (!verdict || verdict.ownerId !== ownerId) throw new HypothesisError(404, "verdict not found");
-			if (verdict.stage === "confirmed") throw new HypothesisError(409, "confirmed verdict cannot be rejected");
-			if (verdict.stage === "rejected") {
-				const head = await this.activeHeadIn(tx, ownerId, verdict.hypothesisId);
-				if (!head) throw new HypothesisError(404, "hypothesis not found");
-				return { verdict, hypothesis: head };
-			}
-			const rejected: HypothesisVerdict = { ...verdict, stage: "rejected", confirmedAt: this.now() };
-			await tx.hypothesisVerdicts.put(rejected);
+		return this.mutate(ownerId, tx => this.commitRejectVerdict(tx, ownerId, verdictId));
+	}
+
+	private async commitRejectVerdict(
+		tx: Transaction, ownerId: string, verdictId: string,
+	): Promise<{ verdict: HypothesisVerdict; hypothesis: Hypothesis }> {
+		const verdict = await tx.hypothesisVerdicts.get(verdictId);
+		if (!verdict || verdict.ownerId !== ownerId) throw new HypothesisError(404, "verdict not found");
+		if (verdict.stage === "confirmed") throw new HypothesisError(409, "confirmed verdict cannot be rejected");
+		if (verdict.stage === "rejected") {
 			const head = await this.activeHeadIn(tx, ownerId, verdict.hypothesisId);
 			if (!head) throw new HypothesisError(404, "hypothesis not found");
-			return { verdict: rejected, hypothesis: head };
-		});
+			return { verdict, hypothesis: head };
+		}
+		// 驳回不改状态；confirmedAt 只表示确认时刻，因此不写。
+		const rejected: HypothesisVerdict = { ...verdict, stage: "rejected" };
+		await tx.hypothesisVerdicts.put(rejected);
+		const head = await this.activeHeadIn(tx, ownerId, verdict.hypothesisId);
+		if (!head) throw new HypothesisError(404, "hypothesis not found");
+		return { verdict: rejected, hypothesis: head };
 	}
 
 	/** 最近一次已确认判定决定状态：挑战覆盖支持，反之亦然；unclear 不变。 */
@@ -546,6 +558,10 @@ export class HypothesisPreliminaryWriter {
 			const head = await tx.hypotheses.get(hypothesisId);
 			if (!head || head.ownerId !== ownerId) throw new HypothesisError(404, "hypothesis not found");
 			if (head.status === "retired") throw new HypothesisError(409, "hypothesis retired");
+			// 与读写路径同一不变量：到期/已删除任务的假设不写初判。
+			const task = await tx.tasks.get(head.taskId);
+			if (!task || task.ownerId !== ownerId || !(await taskActiveIn(tx, task, new Date(this.now()))))
+				throw new HypothesisError(404, "task not found");
 			await this.resolveSubject(tx, ownerId, input.subject);
 			const dedupKey = hash(["verdict", ownerId, hypothesisId, head.currentVersion, subjectKey(input.subject)]);
 			const existing = (await tx.hypothesisVerdicts.listByOwner(ownerId))

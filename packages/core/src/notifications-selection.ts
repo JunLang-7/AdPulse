@@ -248,7 +248,8 @@ export class NotificationSelectionService {
 			: null;
 		if (eventVersion?.input.provenance.simulated) reason = "simulated_input";
 		else if (!settings?.proactiveEnabled) reason = "push_disabled";
-		else if (!settings.enabledAt || verdict.createdAt <= settings.enabledAt) reason = "before_enabled";
+		// 用确认时刻判定「开启前/后」：初判可能早于开启，但用户确认晚于开启。
+		else if (!settings.enabledAt || (verdict.confirmedAt ?? verdict.createdAt) <= settings.enabledAt) reason = "before_enabled";
 		else if (associated.length === 0) reason = "no_target";
 		else if (!associated.some((target) => target.status === "active")) reason = "target_muted";
 		else if (matched.length === 0) reason = "category_excluded";
