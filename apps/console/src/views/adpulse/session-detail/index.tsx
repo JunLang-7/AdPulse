@@ -103,6 +103,8 @@ export default function SessionDetailPage() {
 						const candidates = (round.candidates ?? []) as Array<{
 							id: string;
 							label: string;
+							hypothesis?: string;
+							validationPlan?: string;
 						}>;
 						const actions = (data.actions ?? []).filter(
 							(a) => a.roundId === round.id,
@@ -175,6 +177,23 @@ export default function SessionDetailPage() {
 										);
 									})}
 								</div>
+
+								{candidates.map((candidate) => {
+									const detail = [
+										candidate.hypothesis ? `假设：${candidate.hypothesis}` : "",
+										candidate.validationPlan ? `验证：${candidate.validationPlan}` : "",
+									]
+										.filter(Boolean)
+										.join("；");
+									return detail ? (
+										<p
+											key={`${candidate.id}:detail`}
+											className="text-xs text-muted-foreground"
+										>
+											{candidate.label}：{detail}
+										</p>
+									) : null;
+								})}
 							</div>
 						);
 					})}

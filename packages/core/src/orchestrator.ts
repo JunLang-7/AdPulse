@@ -2,6 +2,7 @@ import {
 	admitDecisionIn,
 	type DecisionAccountResolver,
 } from "./decision-delivery.js";
+import { MAX_CANDIDATE_RATIONALE_LENGTH } from "./domain/decisionCard.js";
 import type { Limits, Signal, Strategy } from "./domain/strategy.js";
 import {
 	applyChanges,
@@ -403,7 +404,22 @@ export class Orchestrator {
 			const roundNo = session.roundNo + 1;
 			const card = {
 				...proposal.card,
-				options: proposal.candidates.map(({ id, label }) => ({ id, label })),
+				options: proposal.candidates.map(
+					({ id, label, hypothesis, validationPlan }) => ({
+						id,
+						label,
+						...(hypothesis || validationPlan
+							? {
+									detail: [
+										hypothesis ? `假设：${hypothesis}` : "",
+										validationPlan ? `验证：${validationPlan}` : "",
+									]
+										.filter(Boolean)
+										.join("；"),
+								}
+							: {}),
+					}),
+				),
 			};
 			const alert = session.investigationAlertId
 				? await tx.investigationAlerts.get(session.investigationAlertId)
@@ -529,6 +545,19 @@ export class Orchestrator {
 				typeof candidate.complete !== "boolean"
 			) {
 				throw new Error("invalid candidate");
+			}
+			// 可选的假设/验证说明也要守边界：单行、去空白、有上限，避免卡片被撑爆。
+			for (const field of ["hypothesis", "validationPlan"] as const) {
+				const value = candidate[field];
+				if (value === undefined) continue;
+				if (
+					typeof value !== "string" ||
+					!value.trim() ||
+					value !== value.trim() ||
+					value.length > MAX_CANDIDATE_RATIONALE_LENGTH ||
+					/[\u0000-\u001f]/.test(value)
+				)
+					throw new Error("invalid candidate rationale");
 			}
 			if (candidate.changes.length && proposal.card.evidence.length === 0)
 				throw new Error("changes require evidence");
