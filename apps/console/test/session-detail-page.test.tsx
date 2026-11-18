@@ -29,7 +29,15 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 			session: {
 				id: "session-1", ownerId: "owner", version: 1, roundNo: 1, status: "completed",
 				signal: { title: "每次咨询成本超过提醒线", summary: "检查本期成本" },
-				strategy: {}, limits: {}, allowedActorIds: ["ou-owner"], createdAt: "2026-11-16T01:00:00Z",
+				strategy: {
+					objective: "提升咨询量",
+					audience: ["装修业主"],
+					sellingPoints: ["免费样品"],
+					contentDirections: ["产地溯源"],
+					partners: ["本地达人"],
+					channels: { "小红书": { budget: 1200, bidCpc: 2.5, enabled: true } },
+				},
+				limits: {}, allowedActorIds: ["ou-owner"], createdAt: "2026-11-16T01:00:00Z",
 			},
 			rounds: [
 				{
@@ -65,6 +73,12 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 		}),
 	});
 	mount();
+	assert.ok(await screen.findByText("当前方案"));
+	assert.ok(screen.getByText("推广目标：提升咨询量"));
+	assert.ok(screen.getByText("装修业主"));
+	assert.ok(screen.getByText("产地溯源"));
+	assert.ok(screen.getByText("本地达人"));
+	assert.ok(screen.getByText(/小红书：预算 1200 · 出价 2.5 · 启用/));
 	assert.ok(await screen.findByText("策略变更记录"));
 	// from/to 明细（#11 的明确规格）：字段 + 渠道 + 原值 → 新值。
 	assert.ok(screen.getByText("预算（channel-a）：1000 → 1500"), "预算 from/to");
