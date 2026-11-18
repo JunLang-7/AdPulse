@@ -3,7 +3,11 @@ import {
 	type DecisionAccountResolver,
 } from "./decision-delivery.js";
 import type { Limits, Signal, Strategy } from "./domain/strategy.js";
-import { applyChanges, validateStrategy } from "./domain/strategy.js";
+import {
+	applyChanges,
+	isMonetaryChange,
+	validateStrategy,
+} from "./domain/strategy.js";
 import { invalidateAlertCandidate } from "./investigation-alerts.js";
 import type { Actor, ChoiceCommand, Recipient } from "./ports/channel.js";
 import type { PolicyEngine, Proposal } from "./ports/policyEngine.js";
@@ -273,7 +277,7 @@ export class Orchestrator {
 			if (
 				session.taskRef &&
 				!session.monetarySuggestionsAllowed &&
-				candidate.changes.some((change) => change.kind !== "enabled")
+				candidate.changes.some(isMonetaryChange)
 			)
 				return reject("unconfirmed_monetary_semantics");
 
@@ -515,7 +519,7 @@ export class Orchestrator {
 			if (
 				session.taskRef &&
 				!session.monetarySuggestionsAllowed &&
-				candidate.changes?.some((change) => change.kind !== "enabled")
+				candidate.changes?.some(isMonetaryChange)
 			)
 				throw new Error("unconfirmed task rules prohibit monetary suggestions");
 			if (

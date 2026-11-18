@@ -1852,6 +1852,8 @@ export interface components {
                 };
             };
             sellingPoints: string[];
+            contentDirections?: string[];
+            partners?: string[];
         };
         Limits: {
             maxBudgetChangeRatio: number;
@@ -1907,6 +1909,30 @@ export interface components {
             channelId: string;
             from: boolean;
             to: boolean;
+        } | {
+            /** @enum {string} */
+            kind: "audience";
+            /** @enum {string} */
+            op: "add" | "remove";
+            item: string;
+        } | {
+            /** @enum {string} */
+            kind: "sellingPoint";
+            /** @enum {string} */
+            op: "add" | "remove";
+            item: string;
+        } | {
+            /** @enum {string} */
+            kind: "contentDirection";
+            /** @enum {string} */
+            op: "add" | "remove";
+            item: string;
+        } | {
+            /** @enum {string} */
+            kind: "partner";
+            /** @enum {string} */
+            op: "add" | "remove";
+            item: string;
         };
         Candidate: {
             id: string;

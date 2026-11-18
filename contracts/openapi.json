@@ -5000,6 +5000,18 @@
             "items": {
               "type": "string"
             }
+          },
+          "contentDirections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "partners": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -5241,6 +5253,114 @@
               "channelId",
               "from",
               "to"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "audience"
+                ]
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              },
+              "item": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "op",
+              "item"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "sellingPoint"
+                ]
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              },
+              "item": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "op",
+              "item"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "contentDirection"
+                ]
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              },
+              "item": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "op",
+              "item"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "partner"
+                ]
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "remove"
+                ]
+              },
+              "item": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "op",
+              "item"
             ],
             "additionalProperties": false
           }
