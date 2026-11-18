@@ -186,8 +186,27 @@ export class UserSourceService {
 		}
 		if (page.status >= 400) return await failure(`列表页返回 ${page.status}`);
 
-		const parsed = parseUserListPage(page.body, source.listUrl, source.host);
-		if (parsed.length === 0) return await failure("列表页没有解析出条目");
+		let listUrl = source.listUrl;
+		let parsed = parseUserListPage(page.body, listUrl, source.host);
+		// 列表页可能是 JS 渲染或选错了页面：条目过少也可疑，退回官网首页比一比，谁多用谁。
+		if (parsed.length < 3) {
+			const home = `https://${source.host}/`;
+			if (listUrl.replace(/\/+$/u, "") !== home) {
+				try {
+					const homePage = await fetcher.fetchText(home, FETCH_LIMITS);
+					if (homePage.status < 400) {
+						const fromHome = parseUserListPage(homePage.body, home, source.host);
+						if (fromHome.length > parsed.length) {
+							parsed = fromHome;
+							listUrl = home;
+						}
+					}
+				} catch {
+					// 首页也失败：维持原有的列表页结论。
+				}
+			}
+		}
+		if (parsed.length === 0) return await failure("列表页没有解析出条目（可能是 JS 渲染站点）");
 
 		const result = await this.storage.transaction(async (tx) => {
 			const existing = new Map(

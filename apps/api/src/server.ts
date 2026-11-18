@@ -23,7 +23,7 @@ import {
 	SubscriptionService,
 	TaskInputValidationError,
 } from "@adpluse/core";
-import { HttpSourceFetcher, type Runtime } from "@adpluse/runtime";
+import { discoverCompanySite, HttpSourceFetcher, type Runtime } from "@adpluse/runtime";
 import { ZodError } from "zod";
 import type { IdentityProvider } from "./feishu-auth.js";
 import { HttpError, json, readJson } from "./http.js";
@@ -616,11 +616,28 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						| { kind?: unknown; name?: unknown }
 						| undefined;
 					try {
+						const label = String(body?.label ?? "");
+						let listUrl = String(body?.listUrl ?? "");
+						// 只给企业名称时：用 agent-reach 搜索官网并定位新闻列表页。
+						if (!listUrl.trim()) {
+							try {
+								const found = await discoverCompanySite(
+									label,
+									process.env.AGENT_REACH_BIN,
+								);
+								listUrl = found.listUrl;
+							} catch {
+								throw new HttpError(
+									422,
+									"site_discovery_failed",
+								);
+							}
+						}
 						const source = await userSources.add(
 							session.userId,
 							{
-								label: String(body?.label ?? ""),
-								listUrl: String(body?.listUrl ?? ""),
+								label,
+								listUrl,
 								subject: {
 									kind: subject?.kind === "competitor" ? "competitor" : "brand",
 									name: String(subject?.name ?? ""),

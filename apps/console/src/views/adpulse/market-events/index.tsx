@@ -30,6 +30,7 @@ const addStatusText = (error: unknown): string => {
 	if (status === 409) return "这个网站已经添加过，不需要重复登记。";
 	if (status === 400) return "地址或填写内容不合法：列表页必须是 https 的站点地址，企业名称与关注对象名称不能为空。";
 	if (status === 404) return "站点不存在或刚被删除，请刷新后重试。";
+	if (status === 422) return "没能自动找到这家企业的官网新闻页：请补填列表页地址，或换一个更明确的企业名称。";
 	return "操作失败，请稍后重试。";
 };
 
@@ -480,17 +481,17 @@ export default function MarketEventsPage() {
 					<div className="mt-2 space-y-2">
 						<div className="grid gap-2 sm:grid-cols-2">
 							<input aria-label="站点企业名称" placeholder="企业名称，如：海尔" maxLength={200} value={siteForm.label} onChange={e => setSiteForm({ ...siteForm, label: e.target.value })} className={control} />
-							<input aria-label="站点新闻列表页地址" placeholder="官网新闻列表页，https://…/news" maxLength={2000} value={siteForm.listUrl} onChange={e => setSiteForm({ ...siteForm, listUrl: e.target.value })} className={control} />
+							<input aria-label="站点新闻列表页地址" placeholder="可留空：按企业名称自动查找官网新闻页" maxLength={2000} value={siteForm.listUrl} onChange={e => setSiteForm({ ...siteForm, listUrl: e.target.value })} className={control} />
 							<select aria-label="站点对象类型" value={siteForm.kind} onChange={e => setSiteForm({ ...siteForm, kind: e.target.value })} className={control}><option value="brand">品牌</option><option value="competitor">竞品</option></select>
 							<input aria-label="站点关注对象名称" placeholder="关注对象名称，如：海尔" maxLength={200} value={siteForm.name} onChange={e => setSiteForm({ ...siteForm, name: e.target.value })} className={control} />
 						</div>
 						<div className="flex flex-wrap items-center gap-2">
 							<Button type="button" disabled={addSite.isPending} onClick={() => {
-								if (!siteForm.label.trim() || !siteForm.name.trim() || !siteForm.listUrl.trim()) { setSiteError("请填写企业名称、列表页地址与关注对象名称。"); return; }
+								if (!siteForm.label.trim() || !siteForm.name.trim()) { setSiteError("请填写企业名称与关注对象名称；列表页地址可留空，自动按名称查找。"); return; }
 								setSiteError(null);
 								addSite.mutate();
 							}}>{addSite.isPending ? "添加并采集中…" : "添加并采集"}</Button>
-							<span className="text-muted-foreground">登记后立即抓一次列表页；之后可手动重采。</span>
+							<span className="text-muted-foreground">登记后立即抓一次列表页；之后每个时段自动重采，也可手动重采。</span>
 						</div>
 						{siteError ? <p role="alert" className="text-red-600">{siteError}</p> : null}
 						{addSite.error ? <p role="alert" className="text-red-600">{addStatusText(addSite.error)}</p> : null}

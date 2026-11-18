@@ -3884,7 +3884,8 @@ export interface operations {
             content: {
                 "application/json": {
                     label: string;
-                    listUrl: string;
+                    /** @description 官网新闻列表页；留空时按企业名称自动发现 */
+                    listUrl?: string;
                     subject: {
                         /** @enum {string} */
                         kind: "brand" | "competitor";
@@ -3921,6 +3922,13 @@ export interface operations {
             };
             /** @description Host already added */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Site discovery failed; provide listUrl manually */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
