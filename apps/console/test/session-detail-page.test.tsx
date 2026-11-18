@@ -57,6 +57,12 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 			actions: [], inbox: [], deliveries: [],
 			snapshots: [
 				{ id: "snap-1", sessionId: "session-1", version: 1, createdAt: "2026-11-16T02:00:00Z",
+					strategy: {
+						objective: "提升咨询量",
+						audience: ["装修业主", "旧人群"],
+						sellingPoints: ["免费样品"],
+						channels: { "小红书": { budget: 1000, bidCpc: 2.5, enabled: true } },
+					},
 					changes: [
 						{ kind: "budget", channelId: "channel-a", from: 1000, to: 1500 },
 						{ kind: "bidCpc", channelId: "channel-a", from: 1.2, to: 1.8 },
@@ -79,6 +85,11 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 	assert.ok(screen.getByText("产地溯源"));
 	assert.ok(screen.getByText("本地达人"));
 	assert.ok(screen.getByText(/小红书：预算 1200 · 出价 2.5 · 启用/));
+	assert.ok(await screen.findByText("与最早快照相比"));
+	assert.ok(screen.getByText("人群：移除 旧人群"));
+	assert.ok(screen.getByText("内容方向：新增 产地溯源"));
+	assert.ok(screen.getByText("合作对象：新增 本地达人"));
+	assert.ok(screen.getByText("渠道 小红书：预算 1000 → 1200"));
 	assert.ok(await screen.findByText("策略变更记录"));
 	// from/to 明细（#11 的明确规格）：字段 + 渠道 + 原值 → 新值。
 	assert.ok(screen.getByText("预算（channel-a）：1000 → 1500"), "预算 from/to");
