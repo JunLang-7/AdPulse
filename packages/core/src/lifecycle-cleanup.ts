@@ -393,6 +393,17 @@ export class LifecycleCleanupService {
 			.map((row) => row.id));
 		await remove("taskOperations", (await tx.taskOperations.all())
 			.filter((row) => row.ownerId === ownerId && row.taskId === taskId).map((row) => row.id));
+		const hypothesisIds = new Set((await tx.hypotheses.listByOwner(ownerId))
+			.filter((row) => row.taskId === taskId).map((row) => row.id));
+		await remove("hypothesisOperations", (await tx.hypothesisOperations.all())
+			.filter((row) => row.ownerId === ownerId
+				&& row.resultRef.hypothesisId !== undefined && hypothesisIds.has(row.resultRef.hypothesisId))
+			.map((row) => row.id));
+		await remove("hypothesisVerdicts", (await tx.hypothesisVerdicts.all())
+			.filter((row) => row.ownerId === ownerId && hypothesisIds.has(row.hypothesisId)).map((row) => row.id));
+		await remove("hypothesisVersions", (await tx.hypothesisVersions.all())
+			.filter((row) => row.ownerId === ownerId && hypothesisIds.has(row.hypothesisId)).map((row) => row.id));
+		await remove("hypotheses", [...hypothesisIds]);
 		await remove("taskVersions", (await tx.taskVersions.all())
 			.filter((row) => row.taskId === taskId).map((row) => row.id));
 		await remove("tasks", [taskId]);
