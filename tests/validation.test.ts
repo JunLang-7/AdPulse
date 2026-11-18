@@ -227,6 +227,74 @@ test("unconfirmed task rules allow audience suggestions but reject monetary ones
 	]);
 });
 
+test("candidate hypothesis and validation plan are bounded, persisted, and shown on the card", async () => {
+	const f = fixture();
+	const card = {
+		title: "复核",
+		summary: "仅调整方案草案",
+		evidence: [{ label: "CPC", value: "2 → 2.4" }],
+	};
+	const policy: PolicyEngine = {
+		async propose() {
+			return {
+				card,
+				candidates: [
+					{
+						id: "adjust",
+						label: "补充人群",
+						changes: [{ kind: "audience", op: "add", item: "春节备货家庭" }],
+						complete: true,
+						hypothesis: "节前备货需求上升",
+						validationPlan: "观察 7 天咨询成本是否回落",
+					},
+				],
+			};
+		},
+	};
+	const decisions = new Orchestrator(f.storage, policy, f.now);
+	const session = await f.start();
+	await decisions.prepareRound(session.id, 0);
+	const round = await f.storage.transaction((tx) =>
+		tx.rounds.get(`${session.id}:1`),
+	);
+	assert.equal(round?.candidates[0]?.hypothesis, "节前备货需求上升");
+	const expectedDetail =
+		"假设：节前备货需求上升；验证：观察 7 天咨询成本是否回落";
+	assert.deepEqual(round?.card.options[0], {
+		id: "adjust",
+		label: "补充人群",
+		detail: expectedDetail,
+	});
+	const delivery = (
+		await f.storage.transaction((tx) => tx.deliveries.all())
+	)[0];
+	assert.ok(delivery && "options" in delivery.card);
+	assert.equal(delivery.card.options[0]?.detail, expectedDetail);
+
+	for (const value of [
+		{ hypothesis: " 前后空格 " },
+		{ validationPlan: "a".repeat(301) },
+		{ hypothesis: "带\n换行" },
+	]) {
+		const invalidPolicy = {
+			async propose() {
+				return {
+					card,
+					candidates: [
+						{ id: "x", label: "x", changes: [], complete: true, ...value },
+					],
+				};
+			},
+		} as PolicyEngine;
+		const invalid = new Orchestrator(f.storage, invalidPolicy, f.now);
+		const target = await f.start();
+		await assert.rejects(
+			invalid.prepareRound(target.id, 0),
+			/invalid candidate rationale/,
+		);
+	}
+});
+
 test("inbox event identity is scoped to each connection", async () => {
 	const f = fixture();
 	const command: ChoiceCommand = {

@@ -31,7 +31,22 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 				signal: { title: "每次咨询成本超过提醒线", summary: "检查本期成本" },
 				strategy: {}, limits: {}, allowedActorIds: ["ou-owner"], createdAt: "2026-11-16T01:00:00Z",
 			},
-			rounds: [], actions: [], inbox: [], deliveries: [],
+			rounds: [
+				{
+					id: "round-1", sessionId: "session-1", roundNo: 1, strategyVersion: 0,
+					status: "answered", respondedAt: "2026-11-16T02:10:00Z",
+					card: {
+						title: "复核成本", summary: "本期咨询成本上升", evidence: [],
+						options: [{ id: "c1", label: "补充人群" }],
+					},
+					candidates: [{
+						id: "c1", label: "补充人群", changes: [], complete: true,
+						hypothesis: "春节前家庭备货增加",
+						validationPlan: "观察 7 天咨询成本是否回落",
+					}],
+				},
+			],
+			actions: [], inbox: [], deliveries: [],
 			snapshots: [
 				{ id: "snap-1", sessionId: "session-1", version: 1, createdAt: "2026-11-16T02:00:00Z",
 					changes: [
@@ -66,4 +81,9 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 	// changes=[] 显示「无变更」，不冒充草案已变更（该行还有时间后缀，用正则匹配）。
 	assert.ok(screen.getByText(/无变更/));
 	assert.equal(screen.queryByText(/0 项变更/), null, "空变更版本不显示计数");
+	// 候选的假设与验证方式在轮次里可见，不塞进按钮文本。
+	assert.ok(
+		screen.getByText("补充人群：假设：春节前家庭备货增加；验证：观察 7 天咨询成本是否回落"),
+		"候选假设与验证方式",
+	);
 });

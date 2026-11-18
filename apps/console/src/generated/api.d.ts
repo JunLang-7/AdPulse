@@ -1888,6 +1888,7 @@ export interface components {
             options: {
                 id: string;
                 label: string;
+                detail?: string;
             }[];
             detailUrl?: string;
         };
@@ -1939,6 +1940,8 @@ export interface components {
             label: string;
             changes: components["schemas"]["Change"][];
             complete: boolean;
+            hypothesis?: string;
+            validationPlan?: string;
         };
         Actor: {
             /** @enum {string} */

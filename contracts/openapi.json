@@ -5152,6 +5152,9 @@
                 },
                 "label": {
                   "type": "string"
+                },
+                "detail": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -5383,6 +5386,14 @@
           },
           "complete": {
             "type": "boolean"
+          },
+          "hypothesis": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "validationPlan": {
+            "type": "string",
+            "maxLength": 300
           }
         },
         "required": [
