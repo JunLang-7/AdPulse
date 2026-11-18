@@ -278,6 +278,33 @@ test("legitimate values containing no banned patterns still pass", async () => {
 	});
 });
 
+test("task draft suggests content directions and partners as baseline names, bounded and deduplicated", async () => {
+	let systemPrompt = "";
+	const extract = createTaskDraftExtractor(deepseekEnv, async (_url, init) => {
+		const body = JSON.parse(String(init?.body ?? "{}")) as { messages?: Array<{ content?: string }> };
+		systemPrompt = body.messages?.[0]?.content ?? "";
+		return providerReply(JSON.stringify({
+			recommendations: {
+				contentDirections: ["产地溯源短视频", " 产地溯源短视频 ", "雨天通勤实测", "x".repeat(81)],
+				partners: ["本地生活达人", "通勤装备测评达人", null],
+			},
+		}));
+	});
+	assert.ok(extract);
+	const result = await extract("准备推广防雨背包，想拍点视频，考虑找本地达人合作");
+	assert.deepEqual(result, {
+		recommendations: {
+			contentDirections: ["产地溯源短视频", "雨天通勤实测"],
+			partners: ["本地生活达人", "通勤装备测评达人"],
+		},
+	});
+	// 提示词必须声明这两项只是基线，不能写成已发布/已合作。
+	assert.match(systemPrompt, /contentDirections/);
+	assert.match(systemPrompt, /partners/);
+	assert.match(systemPrompt, /不代表已发布/);
+	assert.match(systemPrompt, /已联系、已合作/);
+});
+
 test("task draft uses an instance-local provider call limit", async () => {
 	let calls = 0;
 	const extract = createTaskDraftExtractor(deepseekEnv, async () => {

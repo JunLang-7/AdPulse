@@ -1,5 +1,7 @@
 # Proposal：投放方式类型与分口径效果衡量（路线 B 实施计划，草案待评审）
 
+> **实现状态（后补，不改动历史正文）**：路线 B 已实现并合并。见 [#160](https://github.com/JunLang-7/AdPulse/pull/160)（合并）与 [#157](https://github.com/JunLang-7/AdPulse/issues/157)（已关闭）；代码在 `packages/core/src/domain/placement.ts` 及证据/比较/控制台相关改动。下文 §0 的「评审通过前不进入功能开发」是写作时的流程约定；§F.5 的「提案状态仍为待评审」为过时表述，以本状态说明为准。§F 其余「剩余限制」仍然成立：指标集待真实用户验证、一个任务一套口径、不可归因部分只保留不推断。
+
 ## 0. 决策记录
 
 - 前稿列出三条路线：A（收口承诺）、B（显式建模类型 + 各自口径）、C（只加类型标签）。
@@ -208,3 +210,12 @@ PlacementType = "paid_ads" | "influencer" | "seeding"
 4. **合作对象与内容方向仍未建模**：它们是独立缺口，需另开 Issue。
 5. **提案状态仍为待评审**：本附录只记录实现，不代表提案已获接受；关联 Issue 见 [#157](https://github.com/JunLang-7/AdPulse/issues/157)。
 6. **基线**：本分支已同步 `origin/main`（含 #154 / #161）并解决与已合并改动的重叠（`task-setup-guide.tsx` 改用新版建议机制）；本地主工作区另有未提交改动，合并顺序仍由人工确认。
+
+## G. 合并后审核补充说明（新增，不改动上方正文）
+
+实现合并后（PR #160 → `4fbcdbc`，Issue #157 已关闭；main 红由 PR #170 → `3dd0a9c` 修复），又完成一轮审核与加固：
+
+- 新增 `tests/placement-adversarial.test.ts`：把审核时临时跑的 23 条对抗性断言固定为 8 项回归测试，覆盖畸形投放方式值、原型污染键、重复 / 跨口径 / 空键、策略运行时畸形输入。
+- 并发冲突处理加固：`ModelConnectionService.create` 在 SERIALIZABLE 重试耗尽后，把复查 / 重试中的竞态统一映射为领域错误 `connection_conflict`，不再偶发漏出驱动层 40001/40P01（这是 main CI 曾偶发红的根因）。
+- 迁移版本自动校验：新增 `tests/migration-versions.test.ts`，直接从 `postgres.ts` 解析已登记版本，与两处集成测试的期望集合比对；再加迁移忘改断言时该测试先失败。
+- 关联 Issue：正文第 0 节保留历史占位「待填编号」不回写；实际关联见 [#157](https://github.com/JunLang-7/AdPulse/issues/157)，本说明为新增记录。

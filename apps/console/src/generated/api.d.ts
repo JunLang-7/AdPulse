@@ -1962,6 +1962,8 @@ export interface components {
                 audience?: string[];
                 sellingPoints?: string[];
                 channels?: string[];
+                contentDirections?: string[];
+                partners?: string[];
                 /** @description 投放方式参考建议，需用户核对，不自动写入表单。 */
                 placementTypes?: ("paid_ads" | "influencer" | "seeding")[];
             };
