@@ -18,6 +18,7 @@ export * from "./lifecycle-deletion.js";
 export * from "./lifecycle-manifest.js";
 export * from "./market-events.js";
 export * from "./hypothesis.js";
+export * from "./signal-relevance.js";
 export * from "./comparisons.js";
 export * from "./comparison-service.js";
 export * from "./sources.js";

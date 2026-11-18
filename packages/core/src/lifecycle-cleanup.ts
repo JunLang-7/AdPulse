@@ -412,6 +412,8 @@ export class LifecycleCleanupService {
 		await remove("hypothesisVersions", (await tx.hypothesisVersions.all())
 			.filter((row) => row.ownerId === ownerId && hypothesisIds.has(row.hypothesisId)).map((row) => row.id));
 		await remove("hypotheses", [...hypothesisIds]);
+		await remove("signalAssessments", (await tx.signalAssessments.all())
+			.filter((row) => row.ownerId === ownerId && row.taskId === taskId).map((row) => row.id));
 		await remove("taskVersions", (await tx.taskVersions.all())
 			.filter((row) => row.taskId === taskId).map((row) => row.id));
 		await remove("tasks", [taskId]);

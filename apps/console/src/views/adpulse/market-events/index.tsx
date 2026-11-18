@@ -334,6 +334,28 @@ function DiscoveryLeadItem({ lead, busy, onReview }: {
 	const [mode, setMode] = useState<"accept" | "reject" | null>(null);
 	const [correctedDate, setCorrectedDate] = useState("");
 	const [reason, setReason] = useState("");
+	const queryClient = useQueryClient();
+	const assessments = useQuery({ queryKey: ["signal-assessments", lead.id], queryFn: async () => {
+		const r = await consoleClient.GET("/api/me/discovery-leads/{leadId}/assessments", { params: { path: { leadId: lead.id } } });
+		if (!r.data) throw new Error("无法读取线索初判");
+		return r.data.items;
+	} });
+	const tasks = useQuery({ queryKey: ["tasks"], queryFn: async () => {
+		const r = await consoleClient.GET("/api/tasks");
+		if (!r.data) throw new Error("无法读取任务");
+		return r.data.items;
+	} });
+	const decide = useMutation({ mutationFn: async ({ id, action }: { id: string; action: "confirm" | "reject" }) => {
+		const path = action === "confirm" ? "/api/signal-assessments/{assessmentId}/confirm" : "/api/signal-assessments/{assessmentId}/reject";
+		const r = await consoleClient.POST(path, { params: { path: { assessmentId: id } } });
+		if (!r.data) throw new Error("操作失败，请稍后重试。");
+		return r.data;
+	}, onSuccess: async () => {
+		await queryClient.invalidateQueries({ queryKey: ["signal-assessments", lead.id] });
+		await queryClient.invalidateQueries({ queryKey: ["signal-assessments-pending"] });
+	} });
+	const importanceLabel = (value: string) => value === "high" ? "重要" : value === "medium" ? "值得关注" : value === "low" ? "价值低" : "尚不确定";
+	const relationLabel = (value: string) => value === "direct" ? "直接相关" : value === "indirect" ? "间接相关" : "关系不明";
 	return <li className="space-y-2 rounded-md border p-3">
 		<div className="min-w-0 space-y-1">
 			<a className="block break-all font-medium text-blue-600 underline underline-offset-2 hover:text-blue-800" href={lead.url} target="_blank" rel="noreferrer" title="在新标签页打开原文">{lead.title}</a>
@@ -343,6 +365,16 @@ function DiscoveryLeadItem({ lead, busy, onReview }: {
 				{lead.author ? ` · 作者 ${lead.author}` : ""}
 				{" · "}索引日期 {formatLeadDate(lead.indexedPublishedAt)}（未核验）
 			</p>
+			{assessments.data?.filter((item) => item.stage === "preliminary").map((item) => <div key={item.id} className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
+				<p>模型初判 · {tasks.data?.find((task) => task.taskId === item.taskId)?.product ?? "本人任务"}：{importanceLabel(item.importance)} / {relationLabel(item.relation)}</p>
+				<p>{item.explanation}</p>
+				{item.quote ? <p className="text-muted-foreground">原文引用：{item.quote}</p> : null}
+				<div className="flex gap-2">
+					<Button size="sm" disabled={decide.isPending} onClick={() => decide.mutate({ id: item.id, action: "confirm" })}>确认关联</Button>
+					<Button size="sm" variant="outline" disabled={decide.isPending} onClick={() => decide.mutate({ id: item.id, action: "reject" })}>驳回</Button>
+				</div>
+			</div>)}
+			{decide.error ? <p role="alert" className="text-sm text-red-600">{decide.error.message}</p> : null}
 		</div>
 		{mode === null ? <div className="flex flex-wrap items-center gap-2">
 			<Button variant="outline" disabled={busy} onClick={() => setMode("accept")}>接受</Button>

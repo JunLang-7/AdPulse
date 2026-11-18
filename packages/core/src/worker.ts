@@ -59,6 +59,8 @@ export class Worker {
 		},
 		/** 验证检查点到期评估；未注入时遇到该任务直接报错，不静默丢弃。 */
 		private validationChecks?: ValidationCheckService,
+		/** 发现线索重要性/关联初判；未注入时 job 失败并保留原因。 */
+		private signalAssessments?: { prepare: (leadId: string) => Promise<void> },
 	) {}
 
 	/** 上一次日汇总调度的时间戳，用于在没有任务可领时按间隔触发。 */
@@ -123,6 +125,11 @@ export class Worker {
 					if (!this.investigationAlerts)
 						throw new Error("investigation alert service is not configured");
 					await this.investigationAlerts.prepareSession(job.task.alertId);
+					break;
+				case "prepare_signal_assessments":
+					if (!this.signalAssessments)
+						throw new Error("signal assessment service is not configured");
+					await this.signalAssessments.prepare(job.task.leadId);
 					break;
 				case "prepare_hypothesis_verdicts":
 					if (!this.hypothesisVerdicts)

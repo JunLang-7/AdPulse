@@ -336,6 +336,19 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (20)",
 				);
 			}
+			if (!current.has(21)) {
+				// 主动发现线索的初判：同一线索同一任务版本唯一。
+				await this.createEntityTable(client, "signalAssessments");
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_signal_assessment_dedup
+					ON adpulse_signalAssessments ((data->>'dedupKey'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_signal_assessment_lead
+					ON adpulse_signalAssessments ((data->>'ownerId'), (data->>'leadId'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_signal_assessment_stage
+					ON adpulse_signalAssessments ((data->>'ownerId'), (data->>'stage'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (21)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

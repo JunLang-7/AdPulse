@@ -2,6 +2,7 @@
 // 纪律：发现结果一律 `unverified`，不直接入库、不直接推送；接受才生成 source item，
 // 拒绝后同一归一化 URL 不再重复出现。审核审计记录在线索行上，可查询。
 import { createHash } from "node:crypto";
+import { taskActiveIn } from "./lifecycle.js";
 import type { Storage } from "./ports/storage.js";
 import type { DiscoveryLead, DiscoveryLeadStatus, SourceItem } from "./state/model.js";
 
@@ -131,6 +132,15 @@ export class DiscoveryLeadService {
 				await tx.discoveryLeads.put(lead);
 				known.add(key);
 				created += 1;
+				// 每个活跃任务排一条初判 job（幂等 id）；模型调用在事务外完成。
+				for (const task of await tx.tasks.listByOwner(ownerId)) {
+					if (!(await taskActiveIn(tx, task, new Date(now)))) continue;
+					await tx.jobs.put({
+						id: createHash("sha256").update(JSON.stringify(["prepare_signal_assessments", lead.id, task.id])).digest("hex"),
+						task: { kind: "prepare_signal_assessments", leadId: lead.id },
+						status: "pending", runAt: now, attempts: 0,
+					});
+				}
 			}
 			return { created, skipped };
 		});
