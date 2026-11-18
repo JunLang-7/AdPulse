@@ -240,6 +240,18 @@ export default function TaskEditorPage() {
 							</div>
 						</OptionalSection>
 
+						<OptionalSection title="内容方向与合作对象" expanded={creating} summary={form.contentDirections || form.partners ? "已填写" : ""}>
+							<div className="grid gap-4 sm:grid-cols-2">
+								<Field label="内容方向" hint="每行一项；仅记录打算表达的方向">
+									<textarea className={textAreaClass} placeholder="例如：产地溯源短视频" value={form.contentDirections} onChange={(e) => set("contentDirections", e.target.value)} />
+								</Field>
+								<Field label="合作对象" hint="每行一项；仅记录名单">
+									<textarea className={textAreaClass} placeholder="例如：本地生活达人" value={form.partners} onChange={(e) => set("partners", e.target.value)} />
+								</Field>
+							</div>
+							<p className="text-xs text-muted-foreground">内容方向与合作对象只作为方案基线记录，不代表已发布、已联系或已投放；不建模合作阶段与效果指标。</p>
+						</OptionalSection>
+
 						<OptionalSection title="投放渠道" expanded={creating} summary={form.channels.length ? `${form.channels.length} 个渠道` : ""}>
 							<div className="space-y-3">
 								<p className="text-sm text-muted-foreground">{creating ? "已经确定在哪个平台推广时，可以添加渠道，例如小红书。" : "知道投放平台时，填渠道名称就够了。预算和出价请按后台已确认的数字填写。"}</p>
