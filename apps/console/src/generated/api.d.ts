@@ -1403,6 +1403,7 @@ export interface components {
         };
         TaskDraftExtractionInput: {
             brief: string;
+            /** @description 限制只整理某一阶段。省略时一次返回全部字段的建议。 */
             stage?: components["schemas"]["TaskDraftStage"];
             provider?: components["schemas"]["TaskDraftProvider"];
             model?: components["schemas"]["TaskDraftModelId"];
@@ -1476,7 +1477,7 @@ export interface components {
             audience?: string[];
             sellingPoints?: string[];
             channels?: string[];
-            /** @description Stage suggestions that require user confirmation. Values may be normalized rather than verbatim. */
+            /** @description Suggestions that require user confirmation. Values may be normalized rather than verbatim. Every field may appear when stage is omitted. */
             recommendations?: {
                 product?: {
                     value: string;
