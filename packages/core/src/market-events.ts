@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { activeEventHeadIn, eventActiveIn, eventLifecycleIn, type EventLifecycle } from "./event-lifecycle.js";
+import { MS_PER_DAY, ONLINE_CLEANUP_DAYS } from "./lifecycle.js";
+import { lifecycleManifestId } from "./lifecycle-cleanup.js";
+import { NotificationQueue } from "./notifications-queue.js";
 import { NotificationSelectionService } from "./notifications-selection.js";
 import type { Storage, Transaction } from "./ports/storage.js";
+import type { LifecycleDeletion } from "./state/model.js";
 
 export interface EventSourceInput {
 	url: string | null;
@@ -34,6 +38,8 @@ export interface MarketEventHead {
 	logicalKey: string;
 	currentVersion: number;
 	createdAt: string;
+	/** 本人确认删除（#144 S2）：删除后立即不可读、不可修订、不参与通知。 */
+	deletion?: { at: string; by: "owner"; manifestId: string };
 }
 export interface MarketEventVersion {
 	id: string;
@@ -137,10 +143,18 @@ const evidenceHash = (input: MarketEventInput) => hash({
 });
 
 /** Private materials never leave this owner scope. No fetching or Session side effects. */
+export interface EventDeletionResult {
+	manifest: LifecycleDeletion;
+	/** true 表示本次真正写入；false 表示此前已删除（幂等返回原清单）。 */
+	created: boolean;
+}
+
 export class MarketEventService {
 	private readonly selections: NotificationSelectionService;
+	private readonly queue: NotificationQueue;
 	constructor(private storage: Storage, private now: () => string = () => new Date().toISOString()) {
 		this.selections = new NotificationSelectionService(storage, now);
+		this.queue = new NotificationQueue(storage, () => new Date(this.now()));
 	}
 	async list(ownerId: string): Promise<MarketEventVersion[]> {
 		const now = new Date(this.now());
@@ -155,6 +169,60 @@ export class MarketEventService {
 			}
 			return active.sort((a,b) => b.createdAt.localeCompare(a.createdAt));
 		});
+	}
+
+	/**
+	 * 本人确认删除事件（#144 S2）：
+	 * 同事务内建立「立即不可访问」、取消尚未发送的提醒条目、写入删除清单与审计。
+	 * 物理清理与备份重放在 S4。幂等：重复提交返回同一清单。
+	 */
+	async delete(ownerId: string, eventId: string, expectedVersion: number): Promise<EventDeletionResult> {
+		if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new MarketEventError(400, "invalid expected version");
+		const lock = await this.storage.runExclusive(
+			`market-events-delete:${ownerId}:${eventId}`,
+			() => this.storage.transaction((tx) => this.deleteIn(tx, ownerId, eventId, expectedVersion)),
+		);
+		if (!lock.acquired) throw new MarketEventError(409, "deletion already in progress");
+		return lock.value!;
+	}
+
+	private async deleteIn(tx: Transaction, ownerId: string, eventId: string, expectedVersion: number): Promise<EventDeletionResult> {
+		const head = await tx.marketEvents.get(eventId);
+		if (!head || head.ownerId !== ownerId) throw new MarketEventError(404, "event not found");
+		const id = lifecycleManifestId(ownerId, eventId);
+		// 已删除：幂等返回原清单，不再校验版本（重复点击/重试不该报冲突）。
+		if (head.deletion) {
+			const existing = await tx.lifecycleDeletions.get(id);
+			if (!existing) throw new MarketEventError(409, "deletion manifest missing");
+			return { manifest: existing, created: false };
+		}
+		if (head.currentVersion !== expectedVersion) throw new MarketEventError(409, "event version conflict");
+
+		const at = new Date(this.now()).toISOString();
+		await tx.marketEvents.put({ ...head, deletion: { at, by: "owner", manifestId: id } });
+		// 取消尚未发出的提醒条目；已发送/已取消是终态，不改写。
+		await this.queue.cancelPendingIn(tx, ownerId, "event_deleted",
+			(item) => item.marketEventRef?.eventId === eventId);
+		const manifest: LifecycleDeletion = {
+			id,
+			ownerId,
+			marketEventId: eventId,
+			reason: "owner_request",
+			requestedAt: at,
+			deadlineAt: new Date(Date.parse(at) + ONLINE_CLEANUP_DAYS * MS_PER_DAY).toISOString(),
+			status: "pending",
+		};
+		await tx.lifecycleDeletions.put(manifest);
+		await tx.auditEvents.put({
+			id: `audit:event-deleted:${id}`,
+			at,
+			kind: "event_deleted",
+			actorId: ownerId,
+			objectId: eventId,
+			// 记下被删版本：S4 清理版本后，审计仍能说明用户删掉的是哪一版。
+			detail: `owner_request;version=${expectedVersion}`,
+		});
+		return { manifest, created: true };
 	}
 
 	/** 到期判定查询：到期事件仍返回状态，便于解释「为什么打不开」。 */

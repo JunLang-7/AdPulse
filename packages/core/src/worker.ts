@@ -319,6 +319,31 @@ export class Worker {
 			return;
 		}
 
+		// 冻结卡片之后还有异步等待（取目的地、取渠道）：这段时间里事件可能被删除、
+		// 条目可能被取消。发送前必须在同一事务里确认「冻结的每一条仍是 queued 且输入仍有效」，
+		// 否则会把已取消的旧卡片发出去。
+		const sendable = await this.storage.transaction(async (tx) => {
+			if (!(await this.holdsLease(tx, job))) return "lease" as const;
+			const queued = (await tx.notificationItems.all()).filter(
+				(item) => item.ownerId === view.ownerId && item.batchId === batchId && item.status === "queued",
+			);
+			const frozen = new Set(shown.map((item) => item.id));
+			const unchanged =
+				queued.length >= shown.length &&
+				shown.every((item) => queued.some((current) => current.id === item.id && current.revision === item.revision));
+			if (!frozen.size || !unchanged) return "changed" as const;
+			for (const item of queued) {
+				if (!frozen.has(item.id)) continue;
+				if (!(await notificationInputsStillCurrentIn(tx, item, new Date(this.now())))) return "changed" as const;
+			}
+			return "ok" as const;
+		});
+		if (sendable === "lease") return;
+		if (sendable === "changed") {
+			await this.digest.queue.setBatchStatus(batchId, "cancelled", { reason: "input_unavailable" });
+			return;
+		}
+
 		const deliveryId = `digest:${batchId}`;
 		const delivery = {
 			id: deliveryId,

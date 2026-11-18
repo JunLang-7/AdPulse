@@ -113,3 +113,67 @@ test("事件生命周期：别名/逻辑键命中的到期事件不能通过新�
 		"同来源 URL + 新幂等键");
 	assert.ok(created.version.eventId);
 });
+
+test("事件删除：立即不可读、不可修订、取消待发，并写清单与审计", async () => {
+	// 复现 #144 S2：删除要同时生效于读取、写入、通知与清单。
+	const storage = new MemoryStorage();
+	const time = clock();
+	const service = new MarketEventService(storage, time.now);
+	const created = await service.create("owner", "key-1", eventInput());
+	const eventId = created.version.eventId;
+
+	const deleted = await service.delete("owner", eventId, 1);
+	assert.equal(deleted.created, true);
+	assert.equal(deleted.manifest.marketEventId, eventId);
+	assert.equal(deleted.manifest.status, "pending");
+	assert.equal(deleted.manifest.deadlineAt, "2026-11-24T10:00:00.000Z", "在线清理截止为请求起 7 天");
+
+	// 立即不可读、不出现在列表、不可修订。
+	assert.equal(await service.detail("owner", eventId), null);
+	assert.equal((await service.list("owner")).length, 0);
+	await assert.rejects(
+		() => service.revise("owner", eventId, "key-2", 1, { ...eventInput(), title: "删除后改名" }, "试图改写"),
+		(error: { status?: number }) => error.status === 404,
+	);
+	const lifecycle = await service.lifecycle("owner", eventId);
+	assert.equal(lifecycle?.state, "deleted");
+	assert.equal(lifecycle?.deletedAt, "2026-11-17T10:00:00.000Z");
+
+	// 幂等：重复删除返回同一清单，不报冲突。
+	const again = await service.delete("owner", eventId, 1);
+	assert.equal(again.created, false);
+	assert.equal(again.manifest.id, deleted.manifest.id);
+
+	// 跨用户与不存在：404，不泄露存在性。
+	await assert.rejects(() => service.delete("other", eventId, 1), (error: { status?: number }) => error.status === 404);
+	await assert.rejects(() => service.delete("owner", "missing", 1), (error: { status?: number }) => error.status === 404);
+});
+
+test("事件删除：版本不一致拒绝，未验证期望版本的删除不会写清单", async () => {
+	const storage = new MemoryStorage();
+	const time = clock();
+	const service = new MarketEventService(storage, time.now);
+	const created = await service.create("owner", "key-1", eventInput());
+	time.set("2026-11-18T10:00:00.000Z");
+	// 先修订到 v2，再用旧版本号删除。
+	await service.revise("owner", created.version.eventId, "key-2", 1, { ...eventInput(), title: "改过的标题" }, "补充标题");
+	await assert.rejects(
+		() => service.delete("owner", created.version.eventId, 1),
+		(error: { status?: number }) => error.status === 409,
+	);
+	assert.ok(await service.detail("owner", created.version.eventId), "拒绝后事件仍可读");
+	assert.equal((await service.delete("owner", created.version.eventId, 2)).created, true);
+});
+
+test("事件删除：审计记录被删版本，便于 S4 清理后追溯", async () => {
+	const storage = new MemoryStorage();
+	const time = clock();
+	const service = new MarketEventService(storage, time.now);
+	const created = await service.create("owner", "key-1", eventInput());
+	await service.delete("owner", created.version.eventId, 1);
+	const audits = await storage.transaction((tx) => tx.auditEvents.all());
+	const audit = audits.find((row) => row.kind === "event_deleted");
+	assert.ok(audit);
+	assert.equal(audit.objectId, created.version.eventId);
+	assert.equal(audit.detail, "owner_request;version=1", "审计要能说明删的是哪一版");
+});

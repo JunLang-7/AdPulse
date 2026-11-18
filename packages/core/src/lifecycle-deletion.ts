@@ -96,11 +96,14 @@ export class LifecycleDeletionService {
 		return { manifest, created: true };
 	}
 
-	/** 本人范围内的删除清单查询（供控制台与 S3 清理任务使用）。 */
+	/**
+	 * 本人范围内的**任务**删除清单（供控制台与清理任务使用）。
+	 * 事件删除清单（#144）由事件侧接口展示，不混进任务清理进度，避免出现永远排队的「已删除的任务」。
+	 */
 	async list(ownerId: string): Promise<LifecycleDeletion[]> {
 		return this.storage.transaction(async (tx) =>
 			(await tx.lifecycleDeletions.all())
-				.filter((row) => row.ownerId === ownerId)
+				.filter((row) => row.ownerId === ownerId && typeof row.taskId === "string")
 				.sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)),
 		);
 	}

@@ -55,6 +55,8 @@ export interface NotificationRecordItem {
 	revision?: number;
 	/** 来源事件已过期或不可用：内容不返回，只留状态。 */
 	inputExpired?: boolean;
+	/** 不可用原因：删除或保留期到期，便于界面区分说法。 */
+	inputRemoved?: "deleted" | "expired";
 	status?: NotificationItemStatus;
 	deliveryId?: string;
 	createdAt?: string;
@@ -121,17 +123,28 @@ const frozenItems = (delivery: Delivery | null): RecordItemDraft[] => {
  * 到期或已不存在的事件 id 集合：这些事件的内容不得出现在记录页。
  * 与详情/列表用同一套生命周期判定，不另写一份到期规则。
  */
-async function unavailableEventIdsIn(
+async function unavailableEventsIn(
 	tx: Parameters<Parameters<Storage["transaction"]>[0]>[0],
 	ownerId: string,
 	now: Date,
-): Promise<Set<string>> {
-	const ids = new Set<string>();
+): Promise<{ byId: Map<string, "deleted" | "expired">; byUrl: Map<string, "deleted" | "expired"> }> {
+	const byId = new Map<string, "deleted" | "expired">();
+	const byUrl = new Map<string, "deleted" | "expired">();
 	for (const head of await tx.marketEvents.all()) {
 		if (head.ownerId !== ownerId) continue;
-		if ((await eventLifecycleIn(tx, head, now)).expired) ids.add(head.id);
+		const lifecycle = await eventLifecycleIn(tx, head, now);
+		if (!lifecycle.expired) continue;
+		const reason = lifecycle.state === "deleted" ? "deleted" as const : "expired" as const;
+		byId.set(head.id, reason);
+		// 早期汇总卡片没有 marketEventRef：用来源地址回退识别，避免把已删事件的标题继续回显。
+		for (const version of await tx.marketEventVersions.all()) {
+			if (version.eventId !== head.id) continue;
+			for (const source of version.input.sources ?? []) {
+				if (source.url) byUrl.set(source.url, reason);
+			}
+		}
 	}
-	return ids;
+	return { byId, byUrl };
 }
 
 export class NotificationRecordService {
@@ -177,23 +190,30 @@ export class NotificationRecordService {
 			const items = (await tx.notificationItems.all()).filter(
 				(item) => item.ownerId === ownerId,
 			);
-			const unavailableEvents = await unavailableEventIdsIn(tx, ownerId, new Date(this.now()));
+			const unavailable = await unavailableEventsIn(tx, ownerId, new Date(this.now()));
 			const redact = (item: RecordItemDraft): NotificationRecordItem => {
 				const ref = item.marketEventRef;
-				if (!ref || !unavailableEvents.has(ref.eventId)) {
+				// 有引用按事件判断；早期卡片没有引用，则按来源地址回退识别。
+				const reason = ref
+					? unavailable.byId.get(ref.eventId)
+					: item.sources.map((source) => (source.url ? unavailable.byUrl.get(source.url) : undefined)).find(Boolean);
+				if (!reason) {
 					const { marketEventRef: _ref, ...rest } = item;
 					return rest;
 				}
-				// 到期/删除后只保留状态，不返回标题、摘要、关联理由与来源链接。
+				// 删除/到期后只保留状态，不返回标题、摘要、关联理由与来源链接。
 				return {
 					...(item.id ? { id: item.id } : {}),
 					...(item.kind ? { kind: item.kind } : {}),
 					...(item.status ? { status: item.status } : {}),
-					title: "已到期的事件",
-					summary: "这条事件已过保留期（365 天），内容不再展示。",
+					title: reason === "deleted" ? "已删除的事件" : "已到期的事件",
+					summary: reason === "deleted"
+						? "这条事件已被删除，内容不再展示。"
+						: "这条事件已过保留期（365 天），内容不再展示。",
 					relevance: "",
 					sources: [],
 					inputExpired: true,
+					inputRemoved: reason,
 				};
 			};
 			const records: NotificationRecord[] = [];

@@ -19,7 +19,9 @@ export interface ManifestEntry {
 
 /** 一行一条 JSON：便于 append-only 追加与逐行重放。 */
 export function serializeManifest(rows: LifecycleDeletion[]): string {
-	return rows
+	// 清单目前只承载任务删除；事件删除清单由 #144 S4 扩展（在此之前不混入任务清单）。
+	const taskRows = rows.filter((row): row is LifecycleDeletion & { taskId: string } => typeof row.taskId === "string");
+	return taskRows
 		.map((row) => JSON.stringify({
 			id: row.id,
 			ownerId: row.ownerId,
@@ -30,7 +32,7 @@ export function serializeManifest(rows: LifecycleDeletion[]): string {
 			status: row.status,
 			...(row.cleanedAt ? { cleanedAt: row.cleanedAt } : {}),
 		} satisfies ManifestEntry))
-		.join("\n") + (rows.length > 0 ? "\n" : "");
+		.join("\n") + (taskRows.length > 0 ? "\n" : "");
 }
 
 const validTime = (value: unknown): value is string =>

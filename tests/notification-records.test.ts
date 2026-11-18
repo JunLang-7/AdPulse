@@ -424,3 +424,34 @@ test("通知记录：来源事件到期后不再返回标题、摘要与来源�
 	assert.equal(sent?.items[0]?.summary, "这条事件已过保留期（365 天），内容不再展示。");
 	assert.deepEqual(sent?.items[0]?.sources, []);
 });
+
+test("通知记录：早期冻结卡片没有事件引用时，按来源地址识别并抹掉已删内容", async () => {
+	const storage = new MemoryStorage();
+	const ownerId = "owner-legacy";
+	const now = "2026-11-18T00:00:00.000Z";
+	const url = "https://www.weichai.com/group/weichai/cn/media-hub/news2/a/2026110421125786644/index.html";
+	await storage.transaction(async (tx) => {
+		await tx.marketEvents.put({ id: "event-legacy", ownerId, logicalKey: "logical", currentVersion: 1, createdAt: "2026-11-17T10:00:00.000Z", deletion: { at: "2026-11-17T12:00:00.000Z", by: "owner", manifestId: "m" } });
+		await tx.marketEventVersions.put({
+			id: "event-legacy:1", eventId: "event-legacy", ownerId, version: 1, evidenceRevision: 1,
+			input: { sources: [{ url, publisher: "潍柴", content: "标题", scope: "title_only", origin: "official", publishedAt: null, acquiredAt: "2026-11-17T10:00:00.000Z", limitations: "" }], taskRefs: [] } as never,
+			method: "manual", sourceItemId: null, materials: [], createdAt: "2026-11-17T10:00:00.000Z",
+			changeReason: "录入", candidate: { status: "evidence_ready", reasons: [] },
+		});
+		await tx.notificationBatches.put({ id: "batch-legacy", ownerId, kind: "digest", localDate: "2026-11-17", status: "sent", settingsVersion: 1, scheduledAt: "2026-11-18T01:30:00Z", createdAt: "2026-11-17T10:00:00.000Z", updatedAt: "2026-11-17T10:00:00.000Z" } as never);
+		// 旧格式冻结卡片：条目上没有 marketEventRef，只有来源地址。
+		await tx.deliveries.put({
+			id: "digest:batch-legacy", ownerId, batchId: "batch-legacy", purpose: "digest", status: "sent",
+			card: { title: "信息汇总", items: [{ title: "潍柴发布新品", summary: "潍柴发布新品，仅限试点地区。", relevance: "该事件明确标注的主体是你关注的品牌", sources: [{ label: "潍柴", url, publishedAt: null }] }] },
+			expiresAt: "2026-11-18T02:00:00Z", sentAt: "2026-11-18T01:30:00Z",
+		} as never);
+	});
+
+	const page = await new NotificationRecordService(storage, () => now).list(ownerId);
+	const item = page.records[0]?.items[0];
+	assert.equal(item?.inputExpired, true, "没有引用的旧快照也要按地址识别");
+	assert.equal(item?.inputRemoved, "deleted");
+	assert.equal(item?.title, "已删除的事件");
+	assert.equal(item?.summary, "这条事件已被删除，内容不再展示。");
+	assert.deepEqual(item?.sources, []);
+});

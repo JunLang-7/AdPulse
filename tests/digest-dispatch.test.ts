@@ -5,7 +5,9 @@ import {
 	AuthenticationService,
 	CATCH_UP_GRACE_MS,
 	DigestScheduler,
+	MarketEventService,
 	NotificationQueue,
+	NotificationRecordService,
 	NotificationService,
 	SubscriptionService,
 	Worker,
@@ -139,10 +141,48 @@ async function setup(start = AT_DIGEST) {
 			if (!(await worker.runOnce())) break;
 	};
 
+	/** 造一条已可用的事件（head + v1，证据齐备）。 */
+	const seedEvent = async (eventId = "event-1") => {
+		const createdAt = new Date(clock).toISOString();
+		await storage.transaction(async (tx) => {
+			await tx.marketEvents.put({ id: eventId, ownerId, logicalKey: `logical:${eventId}`, currentVersion: 1, createdAt });
+			await tx.marketEventVersions.put({
+				id: `${eventId}:1`, eventId, ownerId, version: 1, evidenceRevision: 1,
+				input: {} as never, method: "manual", sourceItemId: null, materials: [],
+				createdAt, changeReason: "录入", candidate: { status: "evidence_ready", reasons: [] },
+			});
+		});
+		return eventId;
+	};
+	const enqueueEvent = async (eventId: string) => {
+		const view = await subscriptions.view(ownerId);
+		return queue.queue(
+			ownerId,
+			{
+				logicalKey: `event:${eventId}`, kind: "market_event",
+				marketEventRef: { eventId, version: 1, evidenceRevision: 1 },
+				title: "竞品发布新品", summary: "竞品发布新品，仅限试点地区。",
+				relevance: "该事件明确标注的主体是你关注的品牌「测试品牌」",
+				sources: [{ label: "测试官网", url: "https://example.com/1", publishedAt: null }],
+				revision: 1,
+			},
+			{ settingsVersion: view.settings.version, enabled: true },
+		);
+	};
+	const deleteEvent = async (eventId: string) => {
+		await new MarketEventService(storage, () => new Date(clock).toISOString()).delete(ownerId, eventId, 1);
+	};
+	const records = async () =>
+		new NotificationRecordService(storage, () => new Date(clock).toISOString()).list(ownerId);
+
 	return {
 		setOnSend: (hook: (() => Promise<void>) | undefined) => {
 			onSend = hook;
 		},
+		seedEvent,
+		enqueueEvent,
+		deleteEvent,
+		records,
 		storage,
 		runtime,
 		worker,
@@ -566,4 +606,35 @@ test("日汇总发送: 租约被接管时旧 worker 不得回写投递、条目�
 	// 地址状态也不能被旧 worker 改动。
 	const status = await started.notifications.status(started.ownerId);
 	assert.equal(status.destination?.status, "verified");
+});
+
+test("日汇总发送: 冻结卡片后事件被删除，发送前复检拦住旧卡片", async () => {
+	// 复现评审 P1：取目的地这段时间里 DELETE 已提交、条目已取消，Worker 仍会发送旧卡片。
+	const f = await setup();
+	const eventId = await f.seedEvent();
+	await f.enqueueEvent(eventId);
+	f.at("2026-11-11T01:30:00.000Z");
+
+	// 在「取目的地」之后插入删除：这正是冻结卡片与真正发送之间的窗口。
+	const original = f.notifications.status.bind(f.notifications);
+	f.notifications.status = async (ownerId: string) => {
+		await f.deleteEvent(eventId);
+		return original(ownerId);
+	};
+
+	await f.scheduler.tick();
+	await f.drain();
+	assert.equal(f.sent.length, 0, "已删除事件不得再被发送");
+	const record = await f.records();
+	assert.equal(record.records[0]?.status, "cancelled", "批次应被取消而不是标成已发送");
+});
+
+test("日汇总发送: 事件仍在时照常发送，复检不误伤正常路径", async () => {
+	const f = await setup();
+	const eventId = await f.seedEvent();
+	await f.enqueueEvent(eventId);
+	f.at("2026-11-11T01:30:00.000Z");
+	await f.scheduler.tick();
+	await f.drain();
+	assert.equal(f.sent.length, 1, "正常路径不应被新检查拦住");
 });
