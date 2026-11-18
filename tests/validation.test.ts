@@ -476,3 +476,91 @@ test("an expired worker cannot overwrite the receipt committed by the new lease 
 	assert.equal(sendJob.status, "done");
 	assert.equal(sendJob.attempts, 2);
 });
+
+test("卖点、内容方向、人群与合作对象的变更可作为建议提出，并经确认应用到方案", async () => {
+	// README 承诺「调整卖点、内容、人群、渠道、合作对象，还是预算」均能作为建议；
+	// 本用例走完整链路：PolicyEngine 提出→冻结候选→用户确认→策略快照应用。
+	const storage = new MemoryStorage();
+	const now = () => "2026-01-01T00:00:00.000Z";
+	const baseStrategy: Strategy = {
+		objective: "获取咨询",
+		audience: ["装修业主"],
+		channels: { ads: { budget: 100, bidCpc: 2 } },
+		sellingPoints: ["免费样品"],
+		contentDirections: ["产地溯源"],
+		partners: ["本地生活达人"],
+	};
+	const listPolicy: PolicyEngine = {
+		async propose() {
+			return {
+				card: {
+					title: "调整表达与人群",
+					summary: "仅调整方案草案",
+					evidence: [{ label: "讨论", value: "防雨内容上升" }],
+				},
+				candidates: [
+					{
+						id: "rephrase",
+						label: "换卖点、人群、内容与合作对象",
+						changes: [
+							{ kind: "sellingPoint", op: "add", item: "防雨设计" },
+							{ kind: "sellingPoint", op: "remove", item: "免费样品" },
+							{ kind: "audience", op: "add", item: "通勤人群" },
+							{ kind: "contentDirection", op: "add", item: "雨天通勤短视频" },
+							{ kind: "partner", op: "add", item: "通勤装备测评达人" },
+						],
+						complete: true,
+					},
+				],
+			};
+		},
+	};
+	const task = await new TaskService(storage, now).create("owner", "task-key", {
+		product: "防雨背包",
+		strategy: structuredClone(baseStrategy),
+		observation: {},
+		rules: {},
+	});
+	const decisions = new Orchestrator(storage, listPolicy, now);
+	const session = await decisions.startSession({
+		requestId: crypto.randomUUID(),
+		ownerId: "owner",
+		taskRef: { taskId: task.taskId, taskVersion: task.version },
+		recipient: { accountId: "account-a", kind: "user", externalId: "user-a" },
+		allowedActorIds: ["user-a"],
+		strategy: structuredClone(baseStrategy),
+		limits,
+		signal: {
+			id: "sig",
+			title: "讨论变化",
+			summary: "需要复核",
+			evidence: [{ label: "讨论", value: "防雨内容上升" }],
+		},
+		expiresAt: "2026-01-02T00:00:00.000Z",
+	});
+	// 任务口径未确认：非货币的五条列表变更必须被接受（不被当作花钱建议拦下）。
+	await decisions.prepareRound(session.id, 0);
+	const round = await storage.transaction((tx) => tx.rounds.get(`${session.id}:1`));
+	assert.equal(round?.candidates[0]?.changes.length, 5);
+	assert.equal(round?.candidates[0]?.label, "换卖点、人群、内容与合作对象");
+
+	const action = (await storage.transaction((tx) => tx.actions.all()))[0];
+	assert.ok(action);
+	const inbox = await decisions.receiveChoice({
+		sourceId: "console:owner",
+		eventId: "list-changes-accept",
+		actionRef: action.id,
+		actor: { kind: "console", userId: "owner" },
+	});
+	await decisions.processInbox(inbox.id);
+
+	const applied = await storage.transaction((tx) => tx.snapshots.get(`${session.id}:1`));
+	assert.deepEqual(applied?.strategy.sellingPoints, ["防雨设计"]);
+	assert.deepEqual(applied?.strategy.audience, ["装修业主", "通勤人群"]);
+	assert.deepEqual(applied?.strategy.contentDirections, ["产地溯源", "雨天通勤短视频"]);
+	assert.deepEqual(applied?.strategy.partners, ["本地生活达人", "通勤装备测评达人"]);
+	// 未提议的渠道数值与目标保持不变：建议不越权改动其余字段。
+	assert.equal(applied?.strategy.channels.ads.budget, 100);
+	assert.equal(applied?.strategy.objective, "获取咨询");
+	assert.equal(applied?.changes.length, 5);
+});

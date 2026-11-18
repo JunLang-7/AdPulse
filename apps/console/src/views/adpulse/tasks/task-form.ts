@@ -28,6 +28,10 @@ export type FormState = {
 	objective: string;
 	audience: string;
 	sellingPoints: string;
+	/** 站内基线：打算表达的内容方向（多行）；不代表已发布或已投放。 */
+	contentDirections: string;
+	/** 站内基线：考虑或正在接触的合作对象（多行）；不代表已联系或已付款。 */
+	partners: string;
 	channels: ChannelForm[];
 	scope: string;
 	startsAt: string;
@@ -44,7 +48,8 @@ export type FormState = {
 } & Record<keyof typeof ruleCounts, string>;
 
 export const emptyForm: FormState = {
-	product: "", objective: "", audience: "", sellingPoints: "", channels: [],
+	product: "", objective: "", audience: "", sellingPoints: "",
+	contentDirections: "", partners: "", channels: [],
 	scope: "", startsAt: "", endsAt: "", metricDefinition: "", placementType: "", metricKey: "",
 	moneyMode: "", currency: "", unit: "", alertThreshold: "", minimumSpend: "",
 	statWindowDays: "", minimumConsultations: "", handlingDeadlineHours: "", maxPushRounds: "",
@@ -96,6 +101,8 @@ export function fromVersion(task: TaskVersion): FormState {
 		objective: task.strategy.objective,
 		audience: task.strategy.audience.join("\n"),
 		sellingPoints: task.strategy.sellingPoints.join("\n"),
+		contentDirections: (task.strategy.contentDirections ?? []).join("\n"),
+		partners: (task.strategy.partners ?? []).join("\n"),
 		channels: Object.entries(task.strategy.channels).map(([name, channel]) => ({
 			name,
 			type: channel.type ?? "",
@@ -206,12 +213,17 @@ export function toInput(form: FormState): TaskInput {
 	if (minimumSpend !== undefined) rules.minimumSpendMinor = minimumSpend;
 
 	const lines = (value: string) => value.split("\n").map((line) => line.trim()).filter(Boolean);
+	// 内容方向与合作对象是可选字段：未填写时不写空数组，保留旧任务原样可读。
+	const contentDirections = lines(form.contentDirections);
+	const partners = lines(form.partners);
 	return {
 		product,
 		strategy: {
 			objective: form.objective,
 			audience: lines(form.audience),
 			sellingPoints: lines(form.sellingPoints),
+			...(contentDirections.length ? { contentDirections } : {}),
+			...(partners.length ? { partners } : {}),
 			channels: toChannels(form.channels),
 		},
 		observation: {

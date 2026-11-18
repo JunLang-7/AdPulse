@@ -103,6 +103,42 @@ test("integer fields validate decimal text before numeric conversion", () => {
 	}).strategy.channels, { 测试渠道: { budget: 12.5, bidCpc: 1e-7 } });
 });
 
+test("内容方向与合作对象随任务表单往返，不因编辑而丢失", () => {
+	// 回归：此前 toInput/fromVersion 只处理四个字段，编辑任务保存会静默丢掉这两个基线。
+	const task: components["schemas"]["TaskVersion"] = {
+		id: "task:1", taskId: "task", version: 1, createdAt: "2026-11-08T00:00:00.000Z",
+		product: "防雨背包",
+		strategy: {
+			objective: "获取咨询",
+			audience: ["通勤人群"],
+			sellingPoints: ["防雨设计"],
+			contentDirections: ["雨天通勤短视频"],
+			partners: ["通勤装备测评达人"],
+			channels: { 小红书: { budget: 100 } },
+		},
+		observation: {},
+		rules: {},
+	};
+	const form = fromVersion(task);
+	assert.equal(form.contentDirections, "雨天通勤短视频");
+	assert.equal(form.partners, "通勤装备测评达人");
+	const saved = toInput({ ...form, product: "防雨背包（修订）" });
+	assert.deepEqual(saved.strategy.contentDirections, ["雨天通勤短视频"]);
+	assert.deepEqual(saved.strategy.partners, ["通勤装备测评达人"]);
+
+	// 多行录入 → 列表；清空后不写空数组，旧任务保持原样可读。
+	const multi = toInput({
+		...emptyForm, product: "任务",
+		contentDirections: " 方向 A \n\n方向 B ",
+		partners: "达人 A",
+	});
+	assert.deepEqual(multi.strategy.contentDirections, ["方向 A", "方向 B"]);
+	assert.deepEqual(multi.strategy.partners, ["达人 A"]);
+	const empty = toInput({ ...emptyForm, product: "任务" });
+	assert.equal("contentDirections" in empty.strategy, false);
+	assert.equal("partners" in empty.strategy, false);
+});
+
 test("invalid dates, amounts and duplicate channels get plain-language errors", () => {
 	const form = { ...emptyForm, product: "测试任务" };
 	assert.throws(() => toInput({ ...form, startsAt: "2026-02-30T00:00" }), /有效的北京时间/);
