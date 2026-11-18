@@ -126,7 +126,7 @@ test("PostgreSQL: migrations 13 and 14 preserve market events and notification s
 		await storage.initialize();
 		assert.deepEqual(await mainRows(), before);
 		const migrations = await pool.query("SELECT version FROM adpulse_schema_migrations WHERE version >= 11 ORDER BY version");
-		assert.deepEqual(migrations.rows.map((row) => row.version), [11, 12, 13, 14, 15, 16]);
+		assert.deepEqual(migrations.rows.map((row) => row.version), [11, 12, 13, 14, 15, 16, 17]);
 		const created = await service(storage).create(fixture.owner, inputFor(fixture.owner));
 		const credential = await storage.transaction((tx) => tx.userModelCredentials.get(created.id));
 		assert.ok(credential?.ciphertext);
