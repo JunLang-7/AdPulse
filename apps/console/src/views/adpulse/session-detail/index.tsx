@@ -93,6 +93,53 @@ export default function SessionDetailPage() {
 
 			<Card>
 				<CardHeader>
+					<CardTitle>当前方案</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-2">
+					<p className="text-sm">
+						推广目标：{session.strategy.objective || "未填写"}
+					</p>
+					<StrategyValues label="人群" values={session.strategy.audience} />
+					<StrategyValues
+						label="卖点"
+						values={session.strategy.sellingPoints}
+					/>
+					<StrategyValues
+						label="内容方向"
+						values={session.strategy.contentDirections}
+					/>
+					<StrategyValues
+						label="合作对象"
+						values={session.strategy.partners}
+					/>
+					<div className="space-y-1">
+						<p className="text-sm text-muted-foreground">渠道：</p>
+						{Object.keys(session.strategy.channels ?? {}).length === 0 ? (
+							<p className="text-sm text-muted-foreground">未填写</p>
+						) : (
+							Object.entries(session.strategy.channels ?? {}).map(
+								([name, channel]) => (
+									<p
+										key={name}
+										className="break-all text-xs text-muted-foreground"
+									>
+										{name}：预算 {channel.budget ?? "未设置"} · 出价{" "}
+										{channel.bidCpc ?? "未设置"} ·{" "}
+										{channel.enabled === undefined
+											? "启停未设置"
+											: channel.enabled
+												? "启用"
+												: "暂停"}
+									</p>
+								),
+							)
+						)}
+					</div>
+				</CardContent>
+			</Card>
+
+			<Card>
+				<CardHeader>
 					<CardTitle>轮次时间线</CardTitle>
 				</CardHeader>
 				<CardContent className="space-y-3">
@@ -274,6 +321,29 @@ export default function SessionDetailPage() {
 }
 
 /** 策略变更的人话描述：渠道数值用「原值 → 新值」，列表字段用增删。 */
+function StrategyValues({
+	label,
+	values,
+}: {
+	label: string;
+	values?: string[];
+}) {
+	return (
+		<div className="flex flex-wrap items-center gap-1.5 text-sm">
+			<span className="text-muted-foreground">{label}：</span>
+			{values?.length ? (
+				values.map((value, index) => (
+					<Badge key={`${value}:${index}`} variant="outline">
+						{value}
+					</Badge>
+				))
+			) : (
+				<span className="text-muted-foreground">未填写</span>
+			)}
+		</div>
+	);
+}
+
 const LIST_LABELS = {
 	audience: "人群",
 	sellingPoint: "卖点",
