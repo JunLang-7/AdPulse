@@ -272,6 +272,20 @@ export class MarketEventService {
 		validate(input);
 		return this.mutate(ownerId, tx => this.commit(tx, ownerId, key, input, eventId, expectedVersion, reason, sourceItemId));
 	}
+	/** 关联任务存在非停用假设时，为新证据版本排初判 job（幂等： jobId 含事件版本）。 */
+	private async enqueueHypothesisJobIn(tx: Transaction, ownerId: string, version: MarketEventVersion): Promise<void> {
+		const taskIds = new Set(version.input.taskRefs.map(ref => ref.taskId));
+		if (!taskIds.size) return;
+		const relevant = (await tx.hypotheses.listByOwner(ownerId))
+			.filter(head => taskIds.has(head.taskId) && head.status !== "retired");
+		if (!relevant.length) return;
+		await tx.jobs.put({
+			id: hash(["prepare_hypothesis_verdicts", version.eventId, version.version]),
+			task: { kind: "prepare_hypothesis_verdicts", source: { kind: "market_event", eventId: version.eventId, version: version.version } },
+			status: "pending", runAt: this.now(), attempts: 0,
+		});
+	}
+
 	/** Reject overlapping owner writes before starting a serializable snapshot. Retry with the same key. */
 	private async mutate<T>(ownerId: string, work: (tx: Transaction) => Promise<T>): Promise<T> {
 		const lock = await this.storage.runExclusive(`market-events:${ownerId}`, () => this.storage.transaction(work));
@@ -342,6 +356,8 @@ export class MarketEventService {
 			for (const id of new Set(aliases)) await tx.marketEventAliases.put({ id, ownerId, eventId: version.eventId });
 		// #112 第二阶段：同一事务内按本人订阅筛选事件并留历史记录；只有新的证据版本会推进通知 revision。
 		if (status === "created" || status === "revised") await this.selections.selectEventIn(tx, version);
+		// 假设偏差初判（问题二 S2）：关联任务存在非停用假设时，为新证据版本排初判 job。
+		if (status === "created" || status === "revised") await this.enqueueHypothesisJobIn(tx, ownerId, version);
 		await tx.marketEventOperations.put({ id: operationId, ownerId, digest, versionId: version.id, status, createdAt: this.now() });
 		return { status, version };
 	}

@@ -7,6 +7,7 @@
 import {
 	ComparisonService,
 	EvidenceService,
+	HypothesisService,
 	MarketEventService,
 	DigestScheduler,
 	InvestigationAlertService,
@@ -39,6 +40,21 @@ import {
 	type ModelRouteInput,
 } from "./task-draft-extractor.js";
 import { createTaskDraftModels } from "./task-draft-models.js";
+import {
+	createHypothesisVerdictJobHandler,
+	type HypothesisVerdictSource,
+} from "./hypothesis-jobs.js";
+import { createHypothesisReasoning } from "./hypothesis-reasoning.js";
+
+export { createHypothesisReasoning };
+export type {
+	HypothesisDraftRequest,
+	HypothesisDraftSuggestion,
+	HypothesisJudgeRequest,
+	HypothesisJudgmentSuggestion,
+	HypothesisReasoning,
+} from "./hypothesis-reasoning.js";
+export type { HypothesisVerdictSource } from "./hypothesis-jobs.js";
 
 export const reviewPolicy: PolicyEngine = {
 	async propose({ signal, roundNo }) {
@@ -62,7 +78,14 @@ export function compose(
 	storage: Storage,
 	accounts: ChannelAccount[],
 	policy: PolicyEngine = reviewPolicy,
-	options: { detailUrlBase?: string; decisionCardsEnabled?: boolean } = {},
+	options: {
+		detailUrlBase?: string;
+		decisionCardsEnabled?: boolean;
+		/** 假设偏差初判处理器；未注入时初判 job 失败（独立 worker 场景需自行装配）。 */
+		hypothesisVerdicts?: {
+			prepare: (source: HypothesisVerdictSource) => Promise<void>;
+		};
+	} = {},
 ) {
 	const channels = new ChannelRegistry(accounts);
 	// 站内详情链接只在 HTTPS 控制台 origin 下生成：卡片渲染强制 https，
@@ -128,6 +151,7 @@ export function compose(
 		tasks,
 		evidence,
 		marketEvents: new MarketEventService(storage),
+		hypotheses: new HypothesisService(storage),
 		comparisons,
 		investigationAlerts,
 		notifications,
@@ -149,6 +173,8 @@ export function compose(
 			30_000,
 			decisionAccountFor,
 			lifecycleCleanup,
+			3_600_000,
+			options.hypothesisVerdicts,
 		),
 	};
 }
@@ -290,10 +316,21 @@ export async function fromEnvironment(
 	const taskDraftModels = createTaskDraftModels(env);
 	const storage = postgres ?? new MemoryStorage();
 	const modelConnections = createModelConnections(storage, env);
+	// 假设偏差初判：与任务草案共用同一套模型连接与限流；未配置模型时初判跳过。
+	const hypothesisVerdicts = createHypothesisVerdictJobHandler(
+		storage,
+		(ownerId, systemPrompt, brief, maxTokens) =>
+			taskDraftModels.completeJson(ownerId, systemPrompt, brief, undefined, maxTokens),
+		(ownerId) => {
+			const selection = taskDraftModels.list(ownerId).defaultSelection;
+			return selection ? `${selection.provider}/${selection.model}` : null;
+		},
+	);
 	return {
 		...compose(storage, accounts, reviewPolicy, {
 			decisionCardsEnabled: env.DECISION_CARDS_ENABLED === "1",
 			...(env.PUBLIC_ORIGIN ? { detailUrlBase: env.PUBLIC_ORIGIN } : {}),
+			hypothesisVerdicts,
 		}),
 		taskDraftModels,
 		modelConnections,

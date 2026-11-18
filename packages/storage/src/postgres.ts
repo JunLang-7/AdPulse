@@ -283,6 +283,26 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (16)",
 				);
 			}
+			if (!current.has(17)) {
+				// 假设偏差（README 第三类信号）：假设、版本、判定与幂等操作。
+				for (const name of [
+					"hypotheses",
+					"hypothesisVersions",
+					"hypothesisVerdicts",
+					"hypothesisOperations",
+				]) await this.createEntityTable(client, name);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_hypothesis_version
+					ON adpulse_hypothesisVersions ((data->>'hypothesisId'), (data->>'version'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_hypothesis_task
+					ON adpulse_hypotheses ((data->>'ownerId'), (data->>'taskId'), (data->>'createdAt'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_hypothesis_verdict_hypothesis
+					ON adpulse_hypothesisVerdicts ((data->>'ownerId'), (data->>'hypothesisId'), (data->>'createdAt'))`);
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_hypothesis_verdict_subject
+					ON adpulse_hypothesisVerdicts ((data->>'ownerId'), (data->>'dedupKey'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (17)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

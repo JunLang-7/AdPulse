@@ -3,7 +3,7 @@
 import type { components } from "../../../../generated/api";
 
 export type SubscriptionKind = "task" | "brand" | "competitor";
-export type SubscriptionCategory = "effect" | "event" | "evidence";
+export type SubscriptionCategory = "effect" | "event" | "evidence" | "hypothesis";
 export type SubscriptionScope = "task_only" | "include_general";
 
 export interface SubscriptionSettingsLike {
@@ -75,6 +75,7 @@ export const CATEGORY_OPTIONS: ReadonlyArray<{
 	{ value: "effect", label: "效果排查", hint: "投放数据出现异常、需要你判断时" },
 	{ value: "event", label: "明确事件", hint: "本人录入或从来源线索转为事件后参与筛选" },
 	{ value: "evidence", label: "补证/待处理", hint: "尚未接入；保存配置后保留偏好" },
+	{ value: "hypothesis", label: "假设偏差", hint: "你确认的判定显示当前方案的判断被证据支持或挑战时" },
 ];
 
 export const SCOPE_OPTIONS: ReadonlyArray<{

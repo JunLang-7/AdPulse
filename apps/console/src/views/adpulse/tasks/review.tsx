@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router";
 import { consoleClient } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
 import { EvidencePanel } from "./evidence-panel";
+import { HypothesesPanel } from "./hypotheses-panel";
 import { formatBeijingTime } from "./task-form.js";
 
 export default function TaskReviewPage() {
@@ -53,6 +54,8 @@ export default function TaskReviewPage() {
 			</header>
 
 			<EvidencePanel key={task.taskId} taskId={task.taskId} taskVersion={task.version} taskVersions={versions} rules={task.rules} />
+
+			<HypothesesPanel key={`hypotheses-${task.taskId}`} taskId={task.taskId} />
 
 			<details className="group rounded-xl border bg-card">
 				<summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm marker:hidden">

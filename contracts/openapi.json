@@ -507,6 +507,1006 @@
         }
       }
     },
+  "/api/tasks/{taskId}/hypotheses": {
+    "get": {
+      "operationId": "listTaskHypotheses",
+      "parameters": [
+        {
+          "name": "taskId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/HypothesisSummary"
+                    }
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "Unauthorized",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Origin rejected",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Not found",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "409": {
+          "description": "Version or idempotency conflict",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "503": {
+          "description": "Temporarily unavailable",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      }
+    },
+    "post": {
+      "operationId": "createHypothesis",
+      "parameters": [
+        {
+          "name": "taskId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "header",
+          "name": "Idempotency-Key",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HypothesisCreateRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HypothesisWriteResult"
+              }
+            }
+          }
+        },
+        "201": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HypothesisWriteResult"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "Unauthorized",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Origin rejected",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Not found",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "409": {
+          "description": "Version or idempotency conflict",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "503": {
+          "description": "Temporarily unavailable",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/tasks/{taskId}/hypotheses/drafts": {
+    "post": {
+      "operationId": "generateHypothesisDrafts",
+      "parameters": [
+        {
+          "name": "taskId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HypothesisDraftsRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "drafts": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/HypothesisDraftSuggestion"
+                    }
+                  }
+                },
+                "required": [
+                  "drafts"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "Unauthorized",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Origin rejected",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Not found",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "409": {
+          "description": "Version or idempotency conflict",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "503": {
+          "description": "Temporarily unavailable",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/hypotheses/pending": {
+    "get": {
+      "operationId": "listPendingHypothesisVerdicts",
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/HypothesisVerdict"
+                    }
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "Unauthorized",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Origin rejected",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Not found",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "409": {
+          "description": "Version or idempotency conflict",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "503": {
+          "description": "Temporarily unavailable",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/hypotheses/{hypothesisId}": {
+    "get": {
+      "operationId": "getHypothesisDetail",
+      "parameters": [
+        {
+          "name": "hypothesisId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HypothesisDetail"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "Unauthorized",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Origin rejected",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Not found",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "409": {
+          "description": "Version or idempotency conflict",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "503": {
+          "description": "Temporarily unavailable",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/hypotheses/{hypothesisId}/revisions": {
+    "post": {
+      "operationId": "reviseHypothesis",
+      "parameters": [
+        {
+          "name": "hypothesisId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "header",
+          "name": "Idempotency-Key",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HypothesisRevisionRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HypothesisWriteResult"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "Unauthorized",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Origin rejected",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Not found",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "409": {
+          "description": "Version or idempotency conflict",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "503": {
+          "description": "Temporarily unavailable",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/hypotheses/{hypothesisId}/retire": {
+    "post": {
+      "operationId": "retireHypothesis",
+      "parameters": [
+        {
+          "name": "hypothesisId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "header",
+          "name": "Idempotency-Key",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HypothesisRetireRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HypothesisWriteResult"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "Unauthorized",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Origin rejected",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Not found",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "409": {
+          "description": "Version or idempotency conflict",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "503": {
+          "description": "Temporarily unavailable",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/hypotheses/{hypothesisId}/verdicts": {
+    "post": {
+      "operationId": "createHypothesisVerdict",
+      "parameters": [
+        {
+          "name": "hypothesisId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "header",
+          "name": "Idempotency-Key",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HypothesisVerdictRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HypothesisVerdictResult"
+              }
+            }
+          }
+        },
+        "201": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HypothesisVerdictResult"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "Unauthorized",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Origin rejected",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Not found",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "409": {
+          "description": "Version or idempotency conflict",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "503": {
+          "description": "Temporarily unavailable",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/hypotheses/verdicts/{verdictId}/confirm": {
+    "post": {
+      "operationId": "confirmHypothesisVerdict",
+      "parameters": [
+        {
+          "name": "verdictId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HypothesisVerdictResult"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "Unauthorized",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Origin rejected",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Not found",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "409": {
+          "description": "Version or idempotency conflict",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "503": {
+          "description": "Temporarily unavailable",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/hypotheses/verdicts/{verdictId}/reject": {
+    "post": {
+      "operationId": "rejectHypothesisVerdict",
+      "parameters": [
+        {
+          "name": "verdictId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HypothesisVerdictResult"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "Unauthorized",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Origin rejected",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Not found",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "409": {
+          "description": "Version or idempotency conflict",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "503": {
+          "description": "Temporarily unavailable",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
     "/api/me/model-connections": {
       "get": {
         "operationId": "listModelConnections",
@@ -2116,7 +3116,579 @@
           "limitations"
         ]
       },
-      "MarketEventInput": {
+    "Hypothesis": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "ownerId": {
+        "type": "string"
+      },
+      "taskId": {
+        "type": "string"
+      },
+      "taskVersion": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "currentVersion": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "open",
+          "supported",
+          "challenged",
+          "retired"
+        ]
+      },
+      "createdAt": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "required": [
+      "id",
+      "ownerId",
+      "taskId",
+      "taskVersion",
+      "currentVersion",
+      "status",
+      "createdAt"
+    ]
+  },
+  "HypothesisVersion": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "hypothesisId": {
+        "type": "string"
+      },
+      "ownerId": {
+        "type": "string"
+      },
+      "version": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "statement": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "rationale": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "testable": {
+        "type": "string",
+        "maxLength": 400
+      },
+      "origin": {
+        "type": "string",
+        "enum": [
+          "manual",
+          "model_draft_accepted"
+        ]
+      },
+      "draftRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "modelRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "iterations": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "modelRef",
+          "generatedAt",
+          "iterations"
+        ]
+      },
+      "createdAt": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "required": [
+      "id",
+      "hypothesisId",
+      "ownerId",
+      "version",
+      "statement",
+      "rationale",
+      "origin",
+      "createdAt"
+    ]
+  },
+  "HypothesisSubject": {
+    "oneOf": [
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "market_event"
+            ]
+          },
+          "eventId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "kind",
+          "eventId",
+          "version"
+        ]
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "source_item"
+            ]
+          },
+          "sourceItemId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "kind",
+          "sourceItemId"
+        ]
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "comparison"
+            ]
+          },
+          "comparisonResultId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "kind",
+          "comparisonResultId"
+        ]
+      }
+    ]
+  },
+  "HypothesisVerdict": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "dedupKey": {
+        "type": "string"
+      },
+      "ownerId": {
+        "type": "string"
+      },
+      "hypothesisId": {
+        "type": "string"
+      },
+      "hypothesisVersion": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "subject": {
+        "$ref": "#/components/schemas/HypothesisSubject"
+      },
+      "judgment": {
+        "type": "string",
+        "enum": [
+          "supports",
+          "challenges",
+          "unclear"
+        ]
+      },
+      "explanation": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      },
+      "quote": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "stage": {
+        "type": "string",
+        "enum": [
+          "preliminary",
+          "confirmed",
+          "rejected"
+        ]
+      },
+      "preliminary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "modelRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "modelRef",
+          "generatedAt"
+        ]
+      },
+      "confirmedAt": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "createdAt": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "required": [
+      "id",
+      "dedupKey",
+      "ownerId",
+      "hypothesisId",
+      "hypothesisVersion",
+      "subject",
+      "judgment",
+      "explanation",
+      "stage",
+      "createdAt"
+    ]
+  },
+  "HypothesisSummary": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "head": {
+        "$ref": "#/components/schemas/Hypothesis"
+      },
+      "current": {
+        "$ref": "#/components/schemas/HypothesisVersion"
+      }
+    },
+    "required": [
+      "head",
+      "current"
+    ]
+  },
+  "HypothesisDetail": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "head": {
+        "$ref": "#/components/schemas/Hypothesis"
+      },
+      "current": {
+        "$ref": "#/components/schemas/HypothesisVersion"
+      },
+      "versions": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/HypothesisVersion"
+        }
+      },
+      "verdicts": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/HypothesisVerdict"
+        }
+      }
+    },
+    "required": [
+      "head",
+      "current",
+      "versions",
+      "verdicts"
+    ]
+  },
+  "HypothesisWriteResult": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "created",
+          "duplicate",
+          "revised",
+          "unchanged",
+          "retired"
+        ]
+      },
+      "hypothesis": {
+        "$ref": "#/components/schemas/Hypothesis"
+      },
+      "version": {
+        "$ref": "#/components/schemas/HypothesisVersion"
+      }
+    },
+    "required": [
+      "status",
+      "hypothesis",
+      "version"
+    ]
+  },
+  "HypothesisVerdictResult": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "verdict": {
+        "$ref": "#/components/schemas/HypothesisVerdict"
+      },
+      "hypothesis": {
+        "$ref": "#/components/schemas/Hypothesis"
+      }
+    },
+    "required": [
+      "verdict",
+      "hypothesis"
+    ]
+  },
+  "HypothesisDraftSuggestion": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "statement": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "rationale": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "testable": {
+        "type": "string",
+        "maxLength": 400
+      },
+      "evidenceHint": {
+        "type": "string",
+        "maxLength": 400
+      }
+    },
+    "required": [
+      "statement",
+      "rationale"
+    ]
+  },
+  "HypothesisCreateRequest": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "statement": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "rationale": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "testable": {
+        "type": "string",
+        "maxLength": 400
+      },
+      "origin": {
+        "type": "string",
+        "enum": [
+          "manual",
+          "model_draft_accepted"
+        ]
+      },
+      "draftRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "modelRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "iterations": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "modelRef",
+          "generatedAt",
+          "iterations"
+        ]
+      }
+    },
+    "required": [
+      "statement",
+      "rationale",
+      "origin"
+    ]
+  },
+  "HypothesisRevisionRequest": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "expectedVersion": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "statement": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "rationale": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "testable": {
+        "type": "string",
+        "maxLength": 400
+      }
+    },
+    "required": [
+      "expectedVersion",
+      "statement",
+      "rationale"
+    ]
+  },
+  "HypothesisRetireRequest": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "expectedVersion": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "required": [
+      "expectedVersion"
+    ]
+  },
+  "HypothesisVerdictRequest": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "subject": {
+        "$ref": "#/components/schemas/HypothesisSubject"
+      },
+      "judgment": {
+        "type": "string",
+        "enum": [
+          "supports",
+          "challenges",
+          "unclear"
+        ]
+      },
+      "explanation": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      },
+      "quote": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "required": [
+      "subject",
+      "judgment",
+      "explanation"
+    ]
+  },
+  "HypothesisDraftsRequest": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "materials": {
+        "type": "string",
+        "maxLength": 2500
+      },
+      "feedback": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "previous": {
+        "type": "array",
+        "maxItems": 8,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "statement": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "accepted",
+                "rejected",
+                "revised"
+              ]
+            }
+          },
+          "required": [
+            "statement",
+            "outcome"
+          ]
+        }
+      }
+    }
+  },
+    "MarketEventInput": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
@@ -2716,7 +4288,7 @@
           "refId": { "type": "string", "description": "task 为目标任务 id；brand/competitor 为名称规范化 key" },
           "label": { "type": "string" },
           "sourceUrl": { "type": "string", "format": "uri" },
-          "categories": { "type": "array", "minItems": 1, "items": { "type": "string", "enum": ["effect", "event", "evidence"] } },
+          "categories": { "type": "array", "minItems": 1, "items": { "type": "string", "enum": ["effect", "event", "evidence", "hypothesis"] } },
           "scope": { "type": "string", "enum": ["task_only", "include_general"] },
           "status": { "type": "string", "enum": ["active", "muted"], "description": "muted 即退订该对象，配置保留" },
           "updatedAt": { "type": "string", "format": "date-time" }
@@ -2742,8 +4314,8 @@
           },
           "input": {
             "type": "string",
-            "enum": ["effect", "event"],
-            "description": "筛选输入类别：effect = 效果告警，event = 市场/竞品事件"
+            "enum": ["effect", "event", "hypothesis"],
+            "description": "筛选输入类别：effect = 效果告警，event = 市场/竞品事件，hypothesis = 假设偏差判定"
           },
           "alertId": {
             "type": "string"
@@ -2975,7 +4547,7 @@
           "refId": { "type": "string", "description": "task 必填；brand/competitor 忽略" },
           "label": { "type": "string", "maxLength": 40, "description": "brand/competitor 必填；task 忽略" },
           "sourceUrl": { "type": "string", "format": "uri" },
-          "categories": { "type": "array", "minItems": 1, "items": { "type": "string", "enum": ["effect", "event", "evidence"] } },
+          "categories": { "type": "array", "minItems": 1, "items": { "type": "string", "enum": ["effect", "event", "evidence", "hypothesis"] } },
           "scope": { "type": "string", "enum": ["task_only", "include_general"] }
         },
         "required": ["expectedVersion", "kind", "categories", "scope"],
@@ -2985,7 +4557,7 @@
         "type": "object",
         "properties": {
           "expectedVersion": { "type": "integer", "minimum": 0 },
-          "categories": { "type": "array", "minItems": 1, "items": { "type": "string", "enum": ["effect", "event", "evidence"] } },
+          "categories": { "type": "array", "minItems": 1, "items": { "type": "string", "enum": ["effect", "event", "evidence", "hypothesis"] } },
           "scope": { "type": "string", "enum": ["task_only", "include_general"] },
           "status": { "type": "string", "enum": ["active", "muted"] }
         },
