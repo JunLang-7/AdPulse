@@ -9,7 +9,9 @@ import type { LifecycleDeletion } from "./state/model.js";
 export interface ManifestEntry {
 	id: string;
 	ownerId: string;
-	taskId: string;
+	/** 任务清单带 taskId；事件清单带 marketEventId，两者恰有一。 */
+	taskId?: string;
+	marketEventId?: string;
 	reason: "owner_request" | "retention_expired";
 	requestedAt: string;
 	deadlineAt: string;
@@ -19,20 +21,22 @@ export interface ManifestEntry {
 
 /** 一行一条 JSON：便于 append-only 追加与逐行重放。 */
 export function serializeManifest(rows: LifecycleDeletion[]): string {
-	// 清单目前只承载任务删除；事件删除清单由 #144 S4 扩展（在此之前不混入任务清单）。
-	const taskRows = rows.filter((row): row is LifecycleDeletion & { taskId: string } => typeof row.taskId === "string");
-	return taskRows
+	// 任务与事件清单（#144 S4 起都外置）；未知形状（两者都缺/都有）跳过并保持其余行有效。
+	const entries = rows.filter((row) =>
+		(typeof row.taskId === "string") !== (typeof row.marketEventId === "string"));
+	return entries
 		.map((row) => JSON.stringify({
 			id: row.id,
 			ownerId: row.ownerId,
-			taskId: row.taskId,
+			...(typeof row.taskId === "string" ? { taskId: row.taskId } : {}),
+			...(typeof row.marketEventId === "string" ? { marketEventId: row.marketEventId } : {}),
 			reason: row.reason ?? "owner_request",
 			requestedAt: row.requestedAt,
 			deadlineAt: row.deadlineAt,
 			status: row.status,
 			...(row.cleanedAt ? { cleanedAt: row.cleanedAt } : {}),
 		} satisfies ManifestEntry))
-		.join("\n") + (taskRows.length > 0 ? "\n" : "");
+		.join("\n") + (entries.length > 0 ? "\n" : "");
 }
 
 const validTime = (value: unknown): value is string =>
@@ -54,9 +58,13 @@ export function parseManifest(text: string): ManifestEntry[] {
 			throw new Error(`manifest line ${index + 1}: invalid JSON`);
 		}
 		const entry = raw as Partial<ManifestEntry>;
+		// 任务与事件清单两者恰有一：都缺或都有都拒绝——重放时静默忽略一条删除请求，
+		// 等于让已删数据复活，宁可中止。
+		const hasTask = typeof entry.taskId === "string" && !!entry.taskId;
+		const hasEvent = typeof entry.marketEventId === "string" && !!entry.marketEventId;
 		if (typeof entry.id !== "string" || !entry.id
 			|| typeof entry.ownerId !== "string" || !entry.ownerId
-			|| typeof entry.taskId !== "string" || !entry.taskId
+			|| hasTask === hasEvent
 			|| !validTime(entry.requestedAt) || !validTime(entry.deadlineAt)
 			|| (entry.reason !== undefined && !["owner_request", "retention_expired"].includes(entry.reason))
 			|| (entry.status !== undefined && !["pending", "cleaned"].includes(entry.status)))
@@ -64,7 +72,8 @@ export function parseManifest(text: string): ManifestEntry[] {
 		entries.push({
 			id: entry.id,
 			ownerId: entry.ownerId,
-			taskId: entry.taskId,
+			...(hasTask ? { taskId: entry.taskId } : {}),
+			...(hasEvent ? { marketEventId: entry.marketEventId } : {}),
 			reason: entry.reason ?? "owner_request",
 			requestedAt: entry.requestedAt,
 			deadlineAt: entry.deadlineAt,
@@ -83,14 +92,14 @@ export function replayPlan(entries: ManifestEntry[], now: Date): {
 	applicable: ManifestEntry[];
 	dueNow: ManifestEntry[];
 } {
-	const byTask = new Map<string, ManifestEntry>();
+	const byObject = new Map<string, ManifestEntry>();
 	for (const entry of entries) {
-		const key = `${entry.ownerId}:${entry.taskId}`;
-		const current = byTask.get(key);
+		const key = `${entry.ownerId}:${entry.taskId ?? entry.marketEventId}`;
+		const current = byObject.get(key);
 		if (!current || Date.parse(entry.requestedAt) < Date.parse(current.requestedAt))
-			byTask.set(key, entry);
+			byObject.set(key, entry);
 	}
-	const applicable = [...byTask.values()].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
+	const applicable = [...byObject.values()].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
 	return {
 		applicable,
 		dueNow: applicable.filter((entry) => Date.parse(entry.deadlineAt) <= now.getTime()),

@@ -121,7 +121,9 @@ export class LifecycleDeletionService {
 	 * 已存在的条目**不覆盖**（更早的请求优先）。
 	 */
 	async replay(entries: Array<{
-		id: string; ownerId: string; taskId: string;
+		id: string; ownerId: string;
+		/** 任务清单带 taskId；事件清单带 marketEventId，两者恰有一（#144 S4）。 */
+		taskId?: string; marketEventId?: string;
 		reason?: "owner_request" | "retention_expired";
 		requestedAt: string; deadlineAt: string;
 		status?: "pending" | "cleaned"; cleanedAt?: string;
@@ -130,6 +132,8 @@ export class LifecycleDeletionService {
 			let inserted = 0;
 			let kept = 0;
 			for (const entry of entries) {
+				if ((typeof entry.taskId === "string") === (typeof entry.marketEventId === "string"))
+					throw new LifecycleDeletionError(409, "manifest entry must carry exactly one of taskId or marketEventId");
 				const existing = await tx.lifecycleDeletions.get(entry.id);
 				if (existing) {
 					kept += 1;
@@ -138,19 +142,31 @@ export class LifecycleDeletionService {
 				await tx.lifecycleDeletions.put({
 					id: entry.id,
 					ownerId: entry.ownerId,
-					taskId: entry.taskId,
+					...(typeof entry.taskId === "string" ? { taskId: entry.taskId } : { marketEventId: entry.marketEventId! }),
 					reason: entry.reason ?? "owner_request",
 					requestedAt: entry.requestedAt,
 					deadlineAt: entry.deadlineAt,
 					status: "pending",
 				});
-				// 清单里出现即代表本人已确认删除：恢复出来的任务必须立即限访，不能等服务再跑。
-				const task = await tx.tasks.get(entry.taskId);
-				if (task && task.ownerId === entry.ownerId && !task.deletion)
-					await tx.tasks.put({
-						...task,
-						deletion: { at: entry.requestedAt, by: "owner", manifestId: entry.id },
-					});
+				// 清单里出现即代表本人已确认删除：恢复出来的对象必须立即限访，不能等服务再跑。
+				if (typeof entry.taskId === "string") {
+					const task = await tx.tasks.get(entry.taskId);
+					if (task && task.ownerId === entry.ownerId && !task.deletion)
+						await tx.tasks.put({
+							...task,
+							deletion: { at: entry.requestedAt, by: "owner", manifestId: entry.id },
+						});
+				} else {
+					const head = await tx.marketEvents.get(entry.marketEventId!);
+					if (head && head.ownerId === entry.ownerId && !head.deletion)
+						await tx.marketEvents.put({
+							...head,
+							deletion: { at: entry.requestedAt, by: "owner", manifestId: entry.id },
+						});
+					// 恢复出来的待发条目立即取消：不能等发送前复检才发现输入已删。
+					await this.queue.cancelPendingIn(tx, entry.ownerId, "event_deleted",
+						(item) => item.marketEventRef?.eventId === entry.marketEventId!);
+				}
 				inserted += 1;
 			}
 			return { inserted, kept };
