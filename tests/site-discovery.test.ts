@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import test from "node:test";
 import {
 	pickCompanySite,
@@ -6,6 +7,8 @@ import {
 	discoverCompanySite,
 } from "../packages/runtime/dist/index.js";
 import type { SourceFetcher } from "../packages/core/dist/index.js";
+
+const fakeBin = resolve("agent-reach");
 
 const result = (items: unknown): string =>
 	JSON.stringify({ schema_version: 1, ok: true, channel: "web", action: "search", backend: "exa", items });
@@ -61,7 +64,7 @@ test("discoverCompanySite：搜索→挑站→定位列表页；没配 AGENT_REA
 			return { status: 200, bytes: 50, body: `<a href="/news/index.html">新闻动态</a>` };
 		},
 	};
-	const site = await discoverCompanySite("某 企业", "C:\\fake\\agent-reach.exe", { runReach, fetcher });
+	const site = await discoverCompanySite("某 企业", fakeBin, { runReach, fetcher });
 	assert.deepEqual(calls[0]?.slice(0, 4), ["web", "search", "某 企业 官网", "--backend"]);
 	assert.equal(site.host, "www.jd-example.com");
 	assert.equal(site.listUrl, "https://www.jd-example.com/news/index.html");
@@ -72,7 +75,7 @@ test("discoverCompanySite：搜索→挑站→定位列表页；没配 AGENT_REA
 		exitCode: 0,
 	});
 	await assert.rejects(
-		discoverCompanySite("某企业", "C:\\fake\\agent-reach.exe", { runReach: upstream }),
+		discoverCompanySite("某企业", fakeBin, { runReach: upstream }),
 		/RATE_LIMITED/,
 	);
 });
