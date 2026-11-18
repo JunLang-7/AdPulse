@@ -4,6 +4,7 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
 import type { ModelConnectionProtocol } from "@adpluse/core";
+import { MAX_STRATEGY_LIST_ITEM_LENGTH } from "@adpluse/core";
 import { findCatalogModel } from "./model-catalog.js";
 import { requestGeminiText } from "./model-gemini.js";
 
@@ -46,6 +47,10 @@ export interface TaskDraftRecommendations {
 	channels?: string[];
 	/** 投放方式建议，只作为待核对参考，不自动写入表单。 */
 	placementTypes?: Array<"paid_ads" | "influencer" | "seeding">;
+	/** 内容方向建议：只给方向名称，不代表已发布。 */
+	contentDirections?: string[];
+	/** 合作对象建议：只给名单，不代表已联系或已合作。 */
+	partners?: string[];
 }
 
 export interface TaskDraftSuggestions {
@@ -72,12 +77,12 @@ type SuggestionField = (typeof suggestionFields)[number];
 
 const recommendationKeys: Record<TaskDraftStage, string> = {
 	overview: "product、objectives",
-	audience: "audience、sellingPoints",
+	audience: "audience、sellingPoints、contentDirections、partners",
 	channels: "channels、placementTypes",
 };
 
 /** 不传 stage 时一次给全部字段的建议，而不是让用户分三步各点一次。 */
-const allRecommendationKeys = "product、objectives、audience、sellingPoints、channels";
+const allRecommendationKeys = "product、objectives、audience、sellingPoints、contentDirections、partners、channels、placementTypes";
 
 function prompt(fields: readonly SuggestionField[], stage?: TaskDraftStage): string {
 	const keys = fields.map(({ field, label }) => field + "（" + label + "）").join("、");
@@ -103,6 +108,7 @@ function prompt(fields: readonly SuggestionField[], stage?: TaskDraftStage): str
 		] : []),
 		...(audience ? [
 			"audience 给一到八项具体人群；sellingPoints 给一到八项卖点。人群和渠道可以按产品品类给常见候选，不编造具体数据；卖点只能来自材料或通用服务（如可预约咨询），不编造产地、认证、功效、价格或优惠。不要重复摘录字段里已有的值。",
+			"contentDirections 给一到八项打算表达的内容方向名称（例如产地溯源短视频），partners 给一到八项考虑接触的合作对象名称（例如本地生活达人）。两者都只是方案基线：不代表已发布、已联系、已合作或已付款；不要写合作阶段、效果数据、粉丝量或报价。材料或产品品类没有依据时不要推荐，宁少不造。单项不超过" + MAX_STRATEGY_LIST_ITEM_LENGTH + "字。",
 		] : []),
 		...(channels ? [
 			"channels 给一到八个适合的投放渠道名称，例如小红书、抖音、微信视频号、微信公众号、搜索广告。不要重复摘录字段里已有的值。",
@@ -205,8 +211,21 @@ function extractSuggestions(
 			recommendations.sellingPoints,
 			collectValues(proposed.sellingPoints, 160, () => true),
 		).filter((text) => !(suggestions.sellingPoints ?? []).includes(text)).slice(0, maxListItems);
+		// 内容方向与合作对象：只给名称，不接受已发布/已合作的声称。
+		const contentDirections = uniqueValues(
+			recommendations.contentDirections,
+			collectValues(proposed.contentDirections, MAX_STRATEGY_LIST_ITEM_LENGTH, () => true),
+		).slice(0, maxListItems);
+		const partners = uniqueValues(
+			recommendations.partners,
+			collectValues(proposed.partners, MAX_STRATEGY_LIST_ITEM_LENGTH, () => true),
+		).slice(0, maxListItems);
 		if (!recommendations.audience.length) delete recommendations.audience;
 		if (!recommendations.sellingPoints.length) delete recommendations.sellingPoints;
+		if (contentDirections.length) recommendations.contentDirections = contentDirections;
+		else delete recommendations.contentDirections;
+		if (partners.length) recommendations.partners = partners;
+		else delete recommendations.partners;
 	}
 	if (!stage || stage === "channels") {
 		const channels = uniqueValues(

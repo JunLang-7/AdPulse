@@ -133,3 +133,28 @@ test("every field ships a filling hint with an example", () => {
 	// 食品不得在卖点里写功效：提示必须明确挡住这类写法。
 	assert.match(fieldHints.sellingPoints.hint, /不要写功效/);
 });
+
+test("内容方向与合作对象作为可勾选建议进入表单，并写入方案基线", () => {
+	const form = { ...emptyForm, product: "防雨背包" };
+	const items = taskSuggestions(form, {
+		recommendations: {
+			contentDirections: ["产地溯源短视频", "雨天通勤实测"],
+			partners: ["本地生活达人"],
+		},
+	});
+	assert.deepEqual(items, [
+		{ field: "contentDirections", value: "产地溯源短视频", source: "idea" },
+		{ field: "contentDirections", value: "雨天通勤实测", source: "idea" },
+		{ field: "partners", value: "本地生活达人", source: "idea" },
+	]);
+	const next = applyTaskSuggestions(form, items);
+	assert.equal(next.contentDirections, "产地溯源短视频\n雨天通勤实测");
+	assert.equal(next.partners, "本地生活达人");
+	// 应用后写入策略：这两项是站内基线，不改变其余字段。
+	const saved = toInput(next);
+	assert.deepEqual(saved.strategy.contentDirections, ["产地溯源短视频", "雨天通勤实测"]);
+	assert.deepEqual(saved.strategy.partners, ["本地生活达人"]);
+	// 已选中的值不会重复出现。
+	const again = taskSuggestions(next, { recommendations: { partners: ["本地生活达人"] } });
+	assert.deepEqual(again, []);
+});

@@ -14,7 +14,7 @@ import {
 import { Input } from "../../../components/ui/input";
 import {
 	applyTaskSuggestions,
-	draftFields,
+	suggestionFields,
 	emptyNotes,
 	fieldHints,
 	fieldLabels,
@@ -342,7 +342,7 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 										按你的说明一次整理出所有字段。原话摘录默认勾选；标“AI 建议”的是模型整理，默认不勾，请先核对。
 									</p>
 									{placementIdeas.length ? <p className="text-xs text-muted-foreground">投放方式参考建议（请自行核对，不会自动填入）：{placementIdeas.join("、")}。</p> : null}
-									{draftFields.map((field) => ({ field, fieldItems: items.filter((item) => item.field === field) }))
+									{suggestionFields.map((field) => ({ field, fieldItems: items.filter((item) => item.field === field) }))
 										.filter(({ fieldItems }) => fieldItems.length > 0)
 										.map(({ field, fieldItems }) => (
 											<fieldset key={field} className="space-y-1">
