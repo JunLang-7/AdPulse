@@ -34,6 +34,8 @@ export interface TaskDraftRecommendations {
 	audience?: string[];
 	sellingPoints?: string[];
 	channels?: string[];
+	/** 投放方式建议，只作为待核对参考，不自动写入表单。 */
+	placementTypes?: string[];
 }
 
 export interface TaskDraftSuggestions {
@@ -61,7 +63,7 @@ type SuggestionField = (typeof suggestionFields)[number];
 const recommendationKeys: Record<TaskDraftStage, string> = {
 	overview: "product、objectives",
 	audience: "audience、sellingPoints",
-	channels: "channels",
+	channels: "channels、placementTypes",
 };
 
 function prompt(fields: readonly SuggestionField[], stage?: TaskDraftStage): string {
@@ -86,6 +88,7 @@ function prompt(fields: readonly SuggestionField[], stage?: TaskDraftStage): str
 		] : []),
 		...(stage === "channels" ? [
 			"channels 给一到八个适合的投放渠道名称，例如小红书、抖音、微信视频号、微信公众号、搜索广告。不要重复摘录字段里已有的值。",
+			"placementTypes 只能从 paid_ads（平台付费广告）、influencer（达人合作）、seeding（内容种草）中选，最多三项；这是待核对的方向建议，不是已确定的投放安排。材料没有依据时不要推荐。",
 		] : []),
 		...(stage ? ["即使材料很口语化，也要尽量给出可核对的具体内容；确实无法判断时才返回空对象。"] : []),
 	].join("\n");
@@ -192,6 +195,12 @@ function extractSuggestions(
 		).filter((text) => !(suggestions.channels ?? []).includes(text)).slice(0, maxListItems);
 		if (channels.length) recommendations.channels = channels;
 		else delete recommendations.channels;
+		const placementTypes = [...new Set(
+			collectValues(proposed.placementTypes, 32, () => true).filter((text) =>
+				["paid_ads", "influencer", "seeding"].includes(text)),
+		)].slice(0, 3);
+		if (placementTypes.length) recommendations.placementTypes = placementTypes;
+		else delete recommendations.placementTypes;
 	}
 	if (stage && Object.keys(recommendations).length) suggestions.recommendations = recommendations;
 	return suggestions;
