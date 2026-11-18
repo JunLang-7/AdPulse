@@ -31,6 +31,12 @@ export const taskStages = [
 
 export type ChoiceField = Exclude<DraftField, "product">;
 export type ExcludedChoices = Partial<Record<ChoiceField, readonly string[]>>;
+export type TaskNotes = Record<TaskDraftStage, string>;
+
+/** 一次性整理时覆盖的字段顺序：表单、提示、结果展示都用同一份。 */
+export const draftFields = ["product", "objective", "audience", "sellingPoints", "channels"] as const;
+
+export const emptyNotes: TaskNotes = { overview: "", audience: "", channels: "" };
 
 export const fieldLabels: Record<DraftField, string> = {
 	product: "产品或服务",
@@ -47,6 +53,30 @@ export const fieldOptions: Record<ChoiceField, readonly string[]> = {
 	channels: ["小红书", "抖音", "微信视频号", "微信公众号", "搜索广告"],
 };
 
+/** 每个字段该写什么。模型没给出内容时，把这些提示连同示例一起摆出来。 */
+export const fieldHints: Record<DraftField, { hint: string; example: string }> = {
+	product: {
+		hint: "写清卖的是什么，带上品类和规格就够；只写名字也可以。",
+		example: "例如：南瓜子 500 克罐装",
+	},
+	objective: {
+		hint: "写这次投放希望换来什么结果，也可以点上面的选项。",
+		example: "例如：让本地顾客加微信咨询",
+	},
+	audience: {
+		hint: "写你判断会买的人：身份、场景或地区，一行一项。",
+		example: "例如：30 岁以上、在意养生的男性上班族",
+	},
+	sellingPoints: {
+		hint: "写能核对的优势：口感、新鲜度、产地、规格、试吃、包邮。食品不要写功效或医疗效果。",
+		example: "例如：今年新货、可以先试吃一小包",
+	},
+	channels: {
+		hint: "写已经在用的平台；还没定就留空，之后在复盘页补。",
+		example: "例如：微信视频号、抖音",
+	},
+};
+
 function readList(text: string): string[] {
 	return text.split("\n").map((item) => item.trim()).filter(Boolean);
 }
@@ -58,6 +88,15 @@ export function selectedValues(form: FormState, field: ChoiceField): string[] {
 
 export function stageValue(form: FormState, field: DraftField): string {
 	return field === "product" ? form.product.trim() : selectedValues(form, field).join("、");
+}
+
+/** 只拼某一个阶段的说明：给“按阶段一次次给”的整理方式用。 */
+export function stageBrief(form: FormState, stage: { fields: readonly DraftField[] }, notes: string): string {
+	const known = stage.fields.flatMap((field) => {
+		const value = stageValue(form, field);
+		return value ? [fieldLabels[field] + "：" + value] : [];
+	});
+	return [...known, notes.trim()].filter(Boolean).join("\n");
 }
 
 export function withSelectedValue(form: FormState, field: ChoiceField, value: string): FormState {
@@ -73,45 +112,94 @@ export function withSelectedValue(form: FormState, field: ChoiceField, value: st
 	return { ...form, [field]: values.join("\n") };
 }
 
-export function stageBrief(form: FormState, stage: typeof taskStages[number], notes: string): string {
-	const known = stage.fields.flatMap((field) => {
+/** 全部阶段里还没填的字段：决定要提示哪几项。 */
+export function missingFields(form: FormState): DraftField[] {
+	return draftFields.filter((field) => !stageValue(form, field));
+}
+
+/**
+ * 送给模型的一份说明：三个阶段的已选内容和补充资料都算，一次整理全部字段，
+ * 这样用户不必在每一步各点一次。
+ */
+export function setupBrief(form: FormState, notes: TaskNotes): string {
+	const known = draftFields.flatMap((field) => {
 		const value = stageValue(form, field);
 		return value ? [fieldLabels[field] + "：" + value] : [];
 	});
-	return [...known, notes.trim()].filter(Boolean).join("\n");
+	const extra = taskStages.map(({ id }) => notes[id].trim());
+	return [...known, ...extra].filter(Boolean).join("\n");
 }
 
-export function applyStageSuggestions(
+export type SuggestionSource = "quote" | "idea";
+
+export type TaskSuggestion = {
+	field: DraftField;
+	value: string;
+	/** quote：用户资料里的原话；idea：模型按资料整理的，需要用户自己核对。 */
+	source: SuggestionSource;
+	evidence?: string;
+};
+
+export function suggestionKey(item: TaskSuggestion): string {
+	return item.field + "\u0000" + item.value;
+}
+
+/**
+ * 一次请求的结果拍平成可勾选的一整份建议：原文摘录在前，模型建议在后。
+ * 已经填过、或用户明确去掉的值不再出现，避免每点一次就多一堆重复项。
+ */
+export function taskSuggestions(
 	form: FormState,
-	stage: TaskDraftStage,
-	draft: TaskDraftSuggestions,
+	data: TaskDraftSuggestions,
 	excluded: ExcludedChoices = {},
-): FormState {
-	const available = (field: ChoiceField, values: readonly string[] = []) =>
-		values.filter((value) => !excluded[field]?.includes(value));
-	if (stage === "overview") {
-		return {
-			...form,
-			product: form.product.trim() ? form.product : draft.product ?? form.product,
-			objective: form.objective.trim() ? form.objective
-				: available("objective", draft.objective ? [draft.objective] : [])[0] ?? form.objective,
-		};
+): TaskSuggestion[] {
+	const items: TaskSuggestion[] = [];
+	const seen = new Set<string>();
+	const push = (field: DraftField, value: unknown, source: SuggestionSource, evidence?: unknown) => {
+		if (typeof value !== "string") return;
+		const text = value.trim();
+		if (!text) return;
+		const key = field + "\u0000" + text;
+		if (seen.has(key)) return;
+		if (field === "product") {
+			if (form.product.trim()) return;
+		} else if (selectedValues(form, field).includes(text) || excluded[field]?.includes(text)) {
+			return;
+		}
+		seen.add(key);
+		items.push({
+			field, value: text, source,
+			...(typeof evidence === "string" && evidence.trim() ? { evidence: evidence.trim() } : {}),
+		});
+	};
+	for (const field of ["product", "objective"] as const) push(field, data[field], "quote");
+	for (const field of ["audience", "sellingPoints", "channels"] as const)
+		for (const value of data[field] ?? []) push(field, value, "quote");
+	const ideas = data.recommendations;
+	if (ideas) {
+		push("product", ideas.product?.value, "idea", ideas.product?.evidence);
+		for (const value of ideas.objectives ?? []) push("objective", value, "idea");
+		for (const field of ["audience", "sellingPoints", "channels"] as const)
+			for (const value of ideas[field] ?? []) push(field, value, "idea");
 	}
-	if (stage === "audience") {
-		return {
-			...form,
-			audience: mergeList(form.audience, available("audience", draft.audience)),
-			sellingPoints: mergeList(form.sellingPoints, available("sellingPoints", draft.sellingPoints)),
-		};
-	}
+	return items;
+}
+
+/** 用户勾选后的表单：产品换成勾选的那一个，其余追加并去重。 */
+export function applyTaskSuggestions(form: FormState, items: readonly TaskSuggestion[]): FormState {
+	const values = (field: DraftField) => items.filter((item) => item.field === field).map((item) => item.value);
+	let product = form.product;
+	for (const value of values("product")) product = value;
+	const channels = [...form.channels];
+	for (const name of values("channels"))
+		if (!channels.some((channel) => channel.name === name)) channels.push({ ...emptyChannel, name });
 	return {
 		...form,
-		channels: [
-			...form.channels,
-			...available("channels", draft.channels)
-				.filter((name) => !form.channels.some((channel) => channel.name === name))
-				.map((name) => ({ ...emptyChannel, name })),
-		],
+		product,
+		objective: mergeList(form.objective, values("objective")),
+		audience: mergeList(form.audience, values("audience")),
+		sellingPoints: mergeList(form.sellingPoints, values("sellingPoints")),
+		channels,
 	};
 }
 

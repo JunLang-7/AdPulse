@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/branding/svg/lockup-dark.svg" />
+    <img alt="AdPulse" src="docs/assets/branding/svg/lockup-light.svg" width="360" />
+  </picture>
+</p>
+
 # AdPulse
 
 > 主动发现市场信号，辅助下一步投放决策。
@@ -100,6 +107,10 @@ AdPulse 希望帮助用户回答：
 ## 当前阶段
 
 继续验证用户痛点、信号价值与使用场景，同时用已实现的交互子系统检验「提醒 → 选择 → 调整方案 → 下一轮」的技术闭环。信号采集、数据比较基线、完整控制台和真实 IM 体验尚未完成，不将工程演示视为产品假设已验证。
+
+## 品牌资源
+
+Logo、图标与配色素材见 [docs/assets/branding](docs/assets/branding/README.md)（SVG/PNG 源文件与推荐用法）。控制台实际加载的静态资源位于 `apps/console/public/branding/`，站点图标为 `apps/console/public/favicon.ico`；两者需同步更新。
 
 ## 开发环境
 

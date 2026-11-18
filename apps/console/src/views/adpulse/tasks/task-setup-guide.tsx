@@ -1,22 +1,45 @@
-import { Upload } from "lucide-react";
+import { Sparkles, Upload } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { consoleClient, type components } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent } from "../../../components/ui/card";
+import {
+	Dialog,
+	DialogCloseButton,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import {
-	applyStageSuggestions,
+	applyTaskSuggestions,
+	draftFields,
+	emptyNotes,
+	fieldHints,
 	fieldLabels,
 	fieldOptions,
+	missingFields,
 	selectedValues,
+	setupBrief,
 	stageBrief,
 	stageValue,
+	suggestionKey,
 	taskStages,
+	taskSuggestions,
 	withSelectedValue,
 	type ChoiceField,
 	type ExcludedChoices,
 	type TaskDraftStage,
+	type TaskSuggestion,
 } from "./task-setup.js";
+import {
+	assistModeLabel,
+	assistModeOptions,
+	readAssistMode,
+	writeAssistMode,
+	type AssistMode,
+} from "./task-assist-mode.js";
 import { TASK_SETUP_BRIEF_LIMIT } from "./task-setup-file.js";
 import { readTaskSetupAttachment, TASK_SETUP_ATTACHMENT_ACCEPT, TASK_SETUP_PREVIEW_LIMIT } from "./task-setup-attachment.js";
 import type { FormState } from "./task-form.js";
@@ -25,27 +48,15 @@ import { TaskModelSettings } from "./task-model-settings.js";
 import type { TaskModelChoice } from "../models/model-config-dialog.js";
 
 type Suggestions = components["schemas"]["TaskDraftSuggestions"];
-type DraftField = Exclude<keyof Suggestions, "recommendations">;
-type Idea = { field: DraftField; label?: string; value: string };
 
 const reviewIndex = taskStages.length;
 const stepTitles = [...taskStages.map(({ title }) => title), "核对并创建"];
-const emptyNotes: Record<TaskDraftStage, string> = { overview: "", audience: "", channels: "" };
-const ideaKey = ({ field, value }: Idea) => field + "\u0000" + value;
 
-function hasStageIdeas(stage: TaskDraftStage, form: FormState, data: Suggestions | undefined, excluded: ExcludedChoices): boolean {
-	const ideas = data?.recommendations;
-	if (!ideas) return false;
-	const addable = (field: ChoiceField, values?: readonly string[]) => {
-		const selected = selectedValues(form, field);
-		return (values ?? []).some((value) => !selected.includes(value) && !excluded[field]?.includes(value));
-	};
-	if (stage === "overview")
-		return Boolean((ideas.product && ideas.product.value !== form.product.trim()) ||
-			(!form.objective.trim() && ideas.objectives?.length));
-	if (stage === "audience") return addable("audience", ideas.audience) || addable("sellingPoints", ideas.sellingPoints);
-	return addable("channels", ideas.channels);
-}
+/** 默认只勾原话；模型整理出来的建议默认不勾，由用户自己挑。 */
+const suggestSourceLabel: Record<TaskSuggestion["source"], string> = {
+	quote: "原话摘录",
+	idea: "AI 建议",
+};
 
 export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, saving }: {
 	form: FormState;
@@ -57,8 +68,12 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 }) {
 	const [step, setStep] = useState(0);
 	const [provider, setProvider] = useState<TaskModelChoice>();
+	/** 没选过就为 undefined：首次打开先问一次，选完记下来。 */
+	const [mode, setMode] = useState<AssistMode | undefined>(() => readAssistMode());
+	const [modeDialog, setModeDialog] = useState(false);
 	const [suggestion, setSuggestion] = useState<{ brief: string; data?: Suggestions }>();
-	const [deselectedIdeas, setDeselectedIdeas] = useState<string[]>([]);
+	/** 用户对单条建议的勾选：没记录的按来源给默认值（原话默认勾，AI 建议默认不勾）。 */
+	const [choices, setChoices] = useState<Record<string, boolean>>({});
 	const [returnToReview, setReturnToReview] = useState(false);
 	const [notes, setNotes] = useState(emptyNotes);
 	const [excluded, setExcluded] = useState<ExcludedChoices>({});
@@ -67,9 +82,6 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const [reading, setReading] = useState(false);
 	const [error, setError] = useState("");
 	const [fileError, setFileError] = useState("");
-	const [failed, setFailed] = useState(false);
-	const [useEnteredValues, setUseEnteredValues] = useState(false);
-	const [localStages, setLocalStages] = useState<Partial<Record<TaskDraftStage, boolean>>>({});
 	const busyRef = useRef(false);
 	const fileInput = useRef<HTMLInputElement>(null);
 	const assistId = useId();
@@ -77,57 +89,41 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const [dragging, setDragging] = useState(false);
 	const stage = taskStages[step];
 	const busy = processing || reading || saving;
-	const brief = stage ? stageBrief(form, stage, notes[stage.id]) : "";
+	const stageOnly = mode === "stage";
+	const brief = stageOnly && stage ? stageBrief(form, stage, notes[stage.id]) : setupBrief(form, notes);
 	const remaining = TASK_SETUP_BRIEF_LIMIT - brief.length;
 	const attachment = stage ? attached[stage.id] : undefined;
 	const canUseFileStart = remaining < 0 && Boolean(attachment);
 	const suggestionCurrent = suggestion?.brief === brief ? suggestion : undefined;
-	const recommendations = suggestionCurrent?.data?.recommendations;
-	const productIdea = stage?.id === "overview" && recommendations?.product?.value !== form.product.trim()
-		? recommendations?.product : undefined;
-	const goalIdeas = stage?.id === "overview" && !form.objective.trim() ? recommendations?.objectives ?? [] : [];
 	// 投放方式只作为参考提示，不写入表单：材料里的说法不等于已确定的投放安排。
 	const placementIdeas = stage?.id === "channels"
-		? (recommendations?.placementTypes ?? []).map((value) =>
+		? (suggestionCurrent?.data?.recommendations?.placementTypes ?? []).map((value) =>
 			value === "influencer" ? "达人合作" : value === "seeding" ? "内容种草" : "平台付费广告")
 		: [];
-	const addable = (field: ChoiceField, values?: readonly string[]) => {
-		const selected = selectedValues(form, field);
-		return [...new Set(values ?? [])].filter((value) => !selected.includes(value) && !excluded[field]?.includes(value));
-	};
-	const ideas: Idea[] = [
-		...(productIdea ? [{ field: "product" as const, label: "建议名称", value: productIdea.value }] : []),
-		...goalIdeas.map((value) => ({ field: "objective" as const, value })),
-		...(stage?.id === "audience" ? [
-			...addable("audience", recommendations?.audience).map((value) => ({ field: "audience" as const, label: "人群建议", value })),
-			...addable("sellingPoints", recommendations?.sellingPoints).map((value) => ({ field: "sellingPoints" as const, label: "卖点建议", value })),
-		] : []),
-		...(stage?.id === "channels"
-			? addable("channels", recommendations?.channels).map((value) => ({ field: "channels" as const, label: "渠道建议", value }))
-			: []),
-	];
-	const excerpts = stage && suggestionCurrent?.data ? applyStageSuggestions(form, stage.id, suggestionCurrent.data, excluded) : undefined;
-	const draft = excerpts && productIdea ? { ...excerpts, product: form.product } : excerpts;
-	const additions = stage?.fields.filter((field) => draft && stageValue(draft, field) !== stageValue(form, field)) ?? [];
-	const missingFields = stage?.fields.filter((field) => !stageValue(form, field)) ?? [];
-	const selectedIdeas = ideas.filter((idea) => !deselectedIdeas.includes(ideaKey(idea)));
+	const allItems = suggestionCurrent?.data ? taskSuggestions(form, suggestionCurrent.data, excluded) : [];
+	// 按阶段整理时只显示本阶段的字段；整表单则一次列出全部。
+	const stageFieldNames = new Set<string>(stage ? stage.fields : []);
+	const items = stageOnly && stage ? allItems.filter((item) => stageFieldNames.has(item.field)) : allItems;
+	const isPicked = (item: TaskSuggestion) => choices[suggestionKey(item)] ?? item.source === "quote";
+	const pickedItems = items.filter(isPicked);
+	const missing = stageOnly && stage
+		? stage.fields.filter((field) => !stageValue(form, field))
+		: missingFields(form);
+	const stageMissing = stage ? stage.fields.filter((field) => !stageValue(form, field)) : [];
 
-	function applySuggestions() {
-		if (!stage || !draft) return;
-		let next = { ...draft };
-		const chosenProduct = selectedIdeas.find((idea) => idea.field === "product");
-		if (chosenProduct) next.product = chosenProduct.value;
-		if (!form.objective.trim()) {
-			const chosenGoals = selectedIdeas.filter((idea) => idea.field === "objective").map((idea) => idea.value);
-			if (chosenGoals.length) next.objective = chosenGoals.join("\n");
-		}
-		for (const idea of selectedIdeas) {
-			if (idea.field === "product" || idea.field === "objective") continue;
-			if (!selectedValues(next, idea.field).includes(idea.value))
-				next = withSelectedValue(next, idea.field, idea.value);
-		}
-		onChange(next);
-		setSuggestion({ brief: stageBrief(next, stage, notes[stage.id]) });
+	function applySelected() {
+		if (!pickedItems.length) return;
+		onChange(applyTaskSuggestions(form, pickedItems));
+		setSuggestion(undefined);
+		setChoices({});
+	}
+
+	function chooseMode(next: AssistMode) {
+		writeAssistMode(next);
+		setMode(next);
+		setModeDialog(false);
+		setSuggestion(undefined);
+		setChoices({});
 	}
 
 	function go(index: number, fromReview = false) {
@@ -135,10 +131,8 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 		setReturnToReview(fromReview);
 		setError("");
 		setFileError("");
-		setFailed(false);
-		setUseEnteredValues(false);
 		setSuggestion(undefined);
-		setDeselectedIdeas([]);
+		setChoices({});
 	}
 
 	async function loadFile(file: File) {
@@ -169,70 +163,63 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 		}
 	}
 
-	async function submitStage(preview = false) {
+	/** 一次整理全部阶段：说到哪些字段就给哪些字段，返回后统一勾选。 */
+	async function generate() {
 		if (!stage || busyRef.current || saving) return;
 		setError("");
-		const hasNotes = Boolean(notes[stage.id].trim());
-		const needsExtraction = Boolean(brief) && (preview || (hasNotes && !useEnteredValues && !suggestionCurrent));
-		const useFileStart = preview && canUseFileStart;
-		if (needsExtraction && remaining < 0 && !useFileStart) {
+		const useFileStart = canUseFileStart;
+		if (!brief || (remaining < 0 && !useFileStart)) {
 			setError(canUseFileStart
-				? "资料超过 2,500 字。请先在上方用前 2,500 字生成建议，或编辑预览后提交。"
+				? "资料超过 2,500 字。请先在上方用前 2,500 字生成建议，或编辑预览后重试。"
 				: "说明和选项共超过 2,500 字，请先精简资料。");
 			return;
 		}
-		let nextForm = form;
-		if (needsExtraction) {
-			busyRef.current = true;
-			setProcessing(true);
-			onBusyChange(true);
-			try {
-				const result = await consoleClient.POST("/api/task-drafts/extract", {
-					body: {
-						brief: useFileStart ? brief.slice(0, TASK_SETUP_BRIEF_LIMIT).replace(/[\uD800-\uDBFF]$/, "") : brief,
-						stage: stage.id,
-						...(provider
-							? "connectionId" in provider
-								? { connectionId: provider.connectionId, model: provider.model }
-								: { provider: provider.provider, model: provider.model }
-							: {}),
-					},
-				});
-				if (result.response.status === 409 && result.error?.error === "model_selection_required") {
-					setFailed(true);
-					setError("请先选择一个模型，或按已填写的内容继续。");
-					return;
-				}
-				if (result.response.status === 503) {
-					setFailed(true);
-					setError("当前模型暂时无法整理资料。请检查模型配置、换一个模型重试，或按已填写的内容继续。");
-					return;
-				}
-				if (!result.data) throw new Error("整理服务不可用");
-				if (preview || hasStageIdeas(stage.id, form, result.data, excluded)) {
-					setSuggestion({ brief, data: result.data });
-					setDeselectedIdeas([]);
-					setFailed(false);
-					setUseEnteredValues(false);
-					return;
-				}
-				nextForm = applyStageSuggestions(form, stage.id, result.data, excluded);
-			} catch {
-				setFailed(true);
-				setError("暂时无法整理资料。可以重试，或按已填写的内容继续。");
+		busyRef.current = true;
+		setProcessing(true);
+		onBusyChange(true);
+		try {
+		const result = await consoleClient.POST("/api/task-drafts/extract", {
+				body: {
+					brief: useFileStart ? brief.slice(0, TASK_SETUP_BRIEF_LIMIT).replace(/[\uD800-\uDBFF]$/, "") : brief,
+					...(stageOnly && stage ? { stage: stage.id } : {}),
+					...(provider
+						? "connectionId" in provider
+							? { connectionId: provider.connectionId, model: provider.model }
+							: { provider: provider.provider, model: provider.model }
+						: {}),
+				},
+			});
+			if (result.response.status === 409 && result.error?.error === "model_selection_required") {
+				setSuggestion(undefined);
+				setError("请先选择一个模型，或直接手填。");
 				return;
-			} finally {
-				busyRef.current = false;
-				setProcessing(false);
-				onBusyChange(false);
 			}
+			if (result.response.status === 503) {
+				setSuggestion(undefined);
+				setError("当前模型暂时无法整理资料。请检查模型配置或换一个模型重试；手填不受影响。");
+				return;
+			}
+			if (!result.data) throw new Error("整理服务不可用");
+			setSuggestion({ brief, data: result.data });
+			setChoices({});
+		} catch {
+			setSuggestion(undefined);
+			setError("暂时无法整理资料。可以重试，或直接手填；手填不影响后续步骤。");
+		} finally {
+			busyRef.current = false;
+			setProcessing(false);
+			onBusyChange(false);
 		}
-		if (stage.id === "overview" && !nextForm.product.trim()) {
-			setError("请填写一个产品或服务名称，或在补充资料里明确说明要推广什么。");
+	}
+
+	/** 提交只在本机校验并前进：不再隐式调用模型，也不替用户写入任何建议。 */
+	function submitStage() {
+		if (!stage || busyRef.current || saving) return;
+		setError("");
+		if (stage.id === "overview" && !form.product.trim()) {
+			setError("请先填写产品或服务名称；也可以在上面的说明里写清卖的是什么，再点「生成建议」。");
 			return;
 		}
-		if (nextForm !== form) onChange(nextForm);
-		setLocalStages((previous) => ({ ...previous, [stage.id]: useEnteredValues }));
 		go(returnToReview ? reviewIndex : step + 1);
 	}
 
@@ -243,10 +230,8 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 					<TaskModelSettings selected={provider} disabled={busy} onSelect={(choice) => {
 						setProvider(choice);
 						setSuggestion(undefined);
-						setDeselectedIdeas([]);
+						setChoices({});
 						setError("");
-						setFailed(false);
-						setUseEnteredValues(false);
 					}} />
 				</div>
 				<ol aria-label="填写进度" className="grid grid-cols-2 gap-2 border-b pb-4 sm:grid-cols-4">
@@ -268,16 +253,28 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 						<div className="space-y-1">
 							<h2 className="text-lg font-semibold">{stage.title}</h2>
 							<p className="text-sm text-muted-foreground">{stage.description}</p>
-							{missingFields.length ? (
+							{stageMissing.length ? (
 								<p className="text-xs text-muted-foreground">
-									还待补充：{missingFields.map((field) => fieldLabels[field]).join("、")}。可以直接在下方填写，或补充一句描述后点「生成建议」。
+									还待补充：{stageMissing.map((field) => fieldLabels[field]).join("、")}。可以直接在下方填写，或补充一句描述后点「一次整理全部字段」。
 								</p>
 							) : null}
 						</div>
 						<section key={stage.id} aria-labelledby={assistId} className="space-y-3 rounded-lg border border-primary/25 bg-muted/25 p-4">
-							<div className="space-y-1">
-								<h3 id={assistId} className="text-sm font-semibold">AI 辅助填写</h3>
-								<p className="text-sm text-muted-foreground">写一句话或上传已有资料，生成建议后再核对。</p>
+							<div className="space-y-2">
+								<div className="flex flex-wrap items-center justify-between gap-2">
+									<h3 id={assistId} className="flex items-center gap-1.5 text-sm font-semibold">
+										<img src="/branding/icon-color.svg" alt="" aria-hidden="true" className="size-4" />
+										AI 辅助填写
+									</h3>
+									<Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setModeDialog(true)}>
+										填写方式：{assistModeLabel(mode)} · 更换
+									</Button>
+								</div>
+								<p className="text-sm text-muted-foreground">
+									{mode === "stage"
+										? "写一句话或上传已有资料，只整理本阶段的字段，确认后再往下走。"
+										: "写一句话或上传已有资料，一次整理全部字段，勾选后再核对。"}
+								</p>
 							</div>
 							<div className="space-y-3">
 								<div className="space-y-1 text-sm">
@@ -333,41 +330,68 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 								</p>
 							</div>
 							<Button type="button" disabled={busy || !brief || (remaining < 0 && !canUseFileStart)}
-								onClick={() => void submitStage(true)}>{processing ? "正在整理…" : canUseFileStart ? "用前 2,500 字生成建议" : "生成建议"}</Button>
-							{draft && (additions.length > 0 || ideas.length > 0 || placementIdeas.length > 0) ? (
-								<div className="space-y-2 rounded-md bg-muted/40 p-2 text-sm">
-									<p className="font-medium">待核对建议</p>
-									<p className="text-xs text-muted-foreground">根据你的描述整理，勾选的内容会填入下方表单。</p>
+								onClick={() => void generate()}>{processing
+								? "正在整理…"
+								: canUseFileStart
+									? stageOnly ? "用前 2,500 字整理本阶段" : "用前 2,500 字整理全部"
+									: stageOnly ? "整理本阶段" : "一次整理全部字段"}</Button>
+							{suggestionCurrent ? (
+								<div className="space-y-2 rounded-md bg-muted/40 p-3 text-sm">
+									<p className="font-medium">可填的内容 · 共 {items.length} 条，已选 {pickedItems.length} 条</p>
+									<p className="text-xs text-muted-foreground">
+										按你的说明一次整理出所有字段。原话摘录默认勾选；标“AI 建议”的是模型整理，默认不勾，请先核对。
+									</p>
 									{placementIdeas.length ? <p className="text-xs text-muted-foreground">投放方式参考建议（请自行核对，不会自动填入）：{placementIdeas.join("、")}。</p> : null}
-									{additions.map((field) => <p key={field}>{fieldLabels[field]} · {stageValue(draft, field)}</p>)}
-									{ideas.map((idea) => (
-										<label key={ideaKey(idea)} className="flex items-center gap-2">
-											<input type="checkbox" checked={!deselectedIdeas.includes(ideaKey(idea))} disabled={busy}
-												onChange={(event) => {
-													const key = ideaKey(idea);
-													setDeselectedIdeas((current) => event.target.checked
-														? current.filter((item) => item !== key)
-														: [...current, key]);
-												}} />
-											<span>{idea.label ? idea.label + " · " : ""}{idea.value}</span>
-										</label>
-									))}
-									{productIdea?.evidence ? <p className="text-xs text-muted-foreground">根据原文「{productIdea.evidence}」整理</p> : null}
-									<Button type="button" size="sm"
-										disabled={busy || (!additions.length && selectedIdeas.length === 0)}
-										onClick={applySuggestions}>
-										{ideas.length ? "应用所选建议" : "应用建议"}
-									</Button>
-								</div>
-							) : draft ? <p role="status" className="text-sm">没有可补充的建议。可以在下方直接选择或填写，或把补充说明写得更具体一些。</p> : null}
-							{failed ? (
-								<div className="space-y-2">
-									{error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
-									<label className="flex items-center gap-2 text-sm">
-										<input type="checkbox" checked={useEnteredValues} disabled={busy}
-											onChange={(event) => setUseEnteredValues(event.target.checked)} />
-										本阶段按已填写的内容继续
-									</label>
+									{draftFields.map((field) => ({ field, fieldItems: items.filter((item) => item.field === field) }))
+										.filter(({ fieldItems }) => fieldItems.length > 0)
+										.map(({ field, fieldItems }) => (
+											<fieldset key={field} className="space-y-1">
+												<legend className="text-xs font-medium text-muted-foreground">{fieldLabels[field]}</legend>
+												{fieldItems.map((item) => (
+													<label key={suggestionKey(item)} className="flex items-start gap-2">
+														<input type="checkbox" className="mt-1" checked={isPicked(item)} disabled={busy}
+															onChange={() => setChoices((current) => ({ ...current, [suggestionKey(item)]: !isPicked(item) }))} />
+														<span className="min-w-0 break-words">
+															{item.value}
+															<span className={item.source === "idea"
+																? "ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900"
+																: "ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"}>
+																{suggestSourceLabel[item.source]}
+															</span>
+															{item.evidence ? (
+																<span className="block text-xs text-muted-foreground">根据原文「{item.evidence}」整理</span>
+															) : null}
+														</span>
+													</label>
+												))}
+											</fieldset>
+										))}
+									{items.length ? (
+										<div className="flex flex-wrap gap-2">											<Button type="button" size="sm" disabled={busy || !pickedItems.length} onClick={applySelected}>
+												写入表单（{pickedItems.length}）
+											</Button>
+											<Button type="button" size="sm" variant="ghost" disabled={busy}
+												onClick={() => { setSuggestion(undefined); setChoices({}); }}>都不用</Button>
+										</div>
+									) : null}
+									{missing.length ? (
+										<div className="space-y-1 border-t pt-2">
+											<p className="text-xs font-medium text-muted-foreground">还没整理出来的字段，补一句就能生成：</p>
+											<ul className="space-y-1 text-xs">
+												{missing.map((field) => (
+													<li key={field} className="break-words">
+														<span className="font-medium">{fieldLabels[field]}</span>：{fieldHints[field].hint}
+														<span className="text-muted-foreground">{fieldHints[field].example}</span>
+													</li>
+												))}
+											</ul>
+											{stageOnly ? (
+												<p className="text-xs text-muted-foreground">
+													如果你问的是别的字段（比如「给谁」），可以切到那一步再整理，或在「填写方式」里换成整表单一次给。
+												</p>
+											) : null}
+										</div>
+									) : null}
 								</div>
 							) : null}
 						</section>
@@ -377,7 +401,9 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 								<span>产品或服务名称</span>
 								<Input value={form.product} maxLength={200} disabled={busy} placeholder="例如：新品试用装"
 									onChange={(event) => onChange({ ...form, product: event.target.value })} />
-								<span className="block text-xs font-normal text-muted-foreground">任务唯一必填项，可直接填写或应用上方建议。</span>
+								<span className="block text-xs font-normal text-muted-foreground">
+									任务唯一必填项，可直接填写或应用上方建议。{fieldHints.product.hint}{fieldHints.product.example}
+								</span>
 							</label>
 						) : (
 							<StageChoices key={field} field={field} form={form} disabled={busy} onSelect={(value, chosen) => {
@@ -388,9 +414,12 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 								onChange(withSelectedValue(form, field, value));
 							}} />
 						))}
-						{!failed && error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
+						{error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
 						<p className="text-xs text-muted-foreground">
-							补充说明会在生成建议或提交本阶段时用于整理。还没确定的信息可以暂时留空。
+							{stageOnly
+								? "只有点「整理本阶段」才会把本阶段的说明发送给所选模型；提交本阶段只在本机校验。"
+								: "只有点「一次整理全部字段」才会把三个阶段的说明发送给所选模型；提交本阶段只在本机校验。"}
+							还没确定的信息可以暂时留空。
 						</p>
 						<div className="flex flex-wrap gap-2">
 							<Button type="button" variant="outline" disabled={step === 0 || busy} onClick={() => go(step - 1, returnToReview)}>上一步</Button>
@@ -412,7 +441,6 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 										<h3 className="text-sm font-semibold">{title}</h3>
 										<Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => go(index, true)}>修改{title}</Button>
 									</div>
-									{localStages[id] ? <p className="text-xs text-muted-foreground">本阶段按填写内容记录。</p> : null}
 									<dl className="grid gap-2 text-sm sm:grid-cols-2">
 										{fields.map((field) => (
 											<div key={field} className="min-w-0">
@@ -433,8 +461,51 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 						</div>
 					</div>
 				)}
+				{mode === undefined || modeDialog ? (
+					<AssistModeDialog
+						onChoose={chooseMode}
+						onClose={() => setModeDialog(false)}
+					/>
+				) : null}
 			</CardContent>
 		</Card>
+	);
+}
+
+/** 第一次打开先问填写方式；之后从面板上“更换”随时可以重新选。关掉时按默认方式继续。 */
+function AssistModeDialog({ onChoose, onClose }: {
+	onChoose: (mode: AssistMode) => void;
+	onClose: () => void;
+}) {
+	return (
+		<Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+			<DialogContent>
+				<DialogHeader>
+					<div className="flex items-center gap-2">
+						<img src="/branding/icon-color.svg" alt="" aria-hidden="true" className="size-6" />
+						<DialogTitle>先选一个填写方式</DialogTitle>
+					</div>
+					<DialogCloseButton onClick={onClose} />
+				</DialogHeader>
+				<div className="space-y-3 px-5 py-4">
+					<DialogDescription>
+						两种都能用，只是给建议的节奏不同。选完会记在这台设备上，之后随时能换；先关掉也可以，默认按整表单一次给。
+					</DialogDescription>
+					<div className="grid gap-2 sm:grid-cols-2">
+						{assistModeOptions.map((option) => (
+							<button key={option.id} type="button" onClick={() => onChoose(option.id)}
+								className="flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors hover:border-primary hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+								<span className="flex items-center gap-1.5 text-sm font-semibold">
+									<Sparkles aria-hidden="true" className="size-3.5" />{option.title}
+								</span>
+								<span className="text-xs text-muted-foreground">{option.summary}</span>
+								<span className="text-xs text-muted-foreground">{option.detail}</span>
+							</button>
+						))}
+					</div>
+				</div>
+			</DialogContent>
+		</Dialog>
 	);
 }
 
@@ -460,6 +531,9 @@ function StageChoices({ field, form, disabled, onSelect }: {
 					);
 				})}
 			</div>
+			<p className="text-xs font-normal text-muted-foreground">
+				没有合适的选项，就在上面的说明里写一句。{fieldHints[field].hint}{fieldHints[field].example}
+			</p>
 		</fieldset>
 	);
 }
