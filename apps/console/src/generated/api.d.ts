@@ -930,6 +930,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/validation-checks/{checkId}/reevaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reevaluateValidationCheck"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/choices": {
         parameters: {
             query?: never;
@@ -1864,6 +1880,8 @@ export interface components {
                 };
             };
             sellingPoints: string[];
+            contentDirections?: string[];
+            partners?: string[];
         };
         Limits: {
             maxBudgetChangeRatio: number;
@@ -1898,6 +1916,7 @@ export interface components {
             options: {
                 id: string;
                 label: string;
+                detail?: string;
             }[];
             detailUrl?: string;
         };
@@ -1919,12 +1938,38 @@ export interface components {
             channelId: string;
             from: boolean;
             to: boolean;
+        } | {
+            /** @enum {string} */
+            kind: "audience";
+            /** @enum {string} */
+            op: "add" | "remove";
+            item: string;
+        } | {
+            /** @enum {string} */
+            kind: "sellingPoint";
+            /** @enum {string} */
+            op: "add" | "remove";
+            item: string;
+        } | {
+            /** @enum {string} */
+            kind: "contentDirection";
+            /** @enum {string} */
+            op: "add" | "remove";
+            item: string;
+        } | {
+            /** @enum {string} */
+            kind: "partner";
+            /** @enum {string} */
+            op: "add" | "remove";
+            item: string;
         };
         Candidate: {
             id: string;
             label: string;
             changes: components["schemas"]["Change"][];
             complete: boolean;
+            hypothesis?: string;
+            validationPlan?: string;
         };
         Actor: {
             /** @enum {string} */
@@ -2061,7 +2106,31 @@ export interface components {
             version: number;
             strategy: components["schemas"]["Strategy"];
             changes: components["schemas"]["Change"][];
+            hypothesis?: string;
+            validationPlan?: string;
             createdAt: string;
+        };
+        ValidationCheck: {
+            id: string;
+            ownerId: string;
+            taskId: string;
+            taskVersion: number;
+            sessionId: string;
+            snapshotVersion: number;
+            hypothesis?: string;
+            validationPlan: string;
+            /** @enum {string} */
+            metricKey: "cost_per_consultation";
+            dueAt: string;
+            /** @enum {string} */
+            status: "pending" | "observed" | "inconclusive" | "cancelled";
+            comparisonResultId?: string;
+            evidenceRef?: components["schemas"]["EvidenceRef"];
+            /** @enum {string} */
+            observedOutcome?: "below_threshold" | "above_threshold";
+            reason?: string;
+            createdAt: string;
+            observedAt?: string;
         };
         JobTask: {
             /** @enum {string} */
@@ -2080,6 +2149,10 @@ export interface components {
             /** @enum {string} */
             kind: "send_delivery" | "send_investigation_decision";
             deliveryId: string;
+        } | {
+            /** @enum {string} */
+            kind: "evaluate_validation_check";
+            checkId: string;
         };
         Job: {
             id: string;
@@ -2100,6 +2173,7 @@ export interface components {
             deliveries: components["schemas"]["Delivery"][];
             jobs: components["schemas"]["Job"][];
             snapshots: components["schemas"]["Snapshot"][];
+            validationChecks: components["schemas"]["ValidationCheck"][];
         };
         EvidenceImportInput: {
             /** @enum {integer} */
@@ -6235,6 +6309,64 @@ export interface operations {
             };
             /** @description Request failed */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reevaluateValidationCheck: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                checkId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationCheck"];
+                };
+            };
+            /** @description Request failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request failed */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request failed */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request failed */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

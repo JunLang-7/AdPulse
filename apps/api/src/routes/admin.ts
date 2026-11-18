@@ -9,7 +9,7 @@ import type {
 	TaskInput,
 	Transaction,
 } from "@adpluse/core";
-import { LifecycleDeletionError, ModelConnectionError, modelConnectionProtocols, placementTypes, taskLifecycleIn, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
+import { LifecycleDeletionError, ModelConnectionError, ValidationCheckError, modelConnectionProtocols, placementTypes, taskLifecycleIn, normalizeModelBaseUrl, validateModelConnectionInput, type ModelConnectionInput, type ModelConnectionProtocol } from "@adpluse/core";
 import { findCatalogModel, taskDraftBriefMaxLength, taskDraftStages, type Runtime, type TaskDraftSelection } from "@adpluse/runtime";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
@@ -40,8 +40,16 @@ const strategy = z
 				})),
 		),
 		sellingPoints: z.array(z.string()).max(100),
+		contentDirections: z.array(z.string()).max(100).optional(),
+		partners: z.array(z.string()).max(100).optional(),
 	})
-	.strict();
+	.strict()
+	// exactOptionalPropertyTypes：显式 undefined 不能传给内核的可选字段，统一在边界剔除。
+	.transform(({ contentDirections, partners, ...rest }) => ({
+		...rest,
+		...(contentDirections === undefined ? {} : { contentDirections }),
+		...(partners === undefined ? {} : { partners }),
+	}));
 const sessionInput = z
 	.object({
 		taskRef: z
@@ -372,6 +380,8 @@ async function sessionForJob(
 		return (await tx.deliveries.get(job.task.deliveryId))?.sessionId ?? null;
 	if (job.task.kind === "prepare_investigation_alert_session")
 		return (await tx.investigationAlerts.get(job.task.alertId))?.sessionId ?? null;
+	if (job.task.kind === "evaluate_validation_check")
+		return (await tx.validationChecks.get(job.task.checkId))?.sessionId ?? null;
 	// 日汇总与假设初判不属于任何会话。
 	if (job.task.kind === "send_digest") return null;
 	if (job.task.kind === "prepare_hypothesis_verdicts") return null;
@@ -903,6 +913,10 @@ export async function handleAdmin(
 				(d) => d.sessionId === id,
 			);
 			const deliveryIds = new Set(deliveries.map((d) => d.id));
+			const validationChecks = (await tx.validationChecks.listByOwner(userId))
+				.filter((check) => check.sessionId === id)
+				.sort((a, b) => a.snapshotVersion - b.snapshotVersion);
+			const checkIds = new Set(validationChecks.map((check) => check.id));
 			const jobs = (await tx.jobs.all()).filter((j) =>
 				j.task.kind === "prepare_round"
 					? j.task.sessionId === id
@@ -910,9 +924,11 @@ export async function handleAdmin(
 						? inboxIds.has(j.task.inboxId)
 						: j.task.kind === "send_delivery" || j.task.kind === "send_investigation_decision"
 							? deliveryIds.has(j.task.deliveryId)
-							: j.task.kind === "send_digest" || j.task.kind === "prepare_hypothesis_verdicts"
-								? false
-								: j.task.alertId === session.investigationAlertId,
+							: j.task.kind === "evaluate_validation_check"
+								? checkIds.has(j.task.checkId)
+								: j.task.kind === "send_digest" || j.task.kind === "prepare_hypothesis_verdicts"
+									? false
+									: j.task.alertId === session.investigationAlertId,
 			);
 			return {
 				session,
@@ -921,6 +937,7 @@ export async function handleAdmin(
 				inbox,
 				deliveries,
 				jobs,
+				validationChecks,
 				snapshots: (await tx.snapshots.all())
 					.filter((s) => s.sessionId === id)
 					.sort((a, b) => a.version - b.version),
@@ -937,6 +954,19 @@ export async function handleAdmin(
 			actor: { kind: "console", userId },
 		});
 		return json(res, 202, { inboxId: inbox.id, status: inbox.status });
+	}
+	const reevaluate = path.match(
+		/^\/api\/validation-checks\/([^/]+)\/reevaluate$/,
+	);
+	if (reevaluate?.[1] && req.method === "POST") {
+		const id = decodeURIComponent(reevaluate[1]);
+		try {
+			return json(res, 200, await runtime.validationChecks.reevaluate(userId, id));
+		} catch (error) {
+			if (error instanceof ValidationCheckError)
+				throw new HttpError(error.status, error.message);
+			throw error;
+		}
 	}
 	if (path.startsWith("/api/choices/") && req.method === "GET") {
 		const id = decodeURIComponent(path.slice("/api/choices/".length));

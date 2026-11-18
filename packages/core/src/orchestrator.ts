@@ -2,11 +2,20 @@ import {
 	admitDecisionIn,
 	type DecisionAccountResolver,
 } from "./decision-delivery.js";
+import { MAX_CANDIDATE_RATIONALE_LENGTH } from "./domain/decisionCard.js";
 import type { Limits, Signal, Strategy } from "./domain/strategy.js";
-import { applyChanges, validateStrategy } from "./domain/strategy.js";
+import {
+	applyChanges,
+	isMonetaryChange,
+	validateStrategy,
+} from "./domain/strategy.js";
 import { invalidateAlertCandidate } from "./investigation-alerts.js";
 import type { Actor, ChoiceCommand, Recipient } from "./ports/channel.js";
-import type { PolicyEngine, Proposal } from "./ports/policyEngine.js";
+import type {
+	PolicyEngine,
+	Proposal,
+	ValidationCheckContext,
+} from "./ports/policyEngine.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
 	Delivery,
@@ -16,6 +25,7 @@ import type {
 	Session,
 	TaskVersion,
 } from "./state/model.js";
+import { createValidationCheckIn } from "./validation-checks.js";
 
 export interface StartSession {
 	requestId: string;
@@ -273,7 +283,7 @@ export class Orchestrator {
 			if (
 				session.taskRef &&
 				!session.monetarySuggestionsAllowed &&
-				candidate.changes.some((change) => change.kind !== "enabled")
+				candidate.changes.some(isMonetaryChange)
 			)
 				return reject("unconfirmed_monetary_semantics");
 
@@ -297,6 +307,13 @@ export class Orchestrator {
 				version,
 				strategy: next,
 				changes: candidate.changes,
+				// 假设/验证说明随快照冻结：事后能核对“当时为什么改、准备怎么验证”。
+				...(candidate.hypothesis
+					? { hypothesis: candidate.hypothesis }
+					: {}),
+				...(candidate.validationPlan
+					? { validationPlan: candidate.validationPlan }
+					: {}),
 				createdAt: this.now(),
 			});
 			await tx.sessions.put({
@@ -304,6 +321,13 @@ export class Orchestrator {
 				strategy: next,
 				version,
 				status: candidate.complete ? "completed" : "planning",
+			});
+			// 已应用变更 + 验证计划 + 完整任务口径 → 建立到期检查点，仍不自动行动。
+			await createValidationCheckIn(tx, {
+				session,
+				candidate,
+				snapshotVersion: version,
+				at: this.now(),
 			});
 			if (investigationAlert) {
 				const deferred = candidate.id === "await_evidence";
@@ -365,6 +389,9 @@ export class Orchestrator {
 		)
 			return;
 		// Slow model calls outside the transaction; commit only if the input version is still current.
+		const validationChecks = snapshot.investigationAlertId
+			? []
+			: await this.validationChecksFor(snapshot);
 		const proposal = snapshot.investigationAlertId
 			? {
 					card: {
@@ -383,6 +410,7 @@ export class Orchestrator {
 					limits: snapshot.limits,
 					signal: snapshot.signal,
 					roundNo: snapshot.roundNo + 1,
+					...(validationChecks.length ? { validationChecks } : {}),
 				});
 		this.validateProposal(proposal, snapshot);
 		await this.storage.transaction(async (tx) => {
@@ -399,7 +427,22 @@ export class Orchestrator {
 			const roundNo = session.roundNo + 1;
 			const card = {
 				...proposal.card,
-				options: proposal.candidates.map(({ id, label }) => ({ id, label })),
+				options: proposal.candidates.map(
+					({ id, label, hypothesis, validationPlan }) => ({
+						id,
+						label,
+						...(hypothesis || validationPlan
+							? {
+									detail: [
+										hypothesis ? `假设：${hypothesis}` : "",
+										validationPlan ? `验证：${validationPlan}` : "",
+									]
+										.filter(Boolean)
+										.join("；"),
+								}
+							: {}),
+					}),
+				),
 			};
 			const alert = session.investigationAlertId
 				? await tx.investigationAlerts.get(session.investigationAlertId)
@@ -497,6 +540,33 @@ export class Orchestrator {
 		});
 	}
 
+	/** 只把同一任务最近的检查点交给策略层，限制条数，避免上下文无界增长。 */
+	private async validationChecksFor(
+		session: Session,
+	): Promise<ValidationCheckContext[]> {
+		const taskRef = session.taskRef;
+		if (!taskRef) return [];
+		const checks = await this.storage.transaction((tx) =>
+			tx.validationChecks.listByOwner(session.ownerId),
+		);
+		return checks
+			.filter((check) => check.taskId === taskRef.taskId)
+			.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+			.slice(0, 5)
+			.map((check) => ({
+				id: check.id,
+				snapshotVersion: check.snapshotVersion,
+				validationPlan: check.validationPlan,
+				dueAt: check.dueAt,
+				status: check.status,
+				...(check.hypothesis ? { hypothesis: check.hypothesis } : {}),
+				...(check.observedOutcome
+					? { observedOutcome: check.observedOutcome }
+					: {}),
+				...(check.reason ? { reason: check.reason } : {}),
+			}));
+	}
+
 	private validateProposal(proposal: Proposal, session: Session): void {
 		if (
 			!proposal?.card?.title ||
@@ -515,7 +585,7 @@ export class Orchestrator {
 			if (
 				session.taskRef &&
 				!session.monetarySuggestionsAllowed &&
-				candidate.changes?.some((change) => change.kind !== "enabled")
+				candidate.changes?.some(isMonetaryChange)
 			)
 				throw new Error("unconfirmed task rules prohibit monetary suggestions");
 			if (
@@ -525,6 +595,19 @@ export class Orchestrator {
 				typeof candidate.complete !== "boolean"
 			) {
 				throw new Error("invalid candidate");
+			}
+			// 可选的假设/验证说明也要守边界：单行、去空白、有上限，避免卡片被撑爆。
+			for (const field of ["hypothesis", "validationPlan"] as const) {
+				const value = candidate[field];
+				if (value === undefined) continue;
+				if (
+					typeof value !== "string" ||
+					!value.trim() ||
+					value !== value.trim() ||
+					value.length > MAX_CANDIDATE_RATIONALE_LENGTH ||
+					/[\u0000-\u001f]/.test(value)
+				)
+					throw new Error("invalid candidate rationale");
 			}
 			if (candidate.changes.length && proposal.card.evidence.length === 0)
 				throw new Error("changes require evidence");

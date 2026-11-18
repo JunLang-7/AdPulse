@@ -17,6 +17,7 @@ import {
 	ModelConnectionService,
 	Orchestrator,
 	SubscriptionService,
+	ValidationCheckService,
 	resolveActiveIdentity,
 	SOURCE_DEFINITIONS,
 	SourceService,
@@ -139,6 +140,7 @@ export function compose(
 	const notificationQueue = new NotificationQueue(storage);
 	const digestScheduler = new DigestScheduler(storage, subscriptions, notificationQueue);
 	const lifecycleCleanup = new LifecycleCleanupService(storage);
+	const validationChecks = new ValidationCheckService(storage);
 	// 目的地平台 → 渠道账号：只匹配声明了同一身份作用域的连接，避免把飞书消息发到别的账号。
 	const platformAccounts = new Map<string, string>();
 	for (const account of accounts)
@@ -153,6 +155,7 @@ export function compose(
 		marketEvents: new MarketEventService(storage),
 		hypotheses: new HypothesisService(storage),
 		comparisons,
+		validationChecks,
 		investigationAlerts,
 		notifications,
 		worker: new Worker(
@@ -175,6 +178,7 @@ export function compose(
 			lifecycleCleanup,
 			3_600_000,
 			options.hypothesisVerdicts,
+			validationChecks,
 		),
 	};
 }

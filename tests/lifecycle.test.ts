@@ -337,6 +337,29 @@ test("在线清理：到期前不动数据，到期后按清单删除任务全�
 	await new InvestigationAlertService(f.storage, f.clock).evaluateComparison(f.owner, comparison.id);
 	const manifest = (await f.tasks.delete(f.owner, f.task.taskId)).manifest;
 	const cleanup = new LifecycleCleanupService(f.storage, f.clock);
+	const checkId = `${crypto.randomUUID()}:1`;
+	await f.storage.transaction(async (tx) => {
+		await tx.validationChecks.put({
+			id: checkId,
+			ownerId: f.owner,
+			taskId: f.task.taskId,
+			taskVersion: 1,
+			sessionId: "session-cleanup",
+			snapshotVersion: 1,
+			validationPlan: "观察 7 天咨询成本",
+			metricKey: "cost_per_consultation",
+			dueAt: manifest.deadlineAt,
+			status: "pending",
+			createdAt: manifest.requestedAt,
+		});
+		await tx.jobs.put({
+			id: `validation:${checkId}`,
+			task: { kind: "evaluate_validation_check", checkId },
+			status: "pending",
+			runAt: manifest.deadlineAt,
+			attempts: 0,
+		});
+	});
 
 	// 到期前（6 天 23 小时）不清理。
 	f.setTime(new Date(Date.parse(manifest.requestedAt) + 7 * MS_PER_DAY - 60_000).toISOString());
@@ -353,6 +376,8 @@ test("在线清理：到期前不动数据，到期后按清单删除任务全�
 	assert.ok((result.removed.comparisonResults ?? 0) >= 1);
 	assert.ok((result.removed.investigationAlerts ?? 0) >= 1);
 	assert.ok((result.removed.notificationSelections ?? 0) >= 1);
+	assert.equal(result.removed.validationChecks, 1, "检查点随任务清理");
+	assert.ok((result.removed.jobs ?? 0) >= 1, "到期评估任务一并清理");
 
 	const remaining = await f.storage.transaction(async (tx) => ({
 		tasks: (await tx.tasks.all()).filter((row) => row.id === f.task.taskId),
@@ -360,6 +385,10 @@ test("在线清理：到期前不动数据，到期后按清单删除任务全�
 		evidence: (await tx.evidenceHeads.all()).filter((row) => row.taskId === f.task.taskId),
 		alerts: (await tx.investigationAlerts.all()).filter((row) => row.taskId === f.task.taskId),
 		selections: (await tx.notificationSelections.all()).filter((row) => row.taskId === f.task.taskId),
+		checks: (await tx.validationChecks.all()).filter((row) => row.taskId === f.task.taskId),
+		validationJobs: (await tx.jobs.all()).filter(
+			(job) => job.task.kind === "evaluate_validation_check" && job.task.checkId === checkId,
+		),
 	}));
 	for (const [name, rows] of Object.entries(remaining)) assert.deepEqual(rows, [], `${name} 应被清理`);
 	const cleaned = (await f.storage.transaction((tx) => tx.lifecycleDeletions.get(manifest.id)))!;
