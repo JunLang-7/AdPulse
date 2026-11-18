@@ -283,6 +283,17 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (16)",
 				);
 			}
+			if (!current.has(17)) {
+				// 用户自加的企业站点（每人多个；同一人同一 host 唯一）。
+				await this.createEntityTable(client, "userSources");
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_user_source_host
+					ON adpulse_userSources ((data->>'ownerId'), (data->>'host'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_user_source_owner
+					ON adpulse_userSources ((data->>'ownerId'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (17)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

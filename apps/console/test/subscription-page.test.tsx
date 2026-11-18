@@ -62,31 +62,18 @@ function renderPage(): void {
 	);
 }
 
-const openConfirm = async (): Promise<void> => {
-	fireEvent.click(await screen.findByRole("button", { name: "配置并开启" }));
-	await screen.findByText("开启前请确认");
-};
-
-test("订阅页：开启请求在途时禁用「暂不开启」", async () => {
+test("订阅页：一步开启推送，提交中不能重复点击", async () => {
 	serve(defaults, {
 		// 永不返回：模拟慢请求，界面必须停留在「提交中」。
 		"PUT /api/me/subscription/settings": () => new Promise<Response>(() => {}),
 	});
 	renderPage();
-	await openConfirm();
 
-	fireEvent.click(screen.getByRole("button", { name: "确认开启" }));
+	const push = await screen.findByRole("button", { name: "开启推送" });
+	fireEvent.click(push);
 
-	const dismiss = (await screen.findByRole("button", {
-		name: /请稍候/,
-	})) as HTMLButtonElement;
 	assert.equal(
-		dismiss.disabled,
-		true,
-		"开启请求在途必须禁用「暂不开启」，否则会关掉确认区却让请求落库",
-	);
-	assert.equal(
-		(screen.getByRole("button", { name: "正在提交…" }) as HTMLButtonElement)
+		(screen.getByRole("button", { name: "正在开启推送…" }) as HTMLButtonElement)
 			.disabled,
 		true,
 		"提交中不能重复点击开启",
@@ -100,9 +87,8 @@ test("订阅页：开启失败（409）必须显示可见提示并清空旧的�
 			json({ error: "subscription_conflict" }, 409),
 	});
 	renderPage();
-	await openConfirm();
 
-	fireEvent.click(screen.getByRole("button", { name: "确认开启" }));
+	fireEvent.click(await screen.findByRole("button", { name: "开启推送" }));
 
 	const alert = await screen.findByRole("alert");
 	assert.match(alert.textContent ?? "", /其他标签页修改，请刷新/);
@@ -111,9 +97,58 @@ test("订阅页：开启失败（409）必须显示可见提示并清空旧的�
 		null,
 		"失败时不能同时显示上一次的成功提示",
 	);
+	cleanup();
+});
+
+test("三步引导：未确认地址时后续步骤锁定，确认地址调用对应接口", async () => {
+	// 初始状态：地址未确认、无授权记录，三步全未完成。
+	let status: {
+		destination: { status: string } | null;
+		consent: { status: string; version: number } | null;
+		canSendProactive: boolean;
+	} = { destination: null, consent: null, canSendProactive: false };
+	const { calls } = serve(
+		{
+			"GET /api/me/subscription": () => json(subscription),
+			"GET /api/me/notification-status": () => json(status),
+			"GET /api/tasks": () => json({ items: [] }),
+		},
+		{
+			"PUT /api/me/notification-destination": () => {
+				status = {
+					destination: { status: "verified" },
+				consent: null,
+					canSendProactive: false,
+				};
+				return json(status);
+			},
+		},
+	);
+	renderPage();
+
+	const step1 = await screen.findByRole("button", { name: "确认地址" });
+	// 引导第 3 步：一步点击开启，无额外确认卡。
 	assert.equal(
-		screen.queryByText("已选择暂不开启；不会发送任何主动推送。"),
-		null,
+		(screen.getByRole("button", { name: "同意接收" }) as HTMLButtonElement)
+			.disabled,
+		true,
+		"地址未确认时第 2 步必须锁定",
+	);
+	assert.equal(
+		(screen.getByRole("button", { name: "开启推送" }) as HTMLButtonElement)
+			.disabled,
+		true,
+		"前置未完成时第 3 步必须锁定",
+	);
+
+	fireEvent.click(step1);
+	await screen.findByText("已确认单聊地址（第 1 步完成）。");
+	assert.equal(calls.includes("PUT /api/me/notification-destination"), true);
+	assert.equal(
+		(screen.getByRole("button", { name: "同意接收" }) as HTMLButtonElement)
+			.disabled,
+		false,
+		"地址确认后第 2 步应解锁",
 	);
 	cleanup();
 });
@@ -153,7 +188,7 @@ test("订阅页：本地校验拦住非法时段，不发出请求", async () =>
 	cleanup();
 });
 
-test("决策卡偏好：浏览与取消不写入，明确确认只提交独立字段", async () => {
+test("决策卡偏好：一步开启，只提交独立字段", async () => {
 	let stored = {
 		...subscription,
 		settings: { ...subscription.settings, decisionCards: { enabled: false } },
@@ -175,23 +210,16 @@ test("决策卡偏好：浏览与取消不写入，明确确认只提交独立�
 		},
 	});
 	renderPage();
-	const open = await screen.findByRole("button", {
-		name: "了解并单独确认决策卡",
-	});
 	assert.equal(calls.includes("PUT /api/me/subscription/settings"), false);
-	fireEvent.click(open);
-	fireEvent.click(screen.getByRole("button", { name: "暂不确认决策卡" }));
-	assert.equal(calls.includes("PUT /api/me/subscription/settings"), false);
-	fireEvent.click(screen.getByRole("button", { name: "了解并单独确认决策卡" }));
-	fireEvent.click(screen.getByRole("button", { name: "确认记录决策卡偏好" }));
-	await screen.findByText(
-		"已记录决策卡确认；投递仍需服务端启用与发送前检查，不补发历史候选。",
+	fireEvent.click(
+		await screen.findByRole("button", { name: "开启决策卡推送" }),
 	);
-	await screen.findByRole("button", { name: "关闭决策卡偏好" });
+	await screen.findByText("已开启决策卡推送。");
+	await screen.findByRole("button", { name: "关闭决策卡推送" });
 	assert.deepEqual(bodies, [
 		{ expectedVersion: 3, decisionCardsEnabled: true },
 	]);
-	assert.ok(screen.getByRole("button", { name: "配置并开启" }));
+	assert.ok(screen.getByRole("button", { name: "开启推送" }));
 	cleanup();
 });
 
@@ -201,20 +229,14 @@ test("决策卡偏好：提交中不可撤回确认或重复提交", async () =>
 	});
 	renderPage();
 	fireEvent.click(
-		await screen.findByRole("button", { name: "了解并单独确认决策卡" }),
+		await screen.findByRole("button", { name: "开启决策卡推送" }),
 	);
-	fireEvent.click(screen.getByRole("button", { name: "确认记录决策卡偏好" }));
 	assert.equal(
 		(
 			await screen.findByRole<HTMLButtonElement>("button", {
-				name: "正在记录…",
+				name: "正在提交…",
 			})
 		).disabled,
-		true,
-	);
-	assert.equal(
-		screen.getByRole<HTMLButtonElement>("button", { name: "暂不确认决策卡" })
-			.disabled,
 		true,
 	);
 	cleanup();
@@ -227,15 +249,14 @@ test("决策卡偏好：冲突时显示失败且不冒充已开启", async () =>
 	});
 	renderPage();
 	fireEvent.click(
-		await screen.findByRole("button", { name: "了解并单独确认决策卡" }),
+		await screen.findByRole("button", { name: "开启决策卡推送" }),
 	);
-	fireEvent.click(screen.getByRole("button", { name: "确认记录决策卡偏好" }));
 	assert.match(
 		(await screen.findByRole("alert")).textContent ?? "",
 		/其他标签页修改，请刷新/,
 	);
-	assert.equal(screen.queryByText("已记录单独确认"), null);
-	assert.ok(screen.getByText("尚未单独确认"));
+	assert.equal(screen.queryByText("已开启决策卡推送。"), null);
+	assert.ok(screen.getByRole("button", { name: "开启决策卡推送" }));
 	cleanup();
 });
 
@@ -265,9 +286,9 @@ test("决策卡偏好：关闭只提交独立字段，不关闭日汇总", async
 	});
 	renderPage();
 	fireEvent.click(
-		await screen.findByRole("button", { name: "关闭决策卡偏好" }),
+		await screen.findByRole("button", { name: "关闭决策卡推送" }),
 	);
-	await screen.findByText("已关闭决策卡偏好；日汇总设置不变。");
+	await screen.findByText("已关闭决策卡推送；日汇总设置不变。");
 	assert.deepEqual(bodies, [
 		{ expectedVersion: 3, decisionCardsEnabled: false },
 	]);

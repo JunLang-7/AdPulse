@@ -2,6 +2,7 @@
 // 采集到的公开列表条目只作为「待确认线索」出现在本人控制台，不自动建事件、不自动推送。
 // 关联依据是 allowlist 里声明的「站点 → 主体」映射，不是标题或域名推断。
 import { SOURCE_DEFINITIONS, SOURCE_KEYS } from "./sources.js";
+import { userSourceKey } from "./user-sources.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 
 export interface SourceLead {
@@ -75,12 +76,22 @@ export class SourceLeadService {
 	private async sourcesIn(tx: Transaction, ownerId: string): Promise<SourceLeadSource[]> {
 		const settings = await tx.subscriptionSettings.get(ownerId);
 		const enabled = new Set(settings?.sourceFeeds ?? []);
-		return SOURCE_KEYS.map((key) => ({
-			key,
-			label: SOURCE_DEFINITIONS[key]!.label,
-			subject: SOURCE_DEFINITIONS[key]!.subject,
-			enabled: enabled.has(key),
+		// 用户自加站点：登记即开启，主体来自登记时的声明，不是标题推断。
+		const userAdded = (await tx.userSources.listByOwner(ownerId)).map((source) => ({
+			key: userSourceKey(source.id),
+			label: source.label,
+			subject: source.subject,
+			enabled: source.status === "active",
 		}));
+		return [
+			...SOURCE_KEYS.map((key) => ({
+				key,
+				label: SOURCE_DEFINITIONS[key]!.label,
+				subject: SOURCE_DEFINITIONS[key]!.subject,
+				enabled: enabled.has(key),
+			})),
+			...userAdded,
+		];
 	}
 
 	/**
@@ -151,11 +162,14 @@ export class SourceLeadService {
 				.slice(0, limit)
 				.map((item): SourceLead => {
 					const definition = SOURCE_DEFINITIONS[item.sourceKey];
+					const userSource = item.sourceKey.startsWith("user:")
+						? sources.find((source) => source.key === item.sourceKey)
+						: undefined;
 					const eventId = converted.get(urlKey(item.itemUrl) ?? "");
 					return {
 						sourceKey: item.sourceKey,
-						sourceLabel: definition?.label ?? item.sourceKey,
-						subject: definition?.subject ?? { kind: "brand", name: item.sourceKey },
+						sourceLabel: definition?.label ?? userSource?.label ?? item.sourceKey,
+						subject: definition?.subject ?? userSource?.subject ?? { kind: "brand", name: item.sourceKey },
 						itemId: item.id,
 						title: item.title,
 						url: item.itemUrl,

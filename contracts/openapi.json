@@ -195,6 +195,74 @@
         }
       }
     },
+    "/api/market-events/read-source": {
+      "post": {
+        "operationId": "readMarketEventSource",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "url": { "type": "string", "maxLength": 2000 }
+                },
+                "required": ["url"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "title": { "type": ["string", "null"] },
+                    "content": { "type": "string" }
+                  },
+                  "required": ["title", "content"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Source read failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/market-events/{eventId}": {
       "parameters": [
         {
@@ -974,6 +1042,136 @@
             }
           },
           "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/me/user-sources": {
+      "get": {
+        "operationId": "listUserSources",
+        "summary": "本人登记的企业站点",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": { "type": "array", "items": { "$ref": "#/components/schemas/UserSource" } }
+                  },
+                  "required": ["items"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "operationId": "addUserSource",
+        "summary": "登记企业站点并立即采集一次",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "label": { "type": "string", "maxLength": 200 },
+                  "listUrl": { "type": "string", "maxLength": 2000 },
+                  "subject": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "type": "string", "enum": ["brand", "competitor"] },
+                      "name": { "type": "string", "maxLength": 200 }
+                    },
+                    "required": ["kind", "name"]
+                  }
+                },
+                "required": ["label", "listUrl", "subject"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "source": { "$ref": "#/components/schemas/UserSource" }
+                  },
+                  "required": ["source"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid request" },
+          "401": { "description": "Unauthorized" },
+          "409": { "description": "Host already added" }
+        }
+      }
+    },
+    "/api/me/user-sources/{sourceId}/refresh": {
+      "post": {
+        "operationId": "refreshUserSource",
+        "summary": "立即采集一次该站点的列表页",
+        "parameters": [
+          { "name": "sourceId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outcome": { "type": "string", "enum": ["ok", "failed"] },
+                    "created": { "type": "integer" },
+                    "updated": { "type": "integer" },
+                    "reason": { "type": ["string", "null"] }
+                  },
+                  "required": ["outcome", "created", "updated", "reason"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/api/me/user-sources/{sourceId}": {
+      "delete": {
+        "operationId": "deleteUserSource",
+        "summary": "删除登记的站点及其条目",
+        "parameters": [
+          { "name": "sourceId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "ok": { "type": "boolean" } },
+                  "required": ["ok"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Not found" }
         }
       }
     },
@@ -2641,6 +2839,24 @@
           "convertedEventId": { "type": "string", "description": "本人已录入同 URL 事件时给出；不表示已采纳或已核验" }
         },
         "required": ["sourceKey", "sourceLabel", "subject", "itemId", "title", "url", "publishedAt", "firstSeenAt", "lastSeenAt"],
+        "additionalProperties": false
+      },
+      "UserSource": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "ownerId": { "type": "string" },
+          "label": { "type": "string" },
+          "host": { "type": "string" },
+          "listUrl": { "type": "string" },
+          "subject": { "$ref": "#/components/schemas/SourceLeadSubject" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "lastRefreshAt": { "type": ["string", "null"], "format": "date-time" },
+          "lastOutcome": { "type": ["string", "null"], "enum": ["ok", "failed", null] },
+          "lastReason": { "type": ["string", "null"] },
+          "status": { "type": "string", "enum": ["active", "stopped"] }
+        },
+        "required": ["id", "ownerId", "label", "host", "listUrl", "subject", "createdAt", "lastRefreshAt", "lastOutcome", "lastReason", "status"],
         "additionalProperties": false
       },
       "SourceFeedStatus": {

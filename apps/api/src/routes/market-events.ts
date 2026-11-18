@@ -1,8 +1,38 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Runtime } from "@adpluse/runtime";
-import { MarketEventError } from "@adpluse/core";
+import { HttpSourceFetcher, type Runtime } from "@adpluse/runtime";
+import { MarketEventError, SOURCE_DEFINITIONS } from "@adpluse/core";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
+
+/** 允许读取原文的主机：与采集 allowlist 双向一致，不新增范围。 */
+const SOURCE_HOSTS = [
+	...new Set(Object.values(SOURCE_DEFINITIONS).flatMap((s) => s.allowedHosts)),
+];
+
+/** 从官网 HTML 提取可读正文：去脚本/样式/标签，折叠空白；只用于预填，不替代本人核对。 */
+function htmlToText(html: string): string {
+	const cleaned = html
+		.replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, " ")
+		.replace(/<style\b[^>]*>[\s\S]*?<\/style>/giu, " ")
+		.replace(/<!--[^-]*-->/gu, " ")
+		.replace(/<[^>]+>/gu, " ")
+		.replace(/&nbsp;/giu, " ")
+		.replace(/&amp;/giu, "&")
+		.replace(/&lt;/giu, "<")
+		.replace(/&gt;/giu, ">")
+		.replace(/&quot;/giu, '"')
+		.replace(/&#39;/gu, "'");
+	return cleaned.replace(/\s+/gu, " ").trim().slice(0, 30_000);
+}
+
+function htmlTitle(html: string): string | null {
+	const match = /<title[^>]*>([\s\S]*?)<\/title>/iu.exec(html);
+	if (!match) return null;
+	const title = htmlToText(match[1] ?? "");
+	return title ? title.slice(0, 200) : null;
+}
+
+const readSourceInput = z.object({ url: z.string().max(2000) }).strict();
 
 const nonBlank = (max: number) => z.string().trim().min(1).max(max);
 const citation = z.object({ sourceIndex: z.number().int().min(0).max(9), quote: nonBlank(2000) }).strict().nullable();
@@ -23,6 +53,31 @@ const input = z.object({
 const revision = z.object({ expectedVersion: z.number().int().min(1), event: input, changeReason: nonBlank(1000) }).strict();
 
 export async function handleMarketEvents(req: IncomingMessage, res: ServerResponse, runtime: Runtime, ownerId: string, path: string): Promise<boolean> {
+	if (path === "/api/market-events/read-source" && req.method === "POST") {
+		const { url } = readSourceInput.parse(await readJson(req));
+		let target: URL;
+		try {
+			target = new URL(url);
+		} catch {
+			throw new HttpError(400, "invalid url");
+		}
+		// 内置 allowlist + 本人已登记的用户站点主机；他人登记的主机不在这份名单里。
+		const userHosts = await runtime.storage.transaction((tx) =>
+			tx.userSources.listByOwner(ownerId),
+		);
+		const allowed = new Set([...SOURCE_HOSTS, ...userHosts.map((s) => s.host)]);
+		if (!allowed.has(target.host)) throw new HttpError(403, "host not allowed");
+		try {
+			const fetched = await new HttpSourceFetcher([target.host]).fetchText(url, {
+				maxBytes: 512 * 1024,
+				timeoutMs: 15_000,
+			});
+			json(res, 200, { title: htmlTitle(fetched.body), content: htmlToText(fetched.body) });
+		} catch {
+			throw new HttpError(502, "source read failed");
+		}
+		return true;
+	}
 	if (path === "/api/market-events" && req.method === "GET") {
 		json(res, 200, { items: await runtime.marketEvents.list(ownerId) });
 		return true;

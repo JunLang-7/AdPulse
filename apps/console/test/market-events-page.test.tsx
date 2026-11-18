@@ -72,6 +72,46 @@ test("市场事件页：来源线索只展示标题与链接，转事件预填�
 	assert.equal(submitted.eventTime, null, "未知事件时间不补造");
 });
 
+test("市场事件页：转事件自动读取原文并预填材料与逐字引用", async t => {
+	t.after(cleanup);
+	const lead = {
+		sourceKey: "weichai_news", sourceLabel: "潍柴新闻与事件", subject: { kind: "brand" as const, name: "潍柴" },
+		itemId: "weichai_news:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html",
+		publishedAt: "2026-11-15", firstSeenAt: "2026-11-16T00:01:00.000Z", lastSeenAt: "2026-11-16T00:02:00.000Z",
+	};
+	const bodies: Input[] = [];
+	serve(defaults, {
+		"POST /api/market-events/read-source": () =>
+			json({ title: "潍柴列表标题", content: "潍柴发布2026年新款发动机，覆盖全国服务网络。该产品已于11月上市。详情以官网公告为准。" }),
+		"POST /api/market-events": async (req) => {
+			bodies.push(await req.json());
+			return json({ status: "created", version: version(bodies[0]) }, 201);
+		},
+		"GET /api/me/source-leads": () => json({ leads: [lead], sources: [{ ...closedSources[0]!, enabled: true }, closedSources[1]!] }),
+	});
+	mount();
+	fireEvent.click(await screen.findByRole("button", { name: "转事件" }));
+
+	await screen.findByText(/已自动读取官网原文/);
+	assert.equal((screen.getByLabelText("内容范围") as HTMLSelectElement).value, "excerpt");
+	assert.equal((screen.getByLabelText("来源性质") as HTMLSelectElement).value, "official");
+	assert.ok(
+		((screen.getByLabelText("公告主体原文引用") as HTMLInputElement).value || "").includes("新款发动机"),
+		"主体引用必须是原文逐字内容",
+	);
+
+	fireEvent.click(screen.getByRole("button", { name: "保存事件" }));
+	await waitFor(() => assert.equal(bodies.length, 1));
+	const submitted = bodies[0]!;
+	assert.equal(submitted.sources[0]?.scope, "excerpt");
+	assert.equal(submitted.sources[0]?.origin, "official");
+	assert.ok((submitted.sources[0]?.content ?? "").includes("新款发动机"));
+	assert.equal(submitted.citations.subject?.sourceIndex, 0);
+	assert.ok(submitted.citations.subject?.quote.includes("新款发动机"));
+	assert.equal(submitted.eventTime, "2026-11-15", "事件时间自动取线索的发布日期");
+	assert.ok(submitted.citations.conditions?.quote.length, "三个引用都已预填");
+});
+
 test("市场事件页：事件区在上、线索区在下，两块分区可见", async t => {
 	t.after(cleanup);
 	const lead = {
@@ -98,7 +138,7 @@ test("市场事件页：事件区在上、线索区在下，两块分区可见",
 	assert.equal(details.hasAttribute("open"), true, "点标题可展开");
 });
 
-test("市场事件页：线索可按来源筛选，链接默认不带下划线", async t => {
+test("市场事件页：线索可按来源筛选，标题是可见外链新标签页打开", async t => {
 	t.after(cleanup);
 	const base = {
 		sourceLabel: "潍柴新闻与事件", subject: { kind: "brand" as const, name: "潍柴" },
@@ -113,8 +153,11 @@ test("市场事件页：线索可按来源筛选，链接默认不带下划线",
 	mount();
 	await screen.findByRole("link", { name: "潍柴标题一" });
 	assert.equal(screen.getByRole("button", { name: "全部 3" }).getAttribute("aria-pressed"), "true", "默认看全部");
-	assert.ok(screen.getByRole("link", { name: "潍柴标题一" }).className.includes("hover:underline"), "链接默认无下划线，悬停才显示");
-	assert.ok(!screen.getByRole("link", { name: "潍柴标题一" }).className.includes(" underline"), "不常驻下划线");
+	const leadLink = screen.getByRole("link", { name: "潍柴标题一" }) as HTMLAnchorElement;
+	assert.ok(leadLink.className.includes("underline"), "标题必须是可见的链接样式，否则用户看不出能点");
+	assert.equal(leadLink.target, "_blank", "点标题在新标签页打开原文");
+	assert.equal(leadLink.rel, "noreferrer");
+	assert.equal(leadLink.href, "https://www.weichai.com/news/1.html");
 	fireEvent.click(screen.getByRole("button", { name: "海尔品牌资讯 1" }));
 	assert.equal(screen.queryByRole("link", { name: "潍柴标题一" }), null, "筛选后只显示该来源的线索");
 	assert.ok(screen.getByRole("link", { name: "海尔标题" }));

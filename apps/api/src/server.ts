@@ -16,12 +16,14 @@ import {
 	NotificationSelectionService,
 	SourceLeadError,
 	SourceLeadService,
+	UserSourceError,
+	UserSourceService,
 	NotificationService,
 	SubscriptionError,
 	SubscriptionService,
 	TaskInputValidationError,
 } from "@adpluse/core";
-import type { Runtime } from "@adpluse/runtime";
+import { HttpSourceFetcher, type Runtime } from "@adpluse/runtime";
 import { ZodError } from "zod";
 import type { IdentityProvider } from "./feishu-auth.js";
 import { HttpError, json, readJson } from "./http.js";
@@ -155,6 +157,7 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 	const notificationRecords = new NotificationRecordService(runtime.storage);
 	const notificationSelections = new NotificationSelectionService(runtime.storage);
 	const sourceLeads = new SourceLeadService(runtime.storage);
+	const userSources = new UserSourceService(runtime.storage);
 	const lifecycleDeletions = new LifecycleDeletionService(runtime.storage);
 	const subscriptions = new SubscriptionService(runtime.storage);
 	const subscriptionErrorStatus = (reason: SubscriptionError["reason"]): number => {
@@ -600,6 +603,83 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					} catch (error) {
 						if (error instanceof SourceLeadError) throw new HttpError(400, error.reason);
 						throw error;
+					}
+				}
+				if (path === "/api/me/user-sources" && req.method === "GET")
+					return json(res, 200, { items: await userSources.list(session.userId) });
+				if (path === "/api/me/user-sources" && req.method === "POST") {
+					const body = (await readJson(req).catch(() => null)) as Record<
+						string,
+						unknown
+					> | null;
+					const subject = body?.subject as
+						| { kind?: unknown; name?: unknown }
+						| undefined;
+					try {
+						const source = await userSources.add(
+							session.userId,
+							{
+								label: String(body?.label ?? ""),
+								listUrl: String(body?.listUrl ?? ""),
+								subject: {
+									kind: subject?.kind === "competitor" ? "competitor" : "brand",
+									name: String(subject?.name ?? ""),
+								},
+							},
+							new Date().toISOString(),
+						);
+						// 添加后立即采集一次；失败不影响登记成功，状态在条目上可见。
+						try {
+							await userSources.refresh(
+								session.userId,
+								source.id,
+								new HttpSourceFetcher([source.host]),
+								new Date().toISOString(),
+							);
+						} catch {
+							// 刷新失败只记录在来源上；用户可手动重试。
+						}
+						const items = await userSources.list(session.userId);
+						return json(res, 201, { source: items.find((s) => s.id === source.id) ?? source });
+					} catch (error) {
+						if (error instanceof UserSourceError)
+							throw new HttpError(error.status, error.code);
+						throw error;
+					}
+				}
+				const userSourceAction = path.match(
+					/^\/api\/me\/user-sources\/([^/]+)(\/refresh)?$/,
+				);
+				if (userSourceAction?.[1]) {
+					const sourceId = decodeURIComponent(userSourceAction[1]);
+					if (userSourceAction[2] && req.method === "POST") {
+						try {
+							const target = (await userSources.list(session.userId)).find(
+								(s) => s.id === sourceId,
+							);
+							if (!target) throw new HttpError(404, "not_found");
+							const result = await userSources.refresh(
+								session.userId,
+								sourceId,
+								new HttpSourceFetcher([target.host]),
+								new Date().toISOString(),
+							);
+							return json(res, 200, result);
+						} catch (error) {
+							if (error instanceof UserSourceError)
+								throw new HttpError(error.status, error.code);
+							throw error;
+						}
+					}
+					if (!userSourceAction[2] && req.method === "DELETE") {
+						try {
+							await userSources.remove(session.userId, sourceId);
+							return json(res, 200, { ok: true });
+						} catch (error) {
+							if (error instanceof UserSourceError)
+								throw new HttpError(error.status, error.code);
+							throw error;
+						}
 					}
 				}
 				if (path === "/api/me/notification-selections" && req.method === "GET") {

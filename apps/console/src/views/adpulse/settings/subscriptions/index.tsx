@@ -21,7 +21,6 @@ import {
 	type SubscriptionTargetLike,
 	type SubscriptionViewLike,
 	activeTargets,
-	confirmationSummary,
 	describeReadiness,
 	errorText,
 	formatSchedule,
@@ -330,8 +329,6 @@ function TargetRow({
 export default function SubscriptionSettingsPage() {
 	const queryClient = useQueryClient();
 	const [notice, setNotice] = useState<string | null>(null);
-	const [confirmOpen, setConfirmOpen] = useState(false);
-	const [decisionConfirmOpen, setDecisionConfirmOpen] = useState(false);
 	const [scheduleDraft, setScheduleDraft] = useState<{
 		digestAt: string;
 		quietStart: string;
@@ -370,6 +367,41 @@ export default function SubscriptionSettingsPage() {
 			queryClient.invalidateQueries({ queryKey: ["notification-status"] }),
 		]);
 
+	// 三步引导的前两步：确认单聊地址、授权主动提醒。原来分散在「通知设置」页。
+	const verifyDestination = useMutation({
+		mutationFn: async () => {
+			const result = await consoleClient.PUT("/api/me/notification-destination", {
+				body: undefined,
+			});
+			if (result.error)
+				throw Object.assign(new Error("verify failed"), {
+					status: result.response.status,
+				});
+			return result.data;
+		},
+		onSuccess: () => {
+			setNotice("已确认单聊地址（第 1 步完成）。");
+			return invalidate();
+		},
+	});
+
+	const grantConsent = useMutation({
+		mutationFn: async (expectedVersion: number) => {
+			const result = await consoleClient.POST("/api/me/notification-consent", {
+				body: { action: "grant", expectedVersion },
+			});
+			if (result.error)
+				throw Object.assign(new Error("consent failed"), {
+					status: result.response.status,
+				});
+			return result.data;
+		},
+		onSuccess: () => {
+			setNotice("已允许机器人主动发消息（第 2 步完成）。");
+			return invalidate();
+		},
+	});
+
 	const currentVersion = subscription.data?.settings.version ?? 0;
 
 	const updateSettings = useMutation({
@@ -401,16 +433,14 @@ export default function SubscriptionSettingsPage() {
 			setNotice(
 				variables.decisionCardsEnabled !== undefined
 					? variables.decisionCardsEnabled
-						? "已记录决策卡确认；投递仍需服务端启用与发送前检查，不补发历史候选。"
-						: "已关闭决策卡偏好；日汇总设置不变。"
+						? "已开启决策卡推送。"
+						: "已关闭决策卡推送；日汇总设置不变。"
 					: variables.proactiveEnabled === true
 						? "已开启订阅推送。"
 						: variables.proactiveEnabled === false
 							? "已关闭订阅推送；不会生成新的通知。"
 							: savedNotice(data),
 			);
-			setConfirmOpen(false);
-			setDecisionConfirmOpen(false);
 			return invalidate();
 		},
 	});
@@ -493,6 +523,24 @@ export default function SubscriptionSettingsPage() {
 
 	const data = subscription.data;
 	const readiness: Readiness = describeReadiness(data, notification.data);
+	// 三步引导的状态推导：地址、授权、推送开关。
+	const destinationVerified =
+		notification.data.destination?.status === "verified";
+	const consentActive = notification.data.consent?.status === "active";
+	const onboardingIncomplete =
+		!(destinationVerified && consentActive && data.settings.proactiveEnabled);
+	const onboardingFailure = (
+		verifyDestination.error ?? grantConsent.error
+	) as (Error & { status?: number }) | null;
+	const onboardingErrorText = !onboardingFailure
+		? null
+		: onboardingFailure.status === 403
+				? "当前登录身份没有权限确认这个地址，请退出后重新登录再试。"
+				: onboardingFailure.status === 404
+					? "还没有可用的单聊地址，请先完成第 1 步。"
+					: onboardingFailure.status === 409
+					? "状态刚被其他页面更新过，请刷新后重试。"
+					: `操作失败：${String(onboardingFailure)}`;
 	const schedule = formatSchedule(data.settings.schedule);
 	const draft =
 		scheduleDraft ?? {
@@ -500,14 +548,17 @@ export default function SubscriptionSettingsPage() {
 			quietStart: data.settings.schedule.quietStart,
 			quietEnd: data.settings.schedule.quietEnd,
 		};
-	const summary = confirmationSummary(data);
 	const settingsFeedback = describeSettingsFeedback({
 		pending: updateSettings.isPending,
 		errorStatus: updateSettings.error ? statusOf(updateSettings.error) : null,
 		notice,
 	});
 	const busy =
-		updateSettings.isPending || addTarget.isPending || patchTarget.isPending;
+		updateSettings.isPending ||
+		addTarget.isPending ||
+		patchTarget.isPending ||
+		verifyDestination.isPending ||
+		grantConsent.isPending;
 
 	return (
 		<div className="p-6 space-y-4">
@@ -582,31 +633,18 @@ export default function SubscriptionSettingsPage() {
 							>
 								关闭全部主动推送
 							</button>
-						) : (
-							<button
-								type="button"
-								disabled={busy}
-								onClick={() => setConfirmOpen(true)}
-								className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
-							>
-								配置并开启
-							</button>
-						)}
+						) : null}
 					</div>
 				</CardContent>
 			</Card>
 
 			<Card className="max-w-3xl">
 				<CardHeader>
-					<CardTitle>决策卡单独确认</CardTitle>
+					<CardTitle>决策卡推送</CardTitle>
 				</CardHeader>
 				<CardContent className="space-y-3">
-					<p className="text-sm">
-						{data.settings.decisionCards?.enabled ? "已记录单独确认" : "尚未单独确认"}
-					</p>
 					<p className="text-sm text-muted-foreground">
-						开启后，符合条件的决策卡会单独推给你；日汇总的授权不会顺带打开它。
-						关闭再重新打开，只对之后产生的提醒生效，不会补发之前的。
+						符合条件的决策卡会单独推给你，不影响日汇总；只对之后的提醒生效，不补发历史。
 					</p>
 					{data.settings.decisionCards?.enabled ? (
 						<button
@@ -615,92 +653,109 @@ export default function SubscriptionSettingsPage() {
 							onClick={() => updateSettings.mutate({ decisionCardsEnabled: false })}
 							className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
 						>
-							关闭决策卡偏好
+							关闭决策卡推送
 						</button>
-					) : decisionConfirmOpen ? (
-						<div className="space-y-2">
-							<p className="text-sm">
-								确认只记录本人决策卡偏好，不改变日汇总或通知授权，也不会立即发送消息。
-							</p>
-							<div className="flex flex-wrap gap-2">
-								<button
-									type="button"
-									disabled={busy}
-									onClick={() =>
-										updateSettings.mutate({ decisionCardsEnabled: true })
-									}
-									className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
-								>
-									{updateSettings.isPending ? "正在记录…" : "确认记录决策卡偏好"}
-								</button>
-								<button
-									type="button"
-									disabled={busy}
-									onClick={() => setDecisionConfirmOpen(false)}
-									className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
-								>
-									暂不确认决策卡
-								</button>
-							</div>
-						</div>
 					) : (
 						<button
 							type="button"
 							disabled={busy}
-							onClick={() => setDecisionConfirmOpen(true)}
+							onClick={() => updateSettings.mutate({ decisionCardsEnabled: true })}
 							className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
 						>
-							了解并单独确认决策卡
+							{updateSettings.isPending ? "正在提交…" : "开启决策卡推送"}
 						</button>
 					)}
 				</CardContent>
 			</Card>
 
-			{confirmOpen ? (
+
+
+			{onboardingIncomplete ? (
 				<Card className="max-w-3xl border-primary/40">
 					<CardHeader>
-						<CardTitle>开启前请确认</CardTitle>
+						<CardTitle>开启推送 · 三步引导</CardTitle>
 					</CardHeader>
 					<CardContent className="space-y-3">
-						<ul className="list-disc space-y-1 pl-5 text-sm">
-							{summary.lines.map((line) => (
-								<li key={line}>{line}</li>
+						<p className="text-sm text-muted-foreground">
+							三步都在本页按顺序完成，完成前不会发送任何消息。
+						</p>
+						<ol className="space-y-2">
+							{[
+								{
+									key: "address",
+									title: "第 1 步 · 确认单聊地址",
+									description:
+										"机器人需要知道把提醒发到哪个飞书单聊。",
+									done: destinationVerified,
+									unlocked: true,
+									action: "确认地址",
+									pendingLabel: "正在确认…",
+									pending: verifyDestination.isPending,
+									run: () => verifyDestination.mutate(),
+								},
+								{
+									key: "consent",
+									title: "第 2 步 · 允许主动发消息",
+									description:
+										"按你的选择，允许机器人在汇总时间主动给你发消息。",
+									done: consentActive,
+									unlocked: destinationVerified,
+									action: "同意接收",
+									pendingLabel: "正在提交…",
+									pending: grantConsent.isPending,
+									run: () =>
+										grantConsent.mutate(
+											notification.data?.consent?.version ?? 0,
+										),
+								},
+								{
+									key: "push",
+									title: "第 3 步 · 打开订阅推送",
+									description: "按推送时间的汇总时间发送，随时可关闭。",
+									done: data.settings.proactiveEnabled,
+									unlocked: destinationVerified && consentActive,
+									action: "开启推送",
+									pendingLabel: "正在开启推送…",
+									pending: updateSettings.isPending,
+									run: () => updateSettings.mutate({ proactiveEnabled: true }),
+								},
+							].map((step) => (
+								<li
+									key={step.key}
+									className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
+								>
+									<div className="text-sm">
+										<p className="font-medium">
+											{step.title}
+											{step.done ? "（已完成）" : ""}
+										</p>
+										<p className="text-xs text-muted-foreground">
+											{!step.done && !step.unlocked
+												? "先完成上一步"
+												: step.description}
+										</p>
+									</div>
+									{!step.done ? (
+										<button
+											type="button"
+											disabled={busy || !step.unlocked}
+											onClick={step.run}
+											className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+										>
+											{step.pending ? step.pendingLabel : step.action}
+										</button>
+									) : null}
+								</li>
 							))}
-						</ul>
-						{summary.warning ? (
-							<p role="alert" className="text-sm text-amber-600">
-								{summary.warning}
+						</ol>
+						{onboardingErrorText ? (
+							<p role="alert" className="text-sm text-red-600">
+								{onboardingErrorText}
 							</p>
 						) : null}
 						<p className="text-xs text-muted-foreground">
-							开启只影响主动推送；登录、地址与授权都不变，随时可以关闭。
+							完成后每天 {data.settings.schedule.digestAt}（北京时间）汇总发送；内容来自你录入的事件和关联任务的效果异常。
 						</p>
-						<div className="flex flex-wrap gap-2">
-							<button
-								type="button"
-								disabled={busy}
-								onClick={() => updateSettings.mutate({ proactiveEnabled: true })}
-								className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
-							>
-								{settingsFeedback.confirmLabel}
-							</button>
-							<button
-								type="button"
-								disabled={!settingsFeedback.dismissEnabled}
-								title={
-									settingsFeedback.dismissEnabled
-										? undefined
-										: "开启请求正在提交，请等待结果后再操作"
-								}
-								onClick={() => {
-									setConfirmOpen(false);
-									setNotice("已选择暂不开启；不会发送任何主动推送。");
-								}}
-								className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
-							>
-								{settingsFeedback.dismissEnabled ? "暂不开启" : "请稍候…"}
-							</button>
-						</div>
 					</CardContent>
 				</Card>
 			) : null}

@@ -746,6 +746,23 @@ export interface SourceSnapshot {
 	contentHash: string;
 	createdAt: string;
 }
+/**
+ * 用户自加的企业站点（每用户）：只登记站点身份与列表页位置，不改动 #41 的 allowlist。
+ * 采集仍只取标题与链接，与内置来源同一套证据纪律。
+ */
+export interface UserSource {
+	id: string;
+	ownerId: string;
+	label: string;
+	host: string;
+	listUrl: string;
+	subject: { kind: "brand" | "competitor"; name: string };
+	createdAt: string;
+	lastRefreshAt: string | null;
+	lastOutcome: "ok" | "failed" | null;
+	lastReason: string | null;
+	status: "active" | "stopped";
+}
 export interface SourceItem {
 	id: string;
 	sourceKey: string;
@@ -879,6 +896,7 @@ export interface Entities {
 	comparisonOperations: ComparisonOperation;
 	comparisonFollowUps: ComparisonFollowUp;
 	investigationAlerts: InvestigationAlert;
+	userSources: UserSource;
 	sourceStates: SourceState;
 	sourceRuns: SourceRun;
 	sourceSnapshots: SourceSnapshot;

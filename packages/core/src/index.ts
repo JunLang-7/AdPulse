@@ -22,6 +22,7 @@ export * from "./comparison-service.js";
 export * from "./sources.js";
 export * from "./source-leads.js";
 export * from "./source-service.js";
+export * from "./user-sources.js";
 export * from "./investigation-alerts.js";
 export type { DecisionAccountResolver } from "./decision-delivery.js";
 export * from "./domain/strategy.js";
