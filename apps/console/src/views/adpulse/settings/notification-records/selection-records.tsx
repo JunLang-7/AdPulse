@@ -132,9 +132,10 @@ export default function SelectionRecords() {
 			: all.length === 0 ? <p className="text-sm text-muted-foreground">{records.hasNextPage ? "已查询的记录里没有符合条件的提醒。" : "没有可查的未发送提醒。"}</p>
 			: <div className="divide-y divide-border">{all.map((record) => {
 			const isEvent = record.input === "event";
+			const isHypothesis = record.input === "hypothesis";
 			const eventId = record.marketEventRef?.eventId;
 			const taskName = record.taskId ? taskNames.get(record.taskId) : undefined;
-			const category = isEvent ? "市场与竞品事件" : "推广效果提醒";
+			const category = isEvent ? "市场与竞品事件" : isHypothesis ? "假设偏差" : "推广效果提醒";
 			const name = isEvent ? (eventId ? eventNames.get(eventId) : undefined) : taskName;
 			const result = explainSelection(record);
 			return <article key={record.id} className="space-y-2 py-3">

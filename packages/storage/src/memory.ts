@@ -1,6 +1,10 @@
 import type { Entities, Job, Storage, Transaction } from "@adpluse/core";
 
 export const tableNames = [
+	"hypotheses",
+	"hypothesisVersions",
+	"hypothesisVerdicts",
+	"hypothesisOperations",
 	"marketEvents",
 	"marketEventVersions",
 	"marketEventAliases",

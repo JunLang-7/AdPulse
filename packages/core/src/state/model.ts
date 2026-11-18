@@ -73,8 +73,8 @@ export interface NotificationConsent {
 
 /** 关注对象：本人任务，或本人录入的品牌/竞品名称（#38 出现实体后再关联）。 */
 export type SubscriptionTargetKind = "task" | "brand" | "competitor";
-/** 首期三维筛选里的「类别」：效果排查、明确事件、补证/待处理。 */
-export type SubscriptionCategory = "effect" | "event" | "evidence";
+/** 首期三维筛选里的「类别」：效果排查、明确事件、补证/待处理、假设偏差。 */
+export type SubscriptionCategory = "effect" | "event" | "evidence" | "hypothesis";
 /** 「关联范围」：只关联该对象所在任务，或也接收该对象的一般动态。 */
 export type SubscriptionScope = "task_only" | "include_general";
 
@@ -159,7 +159,7 @@ export interface NotificationBatch {
 }
 
 /** 单条待发信息；logicalKey 保证同一逻辑事件不因重试/换标题/转载重复通知。 */
-export type NotificationItemKind = "effect_alert" | "market_event";
+export type NotificationItemKind = "effect_alert" | "market_event" | "hypothesis_verdict";
 export type NotificationItemStatus = "queued" | "sent" | "cancelled" | "expired";
 
 export interface NotificationItem {
@@ -187,6 +187,8 @@ export interface NotificationItem {
 	effectRef?: { alertId: string; evidenceId: string; evidenceVersion: number; taskVersion: number };
 	/** 生产入队的市场/竞品事件引用；发送前重检事件仍是当前证据版本。 */
 	marketEventRef?: { eventId: string; version: number; evidenceRevision: number };
+	/** 生产入队的假设判定引用；发送前重检假设仍非停用且判定仍确认。 */
+	hypothesisRef?: { hypothesisId: string; verdictId: string; hypothesisVersion: number };
 	status: NotificationItemStatus;
 	/** 复用 Delivery：不另建投递状态机。 */
 	deliveryId?: string;
@@ -198,8 +200,8 @@ export interface NotificationItem {
 export interface NotificationSelection {
 	id: string;
 	ownerId: string;
-	/** 输入类别：effect = #10 效果告警；event = #38 市场/竞品事件。 */
-	input: "effect" | "event";
+	/** 输入类别：effect = #10 效果告警；event = #38 市场/竞品事件；hypothesis = 假设偏差判定。 */
+	input: "effect" | "event" | "hypothesis";
 	/** effect 输入专用引用；event 输入不填。 */
 	alertId?: string;
 	/** 事件可无任务关联，因此 taskId 对 event 输入是可选的。 */
@@ -208,6 +210,8 @@ export interface NotificationSelection {
 	evidenceRef?: EvidenceRef;
 	/** event 输入专用引用；发送前与事件当前版本比对。 */
 	marketEventRef?: { eventId: string; version: number; evidenceRevision: number };
+	/** hypothesis 输入专用引用；发送前重检假设与判定状态。 */
+	hypothesisRef?: { hypothesisId: string; verdictId: string; hypothesisVersion: number };
 	revision: number;
 	settingsVersion: number;
 	matchedTargetIds: string[];
@@ -721,7 +725,14 @@ export type JobTask =
 	| { kind: "prepare_investigation_alert_session"; alertId: string }
 	| { kind: "send_delivery"; deliveryId: string }
 	| { kind: "send_investigation_decision"; deliveryId: string }
-	| { kind: "send_digest"; batchId: string };
+	| { kind: "send_digest"; batchId: string }
+/** 假设偏差初判：新证据到达后为关联任务的非停用假设生成待确认初判。 */
+| {
+		kind: "prepare_hypothesis_verdicts";
+		source:
+			| { kind: "market_event"; eventId: string; version: number }
+			| { kind: "comparison"; comparisonResultId: string };
+	};
 export interface Job {
 	id: string;
 	task: JobTask;
@@ -856,7 +867,91 @@ export interface UserModelPreference {
 	updatedAt: string;
 }
 
+/**
+ * 假设偏差（README 第三类信号）：当前方案依赖的判断被新证据支持或挑战。
+ * 只有用户确认的判定能改变状态；模型初判只进入待确认队列。
+ */
+export type HypothesisStatus =
+	| "draft"
+	| "open"
+	| "supported"
+	| "challenged"
+	| "retired";
+export type HypothesisOrigin = "manual" | "model_draft_accepted";
+export interface Hypothesis {
+	id: string;
+	ownerId: string;
+	taskId: string;
+	/** 挂靠的任务版本（策略基线）；策略推进后旧假设保留原归属。 */
+	taskVersion: number;
+	currentVersion: number;
+	status: HypothesisStatus;
+	createdAt: string;
+}
+export interface HypothesisVersion {
+	id: string;
+	hypothesisId: string;
+	ownerId: string;
+	version: number;
+	/** 假设陈述：可被证据支持或挑战的一条判断，不包装为事实。 */
+	statement: string;
+	/** 当前方案为什么依赖这条判断。 */
+	rationale: string;
+	/** 什么样的证据会支持/挑战它；缺失表示尚未定义判定标准。 */
+	testable?: string;
+	origin: HypothesisOrigin;
+	/** 由模型草案接受而来时留痕；manual 判定缺省。 */
+	draftRef?: { modelRef: string; generatedAt: string; iterations: number };
+	createdAt: string;
+}
+export type HypothesisSubjectRef =
+	| { kind: "market_event"; eventId: string; version: number }
+	| { kind: "source_item"; sourceItemId: string }
+	| { kind: "comparison"; comparisonResultId: string };
+export type HypothesisJudgment = "supports" | "challenges" | "unclear";
+export type HypothesisVerdictStage = "preliminary" | "confirmed" | "rejected";
+export interface HypothesisVerdict {
+	id: string;
+	/** 同一假设对同一证据主体只保留一条未驳回判定；重试/驳回后重判靠它去重。 */
+	dedupKey: string;
+	ownerId: string;
+	hypothesisId: string;
+	/** 判定挂靠的假设版本。 */
+	hypothesisVersion: number;
+	subject: HypothesisSubjectRef;
+	judgment: HypothesisJudgment;
+	/** 判定依据；自动初判由模型生成并须引用证据原文。 */
+	explanation: string;
+	/** 初判引用的关键原文（逐字），可为空。 */
+	quote?: string;
+	stage: HypothesisVerdictStage;
+	/** 自动初判留痕；人工判定缺省。 */
+	preliminary?: { modelRef: string; generatedAt: string };
+	confirmedAt?: string;
+	createdAt: string;
+}
+export interface HypothesisOperation {
+	id: string;
+	ownerId: string;
+	digest: string;
+	kind: "create" | "revise" | "retire" | "verdict";
+	resultRef: { hypothesisId?: string; versionId?: string; verdictId?: string };
+	status:
+		| "created"
+		| "duplicate"
+		| "revised"
+		| "unchanged"
+		| "retired"
+		| "verdict_recorded"
+		| "verdict_duplicate";
+	createdAt: string;
+}
+
 export interface Entities {
+	hypotheses: Hypothesis;
+	hypothesisVersions: HypothesisVersion;
+	hypothesisVerdicts: HypothesisVerdict;
+	hypothesisOperations: HypothesisOperation;
 	marketEvents: MarketEventHead;
 	marketEventVersions: MarketEventVersion;
 	marketEventAliases: MarketEventAlias;

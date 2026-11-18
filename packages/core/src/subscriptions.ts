@@ -26,6 +26,7 @@ const CATEGORIES: readonly SubscriptionCategory[] = [
 	"effect",
 	"event",
 	"evidence",
+	"hypothesis",
 ];
 const SCOPES: readonly SubscriptionScope[] = ["task_only", "include_general"];
 const KINDS: readonly SubscriptionTargetKind[] = ["task", "brand", "competitor"];

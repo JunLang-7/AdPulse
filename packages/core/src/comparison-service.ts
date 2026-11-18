@@ -385,6 +385,18 @@ export class ComparisonService {
 				digest: requestDigest,
 				resultId: result.id,
 			});
+			// 假设偏差初判（问题二 S2）：任务存在非停用假设时，为比较结论排初判 job。
+			const relevant = (await tx.hypotheses.listByOwner(ownerId))
+				.filter(head => head.taskId === result.taskId && head.status !== "retired");
+			if (relevant.length) {
+				await tx.jobs.put({
+					id: digest(["prepare_hypothesis_verdicts", result.id]).slice(0, 48),
+					task: { kind: "prepare_hypothesis_verdicts", source: { kind: "comparison", comparisonResultId: result.id } },
+					status: "pending",
+					runAt: createdAt,
+					attempts: 0,
+				});
+			}
 			return result;
 		});
 	}
