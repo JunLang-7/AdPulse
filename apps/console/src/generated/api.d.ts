@@ -892,8 +892,11 @@ export interface components {
         };
         MarketEventLifecycle: {
             eventId: string;
-            /** @enum {string} */
-            state: "active" | "expired";
+            /**
+             * @description active / expired（保留期到期）/ deleted（本人确认删除，优先于到期）
+             * @enum {string}
+             */
+            state: "active" | "expired" | "deleted";
             /**
              * Format: date-time
              * @description 计时起点：最后业务更新（首次录入或最后一次修订）
@@ -906,7 +909,13 @@ export interface components {
             /** Format: date-time */
             expiresAt: string;
             retentionDays: number;
+            /** @description 已到期或已删除；与 state 同源 */
             expired: boolean;
+            /**
+             * Format: date-time
+             * @description 本人确认删除的时刻；未删除为 null
+             */
+            deletedAt: string | null;
         };
         MarketEventVersion: {
             id: string;
@@ -1203,8 +1212,13 @@ export interface components {
         };
         /** @description itemsSource=delivery 时只保证展示字段（卡片冻结内容）；行级字段（id/kind/revision/status）仅 itemsSource=rows 时存在，服务端不补造 */
         NotificationRecordItem: {
-            /** @description 来源事件已过保留期：标题、摘要与来源不返回，只留状态 */
+            /** @description 来源事件已过期或已删除：标题、摘要与来源不返回，只留状态 */
             inputExpired?: boolean;
+            /**
+             * @description 不可用原因：删除或保留期到期
+             * @enum {string}
+             */
+            inputRemoved?: "deleted" | "expired";
             id?: string;
             /** @enum {string} */
             kind?: "effect_alert";

@@ -324,13 +324,17 @@ export default function MarketEventsPage() {
 	// 到期后不再使用详情缓存：曾成功加载过的旧版本仍留在 React Query 里，
 	// 只靠「再请求一次拿到 404」不足以防住把正文继续渲染出来。
 	const expired = lifecycle.data?.expired === true;
+	// 删除与到期在用户那里是两件事：手动删的不该被解释成「存满了一年」。
+	const removedNotice = lifecycle.data?.state === "deleted"
+		? `这条事件已被删除，内容不再展示。删除时间 ${formatRetention(lifecycle.data.deletedAt ?? lifecycle.data.anchor)}。`
+		: lifecycle.data
+			? `这条事件已过保留期（${lifecycle.data.retentionDays} 天），内容不再展示。到期时间 ${formatRetention(lifecycle.data.expiresAt)}。`
+			: null;
 	if (eventId) return <div className="p-6 space-y-4">
 		<Link className="underline text-sm" to="/market-events">返回市场与竞品事件</Link>
 		{notice && <p role="status">{notice}</p>}
-		{expired && lifecycle.data
-			? <p role="status" className="rounded-md border border-dashed p-4 text-sm">
-				这条事件已过保留期（{lifecycle.data.retentionDays} 天），内容不再展示。到期时间 {formatRetention(lifecycle.data.expiresAt)}。
-			</p>
+		{expired && removedNotice
+			? <p role="status" className="rounded-md border border-dashed p-4 text-sm">{removedNotice}</p>
 			: <>
 				{detail.isLoading && <p>正在读取事件…</p>}
 				{detail.error && <p role="alert">{detail.error.message}</p>}

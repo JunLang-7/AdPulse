@@ -949,3 +949,15 @@ test("恢复后会话失效：revokeAllSessions 撤销全部会话并作废未�
 	// 非法时刻不做任何事。
 	assert.equal(await auth.revokeAllSessions("not-a-date"), 0);
 });
+
+test("生命周期删除清单：任务查询不返回事件清单，避免任务页出现永远排队的条目", async () => {
+	const storage = new MemoryStorage();
+	const { LifecycleDeletionService } = await import("../packages/core/dist/index.js");
+	const service = new LifecycleDeletionService(storage, () => "2026-11-17T10:00:00.000Z");
+	await storage.transaction(async (tx) => {
+		await tx.lifecycleDeletions.put({ id: "task-manifest", ownerId: "owner", taskId: "task-1", requestedAt: "2026-11-17T10:00:00.000Z", deadlineAt: "2026-11-24T10:00:00.000Z", status: "pending" });
+		await tx.lifecycleDeletions.put({ id: "event-manifest", ownerId: "owner", marketEventId: "event-1", requestedAt: "2026-11-17T10:00:00.000Z", deadlineAt: "2026-11-24T10:00:00.000Z", status: "pending" });
+	});
+	const rows = await service.list("owner");
+	assert.deepEqual(rows.map((row) => row.id), ["task-manifest"], "只返回任务清单");
+});

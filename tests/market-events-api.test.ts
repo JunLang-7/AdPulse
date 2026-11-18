@@ -104,3 +104,17 @@ test("market events HTTP: 删除需本人与期望版本，删除后详情与生
 	assert.equal(again.created,false);
 	assert.ok(runtime);
 });
+
+test("market events HTTP: 生命周期响应符合 OpenAPI 契约（deleted 与 deletedAt）", async t => {
+	const { request } = await serve(t);
+	const created = await request("/api/market-events","POST",eventInput());
+	const eventId = ((await created.json()) as { version: { eventId: string } }).version.eventId;
+	const active = await (await request(`/api/market-events/${eventId}/lifecycle`)).json() as Record<string, unknown>;
+	assert.ok(["active","expired","deleted"].includes(String(active.state)));
+	assert.equal(active.deletedAt, null, "未删除时必须显式返回 null，契约要求该字段存在");
+	await request(`/api/market-events/${eventId}?expectedVersion=1`,"DELETE");
+	const deleted = await (await request(`/api/market-events/${eventId}/lifecycle`)).json() as Record<string, unknown>;
+	assert.equal(deleted.state,"deleted");
+	assert.ok(typeof deleted.deletedAt === "string");
+	assert.equal(deleted.expired,true);
+});

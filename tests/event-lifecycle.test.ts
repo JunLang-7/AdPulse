@@ -164,3 +164,16 @@ test("事件删除：版本不一致拒绝，未验证期望版本的删除不�
 	assert.ok(await service.detail("owner", created.version.eventId), "拒绝后事件仍可读");
 	assert.equal((await service.delete("owner", created.version.eventId, 2)).created, true);
 });
+
+test("事件删除：审计记录被删版本，便于 S4 清理后追溯", async () => {
+	const storage = new MemoryStorage();
+	const time = clock();
+	const service = new MarketEventService(storage, time.now);
+	const created = await service.create("owner", "key-1", eventInput());
+	await service.delete("owner", created.version.eventId, 1);
+	const audits = await storage.transaction((tx) => tx.auditEvents.all());
+	const audit = audits.find((row) => row.kind === "event_deleted");
+	assert.ok(audit);
+	assert.equal(audit.objectId, created.version.eventId);
+	assert.equal(audit.detail, "owner_request;version=1", "审计要能说明删的是哪一版");
+});

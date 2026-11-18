@@ -306,3 +306,18 @@ test("市场事件页：删除事件需确认，成功后回到列表并提示",
 	assert.equal(confirmations.length, 1, "删除前必须确认");
 	assert.ok(await screen.findByText(/事件已删除，任务与提醒里不再显示它的内容/), "回到列表并提示");
 });
+
+test("市场事件页：已删除事件显示删除说明，不冒充保留期到期", async t => {
+	t.after(cleanup);
+	serve(defaults, {
+		"GET /api/market-events/event-1": () => json({ error: "event not found" }, 404),
+		"GET /api/market-events/event-1/lifecycle": () => json({
+			eventId: "event-1", state: "deleted", anchor: "2026-11-16T01:00:00Z", anchorSource: "last_business_update",
+			lastBusinessUpdate: "2026-11-16T01:00:00Z", expiresAt: "2027-11-16T01:00:00Z", retentionDays: 365,
+			expired: true, deletedAt: "2026-11-17T02:00:00Z",
+		}),
+	});
+	mount("/market-events/event-1");
+	assert.ok(await screen.findByText(/这条事件已被删除，内容不再展示。删除时间 2026年11月17日 10:00。/));
+	assert.equal(screen.queryByText(/已过保留期/), null, "删除不应被说成到期");
+});

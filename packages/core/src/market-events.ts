@@ -219,7 +219,8 @@ export class MarketEventService {
 			kind: "event_deleted",
 			actorId: ownerId,
 			objectId: eventId,
-			detail: "owner_request",
+			// 记下被删版本：S4 清理版本后，审计仍能说明用户删掉的是哪一版。
+			detail: `owner_request;version=${expectedVersion}`,
 		});
 		return { manifest, created: true };
 	}
