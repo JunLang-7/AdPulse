@@ -269,6 +269,7 @@ test("the worker evaluates due checks and next round receives them as read-only 
 		undefined,
 		undefined,
 		3_600_000,
+		undefined,
 		checks,
 	);
 	const task = await new TaskService(storage, now).create("owner", "task-worker", {
