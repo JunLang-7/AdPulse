@@ -6,6 +6,7 @@
 // 3) 只动本清单所属任务的数据，不碰其他用户、不碰来源域（#41 另有保留策略）。
 // 4) 最小审计只记动作与对象引用，180 天后独立清理；不因业务删除而延长业务原文留存。
 import { createHash } from "node:crypto";
+import { eventLifecycleIn } from "./event-lifecycle.js";
 import { AUDIT_RETENTION_DAYS, MS_PER_DAY, taskLifecycleIn } from "./lifecycle.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type { Entities, LifecycleDeletion } from "./state/model.js";
@@ -42,7 +43,7 @@ export class LifecycleCleanupService {
 			try {
 				const lock = await this.storage.runExclusive(
 					`lifecycle-cleanup:${manifest.id}`,
-					() => this.storage.transaction((tx) => this.cleanIn(tx, manifest, at)),
+					() => this.storage.transaction((tx) => this.cleanDispatchIn(tx, manifest, at)),
 				);
 				// 另一个进程正在清这一份：跳过，下次 tick 再看。
 				if (!lock.acquired || !lock.value) continue;
@@ -64,11 +65,75 @@ export class LifecycleCleanupService {
 		return { manifests, removed, scheduled, auditPurged, failed };
 	}
 
+	/** 清单分派：任务清单走任务清理，事件清单走事件清理（#144 S4）。 */
+	/** 到期事件的清单调度：与任务同款，`deadlineAt=expiresAt`（到期即可清）。 */
+	private async scheduleExpiredEventsIn(at: string): Promise<number> {
+		const now = new Date(at);
+		const candidates = await this.storage.transaction(async (tx) => {
+			const existing = new Set((await tx.lifecycleDeletions.all())
+				.filter((row) => typeof row.marketEventId === "string")
+				.map((row) => `${row.ownerId}:${row.marketEventId}`));
+			const out: Array<{ id: string; ownerId: string; marketEventId: string; requestedAt: string; deadlineAt: string; status: "pending"; reason: "retention_expired" }> = [];
+			for (const head of await tx.marketEvents.all()) {
+				if (existing.has(`${head.ownerId}:${head.id}`)) continue;
+				if (head.deletion) continue;
+				const lifecycle = await eventLifecycleIn(tx, head, now);
+				if (!lifecycle.expired || lifecycle.state === "deleted") continue;
+				out.push({
+					id: lifecycleManifestId(head.ownerId, head.id),
+					ownerId: head.ownerId,
+					marketEventId: head.id,
+					requestedAt: lifecycle.expiresAt,
+					deadlineAt: lifecycle.expiresAt,
+					status: "pending",
+					reason: "retention_expired",
+				});
+				if (out.length >= 50) break;
+			}
+			return out;
+		});
+		if (candidates.length === 0) return 0;
+		return this.storage.transaction(async (tx) => {
+			let created = 0;
+			for (const manifest of candidates) {
+				if (await tx.lifecycleDeletions.get(manifest.id)) continue;
+				await tx.lifecycleDeletions.put(manifest);
+				await tx.auditEvents.put({
+					id: `audit:event-expiry:${manifest.id}`,
+					at,
+					kind: "event_deleted",
+					actorId: "system",
+					objectId: manifest.marketEventId,
+					detail: "retention_expired",
+				});
+				created += 1;
+			}
+			return created;
+		});
+	}
+
+	/** 清单分派：任务清单走任务清理，事件清单走事件清理（#144 S4）。 */
+	private async cleanDispatchIn(
+		tx: Transaction,
+		manifest: LifecycleDeletion,
+		at: string,
+	): Promise<Record<string, number> | null> {
+		return typeof manifest.marketEventId === "string"
+			? this.cleanEventIn(tx, manifest as LifecycleDeletion & { marketEventId: string }, at)
+			: this.cleanIn(tx, manifest as LifecycleDeletion & { taskId: string }, at);
+	}
+
 	/**
-	 * 保留期到期（365 天）的任务也要物理清理，而不是永远只是"不可访问"。
+	 * 保留期到期（365 天）的任务与事件都要物理清理，而不是永远只是"不可访问"。
 	 * 复用同一份删除清单：`reason=retention_expired`，`deadlineAt=expiresAt`（到期即可清）。
 	 */
 	private async scheduleExpiredIn(at: string): Promise<number> {
+		const taskScheduled = await this.scheduleExpiredTasksIn(at);
+		const eventScheduled = await this.scheduleExpiredEventsIn(at);
+		return taskScheduled + eventScheduled;
+	}
+
+	private async scheduleExpiredTasksIn(at: string): Promise<number> {
 		const now = new Date(at);
 		const candidates = await this.storage.transaction(async (tx) => {
 			const existing = new Set((await tx.lifecycleDeletions.all())
@@ -132,6 +197,71 @@ export class LifecycleCleanupService {
 		});
 	}
 
+	/**
+	 * 事件清单的物理清理（#144 S4）：
+	 * - 删全部版本（含材料引用）、别名、操作幂等记录与派生的通知条目/筛选记录；
+	 * - **保留 head 骨架**（含 deletion 标记）：读取侧脱敏与「为什么打不开」的解释都靠它，
+	 *   且与定稿一致——到期不删记录骨架；审计引用也可追溯。
+	 */
+	private async cleanEventIn(
+		tx: Transaction,
+		manifest: LifecycleDeletion & { marketEventId: string },
+		at: string,
+	): Promise<Record<string, number> | null> {
+		const current = await tx.lifecycleDeletions.get(manifest.id);
+		if (!current || current.status !== "pending" || typeof current.marketEventId !== "string") return null;
+		const { ownerId, marketEventId: eventId } = current as LifecycleDeletion & { marketEventId: string };
+
+		const versionIds = (await tx.marketEventVersions.all())
+			.filter((row) => row.ownerId === ownerId && row.eventId === eventId)
+			.map((row) => row.id);
+		const aliasIds = (await tx.marketEventAliases.all())
+			.filter((row) => row.ownerId === ownerId && row.eventId === eventId)
+			.map((row) => row.id);
+		// 操作幂等记录只有 versionId（`eventId:version`）：按前缀归属到本事件。
+		const prefix = `${eventId}:`;
+		const operationIds = (await tx.marketEventOperations.all())
+			.filter((row) => row.ownerId === ownerId && row.versionId.startsWith(prefix))
+			.map((row) => row.id);
+		const itemIds = (await tx.notificationItems.all())
+			.filter((row) => row.ownerId === ownerId && row.marketEventRef?.eventId === eventId)
+			.map((row) => row.id);
+		const selectionIds = (await tx.notificationSelections.all())
+			.filter((row) => row.ownerId === ownerId && row.marketEventRef?.eventId === eventId)
+			.map((row) => row.id);
+
+		const removed: Record<string, number> = {};
+		const strip = async (table: "marketEventVersions" | "marketEventAliases" | "marketEventOperations"
+			| "notificationItems" | "notificationSelections", ids: string[]) => {
+			if (ids.length === 0) return;
+			const count = await tx[table].remove(ids);
+			if (count > 0) removed[table] = count;
+		};
+		await strip("notificationSelections", selectionIds);
+		await strip("notificationItems", itemIds);
+		await strip("marketEventOperations", operationIds);
+		await strip("marketEventAliases", aliasIds);
+		await strip("marketEventVersions", versionIds);
+
+		// head 保留骨架：owner_request 的删除标记在删除时已写入（S2）；到期清单不加删除标记，
+		// 状态保持 expired——「存满一年」和「本人删除」在读取侧是两种解释。
+		// 版本已删，锚点退回 head.createdAt，到期判定不变。
+
+		await tx.lifecycleDeletions.put({ ...current, status: "cleaned", cleanedAt: at });
+		await tx.auditEvents.put({
+			id: `audit:event-purged:${manifest.id}`,
+			at,
+			kind: "event_purged",
+			actorId: "system",
+			objectId: eventId,
+			detail: current.reason ?? "owner_request",
+		});
+		return removed;
+	}
+
+	/**
+	 * 事件清单的物理清理（#144 S4）——见上方实现；此注释占位避免重复声明。
+	 */
 	private async cleanIn(
 		tx: Transaction,
 		manifest: LifecycleDeletion & { taskId: string },
@@ -283,14 +413,14 @@ export class LifecycleCleanupService {
 /** 读取到期清单（独立小类，避免清理服务依赖查询实现细节）。 */
 class LifecycleCleanupReader {
 	constructor(private readonly storage: Storage) {}
-	async due(at: string): Promise<Array<LifecycleDeletion & { taskId: string }>> {
+	async due(at: string): Promise<LifecycleDeletion[]> {
 		return this.storage.transaction(async (tx) =>
 			(await tx.lifecycleDeletions.all())
 				.filter((row) => row.status === "pending"
-					// 事件删除清单由 #144 S4 处理，不混进任务清理。
-					&& typeof row.taskId === "string"
+					// 任务与事件清单（#144 S4 起都进在线清理），按分派函数处理。
+					&& (typeof row.taskId === "string" || typeof row.marketEventId === "string")
 					&& Date.parse(row.deadlineAt) <= Date.parse(at))
-				.sort((a, b) => a.deadlineAt.localeCompare(b.deadlineAt)) as Array<LifecycleDeletion & { taskId: string }>,
+				.sort((a, b) => a.deadlineAt.localeCompare(b.deadlineAt)),
 		);
 	}
 }
