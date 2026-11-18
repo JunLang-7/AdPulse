@@ -29,21 +29,29 @@ export const taskStages = [
 	fields: readonly DraftField[];
 }[];
 
-export type ChoiceField = Exclude<DraftField, "product">;
+export type ChoiceField = Exclude<DraftField, "product"> | "contentDirections" | "partners";
 export type ExcludedChoices = Partial<Record<ChoiceField, readonly string[]>>;
 export type TaskNotes = Record<TaskDraftStage, string>;
+
+/** 可勾选建议能落在的字段：表单字段 + 仅由建议填充的两类基线。 */
+export type SuggestionField = DraftField | "contentDirections" | "partners";
 
 /** 一次性整理时覆盖的字段顺序：表单、提示、结果展示都用同一份。 */
 export const draftFields = ["product", "objective", "audience", "sellingPoints", "channels"] as const;
 
+/** 可勾选建议的展示顺序：表单字段在前，仅在建议里出现的两类基线在后。 */
+export const suggestionFields = [...draftFields, "contentDirections", "partners"] as const;
+
 export const emptyNotes: TaskNotes = { overview: "", audience: "", channels: "" };
 
-export const fieldLabels: Record<DraftField, string> = {
+export const fieldLabels: Record<SuggestionField, string> = {
 	product: "产品或服务",
 	objective: "推广目标",
 	audience: "目标人群",
 	sellingPoints: "主要卖点",
 	channels: "投放渠道",
+	contentDirections: "内容方向",
+	partners: "合作对象",
 };
 
 export const fieldOptions: Record<ChoiceField, readonly string[]> = {
@@ -51,10 +59,13 @@ export const fieldOptions: Record<ChoiceField, readonly string[]> = {
 	audience: ["新客户", "老客户", "有明确需求的人", "企业客户"],
 	sellingPoints: ["可免费试用", "价格优惠", "专业服务", "快速交付"],
 	channels: ["小红书", "抖音", "微信视频号", "微信公众号", "搜索广告"],
+	// 内容方向与合作对象不给通用候选：不同品类差异大，通用选项容易变成编造。
+	contentDirections: [],
+	partners: [],
 };
 
 /** 每个字段该写什么。模型没给出内容时，把这些提示连同示例一起摆出来。 */
-export const fieldHints: Record<DraftField, { hint: string; example: string }> = {
+export const fieldHints: Record<SuggestionField, { hint: string; example: string }> = {
 	product: {
 		hint: "写清卖的是什么，带上品类和规格就够；只写名字也可以。",
 		example: "例如：南瓜子 500 克罐装",
@@ -75,6 +86,14 @@ export const fieldHints: Record<DraftField, { hint: string; example: string }> =
 		hint: "写已经在用的平台；还没定就留空，之后在复盘页补。",
 		example: "例如：微信视频号、抖音",
 	},
+	contentDirections: {
+		hint: "写打算表达的方向；只记录基线，不代表已发布。",
+		example: "例如：产地溯源短视频",
+	},
+	partners: {
+		hint: "写考虑接触的合作对象名称；不代表已联系或已合作。",
+		example: "例如：本地生活达人",
+	},
 };
 
 function readList(text: string): string[] {
@@ -83,6 +102,8 @@ function readList(text: string): string[] {
 
 export function selectedValues(form: FormState, field: ChoiceField): string[] {
 	if (field === "channels") return form.channels.map((channel) => channel.name).filter(Boolean);
+	if (field === "contentDirections") return readList(form.contentDirections);
+	if (field === "partners") return readList(form.partners);
 	return readList(form[field]);
 }
 
@@ -133,7 +154,7 @@ export function setupBrief(form: FormState, notes: TaskNotes): string {
 export type SuggestionSource = "quote" | "idea";
 
 export type TaskSuggestion = {
-	field: DraftField;
+	field: SuggestionField;
 	value: string;
 	/** quote：用户资料里的原话；idea：模型按资料整理的，需要用户自己核对。 */
 	source: SuggestionSource;
@@ -155,7 +176,7 @@ export function taskSuggestions(
 ): TaskSuggestion[] {
 	const items: TaskSuggestion[] = [];
 	const seen = new Set<string>();
-	const push = (field: DraftField, value: unknown, source: SuggestionSource, evidence?: unknown) => {
+	const push = (field: SuggestionField, value: unknown, source: SuggestionSource, evidence?: unknown) => {
 		if (typeof value !== "string") return;
 		const text = value.trim();
 		if (!text) return;
@@ -179,7 +200,7 @@ export function taskSuggestions(
 	if (ideas) {
 		push("product", ideas.product?.value, "idea", ideas.product?.evidence);
 		for (const value of ideas.objectives ?? []) push("objective", value, "idea");
-		for (const field of ["audience", "sellingPoints", "channels"] as const)
+		for (const field of ["audience", "sellingPoints", "channels", "contentDirections", "partners"] as const)
 			for (const value of ideas[field] ?? []) push(field, value, "idea");
 	}
 	return items;
@@ -187,7 +208,7 @@ export function taskSuggestions(
 
 /** 用户勾选后的表单：产品换成勾选的那一个，其余追加并去重。 */
 export function applyTaskSuggestions(form: FormState, items: readonly TaskSuggestion[]): FormState {
-	const values = (field: DraftField) => items.filter((item) => item.field === field).map((item) => item.value);
+	const values = (field: SuggestionField) => items.filter((item) => item.field === field).map((item) => item.value);
 	let product = form.product;
 	for (const value of values("product")) product = value;
 	const channels = [...form.channels];
@@ -199,6 +220,8 @@ export function applyTaskSuggestions(form: FormState, items: readonly TaskSugges
 		objective: mergeList(form.objective, values("objective")),
 		audience: mergeList(form.audience, values("audience")),
 		sellingPoints: mergeList(form.sellingPoints, values("sellingPoints")),
+		contentDirections: mergeList(form.contentDirections, values("contentDirections")),
+		partners: mergeList(form.partners, values("partners")),
 		channels,
 	};
 }
