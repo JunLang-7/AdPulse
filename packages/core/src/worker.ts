@@ -49,6 +49,13 @@ export class Worker {
 		/** 生命周期在线清理（#40 S3）；未注入时不做清理。 */
 		private lifecycleCleanup?: { runOnce: () => Promise<unknown> },
 		private readonly cleanupIntervalMs = 3_600_000,
+		/** 假设偏差初判（问题二 S2）：未注入时初判 job 失败并保留原因，不影响其他任务。 */
+		private hypothesisVerdicts?: {
+			prepare: (source: Extract<
+				Job["task"],
+				{ kind: "prepare_hypothesis_verdicts" }
+			>["source"]) => Promise<void>;
+		},
 	) {}
 
 	/** 上一次日汇总调度的时间戳，用于在没有任务可领时按间隔触发。 */
@@ -113,6 +120,11 @@ export class Worker {
 					if (!this.investigationAlerts)
 						throw new Error("investigation alert service is not configured");
 					await this.investigationAlerts.prepareSession(job.task.alertId);
+					break;
+				case "prepare_hypothesis_verdicts":
+					if (!this.hypothesisVerdicts)
+						throw new Error("hypothesis verdict service is not configured");
+					await this.hypothesisVerdicts.prepare(job.task.source);
 					break;
 				case "send_investigation_decision":
 				case "send_delivery":

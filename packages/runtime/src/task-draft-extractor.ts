@@ -580,3 +580,94 @@ export function createTaskDraftRequestLimit(options: {
 		}
 	};
 }
+
+/** 通用 JSON 补全出口：假设草案生成与初判共用同一套连接与限流。 */
+export type JsonCaller = (
+	systemPrompt: string,
+	brief: string,
+	maxTokens?: number,
+) => Promise<string | null>;
+
+/** 从目录连接构造 JSON 补全调用；与抽取路径共用协议适配、出网管控与预算。 */
+export function createCatalogJsonCaller(
+	providerId: string,
+	modelId: string,
+	apiKey: string,
+	fetchImpl: typeof fetch = fetch,
+	limit = createTaskDraftRequestLimit(),
+): JsonCaller | undefined {
+	const entry = findCatalogModel(providerId, modelId);
+	const key = apiKey.trim();
+	if (!entry || !key || entry.provider !== providerId || !isTaskDraftProtocolWired(entry.api)) return;
+	if (isGeminiProtocol(entry.api)) return;
+	const model = {
+		id: entry.id,
+		name: entry.name,
+		api: entry.api,
+		provider: providerId,
+		baseUrl: entry.baseUrl,
+		reasoning: entry.reasoning ?? false,
+		...(entry.thinkingLevelMap ? { thinkingLevelMap: entry.thinkingLevelMap } : {}),
+		input: (entry.input ?? ["text"]) as Model<"openai-completions">["input"],
+		cost: entry.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: entry.contextWindow ?? 8_192,
+		maxTokens: entry.maxTokens ?? maxOutputTokens,
+		...(entry.compat ? { compat: entry.compat as NonNullable<Model<TaskDraftProtocol>["compat"]> } : {}),
+	} satisfies Model<TaskDraftProtocol>;
+	const provider = createProvider({
+		id: providerId,
+		name: entry.name,
+		baseUrl: entry.baseUrl,
+		auth: { apiKey: envApiKeyAuth(entry.name, []) },
+		models: [model],
+		api: protocolApi(entry.api),
+	});
+	return createJsonCaller(provider, entry.id, key, fetchImpl, limit);
+}
+
+export function createJsonCaller(
+	provider: Provider,
+	modelId: string,
+	key: string,
+	fetchImpl: typeof fetch,
+	limit: ReturnType<typeof createTaskDraftRequestLimit>,
+): JsonCaller | undefined {
+	const models = createModels();
+	models.setProvider(provider);
+	const model = models.getModel(provider.id, modelId);
+	if (!model || !isTaskDraftProtocolWired(model.api)) return;
+	const protocol = model.api as TaskDraftProtocol;
+	const responses = protocol === "openai-responses";
+	const anthropic = protocol === "anthropic-messages";
+	const sampling = samplingFor(protocol, model.provider);
+	const guardedFetch = providerFetch(
+		model.baseUrl + protocolEndpoint(protocol),
+		fetchImpl,
+		anthropic ? ["?beta=true"] : [],
+	);
+	return async (systemPrompt, brief, maxTokens = maxOutputTokens) => {
+		if (!brief.trim() || brief.length > taskDraftBriefMaxLength) return null;
+		return limit(async () => {
+			try {
+				const response = await models.completeSimple(model, {
+					systemPrompt,
+					messages: [{ role: "user", content: brief, timestamp: Date.now() }],
+				}, {
+					apiKey: key,
+					fetch: guardedFetch,
+					signal: AbortSignal.timeout(requestTimeoutMs),
+					timeoutMs: requestTimeoutMs,
+					maxRetries: 0,
+					cacheRetention: "none",
+					maxTokens,
+					...(responses ? {} : { temperature: 0 }),
+					...(sampling ? { samplingParams: sampling } : {}),
+				});
+				if (response.stopReason !== "stop") return null;
+				return response.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("");
+			} catch {
+				return null;
+			}
+		});
+	};
+}
