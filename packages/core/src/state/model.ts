@@ -818,6 +818,15 @@ export interface UserSource {
 	lastReason: string | null;
 	status: "active" | "stopped";
 }
+/** 搜索源每日额度（按北京时间自然日计）；付费源用完即停，次日恢复。 */
+export interface SearchQuota {
+	id: string;
+	provider: string;
+	day: string;
+	used: number;
+	dailyLimit: number;
+	updatedAt: string;
+}
 export interface SourceItem {
 	id: string;
 	sourceKey: string;
@@ -1093,6 +1102,7 @@ export interface Entities {
 	investigationAlerts: InvestigationAlert;
 	userSources: UserSource;
 	signalAssessments: SignalAssessment;
+	searchQuotas: SearchQuota;
 	sourceStates: SourceState;
 	sourceRuns: SourceRun;
 	sourceSnapshots: SourceSnapshot;

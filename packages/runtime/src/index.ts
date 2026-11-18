@@ -251,8 +251,9 @@ UserSiteFetcher,
 isAllowedContentType,
 isPublicAddress,} from "./source-fetch.js";
 export { runSources } from "./source-runner.js";
+export { bingProvider, agentReachProvider, serperProvider, braveProvider, providersFromEnvironment, parseDailyLimits, bingQueries } from "./search-providers.js";
 export { runUserSources } from "./user-source-runner.js";
-export { discoverCompanySite, pickCompanySite, resolveNewsListPage, searchBing, readViaAgentReach, parseMarkdownLinks, agentReachReadFallback, AgentReachLimitError, resetDiscoveryThrottle } from "./site-discovery.js";
+export { discoverCompanySite, pickCompanySite, resolveNewsListPage, searchBing, readViaAgentReach, parseMarkdownLinks, agentReachReadFallback, AgentReachLimitError, resetDiscoveryThrottle , SearchQuotaExhaustedError } from "./site-discovery.js";
 export { discoverSource } from "./source-discovery.js";
 export { discoverXiaohongshu } from "./xiaohongshu-discovery.js";
 export type { XiaohongshuNoteCandidate, RunXiaohongshu } from "./xiaohongshu-discovery.js";

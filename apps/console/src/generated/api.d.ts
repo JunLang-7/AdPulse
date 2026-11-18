@@ -590,6 +590,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/search-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 本人可用的搜索源与今日额度
+         * @description 按北京时间自然日计额度；额度用完的源会标记 exhausted，调用会暂停到次日。
+         */
+        get: operations["listSearchProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/user-sources": {
         parameters: {
             query?: never;
@@ -5329,6 +5349,45 @@ export interface operations {
             };
         };
     };
+    listSearchProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            provider: string;
+                            label: string;
+                            metered: boolean;
+                            dailyLimit: number | null;
+                            used: number;
+                            remaining: number | null;
+                            exhausted: boolean;
+                            day: string;
+                            detail: string | null;
+                        }[];
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     listUserSources: {
         parameters: {
             query?: never;
@@ -5407,6 +5466,13 @@ export interface operations {
             };
             /** @description Host already added */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Search quota exhausted for today */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

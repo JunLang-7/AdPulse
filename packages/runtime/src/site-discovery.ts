@@ -114,6 +114,15 @@ export interface CompanySite {
 	via: string;
 }
 
+/** 搜索源额度全部用完：调用方应提示用户次日恢复或手动补填。 */
+export class SearchQuotaExhaustedError extends Error {
+	constructor(
+		public readonly providers: Array<{ provider: string; label: string; detail: string | null }>,
+	) {
+		super("search quota exhausted");
+	}
+}
+
 type RunReach = (executable: string, args: string[]) => Promise<{ stdout: string; exitCode: number }>;
 
 const runReach: RunReach = (executable, args) =>
@@ -209,14 +218,38 @@ export async function searchBing(brand: string, fetcherFor?: (hosts: string[]) =
 export async function discoverCompanySite(
 	name: string,
 	executable: string | undefined,
-	options: { runReach?: RunReach; fetcher?: SourceFetcher; bingFetcherFor?: (hosts: string[]) => SourceFetcher } = {},
+	options: {
+		runReach?: RunReach;
+		fetcher?: SourceFetcher;
+		bingFetcherFor?: (hosts: string[]) => SourceFetcher;
+		/** 多源聚合（带额度管控）；传入后不再走单源路径。 */
+		aggregator?: {
+			search(brand: string): Promise<{
+				hits: Array<{ title: string; url: string }>;
+				providers: Array<{ provider: string; label: string; status: string; detail: string | null }>;
+			}>;
+		};
+	} = {},
 ): Promise<CompanySite> {
 	const brand = name.replace(/\s+/gu, " ").trim();
 	if (!brand) throw new Error("company name required");
 	// 比对时忽略空格：用户可能输入“某 企业”，页面写的是“某企业”。
 	const brandCompact = brand.replace(/\s+/gu, "");
 	let searchItems: unknown;
-	if (executable && isAbsolute(executable)) {
+	// 聚合搜索：给了 aggregator 就走多源（带额度管控），否则走旧的单源兼容路径。
+	if (options.aggregator) {
+		const aggregated = await options.aggregator.search(brand);
+		if (aggregated.hits.length === 0) {
+			const exhausted = aggregated.providers.filter((p) => p.status === "quota_exhausted");
+			if (exhausted.length > 0)
+				throw new SearchQuotaExhaustedError(
+					exhausted.map((p) => ({ provider: p.provider, label: p.label, detail: p.detail })),
+				);
+			const details = aggregated.providers.filter((p) => p.detail).map((p) => `${p.label}：${p.detail}`);
+			throw new Error(details.length > 0 ? `search found nothing (${details.join("；")})` : "search found nothing");
+		}
+		searchItems = aggregated.hits;
+	} else if (executable && isAbsolute(executable)) {
 		const run = options.runReach ?? runReach;
 		const profile = await mkdtemp(resolve(tmpdir(), "adpulse-site-"));
 		try {

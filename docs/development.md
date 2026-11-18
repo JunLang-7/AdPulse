@@ -731,7 +731,27 @@ bun run sources discover weichai_news campaigns
 
 用户自加企业站点（`/api/me/user-sources`）：登记后立即采集一次，之后可手动重采。**同一站点 5 分钟内只采集一次**（429 `refresh_too_soon`，失败也计入冷却），避免连点或脚本对第三方站点造成持续压力；一次刷新包含 robots、列表页与若干探测页，最多约 20 个站内请求。**每日每站配额尚未实现**，需在后续增量里补（当前只靠冷却与 robots 约束）。
 
-## 7.1 任务生命周期（#40 S1：到期与限访）
+## 7.1 搜索源聚合与额度（付费源用完即停）
+
+「只给企业名称」的官网自动发现由多个搜索源聚合完成。每个源按北京时自然日单独记额度，**用满即停**，不静默降级；控制台直接显示每个源今日已用/剩余。
+
+| 源 | 启用条件 | 默认日额度 | 环境变量 |
+| --- | --- | --- | --- |
+| Bing 网页检索（RSS） | 总是启用 | 200 | `SEARCH_DAILY_LIMITS=bing:N` |
+| Exa 语义检索 | `AGENT_REACH_BIN` 已配 | 50 | `SEARCH_DAILY_LIMITS=exa:N` |
+| Serper（Google，付费） | `SERPER_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=serper:N` |
+| Brave 搜索（付费） | `BRAVE_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=brave:N` |
+
+调用顺序：免费源优先（Bing → Exa），结果不够时才用付费源兑底；已够则不消耗付费额度。
+
+- **失败退额度**：源抛错、上游失败、限流、密钥失效都不计费；只有真正返回结果的调用才计一次。
+- **额度用尽**：`POST /api/me/user-sources` 在 `listUrl` 留空且所有源都无额度时返回 `429 search_quota_exhausted`（与采集冷却的 429 靠错误码区分）。
+- **状态可见**：`GET /api/me/search-providers` 返回每源 `used`/`remaining`/`exhausted`/`day`。
+- **不影响主链路**：用户仍可直接填写列表页地址，采集、转事件与推送不受额度约束。
+
+额度记在 `searchQuotas`（迁移 22），按 `provider + day` 唯一；内存存储重启清零，PostgreSQL 持久保存。额度是部署级全局计数（单租户试点口径），多租户需按用户拆分。
+
+## 7.2 任务生命周期（#40 S1：到期与限访）
 
 只做到期判定与读取限访；物理清理、删除确认、180 天审计与备份策略在后续切片实现。
 
