@@ -3017,8 +3017,9 @@
       "TaskRules": {
         "type": "object",
         "properties": {
+          "placementType": { "type": "string", "enum": ["paid_ads", "influencer", "seeding"], "description": "本任务的效果告警口径；一个任务只用一套口径。" },
           "metricDefinition": { "type": "string" },
-          "metricKey": { "type": "string", "enum": ["cost_per_consultation"] },
+          "metricKey": { "type": "string", "enum": ["cost_per_consultation", "cost_per_engagement"] },
           "currency": { "type": "string" },
           "unit": { "type": "string" },
           "statWindowDays": { "type": "integer", "minimum": 0 },
@@ -3300,7 +3301,8 @@
               "objectives": { "type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 100 } },
               "audience": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 160 } },
               "sellingPoints": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 160 } },
-              "channels": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 128 } }
+              "channels": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 128 } },
+              "placementTypes": { "type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": { "type": "string", "enum": ["paid_ads", "influencer", "seeding"] }, "description": "投放方式参考建议，需用户核对，不自动写入表单。" }
             }
           }
         },
@@ -3409,6 +3411,7 @@
             "additionalProperties": {
               "type": "object",
               "properties": {
+                "type": { "type": "string", "enum": ["paid_ads", "influencer", "seeding"], "description": "投放方式；缺省按 paid_ads 读取。" },
                 "budget": {
                   "type": "number"
                 },
@@ -4341,6 +4344,7 @@
       "EvidenceRecordInput": {
         "type": "object",
         "properties": {
+          "placementType": { "type": "string", "enum": ["paid_ads", "influencer", "seeding"], "description": "缺省 paid_ads；指标键集合必须与该口径一致。" },
           "source": { "$ref": "#/components/schemas/EvidenceSourceInput" },
           "scope": { "$ref": "#/components/schemas/EvidenceScope" },
           "period": { "$ref": "#/components/schemas/EvidencePeriod" },
@@ -4397,12 +4401,8 @@
       },
       "EvidenceMetricsContract": {
         "type": "object",
-        "properties": {
-          "spendMinor": { "$ref": "#/components/schemas/EvidenceMetricDefinition" },
-          "consultations": { "$ref": "#/components/schemas/EvidenceMetricDefinition" }
-        },
-        "required": ["spendMinor", "consultations"],
-        "additionalProperties": false
+        "description": "键由投放方式口径决定：付费广告 spendMinor/consultations；达人 feeMinor/engagement；种草 contentCostMinor/engagement。不得混用。",
+        "additionalProperties": { "$ref": "#/components/schemas/EvidenceMetricDefinition" }
       },
       "EvidenceCurrency": {
         "type": "object",
@@ -4425,21 +4425,13 @@
       },
       "EvidenceRawValues": {
         "type": "object",
-        "properties": {
-          "spend": { "oneOf": [{ "type": "string", "maxLength": 500 }, { "type": "number" }, { "type": "null" }] },
-          "consultations": { "oneOf": [{ "type": "string", "maxLength": 500 }, { "type": "number" }, { "type": "null" }] }
-        },
-        "required": [],
-        "additionalProperties": false
+        "description": "报表原始字段，键名由该投放方式的报表决定。",
+        "additionalProperties": { "oneOf": [{ "type": "string", "maxLength": 500 }, { "type": "number" }, { "type": "null" }] }
       },
       "EvidenceValues": {
         "type": "object",
-        "properties": {
-          "spendMinor": { "type": "integer", "minimum": 0, "nullable": true },
-          "consultations": { "type": "integer", "minimum": 0, "nullable": true }
-        },
-        "required": [],
-        "additionalProperties": false
+        "description": "计算用值，键名严格等于该投放方式口径的两个指标键。",
+        "additionalProperties": { "type": "integer", "minimum": 0, "nullable": true }
       },
       "EvidenceVersion": {
         "type": "object",
@@ -4447,6 +4439,7 @@
           "id": { "type": "string" }, "evidenceId": { "type": "string" }, "ownerId": { "type": "string" },
           "taskId": { "type": "string" }, "taskVersion": { "type": "integer" }, "version": { "type": "integer" },
           "businessKey": { "type": "string" }, "contentDigest": { "type": "string" },
+          "placementType": { "type": "string", "enum": ["paid_ads", "influencer", "seeding"] },
           "scope": { "$ref": "#/components/schemas/EvidenceScope" }, "period": { "$ref": "#/components/schemas/EvidencePeriod" },
           "metricsContract": { "$ref": "#/components/schemas/EvidenceMetricsContract" }, "currency": { "$ref": "#/components/schemas/EvidenceCurrency" },
           "attribution": { "$ref": "#/components/schemas/EvidenceAttribution" }, "callbackStatus": { "type": "string", "enum": ["complete", "pending", "not_applicable", "unknown"] },
@@ -4526,9 +4519,9 @@
       "ComparisonReason": {
         "type": "object",
         "properties": {
-          "code": { "type": "string", "enum": ["NO_BASELINE", "TASK_MISMATCH", "ACCOUNT_MISMATCH", "SOURCE_MISSING", "SCOPE_MISMATCH", "METRICS_CONTRACT_MISMATCH", "CURRENCY_MISMATCH", "ATTRIBUTION_MISMATCH", "TIME_ZONE_MISMATCH", "PERIOD_INVALID", "PERIOD_OVERLAP", "PERIOD_NOT_ADJACENT", "DURATION_MISMATCH", "PERIOD_INCOMPLETE", "CALLBACK_PENDING", "CALLBACK_UNKNOWN", "VALUE_MISSING", "VALUE_NULL", "VALUE_INVALID", "RULE_METRIC_MISSING", "RULE_METRIC_UNSUPPORTED", "RULE_THRESHOLD_MISSING", "RULE_CURRENCY_MISSING", "RULE_UNIT_MISSING", "RULE_WINDOW_MISSING", "RULE_MINIMUMS_MISSING", "RULE_CURRENCY_MISMATCH", "RULE_UNIT_MISMATCH", "WINDOW_MISMATCH", "SAMPLE_BELOW_MINIMUM", "ZERO_DENOMINATOR"] },
+          "code": { "type": "string", "enum": ["NO_BASELINE", "TASK_MISMATCH", "ACCOUNT_MISMATCH", "SOURCE_MISSING", "SCOPE_MISMATCH", "PLACEMENT_TYPE_MISMATCH", "RULE_PLACEMENT_MISMATCH", "METRICS_CONTRACT_MISMATCH", "CURRENCY_MISMATCH", "ATTRIBUTION_MISMATCH", "TIME_ZONE_MISMATCH", "PERIOD_INVALID", "PERIOD_OVERLAP", "PERIOD_NOT_ADJACENT", "DURATION_MISMATCH", "PERIOD_INCOMPLETE", "CALLBACK_PENDING", "CALLBACK_UNKNOWN", "VALUE_MISSING", "VALUE_NULL", "VALUE_INVALID", "RULE_METRIC_MISSING", "RULE_METRIC_UNSUPPORTED", "RULE_THRESHOLD_MISSING", "RULE_CURRENCY_MISSING", "RULE_UNIT_MISSING", "RULE_WINDOW_MISSING", "RULE_MINIMUMS_MISSING", "RULE_CURRENCY_MISMATCH", "RULE_UNIT_MISMATCH", "WINDOW_MISMATCH", "SAMPLE_BELOW_MINIMUM", "ZERO_DENOMINATOR"] },
           "axis": { "type": "string", "enum": ["period_comparison", "current_threshold", "both"] },
-          "metric": { "type": "string", "enum": ["spendMinor", "consultations", "cost_per_consultation"] },
+          "metric": { "type": "string", "enum": ["spendMinor", "consultations", "feeMinor", "contentCostMinor", "engagement", "cost_per_consultation", "cost_per_engagement"] },
           "evidenceRef": { "$ref": "#/components/schemas/EvidenceRef" },
           "details": { "type": "object", "additionalProperties": { "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }] } },
           "remediation": { "type": "object", "properties": { "action": { "type": "string", "enum": ["provide_evidence", "revise_task_rules", "verify_source", "none"] }, "completionCriteria": { "type": "string", "enum": ["matching_complete_evidence_version", "complete_task_rule_version", "source_confirms_zero", "manual_review"] } }, "required": ["action", "completionCriteria"], "additionalProperties": false }
@@ -4544,6 +4537,8 @@
           "evaluatorVersion": { "type": "integer", "enum": [1] },
           "status": { "type": "string", "enum": ["comparable", "incomparable", "awaiting_supplementation", "missing_baseline", "temporarily_uncomputable"] },
           "canComparePeriods": { "type": "boolean" }, "canEvaluateCurrentThreshold": { "type": "boolean" },
+          "placementType": { "type": "string", "enum": ["paid_ads", "influencer", "seeding"] },
+          "metricKeys": { "type": "object", "properties": { "spend": { "type": "string" }, "count": { "type": "string" }, "derived": { "type": "string" } }, "required": ["spend", "count", "derived"], "additionalProperties": false },
           "comparisons": { "type": "object", "properties": {
             "spendMinor": { "type": "object", "properties": { "baseline": { "type": "integer" }, "current": { "type": "integer" }, "delta": { "type": "integer" } }, "required": ["baseline", "current", "delta"], "additionalProperties": false },
             "consultations": { "type": "object", "properties": { "baseline": { "type": "integer" }, "current": { "type": "integer" }, "delta": { "type": "integer" } }, "required": ["baseline", "current", "delta"], "additionalProperties": false },
@@ -4552,7 +4547,7 @@
             }, "required": ["baseline", "current", "direction"], "additionalProperties": false }
           }, "required": [], "additionalProperties": false },
           "thresholdEvaluation": { "type": "object", "properties": {
-            "status": { "type": "string", "enum": ["exceeded", "not_exceeded", "not_evaluated"] }, "metricKey": { "type": "string", "enum": ["cost_per_consultation"] },
+            "status": { "type": "string", "enum": ["exceeded", "not_exceeded", "not_evaluated"] }, "metricKey": { "type": "string", "enum": ["cost_per_consultation", "cost_per_engagement"] },
             "value": { "$ref": "#/components/schemas/RatioValue" }, "thresholdMinor": { "type": "integer", "minimum": 0 }, "currency": { "type": "string" }
           }, "required": ["status"], "additionalProperties": false },
           "reasons": { "type": "array", "items": { "$ref": "#/components/schemas/ComparisonReason" } },
@@ -4574,8 +4569,8 @@
         "type": "object",
         "properties": {
           "id": { "type": "string" }, "ownerId": { "type": "string" }, "taskId": { "type": "string" }, "taskVersion": { "type": "integer" }, "dedupKey": { "type": "string" },
-          "reasonCode": { "type": "string", "enum": ["NO_BASELINE", "TASK_MISMATCH", "ACCOUNT_MISMATCH", "SOURCE_MISSING", "SCOPE_MISMATCH", "METRICS_CONTRACT_MISMATCH", "CURRENCY_MISMATCH", "ATTRIBUTION_MISMATCH", "TIME_ZONE_MISMATCH", "PERIOD_INVALID", "PERIOD_OVERLAP", "PERIOD_NOT_ADJACENT", "DURATION_MISMATCH", "PERIOD_INCOMPLETE", "CALLBACK_PENDING", "CALLBACK_UNKNOWN", "VALUE_MISSING", "VALUE_NULL", "VALUE_INVALID", "RULE_METRIC_MISSING", "RULE_METRIC_UNSUPPORTED", "RULE_THRESHOLD_MISSING", "RULE_CURRENCY_MISSING", "RULE_UNIT_MISSING", "RULE_WINDOW_MISSING", "RULE_MINIMUMS_MISSING", "RULE_CURRENCY_MISMATCH", "RULE_UNIT_MISMATCH", "WINDOW_MISMATCH", "SAMPLE_BELOW_MINIMUM", "ZERO_DENOMINATOR"] },
-          "axis": { "type": "string", "enum": ["period_comparison", "current_threshold", "both"] }, "metric": { "type": "string", "enum": ["spendMinor", "consultations", "cost_per_consultation"] },
+          "reasonCode": { "type": "string", "enum": ["NO_BASELINE", "TASK_MISMATCH", "ACCOUNT_MISMATCH", "SOURCE_MISSING", "SCOPE_MISMATCH", "PLACEMENT_TYPE_MISMATCH", "RULE_PLACEMENT_MISMATCH", "METRICS_CONTRACT_MISMATCH", "CURRENCY_MISMATCH", "ATTRIBUTION_MISMATCH", "TIME_ZONE_MISMATCH", "PERIOD_INVALID", "PERIOD_OVERLAP", "PERIOD_NOT_ADJACENT", "DURATION_MISMATCH", "PERIOD_INCOMPLETE", "CALLBACK_PENDING", "CALLBACK_UNKNOWN", "VALUE_MISSING", "VALUE_NULL", "VALUE_INVALID", "RULE_METRIC_MISSING", "RULE_METRIC_UNSUPPORTED", "RULE_THRESHOLD_MISSING", "RULE_CURRENCY_MISSING", "RULE_UNIT_MISSING", "RULE_WINDOW_MISSING", "RULE_MINIMUMS_MISSING", "RULE_CURRENCY_MISMATCH", "RULE_UNIT_MISMATCH", "WINDOW_MISMATCH", "SAMPLE_BELOW_MINIMUM", "ZERO_DENOMINATOR"] },
+          "axis": { "type": "string", "enum": ["period_comparison", "current_threshold", "both"] }, "metric": { "type": "string", "enum": ["spendMinor", "consultations", "feeMinor", "contentCostMinor", "engagement", "cost_per_consultation", "cost_per_engagement"] },
           "remediation": { "type": "object", "properties": { "action": { "type": "string", "enum": ["provide_evidence", "revise_task_rules", "verify_source", "none"] }, "completionCriteria": { "type": "string", "enum": ["matching_complete_evidence_version", "complete_task_rule_version", "source_confirms_zero", "manual_review"] } }, "required": ["action", "completionCriteria"], "additionalProperties": false },
           "evidenceRef": { "$ref": "#/components/schemas/EvidenceRef" }, "anchorEvidenceRef": { "$ref": "#/components/schemas/EvidenceRef" },
           "resolutionKind": { "type": "string", "enum": ["evidence", "task_version"] }, "source": { "type": "object", "properties": { "platform": { "type": "string" }, "accountRef": { "type": "string" } }, "required": ["platform", "accountRef"], "additionalProperties": false },
@@ -4608,7 +4603,9 @@
           "source": { "type": "object", "properties": { "platform": { "type": "string" }, "accountRef": { "type": "string" } }, "required": ["platform", "accountRef"], "additionalProperties": false },
           "scope": { "$ref": "#/components/schemas/EvidenceScope" },
           "period": { "$ref": "#/components/schemas/EvidencePeriod" },
-          "metric": { "type": "string", "enum": ["cost_per_consultation"] },
+          "metric": { "type": "string", "enum": ["cost_per_consultation", "cost_per_engagement"] },
+          "placementType": { "type": "string", "enum": ["paid_ads", "influencer", "seeding"] },
+          "attributionNote": { "type": "string", "description": "该口径的归因局限，必须随结论保留。" },
           "metricDefinition": { "type": "string" }, "metricFormula": { "type": "string" },
           "spendMinor": { "type": ["integer", "null"], "minimum": 0 },
           "consultations": { "type": ["integer", "null"], "minimum": 0 },
