@@ -5834,6 +5834,14 @@
               "$ref": "#/components/schemas/Change"
             }
           },
+          "hypothesis": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "validationPlan": {
+            "type": "string",
+            "maxLength": 300
+          },
           "createdAt": {
             "type": "string"
           }

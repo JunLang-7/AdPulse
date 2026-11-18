@@ -673,6 +673,9 @@ export interface StrategySnapshot {
 	version: number;
 	strategy: Strategy;
 	changes: StrategyChange[];
+	/** 当时被选中候选的假设/验证说明，用于事后核对；缺省表示未提供。 */
+	hypothesis?: string;
+	validationPlan?: string;
 	createdAt: string;
 }
 export interface Inbox {

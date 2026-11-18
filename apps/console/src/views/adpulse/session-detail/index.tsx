@@ -345,6 +345,20 @@ export default function SessionDetailPage() {
 										{changeLabel(change)}
 									</p>
 								))}
+								{snapshot.hypothesis || snapshot.validationPlan ? (
+									<p className="text-xs text-muted-foreground">
+										{[
+											snapshot.hypothesis
+												? `假设：${snapshot.hypothesis}`
+												: "",
+											snapshot.validationPlan
+												? `验证：${snapshot.validationPlan}`
+												: "",
+										]
+											.filter(Boolean)
+											.join("；")}
+									</p>
+								) : null}
 							</div>
 						))}
 					</CardContent>
