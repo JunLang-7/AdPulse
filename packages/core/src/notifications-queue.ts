@@ -66,6 +66,7 @@ export interface QueueItemInput {
 	effectRef?: NotificationItem["effectRef"];
 	marketEventRef?: NotificationItem["marketEventRef"];
 	hypothesisRef?: NotificationItem["hypothesisRef"];
+	signalRef?: NotificationItem["signalRef"];
 	logicalKey: string;
 	kind: NotificationItemKind;
 	taskId?: string;
@@ -220,6 +221,7 @@ export class NotificationQueue {
 					...(input.effectRef ? { effectRef: input.effectRef } : {}),
 					...(input.marketEventRef ? { marketEventRef: input.marketEventRef } : {}),
 					...(input.hypothesisRef ? { hypothesisRef: input.hypothesisRef } : {}),
+					...(input.signalRef ? { signalRef: input.signalRef } : {}),
 					status: "queued",
 					updatedAt: at,
 					...(existing.deliveryId ? { deliveryId: existing.deliveryId } : {}),
@@ -242,6 +244,7 @@ export class NotificationQueue {
 				...(input.effectRef ? { effectRef: input.effectRef } : {}),
 				...(input.marketEventRef ? { marketEventRef: input.marketEventRef } : {}),
 				...(input.hypothesisRef ? { hypothesisRef: input.hypothesisRef } : {}),
+				...(input.signalRef ? { signalRef: input.signalRef } : {}),
 				status: "queued",
 				createdAt: at,
 				updatedAt: at,

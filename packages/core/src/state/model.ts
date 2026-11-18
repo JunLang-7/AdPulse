@@ -159,7 +159,7 @@ export interface NotificationBatch {
 }
 
 /** 单条待发信息；logicalKey 保证同一逻辑事件不因重试/换标题/转载重复通知。 */
-export type NotificationItemKind = "effect_alert" | "market_event" | "hypothesis_verdict";
+export type NotificationItemKind = "effect_alert" | "market_event" | "hypothesis_verdict" | "signal_relevance";
 export type NotificationItemStatus = "queued" | "sent" | "cancelled" | "expired";
 
 export interface NotificationItem {
@@ -189,6 +189,8 @@ export interface NotificationItem {
 	marketEventRef?: { eventId: string; version: number; evidenceRevision: number };
 	/** 生产入队的假设判定引用；发送前重检假设仍非停用且判定仍确认。 */
 	hypothesisRef?: { hypothesisId: string; verdictId: string; hypothesisVersion: number };
+	/** 生产入队的信号关联引用；发送前重检线索与初判状态。 */
+	signalRef?: { assessmentId: string; leadId: string; taskVersion: number };
 	status: NotificationItemStatus;
 	/** 复用 Delivery：不另建投递状态机。 */
 	deliveryId?: string;
@@ -200,8 +202,8 @@ export interface NotificationItem {
 export interface NotificationSelection {
 	id: string;
 	ownerId: string;
-	/** 输入类别：effect = #10 效果告警；event = #38 市场/竞品事件；hypothesis = 假设偏差判定。 */
-	input: "effect" | "event" | "hypothesis";
+	/** 输入类别：effect = #10 效果告警；event = #38 市场/竞品事件；hypothesis = 假设偏差判定；signal = 发现线索关联初判。 */
+	input: "effect" | "event" | "hypothesis" | "signal";
 	/** effect 输入专用引用；event 输入不填。 */
 	alertId?: string;
 	/** 事件可无任务关联，因此 taskId 对 event 输入是可选的。 */
@@ -212,6 +214,8 @@ export interface NotificationSelection {
 	marketEventRef?: { eventId: string; version: number; evidenceRevision: number };
 	/** hypothesis 输入专用引用；发送前重检假设与判定状态。 */
 	hypothesisRef?: { hypothesisId: string; verdictId: string; hypothesisVersion: number };
+	/** signal 输入专用引用。 */
+	signalRef?: { assessmentId: string; leadId: string; taskVersion: number };
 	revision: number;
 	settingsVersion: number;
 	matchedTargetIds: string[];
@@ -755,6 +759,8 @@ export type JobTask =
 	| { kind: "send_delivery"; deliveryId: string }
 	| { kind: "send_investigation_decision"; deliveryId: string }
 	| { kind: "send_digest"; batchId: string }
+/** 主动发现线索的初步关联与重要性判定；模型调用在事务外完成。 */
+| { kind: "prepare_signal_assessments"; leadId: string }
 /** 假设偏差初判：新证据到达后为关联任务的非停用假设生成待确认初判。 */
 | {
 		kind: "prepare_hypothesis_verdicts";
@@ -865,6 +871,31 @@ export interface DiscoveryLead {
 	reviewedBy: string | null;
 	reviewReason: string | null;
 	convertedItemId: string | null;
+}
+/**
+ * 信号重要性与任务关联初判（问题四后半）：模型产出 preliminary，用户确认后生效。
+ * 不自动建事件、不自动推送未确认结论。
+ */
+export type SignalImportance = "high" | "medium" | "low" | "unclear";
+export type SignalRelation = "direct" | "indirect" | "unclear";
+export type SignalAssessmentStage = "preliminary" | "confirmed" | "rejected";
+export interface SignalAssessment {
+	id: string;
+	/** 同一线索同一任务版本唯一；驳回后新证据可新建。 */
+	dedupKey: string;
+	ownerId: string;
+	leadId: string;
+	taskId: string;
+	taskVersion: number;
+	importance: SignalImportance;
+	relation: SignalRelation;
+	explanation: string;
+	/** 逐字摘录自线索标题；摘不到时缺省。 */
+	quote?: string;
+	stage: SignalAssessmentStage;
+	preliminary?: { modelRef: string; generatedAt: string };
+	confirmedAt?: string;
+	createdAt: string;
 }
 /**
  * 个人模型连接（#86）：只存非敏感投影。密钥单独放在 UserModelCredential 的密文记录里，
@@ -1061,6 +1092,7 @@ export interface Entities {
 	comparisonFollowUps: ComparisonFollowUp;
 	investigationAlerts: InvestigationAlert;
 	userSources: UserSource;
+	signalAssessments: SignalAssessment;
 	sourceStates: SourceState;
 	sourceRuns: SourceRun;
 	sourceSnapshots: SourceSnapshot;

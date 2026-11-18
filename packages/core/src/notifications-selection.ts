@@ -14,7 +14,7 @@ import type {
 	NotificationSelection,
 	SubscriptionTarget,
 } from "./state/model.js";
-import type { Hypothesis, HypothesisVerdict } from "./state/model.js";
+import type { Hypothesis, HypothesisVerdict, SignalAssessment } from "./state/model.js";
 
 /** 第一阶段仅接受服务端已经证明的本人任务关联，绝不匹配展示文字或域名。 */
 export function matchEffectTargets(
@@ -379,12 +379,16 @@ export class NotificationSelectionService {
 			// 事件引用只能指向本人事件；事件可以没有任务关联，因此不强制 taskId。
 			const events = new Set((await tx.marketEvents.all()).filter((head) => head.ownerId === ownerId).map((head) => head.id));
 			const hypotheses = new Set((await tx.hypotheses.listByOwner(ownerId)).map((head) => head.id));
+			const assessments = new Set((await tx.signalAssessments.listByOwner(ownerId)).map((item) => item.id));
 			const records = (await tx.notificationSelections.all()).filter((record) => record.ownerId === ownerId
 				&& (record.input === "event"
 					? Boolean(record.marketEventRef) && events.has(record.marketEventRef!.eventId)
 						&& (!record.taskId || tasks.has(record.taskId))
 					: record.input === "hypothesis"
 						? Boolean(record.hypothesisRef) && hypotheses.has(record.hypothesisRef!.hypothesisId)
+							&& record.taskId !== undefined && tasks.has(record.taskId)
+					: record.input === "signal"
+						? Boolean(record.signalRef) && assessments.has(record.signalRef!.assessmentId)
 							&& record.taskId !== undefined && tasks.has(record.taskId)
 					: Boolean(record.taskId) && tasks.has(record.taskId!) && Boolean(record.alertId) && alerts.has(record.alertId!)
 						&& Boolean(record.evidenceRef) && evidence.has(`${record.evidenceRef!.evidenceId}:${record.evidenceRef!.version}`))
@@ -423,6 +427,55 @@ async function selectionDeliveryIn(tx: Transaction, ownerId: string, record: Sel
 		...(status === batch.status && batch.statusReason ? { statusReason: batch.statusReason } : {}),
 		...(status === "sent" && batch.sentAt ? { sentAt: batch.sentAt } : {}),
 	};
+}
+
+/** 信号初判确认后的入队：只在 Confirmed 的同一事务内调用；low/unclear 只留痕。 */
+export async function selectSignalAssessmentIn(
+	tx: Transaction, assessment: SignalAssessment, taskVersion: number, leadTitle: string,
+	queue: NotificationQueue, now: () => string,
+): Promise<void> {
+	const ownerId = assessment.ownerId;
+	const task = await tx.tasks.get(assessment.taskId);
+	if (!task || task.ownerId !== ownerId || !(await taskActiveIn(tx, task, new Date(now())))) return;
+	const id = createHash("sha256").update(JSON.stringify([ownerId, assessment.id])).digest("hex");
+	if (await tx.notificationSelections.get(id)) return;
+	const settings = await tx.subscriptionSettings.get(ownerId);
+	const targets = (await tx.subscriptionTargets.all()).filter((target) => target.userId === ownerId);
+	const matched = matchEffectTargets(targets, ownerId, assessment.taskId);
+	const associated = targets.filter((target) => target.kind === "task" && target.refId === assessment.taskId);
+	let reason: NotificationSelection["reason"] = "matched";
+	if (!settings?.proactiveEnabled) reason = "push_disabled";
+	else if (!settings.enabledAt || assessment.createdAt <= settings.enabledAt) reason = "before_enabled";
+	else if (associated.length === 0) reason = "no_target";
+	else if (!associated.some((target) => target.status === "active")) reason = "target_muted";
+	else if (matched.length === 0) reason = "category_excluded";
+	else if (!(await canSendProactiveIn(tx, ownerId))) reason = "not_authorized";
+	const ref = { assessmentId: assessment.id, leadId: assessment.leadId, taskVersion };
+	const record: NotificationSelection = {
+		id, ownerId, input: "signal", taskId: assessment.taskId, signalRef: ref,
+		revision: 1, settingsVersion: settings?.version ?? 0,
+		matchedTargetIds: matched.map((target) => target.id).sort(),
+		outcome: "not_queued", reason, evaluatedAt: now(),
+	};
+	if (reason === "matched" && settings) {
+		const product = (await tx.taskVersions.get(`${task.id}:${task.currentVersion}`))?.product ?? "本人任务";
+		const clean = (value: string) => value.replace(/[\u0000-\u001f]/g, " ");
+		const importance = assessment.importance === "high" ? "重要" : "值得关注";
+		const relation = assessment.relation === "direct" ? "与当前方案直接相关" : "与当前方案间接相关";
+		const queued = await queue.queueIn(tx, ownerId, {
+			logicalKey: `signal:${assessment.id}`, kind: "signal_relevance", taskId: assessment.taskId,
+			signalRef: ref,
+			title: `${importance}线索：${clean(leadTitle).slice(0, 40)}`,
+			summary: `${relation}。${clean(assessment.explanation).slice(0, 160)}。该关联由你确认；线索未经原文核验，本信息不执行广告操作。`,
+			relevance: `与你关注的任务「${clean(product).slice(0, 40)}」的主动发现关联相关。`,
+			sources: [{ label: `发现线索 ${assessment.leadId}`, publishedAt: null, observedAt: assessment.createdAt }],
+			revision: 1,
+		}, { settingsVersion: settings.version, enabled: true });
+		record.outcome = queued.outcome;
+		record.reason = queued.outcome === "queued" ? "matched" : queued.outcome === "duplicate" ? "duplicate" : "previously_cancelled";
+		if (queued.item) record.itemId = queued.item.id;
+	}
+	await tx.notificationSelections.put(record);
 }
 
 /** 在发送前重检生产引用；不把已处理/删除/修订的旧信息重新包装。 */
@@ -473,10 +526,27 @@ export async function marketEventNotificationCurrentIn(
 export async function notificationInputsStillCurrentIn(
 	tx: Transaction, item: NotificationItem, now: Date = new Date(),
 ): Promise<boolean> {
+	if (item.signalRef) return signalNotificationCurrentIn(tx, item, now);
 	if (item.hypothesisRef) return hypothesisNotificationCurrentIn(tx, item, now);
 	return item.marketEventRef
 		? marketEventNotificationCurrentIn(tx, item, now)
 		: effectNotificationCurrentIn(tx, item, now);
+}
+
+/** 信号条目发送前复检：任务活跃、线索仍存在、初判仍确认且任务版本一致。 */
+export async function signalNotificationCurrentIn(
+	tx: Transaction, item: NotificationItem, now: Date = new Date(),
+): Promise<boolean> {
+	const ref = item.signalRef;
+	if (!ref) return true;
+	const assessment = await tx.signalAssessments.get(ref.assessmentId);
+	if (!assessment || assessment.ownerId !== item.ownerId || assessment.stage !== "confirmed"
+		|| assessment.taskVersion !== ref.taskVersion) return false;
+	const lead = await tx.discoveryLeads.get(ref.leadId);
+	if (!lead || lead.ownerId !== item.ownerId) return false;
+	const task = await tx.tasks.get(assessment.taskId);
+	return Boolean(task && task.ownerId === item.ownerId && task.currentVersion === ref.taskVersion
+		&& await taskActiveIn(tx, task, now));
 }
 
 /**

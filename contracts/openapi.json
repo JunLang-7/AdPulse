@@ -2344,6 +2344,253 @@
           }
         }
       },
+      "/api/me/discovery-leads/{leadId}/assessments": {
+        "get": {
+          "operationId": "listSignalAssessmentsForLead",
+          "summary": "发现线索与本人任务的重要性和关联初判",
+          "description": "模型初判与用户确认记录；初判未确认前不产生提醒，不自动建事件。",
+          "parameters": [
+            {
+              "name": "leadId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Success",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/components/schemas/SignalAssessment"
+                        }
+                      }
+                    },
+                    "required": [
+                      "items"
+                    ]
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Invalid request",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Lead not found",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/me/signal-assessments/pending": {
+        "get": {
+          "operationId": "listPendingSignalAssessments",
+          "summary": "待确认的信号初判",
+          "parameters": [
+            {
+              "name": "taskId",
+              "in": "query",
+              "required": false,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Success",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/components/schemas/SignalAssessment"
+                        }
+                      }
+                    },
+                    "required": [
+                      "items"
+                    ]
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Invalid query",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/signal-assessments/{assessmentId}/confirm": {
+        "post": {
+          "operationId": "confirmSignalAssessment",
+          "summary": "确认信号初判（重要/相关时进入订阅提醒）",
+          "parameters": [
+            {
+              "name": "assessmentId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Success",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/SignalAssessment"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Not found",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "409": {
+              "description": "Conflict",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/signal-assessments/{assessmentId}/reject": {
+        "post": {
+          "operationId": "rejectSignalAssessment",
+          "summary": "驳回信号初判（终态留痕）",
+          "parameters": [
+            {
+              "name": "assessmentId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Success",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/SignalAssessment"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Not found",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "409": {
+              "description": "Conflict",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
     "/api/me/notification-selections": {
       "get": {
         "operationId": "listNotificationSelections",
@@ -4733,6 +4980,105 @@
             "status"
           ],
           "additionalProperties": false
+        },
+        "SignalAssessment": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "dedupKey": {
+              "type": "string"
+            },
+            "ownerId": {
+              "type": "string"
+            },
+            "leadId": {
+              "type": "string"
+            },
+            "taskId": {
+              "type": "string"
+            },
+            "taskVersion": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "importance": {
+              "type": "string",
+              "enum": [
+                "high",
+                "medium",
+                "low",
+                "unclear"
+              ]
+            },
+            "relation": {
+              "type": "string",
+              "enum": [
+                "direct",
+                "indirect",
+                "unclear"
+              ]
+            },
+            "explanation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "quote": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "stage": {
+              "type": "string",
+              "enum": [
+                "preliminary",
+                "confirmed",
+                "rejected"
+              ]
+            },
+            "preliminary": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "modelRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "generatedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "modelRef",
+                "generatedAt"
+              ]
+            },
+            "confirmedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "dedupKey",
+            "ownerId",
+            "leadId",
+            "taskId",
+            "taskVersion",
+            "importance",
+            "relation",
+            "explanation",
+            "stage",
+            "createdAt"
+          ]
         },
       "SubscriptionSchedule": {
         "type": "object",
