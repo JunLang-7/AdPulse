@@ -214,6 +214,7 @@ export {
 	isPublicAddress,
 } from "./source-fetch.js";
 export { runSources } from "./source-runner.js";
+export { runUserSources } from "./user-source-runner.js";
 export { discoverSource } from "./source-discovery.js";
 export { discoverModels, isDiscoveryProtocolWired, modelDiscoveryMaxModels } from "./model-discovery.js";
 export { geminiEndpoint, isGeminiModelId, requestGeminiText } from "./model-gemini.js";
