@@ -9,7 +9,13 @@ import type { SourceItem, UserSource } from "./state/model.js";
 
 const MAX_ITEMS = 20;
 const FETCH_LIMITS = { maxBytes: 512 * 1024, timeoutMs: 15_000 };
-/** 自动找列表页的常见路径兑底：每个站点最多多打 6 个请求，都在每日配额内。 */
+/**
+ * 刷新冷却：一次刷新最多会发 robots + 列表页 + 探测候选 + 新闻入口若干请求，
+ * 用户连点或脚本重复调用会对第三方站点造成持续压力。5 分钟内不重复采集同一站点。
+ * 尚未实现“每日每站配额”，此处为当前边界（见开发指南「用户自加来源」）。
+ */
+const REFRESH_COOLDOWN_MS = 5 * 60_000;
+/** 自动找列表页的常见路径兑底：单个候选页最多多打 6 个请求。 */
 const COMMON_NEWS_PATHS = [
 	"/news", "/news/index.html", "/xwzx/index.html", "/news/list.shtml",
 	"/media/index.html", "/news/gh.htm",
@@ -187,6 +193,12 @@ export class UserSourceService {
 				throw new UserSourceError(404, "not_found", "站点不存在");
 			return found;
 		});
+		// 冷却在读取来源后立即判定：失败也计入，避免失败重试风暴。
+		if (source.lastRefreshAt) {
+			const elapsed = Date.parse(now) - Date.parse(source.lastRefreshAt);
+			if (Number.isFinite(elapsed) && elapsed >= 0 && elapsed < REFRESH_COOLDOWN_MS)
+				throw new UserSourceError(429, "refresh_too_soon", "同一站点 5 分钟内只采集一次，请稍后再试");
+		}
 		const sourceKey = userSourceKey(sourceId);
 		const failure = async (reason: string): Promise<UserSourceRefreshResult> => {
 			await this.storage.transaction(async (tx) => {

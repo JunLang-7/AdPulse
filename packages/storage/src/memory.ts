@@ -36,6 +36,7 @@ export const tableNames = [
 	"comparisonFollowUps",
 	"investigationAlerts",
 	"userSources",
+	"signalAssessments",
 	"searchQuotas",
 	"lifecycleDeletions",
 	"auditEvents",

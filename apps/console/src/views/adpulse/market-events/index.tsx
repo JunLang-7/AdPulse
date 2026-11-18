@@ -24,13 +24,18 @@ function failure(status: number): Error {
 /** 后端给的是结构化判断原因，界面只挑对用户有意义的说法，不把字段名和防御性表述直接摊开。 */
 const FIELD_LABELS = { subject: "公告主体", eventTime: "事件时间", conditions: "适用条件" };
 
-/** 用户站点操作的失败文案：409=重复登记，400=地址或字段不合法，429=搜索额度用完。 */
+/** 用户站点操作的失败文案：按错误码区分，不单靠 HTTP 状态。 */
 const addStatusText = (error: unknown): string => {
-	const status = (error as { status?: number } | null)?.status ?? 0;
+	const record = (error as { status?: number; code?: string } | null) ?? null;
+	const status = record?.status ?? 0;
+	const code = record?.code ?? "";
+	// 搜索额度用完与采集冷却都是 429，必须按码区分，不能共用一条文案。
+	if (code === "search_quota_exhausted")
+		return "今日搜索额度已用完：次日 00:00（北京时间）自动恢复。也可以现在直接填写官网新闻列表页地址。";
 	if (status === 409) return "这个网站已经添加过，不需要重复登记。";
-	if (status === 400) return "地址或填写内容不合法：企业名称与关注对象名称不能为空。";
+	if (status === 429) return "刚刚采集过这个站点，5 分钟内不重复采集，请稍后再试。";
+	if (status === 400) return "地址或填写内容不合法：列表页必须是 https 的站点地址，企业名称与关注对象名称不能为空。";
 	if (status === 404) return "站点不存在或刚被删除，请刷新后重试。";
-	if (status === 429) return "今日搜索额度已用完：次日 00:00（北京时间）自动恢复。也可以现在直接填写官网新闻列表页地址。";
 	if (status === 422) return "没能自动找到这家企业的官网新闻页：请补填列表页地址，或换一个更明确的企业名称。";
 	return "操作失败，请稍后重试。";
 };
@@ -335,6 +340,28 @@ function DiscoveryLeadItem({ lead, busy, onReview }: {
 	const [mode, setMode] = useState<"accept" | "reject" | null>(null);
 	const [correctedDate, setCorrectedDate] = useState("");
 	const [reason, setReason] = useState("");
+	const queryClient = useQueryClient();
+	const assessments = useQuery({ queryKey: ["signal-assessments", lead.id], queryFn: async () => {
+		const r = await consoleClient.GET("/api/me/discovery-leads/{leadId}/assessments", { params: { path: { leadId: lead.id } } });
+		if (!r.data) throw new Error("无法读取线索初判");
+		return r.data.items;
+	} });
+	const tasks = useQuery({ queryKey: ["tasks"], queryFn: async () => {
+		const r = await consoleClient.GET("/api/tasks");
+		if (!r.data) throw new Error("无法读取任务");
+		return r.data.items;
+	} });
+	const decide = useMutation({ mutationFn: async ({ id, action }: { id: string; action: "confirm" | "reject" }) => {
+		const path = action === "confirm" ? "/api/signal-assessments/{assessmentId}/confirm" : "/api/signal-assessments/{assessmentId}/reject";
+		const r = await consoleClient.POST(path, { params: { path: { assessmentId: id } } });
+		if (!r.data) throw new Error("操作失败，请稍后重试。");
+		return r.data;
+	}, onSuccess: async () => {
+		await queryClient.invalidateQueries({ queryKey: ["signal-assessments", lead.id] });
+		await queryClient.invalidateQueries({ queryKey: ["signal-assessments-pending"] });
+	} });
+	const importanceLabel = (value: string) => value === "high" ? "重要" : value === "medium" ? "值得关注" : value === "low" ? "价值低" : "尚不确定";
+	const relationLabel = (value: string) => value === "direct" ? "直接相关" : value === "indirect" ? "间接相关" : "关系不明";
 	return <li className="space-y-2 rounded-md border p-3">
 		<div className="min-w-0 space-y-1">
 			<a className="block break-all font-medium text-blue-600 underline underline-offset-2 hover:text-blue-800" href={lead.url} target="_blank" rel="noreferrer" title="在新标签页打开原文">{lead.title}</a>
@@ -344,6 +371,16 @@ function DiscoveryLeadItem({ lead, busy, onReview }: {
 				{lead.author ? ` · 作者 ${lead.author}` : ""}
 				{" · "}索引日期 {formatLeadDate(lead.indexedPublishedAt)}（未核验）
 			</p>
+			{assessments.data?.filter((item) => item.stage === "preliminary").map((item) => <div key={item.id} className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
+				<p>模型初判 · {tasks.data?.find((task) => task.taskId === item.taskId)?.product ?? "本人任务"}：{importanceLabel(item.importance)} / {relationLabel(item.relation)}</p>
+				<p>{item.explanation}</p>
+				{item.quote ? <p className="text-muted-foreground">原文引用：{item.quote}</p> : null}
+				<div className="flex gap-2">
+					<Button size="sm" disabled={decide.isPending} onClick={() => decide.mutate({ id: item.id, action: "confirm" })}>确认关联</Button>
+					<Button size="sm" variant="outline" disabled={decide.isPending} onClick={() => decide.mutate({ id: item.id, action: "reject" })}>驳回</Button>
+				</div>
+			</div>)}
+			{decide.error ? <p role="alert" className="text-sm text-red-600">{decide.error.message}</p> : null}
 		</div>
 		{mode === null ? <div className="flex flex-wrap items-center gap-2">
 			<Button variant="outline" disabled={busy} onClick={() => setMode("accept")}>接受</Button>
@@ -413,7 +450,7 @@ export default function MarketEventsPage() {
 	]);
 	const addSite = useMutation({ mutationFn: async () => {
 		const r = await consoleClient.POST("/api/me/user-sources", { body: { label: siteForm.label, listUrl: siteForm.listUrl, subject: { kind: siteForm.kind === "competitor" ? "competitor" : "brand", name: siteForm.name } } });
-		if (r.error) throw Object.assign(new Error("add failed"), { status: r.response.status });
+		if (r.error) throw Object.assign(new Error("add failed"), { status: r.response.status, code: (r.error as { error?: string }).error });
 		return r.data;
 	}, onSuccess: async () => {
 		setSiteForm({ label: "", listUrl: "", kind: "brand", name: "" });

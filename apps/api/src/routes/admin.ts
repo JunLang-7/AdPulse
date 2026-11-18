@@ -15,6 +15,7 @@ import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
 import { handleMarketEvents } from "./market-events.js";
 import { handleHypotheses } from "./hypotheses.js";
+import { handleSignalAssessments } from "./signal-assessments.js";
 import type { AuditEvent, ModelAuditEvent } from "../server.js";
 
 const amount = z.number().finite().nonnegative();
@@ -385,6 +386,7 @@ async function sessionForJob(
 	// 日汇总与假设初判不属于任何会话。
 	if (job.task.kind === "send_digest") return null;
 	if (job.task.kind === "prepare_hypothesis_verdicts") return null;
+	if (job.task.kind === "prepare_signal_assessments") return null;
 	const inbox = await tx.inbox.get(job.task.inboxId);
 	const action = inbox && (await tx.actions.get(inbox.command.actionRef));
 	return action
@@ -415,6 +417,7 @@ export async function handleAdmin(
 ): Promise<void> {
 	if (await handleMarketEvents(req, res, runtime, userId, path)) return;
 	if (await handleHypotheses(req, res, runtime, userId, path)) return;
+	if (await handleSignalAssessments(req, res, runtime, userId, path)) return;
 	if (path.startsWith("/api/me/model-connections") || path === "/api/me/model-preferences") {
 		res.setHeader("Cache-Control", "no-store");
 		const modelApi = runtime.modelConnections;
@@ -927,6 +930,7 @@ export async function handleAdmin(
 							: j.task.kind === "evaluate_validation_check"
 								? checkIds.has(j.task.checkId)
 								: j.task.kind === "send_digest" || j.task.kind === "prepare_hypothesis_verdicts"
+									|| j.task.kind === "prepare_signal_assessments"
 									? false
 									: j.task.alertId === session.investigationAlertId,
 			);

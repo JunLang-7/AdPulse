@@ -16,6 +16,7 @@ import {
 	NotificationService,
 	ModelConnectionService,
 	Orchestrator,
+	SignalAssessmentService,
 	SubscriptionService,
 	ValidationCheckService,
 	resolveActiveIdentity,
@@ -41,6 +42,7 @@ import {
 	type ModelRouteInput,
 } from "./task-draft-extractor.js";
 import { createTaskDraftModels } from "./task-draft-models.js";
+import { createSignalAssessmentJobHandler } from "./signal-relevance-jobs.js";
 import {
 	createHypothesisVerdictJobHandler,
 	type HypothesisVerdictSource,
@@ -56,6 +58,7 @@ export type {
 	HypothesisReasoning,
 } from "./hypothesis-reasoning.js";
 export type { HypothesisVerdictSource } from "./hypothesis-jobs.js";
+export { createSignalAssessmentJobHandler, parseSignalSuggestion } from "./signal-relevance-jobs.js";
 
 export const reviewPolicy: PolicyEngine = {
 	async propose({ signal, roundNo }) {
@@ -86,6 +89,8 @@ export function compose(
 		hypothesisVerdicts?: {
 			prepare: (source: HypothesisVerdictSource) => Promise<void>;
 		};
+		/** 发现线索的重要性/关联初判处理器。 */
+		signalAssessments?: { prepare: (leadId: string) => Promise<void> };
 	} = {},
 ) {
 	const channels = new ChannelRegistry(accounts);
@@ -154,6 +159,7 @@ export function compose(
 		evidence,
 		marketEvents: new MarketEventService(storage),
 		hypotheses: new HypothesisService(storage),
+		signalAssessments: new SignalAssessmentService(storage),
 		comparisons,
 		validationChecks,
 		investigationAlerts,
@@ -179,6 +185,7 @@ export function compose(
 			3_600_000,
 			options.hypothesisVerdicts,
 			validationChecks,
+			options.signalAssessments,
 		),
 	};
 }
@@ -335,11 +342,21 @@ export async function fromEnvironment(
 			return selection ? `${selection.provider}/${selection.model}` : null;
 		},
 	);
+	// 发现线索的初判：与假设偏差共用同一套模型连接与限流。
+	const signalAssessments = createSignalAssessmentJobHandler(
+		storage,
+		(ownerId, systemPrompt, brief) => taskDraftModels.completeJson(ownerId, systemPrompt, brief),
+		(ownerId) => {
+			const selection = taskDraftModels.list(ownerId).defaultSelection;
+			return selection ? `${selection.provider}/${selection.model}` : null;
+		},
+	);
 	return {
 		...compose(storage, accounts, reviewPolicy, {
 			decisionCardsEnabled: env.DECISION_CARDS_ENABLED === "1",
 			...(env.PUBLIC_ORIGIN ? { detailUrlBase: env.PUBLIC_ORIGIN } : {}),
 			hypothesisVerdicts,
+			signalAssessments,
 		}),
 		taskDraftModels,
 		modelConnections,

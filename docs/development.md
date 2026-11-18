@@ -727,9 +727,13 @@ bun run sources discover weichai_news campaigns
 
 `discover` 现在可加 `--persist <operator>`：把发现结果写入 `discoveryLeads` 暂存表（含 operator、发现时间、原始查询词，URL 归一化后与现有 source items 及历史线索去重），供控制台「发现线索待审核」接受/拒绝/保留；接受后作为 source item 入库，拒绝后同 URL 不再出现。也可用 `discover xiaohongshu <查询词> --subject brand:名称|competitor:名称` 走 Agent-Reach 的小红书笔记搜索（需登录态，返回 unverified 笔记，仅测试/比赛用途，未做真机签核）。
 
+日期口径：`indexedPublishedAt` 与接受时的 `correctedPublishedAt` 都必须是**真实存在**的 `YYYY-MM-DD`（`2026-02-30` 这类格式合法但不存在的日期会被当成未知或被拒绝），与事件/证据侧校验一致。
+
+用户自加企业站点（`/api/me/user-sources`）：登记后立即采集一次，之后可手动重采。**同一站点 5 分钟内只采集一次**（429 `refresh_too_soon`，失败也计入冷却），避免连点或脚本对第三方站点造成持续压力；一次刷新包含 robots、列表页与若干探测页，最多约 20 个站内请求。**每日每站配额尚未实现**，需在后续增量里补（当前只靠冷却与 robots 约束）。
+
 ## 7.1 搜索源聚合与额度（付费源用完即停）
 
-「只给企业名称」的官网自动发现由多个搜索源聚合完成。每个源按北京时自然日单独记额度，**用满即停**，不静默降级；控制台会直接显示每个源今日已用/剩余。
+「只给企业名称」的官网自动发现由多个搜索源聚合完成。每个源按北京时自然日单独记额度，**用满即停**，不静默降级；控制台直接显示每个源今日已用/剩余。
 
 | 源 | 启用条件 | 默认日额度 | 环境变量 |
 | --- | --- | --- | --- |
@@ -738,13 +742,14 @@ bun run sources discover weichai_news campaigns
 | Serper（Google，付费） | `SERPER_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=serper:N` |
 | Brave 搜索（付费） | `BRAVE_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=brave:N` |
 
-调用顺序：免费源优先（Bing → Exa），结果不够时才用付费源兑底；已够则不消耗付费额度。额度用完时：
+调用顺序：免费源优先（Bing → Exa），结果不够时才用付费源兑底；已够则不消耗付费额度。
 
-- `POST /api/me/user-sources` 在留空 `listUrl` 且所有源都无额度时返回 **429** `search_quota_exhausted`；
-- `GET /api/me/search-providers` 返回每个源的 `used`/`remaining`/`exhausted`/`day`，供界面提示「次日 00:00 恢复」；
-- 用户仍可直接填写官网新闻列表页地址，采集、转事件与推送链路不受额度影响。
+- **失败退额度**：源抛错、上游失败、限流、密钥失效都不计费；只有真正返回结果的调用才计一次。
+- **额度用尽**：`POST /api/me/user-sources` 在 `listUrl` 留空且所有源都无额度时返回 `429 search_quota_exhausted`（与采集冷却的 429 靠错误码区分）。
+- **状态可见**：`GET /api/me/search-providers` 返回每源 `used`/`remaining`/`exhausted`/`day`。
+- **不影响主链路**：用户仍可直接填写列表页地址，采集、转事件与推送不受额度约束。
 
-额度记录在 `searchQuotas`（迁移 21），按 `provider + day` 唯一；内存存储重启即清零，PostgreSQL 持久保存。
+额度记在 `searchQuotas`（迁移 22），按 `provider + day` 唯一；内存存储重启清零，PostgreSQL 持久保存。额度是部署级全局计数（单租户试点口径），多租户需按用户拆分。
 
 ## 7.2 任务生命周期（#40 S1：到期与限访）
 

@@ -337,12 +337,25 @@ export class PostgresStorage implements Storage {
 				);
 			}
 			if (!current.has(21)) {
+				// 主动发现线索的初判：同一线索同一任务版本唯一。
+				await this.createEntityTable(client, "signalAssessments");
+				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_signal_assessment_dedup
+					ON adpulse_signalAssessments ((data->>'dedupKey'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_signal_assessment_lead
+					ON adpulse_signalAssessments ((data->>'ownerId'), (data->>'leadId'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_signal_assessment_stage
+					ON adpulse_signalAssessments ((data->>'ownerId'), (data->>'stage'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (21)",
+				);
+			}
+			if (!current.has(22)) {
 				// 搜索源额度：按源 + 北京时间自然日计；用完即停。
 				await this.createEntityTable(client, "searchQuotas");
 				await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS adpulse_search_quota_key
 					ON adpulse_searchQuotas ((data->>'provider'), (data->>'day'))`);
 				await client.query(
-					"INSERT INTO adpulse_schema_migrations(version) VALUES (21)",
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (22)",
 				);
 			}
 			await client.query("COMMIT");
