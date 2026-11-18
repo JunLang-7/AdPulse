@@ -12,6 +12,7 @@ src/
   views/adpulse/          业务页面
   layouts/full/           壳子：侧边栏、Header（无页面页脚）
   components/ui/          按需保留的 shadcn 组件
+public/branding/          页头 logo 与站点图标（源素材见 docs/assets/branding/）
 ```
 
 ## 命令
