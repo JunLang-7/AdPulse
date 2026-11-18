@@ -115,8 +115,8 @@ test("PostgreSQL: migrations 13 and 14 preserve market events and notification s
 		await pool.query("DROP TABLE IF EXISTS adpulse_hypotheses, adpulse_hypothesisVersions, adpulse_hypothesisVerdicts, adpulse_hypothesisOperations");
 		await pool.query("DROP TABLE IF EXISTS adpulse_validationChecks");
 		// 主动发现线索（迁移 19）与用户自加站点（迁移 20）同样要回到 v12 基线。
-		await pool.query("DROP TABLE IF EXISTS adpulse_discoveryLeads, adpulse_userSources");
-		await pool.query("DELETE FROM adpulse_schema_migrations WHERE version IN (13, 14, 15, 16, 17, 18, 19, 20)");
+		await pool.query("DROP TABLE IF EXISTS adpulse_discoveryLeads, adpulse_userSources, adpulse_searchQuotas");
+		await pool.query("DELETE FROM adpulse_schema_migrations WHERE version IN (13, 14, 15, 16, 17, 18, 19, 20, 21)");
 		const fixture = await eventSelectionFixture(storage);
 		await fixture.create();
 		const mainRows = () => storage.transaction(async (tx) => ({
@@ -131,7 +131,7 @@ test("PostgreSQL: migrations 13 and 14 preserve market events and notification s
 		await storage.initialize();
 		assert.deepEqual(await mainRows(), before);
 		const migrations = await pool.query("SELECT version FROM adpulse_schema_migrations WHERE version >= 11 ORDER BY version");
-		assert.deepEqual(migrations.rows.map((row) => row.version), [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+		assert.deepEqual(migrations.rows.map((row) => row.version), [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
 		const created = await service(storage).create(fixture.owner, inputFor(fixture.owner));
 		const credential = await storage.transaction((tx) => tx.userModelCredentials.get(created.id));
 		assert.ok(credential?.ciphertext);
