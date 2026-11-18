@@ -234,7 +234,11 @@ export default function SessionDetailPage() {
 									</span>
 								</div>
 								{snapshot.changes.map((change, index) => (
-									<p key={`${snapshot.id}:${index}`} className="text-xs text-muted-foreground">
+									<p
+										key={`${snapshot.id}:${index}`}
+										// 渠道名可达 128 字符且多为无空格 token：强制断词，避免被卡片的 overflow-hidden 裁掉。
+										className="break-all text-xs text-muted-foreground"
+									>
 										{changeLabel(change)}
 									</p>
 								))}
