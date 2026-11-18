@@ -379,6 +379,11 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 													</li>
 												))}
 											</ul>
+											{stageOnly ? (
+												<p className="text-xs text-muted-foreground">
+													如果你问的是别的字段（比如「给谁」），可以切到那一步再整理，或在「填写方式」里换成整表单一次给。
+												</p>
+											) : null}
 										</div>
 									) : null}
 								</div>

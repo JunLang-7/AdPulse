@@ -189,3 +189,32 @@ test("记住过的选择不再弹窗，直接沿用", async (t) => {
 	assert.equal(screen.queryByRole("heading", { name: "先选一个填写方式" }), null);
 	assert.ok(screen.getByRole("button", { name: /填写方式：按阶段一次次给/ }));
 });
+
+test("只写一句提问也能拿到候选建议，而不是只剩提示", async (t) => {
+	t.after(cleanup);
+	rememberMode("form");
+	serve({
+		"POST /api/task-drafts/extract": () => json({
+			recommendations: { audience: ["在意养生的上班族", "买给父母的中青年"] },
+		}),
+	});
+	renderGuide();
+	typeNote("你觉得给谁");
+
+	fireEvent.click(screen.getByRole("button", { name: "一次整理全部字段" }));
+	await screen.findByText("在意养生的上班族");
+	assert.ok(screen.getByText("买给父母的中青年"));
+	assert.ok(screen.getAllByText("AI 建议").length >= 2);
+});
+
+test("按阶段整理时，问的是别的字段会提示去哪看", async (t) => {
+	t.after(cleanup);
+	rememberMode("stage");
+	serve({ "POST /api/task-drafts/extract": () => json({}) });
+	renderGuide();
+	typeNote("你觉得给谁");
+
+	fireEvent.click(screen.getByRole("button", { name: "整理本阶段" }));
+	await screen.findByText(/还没整理出来的字段/);
+	assert.ok(screen.getByText(/如果你问的是别的字段（比如「给谁」）/));
+});

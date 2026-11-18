@@ -232,6 +232,24 @@ test("audience and channel stages return recommendations without verbatim excerp
 	});
 });
 
+test("question-only briefs answer with candidate suggestions instead of nothing", async () => {
+	const prompts: string[] = [];
+	const extract = createTaskDraftExtractor(deepseekEnv, async (input, init) => {
+		const request = await new Request(input, init).json();
+		prompts.push(request.messages[0].content);
+		return providerReply(JSON.stringify({
+			recommendations: { audience: ["在意养生的上班族", "买给父母的中青年"] },
+		}));
+	});
+	assert.ok(extract);
+	// 用户只写了一句提问，也要拿到可勾选的候选，而不是空对象。
+	assert.deepEqual(await extract("你觉得给谁"), {
+		recommendations: { audience: ["在意养生的上班族", "买给父母的中青年"] },
+	});
+	assert.match(prompts[0] ?? "", /只是在提问/);
+	assert.match(prompts[0] ?? "", /问「给谁」重点给 audience/);
+});
+
 test("task draft uses an instance-local provider call limit", async () => {
 	let calls = 0;
 	const extract = createTaskDraftExtractor(deepseekEnv, async () => {
