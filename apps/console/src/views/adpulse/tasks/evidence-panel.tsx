@@ -131,7 +131,7 @@ export function EvidencePanel({
 							</div>
 						</details>
 					) : null}
-					<QuickReviewPanel rules={rules} startOpen={empty} />
+					<QuickReviewPanel rules={rules} placementType={rules.placementType} startOpen={empty} />
 					<details className="rounded-lg border">
 						<summary className="cursor-pointer px-4 py-3 text-sm font-medium">
 							<FileUp aria-hidden="true" className="mr-2 inline size-4" />
@@ -243,15 +243,19 @@ function ReportUpload<T>({
 }
 
 function ReportTable({ rows }: { rows: ReportSummary[] }) {
-	const spec = placementLabels(rows[0]?.placementType);
+	const specs = rows.map((row) => placementLabels(row.placementType));
+	// 一次导入两期时口径可能不同；表头不能跟着第一行走，否则会误标另一期。
+	const mixed = new Set(specs.map((spec) => spec.type)).size > 1;
+	const spendHeader = mixed ? "投入金额" : specs[0]?.spend ?? "投入金额";
+	const countHeader = mixed ? "结果计数" : specs[0]?.count ?? "结果计数";
 	return (
 		<div className="mt-2 overflow-x-auto">
 			<table className="w-full text-left text-sm">
 				<thead className="text-xs text-muted-foreground">
 					<tr>
 						<th scope="col" className="p-2 font-medium">统计时间（北京）</th>
-						<th scope="col" className="p-2 font-medium">{spec.spend}</th>
-						<th scope="col" className="p-2 font-medium">{spec.count}</th>
+						<th scope="col" className="p-2 font-medium">{spendHeader}</th>
+						<th scope="col" className="p-2 font-medium">{countHeader}</th>
 					</tr>
 				</thead>
 				<tbody>

@@ -244,14 +244,20 @@ function validateRecord(record: EvidenceImportRecord): void {
 	validateValues(record.values, placementType);
 }
 
+/**
+ * 旧证据的 businessKey 没把口径算进去；为了不把已有记录变成重复项，
+ * 只有非默认口径才把口径并入身份。付费广告的身份保持原样。
+ */
 function identityFor(
 	ownerId: string,
 	taskRef: { taskId: string; taskVersion: number },
 	record: EvidenceImportRecord,
 ): string {
+	const placementType = normalizePlacementType(record.placementType);
 	return digest({
 		ownerId,
 		taskRef,
+		...(placementType === "paid_ads" ? {} : { placementType }),
 		platform: record.source.platform,
 		accountRef: record.source.accountRef,
 		scope: {
@@ -266,7 +272,12 @@ function identityFor(
 	});
 }
 
+/**
+ * 内容指纹同样只在非默认口径时带上 placementType，
+ * 否则旧库里的付费广告证据重新导入时会因指纹不一致被判为内容冲突。
+ */
 function contentOf(record: EvidenceImportRecord): unknown {
+	const placementType = normalizePlacementType(record.placementType);
 	return {
 		scope: {
 			planRef: record.scope.planRef,
@@ -278,7 +289,7 @@ function contentOf(record: EvidenceImportRecord): unknown {
 			timeZone: record.period.timeZone,
 			completeness: record.period.completeness,
 		},
-		placementType: normalizePlacementType(record.placementType),
+		...(placementType === "paid_ads" ? {} : { placementType }),
 		metricsContract: record.metricsContract,
 		currency: record.currency,
 		attribution: record.attribution,

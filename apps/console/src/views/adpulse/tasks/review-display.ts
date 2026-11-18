@@ -1,5 +1,6 @@
 import type { components } from "../../../adpulse-client";
 import { formatBeijingPeriod, formatBeijingTime } from "./task-form";
+import { placementLabels } from "./placement-display";
 
 type EvidenceVersion = components["schemas"]["EvidenceVersion"];
 type EvidenceCurrency = components["schemas"]["EvidenceCurrency"];
@@ -69,10 +70,11 @@ export function formatReviewCost(value: RatioValue, currency: EvidenceCurrency):
 }
 
 export function reportChoiceLabel(item: EvidenceVersion): string {
+	const spec = placementLabels(item.placementType);
 	return [
 		formatBeijingPeriod(item.period),
-		formatReviewAmount(item.values.spendMinor, item.currency),
-		formatReviewCount(item.values.consultations),
+		formatReviewAmount(item.values[spec.spendKey], item.currency),
+		formatReviewCount(item.values[spec.countKey]),
 		`录入于 ${formatBeijingTime(item.createdAt)}`,
 	].join(" · ");
 }

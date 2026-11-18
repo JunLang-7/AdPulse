@@ -187,11 +187,15 @@ export function ComparisonPanel({
 	};
 	const results = comparisons.data?.filter((item) => Boolean(item.baseline) === comparing);
 	const canSelectReports = !comparing || items.length > 1;
+	// 章节说明按任务口径描述，不把达人 / 种草的互动量写成咨询。
+	const sectionSpec = placementLabels(items[0]?.placementType);
 
 	return (
 		<ReviewSection
 			title={comparing ? "对比两期表现" : "检查本期成本"}
-			description={comparing ? "查看两期的花费、咨询次数和每次咨询成本怎么变了。" : "查看一份报表的每次咨询成本是否超过提醒线。"}
+			description={comparing
+				? `查看两期的${sectionSpec.spend}、${sectionSpec.count}和${sectionSpec.derived}怎么变了。`
+				: `查看一份报表的${sectionSpec.derived}是否超过提醒线。`}
 		>
 			<div className="space-y-4">
 				{canSelectReports ? (

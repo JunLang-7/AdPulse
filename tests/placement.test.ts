@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import {
 	EvidenceService,
@@ -323,4 +324,115 @@ test("证据导入：非法投放方式与缺一个指标键的处理", async ()
 		}],
 	});
 	assert.equal(partial[0]?.status, "created");
+});
+
+
+/**
+ * 旧库里的证据是用「不含 placementType」的内容算指纹的。
+ * 这里独立复算一遍旧算法，确保升级后重新导入同一份付费广告报表仍然是「复用」，
+ * 而不是被判成内容冲突、也不是重新生成一条重复证据。
+ */
+const canonicalJson = (value: unknown): string =>
+	JSON.stringify(value, (_key, item) =>
+		item && typeof item === "object" && !Array.isArray(item)
+			? Object.keys(item)
+					.sort()
+					.reduce<Record<string, unknown>>((result, child) => {
+						result[child] = (item as Record<string, unknown>)[child];
+						return result;
+					}, {})
+			: item,
+	);
+const sha = (value: unknown): string =>
+	createHash("sha256").update(canonicalJson(value)).digest("hex");
+
+type LegacyRecord = ReturnType<typeof baseRecord> & {
+	metricsContract: Record<string, { definition: string; formula: string; sourceField: string }>;
+	values: Record<string, number | null>;
+	placementType?: "paid_ads" | "influencer" | "seeding";
+};
+
+function legacyIdentity(ownerId: string, taskRef: { taskId: string; taskVersion: number }, record: LegacyRecord) {
+	return sha({
+		ownerId,
+		taskRef,
+		platform: record.source.platform,
+		accountRef: record.source.accountRef,
+		scope: { planRef: record.scope.planRef, campaignRefs: [...record.scope.campaignRefs].sort() },
+		period: {
+			startsAt: new Date(record.period.startsAt).toISOString(),
+			endsAt: new Date(record.period.endsAt).toISOString(),
+			timeZone: record.period.timeZone,
+		},
+	});
+}
+
+function legacyContent(record: LegacyRecord) {
+	return {
+		scope: { planRef: record.scope.planRef, campaignRefs: [...record.scope.campaignRefs].sort() },
+		period: {
+			startsAt: new Date(record.period.startsAt).toISOString(),
+			endsAt: new Date(record.period.endsAt).toISOString(),
+			timeZone: record.period.timeZone,
+			completeness: record.period.completeness,
+		},
+		metricsContract: record.metricsContract,
+		currency: record.currency,
+		attribution: record.attribution,
+		callbackStatus: record.callbackStatus,
+		values: record.values,
+	};
+}
+
+test("兼容：付费广告证据的身份与指纹和升级前一致，重复导入仍是复用", async () => {
+	const { task, evidence } = await setup();
+	const spec = placementSpec("paid_ads");
+	const record = {
+		...baseRecord(),
+		metricsContract: {
+			[spec.spendKey]: metric("spend"),
+			[spec.countKey]: metric("consultations"),
+		},
+		values: { [spec.spendKey]: 1_000, [spec.countKey]: 10 },
+	};
+	const taskRef = { taskId: task.taskId, taskVersion: task.version };
+	const first = await evidence.import("owner", "legacy-1", { schemaVersion: 1, taskRef, records: [record] });
+	const detail = await evidence.get("owner", first[0]!.evidenceId);
+	assert.equal(detail?.current.businessKey, legacyIdentity("owner", taskRef, record));
+	assert.equal(detail?.current.contentDigest, sha(legacyContent(record)));
+	// 换一个幂等键重放同一份报表：命中已存在的证据，状态为复用。
+	const replay = await evidence.import("owner", "legacy-2", { schemaVersion: 1, taskRef, records: [record] });
+	assert.equal(replay[0]?.status, "reused");
+	assert.equal(replay[0]?.evidenceId, first[0]?.evidenceId);
+});
+
+test("兼容：同账号同区间的付费广告与达人合作是两条证据，互不覆盖", async () => {
+	const { task, evidence } = await setup();
+	const taskRef = { taskId: task.taskId, taskVersion: task.version };
+	const paid = placementSpec("paid_ads");
+	const influencer = placementSpec("influencer");
+	const paidRecord: LegacyRecord = {
+		...baseRecord(),
+		metricsContract: {
+			[paid.spendKey]: metric("spend"),
+			[paid.countKey]: metric("consultations"),
+		},
+		values: { [paid.spendKey]: 1_000, [paid.countKey]: 10 },
+	};
+	const influencerRecord: LegacyRecord = {
+		...baseRecord(),
+		placementType: "influencer",
+		metricsContract: {
+			[influencer.spendKey]: metric("fee"),
+			[influencer.countKey]: metric("engagement"),
+		},
+		values: { [influencer.spendKey]: 2_000, [influencer.countKey]: 20 },
+	};
+	const first = await evidence.import("owner", "mix-1", { schemaVersion: 1, taskRef, records: [paidRecord] });
+	const second = await evidence.import("owner", "mix-2", { schemaVersion: 1, taskRef, records: [influencerRecord] });
+	assert.equal(second[0]?.status, "created");
+	assert.notEqual(second[0]?.evidenceId, first[0]?.evidenceId);
+	const list = await evidence.listForTask("owner", task.taskId);
+	assert.equal(list.length, 2);
+	assert.deepEqual(new Set(list.map((item) => item.placementType)), new Set(["paid_ads", "influencer"]));
 });
