@@ -194,9 +194,10 @@ PlacementType = "paid_ads" | "influencer" | "seeding"
 ## E. 实际验证
 
 - `bun run typecheck`、`bun run build`、控制台 `typecheck` / `build` 通过（全量强制重编译核验）。
-- 本地 `bun run test`（同步 main 后复跑）：Node 测试 608 项，576 通过、0 失败、32 跳过；组件测试 63 项全过。跳过的都是未配置 `TEST_DATABASE_URL` 的 PostgreSQL 集成测试，未冒称通过。
+- 本地最终基线 `bun run test`：Node 624 项，592 通过、0 失败、32 跳过；组件 67 项全过。跳过的都是未配置 `TEST_DATABASE_URL` 的 PostgreSQL 集成测试，未冒称通过。
 - `bun run sdk:check` 通过；基线原有的 SDK drift 已由本次契约与生成类型同步修好。
-- CI（GitHub Actions「Build and Test」，带 PostgreSQL 16，run `44334393168`）：`typecheck` / 控制台 `typecheck` / 控制台 `build` / `sdk:check` / `test` 全部通过；Node 608 项 608 通过、**0 跳过**，组件 63 项全过。本地跳过的集成测试由 CI 补跑，结论为通过。
+- CI（GitHub Actions「Build and Test」，带 PostgreSQL 16，最终 run `44336786977`）：`verify` 与 GitGuardian 均 pass；Node **624 项 624 通过、0 跳过**，组件 67 项全过。本地跳过的集成测试由 CI 补跑且通过。
+- 附带修复：同步 main 时发现 #161 新增数据库迁移 17，却未同步 3 处测试的版本断言（main 自身 CI 当时为红）；本分支将断言与代码事实对齐，属测试期望值修正，不改产品逻辑。
 - 未执行：真实广告平台 / 达人平台联调、真实报表导入验收、人工 Review。
 
 ## F. 剩余限制（不可当作已完成）
@@ -206,4 +207,4 @@ PlacementType = "paid_ads" | "influencer" | "seeding"
 3. **不可归因部分只保留、不推断**：互动量不等于成交，系统不做成交归因，也不承诺收益。
 4. **合作对象与内容方向仍未建模**：它们是独立缺口，需另开 Issue。
 5. **提案状态仍为待评审**：本附录只记录实现，不代表提案已获接受；关联 Issue 见 [#157](https://github.com/JunLang-7/AdPulse/issues/157)。
-6. **基线**：本分支已同步 `origin/main` 并解决与已合并改动的重叠（`task-setup-guide.tsx` 改为沿用新版建议机制）；本地主工作区另有未提交改动，合并顺序仍由人工确认。
+6. **基线**：本分支已同步 `origin/main`（含 #154 / #161）并解决与已合并改动的重叠（`task-setup-guide.tsx` 改用新版建议机制）；本地主工作区另有未提交改动，合并顺序仍由人工确认。
