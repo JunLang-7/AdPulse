@@ -148,6 +148,9 @@ export class LifecycleCleanupService {
 				.filter((row) => row.taskId === taskId)
 				.map((row) => row.id),
 		);
+		// S3 的引用清理会去掉已写回的 taskRef 指针，但清理定位需要它：
+		// 先按清单上的 taskId 找回全部相关会话（含 taskRef 已被清掉的），
+		// 再按 alertId 补充。找不到 taskRef 的会话靠删除清单兜底（见下方 or 条件）。
 		const sessions = (await tx.sessions.listByOwner(ownerId)).filter(
 			(row) => row.taskRef?.taskId === taskId
 				|| (row.investigationAlertId !== undefined && alertIds.has(row.investigationAlertId)),
