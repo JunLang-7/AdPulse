@@ -245,6 +245,8 @@ export {
 } from "./source-fetch.js";
 export { runSources } from "./source-runner.js";
 export { discoverSource } from "./source-discovery.js";
+export { discoverXiaohongshu } from "./xiaohongshu-discovery.js";
+export type { XiaohongshuNoteCandidate, RunXiaohongshu } from "./xiaohongshu-discovery.js";
 export { discoverModels, isDiscoveryProtocolWired, modelDiscoveryMaxModels } from "./model-discovery.js";
 export { geminiEndpoint, isGeminiModelId, requestGeminiText } from "./model-gemini.js";
 export type { ModelDiscoveryInput } from "./model-discovery.js";

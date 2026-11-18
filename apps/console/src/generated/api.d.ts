@@ -536,6 +536,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/discovery-leads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 主动发现线索（discover 暂存）
+         * @description 只返回本人范围内的发现线索（unverified）；接受才入库，拒绝后同 URL 不再出现。
+         */
+        get: operations["listDiscoveryLeads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/discovery-leads/{leadId}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 接受 / 拒绝 / 保留主动发现线索 */
+        post: operations["reviewDiscoveryLead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/user-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 本人登记的企业站点 */
+        get: operations["listUserSources"];
+        put?: never;
+        /** 登记企业站点并立即采集一次 */
+        post: operations["addUserSource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/user-sources/{sourceId}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 立即采集一次该站点的列表页 */
+        post: operations["refreshUserSource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/user-sources/{sourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除登记的站点及其条目 */
+        delete: operations["deleteUserSource"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/notification-selections": {
         parameters: {
             query?: never;
@@ -1354,6 +1443,58 @@ export interface components {
         SourceLeadPage: {
             leads: components["schemas"]["SourceLead"][];
             sources: components["schemas"]["SourceLeadSource"][];
+        };
+        DiscoveryLead: {
+            id: string;
+            ownerId: string;
+            sourceKey: string;
+            topic: string;
+            /** @enum {string} */
+            provider: "agent-reach/exa" | "agent-reach/xiaohongshu";
+            query: string;
+            subject: components["schemas"]["SourceLeadSubject"] | null;
+            title: string;
+            url: string;
+            dedupKey: string;
+            author: string | null;
+            indexedPublishedAt: string | null;
+            /** @enum {string} */
+            verification: "unverified";
+            /** @enum {string} */
+            status: "pending" | "accepted" | "rejected" | "kept";
+            /** Format: date-time */
+            discoveredAt: string;
+            /** Format: date-time */
+            reviewedAt: string | null;
+            reviewedBy: string | null;
+            reviewReason: string | null;
+            convertedItemId: string | null;
+        };
+        DiscoveryLeadPage: {
+            items: components["schemas"]["DiscoveryLead"][];
+        };
+        DiscoveryLeadReview: {
+            /** @description accept 时可选修正发布日期 */
+            correctedPublishedAt?: string | null;
+            /** @description reject 时填写拒绝理由 */
+            reason?: string;
+        };
+        UserSource: {
+            id: string;
+            ownerId: string;
+            label: string;
+            host: string;
+            listUrl: string;
+            subject: components["schemas"]["SourceLeadSubject"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastRefreshAt: string | null;
+            /** @enum {string|null} */
+            lastOutcome: "ok" | "failed" | null;
+            lastReason: string | null;
+            /** @enum {string} */
+            status: "active" | "stopped";
         };
         SubscriptionSchedule: {
             /**
@@ -4924,6 +5065,262 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listDiscoveryLeads: {
+        parameters: {
+            query?: {
+                status?: "pending" | "accepted" | "rejected" | "kept";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own discovery leads */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryLeadPage"];
+                };
+            };
+            /** @description Invalid query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reviewDiscoveryLead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                leadId: string;
+                action: "accept" | "reject" | "keep";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscoveryLeadReview"];
+            };
+        };
+        responses: {
+            /** @description Reviewed lead */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryLead"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lead not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Already reviewed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listUserSources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["UserSource"][];
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    addUserSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    label: string;
+                    listUrl: string;
+                    subject: {
+                        /** @enum {string} */
+                        kind: "brand" | "competitor";
+                        name: string;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        source: components["schemas"]["UserSource"];
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Host already added */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    refreshUserSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        outcome: "ok" | "failed";
+                        created: number;
+                        updated: number;
+                        reason: string | null;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    deleteUserSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

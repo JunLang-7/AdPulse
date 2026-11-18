@@ -321,3 +321,34 @@ test("市场事件页：已删除事件显示删除说明，不冒充保留期�
 	assert.ok(await screen.findByText(/这条事件已被删除，内容不再展示。删除时间 2026年11月17日 10:00。/));
 	assert.equal(screen.queryByText(/已过保留期/), null, "删除不应被说成到期");
 });
+
+test("市场事件页：发现线索待审核，接受不修正日期时提交空对象并入库", async t => {
+	t.after(cleanup);
+	const lead = {
+		id: "lead-1", ownerId: "owner", sourceKey: "haier_news", topic: "products",
+		provider: "agent-reach/exa", query: "site:www.haier.com 海尔 新品发布",
+		subject: { kind: "brand", name: "海尔" },
+		title: "海尔发布新一代冰箱", url: "https://www.haier.com/about_haier/xinwen/20260102_123.shtml",
+		dedupKey: "https://www.haier.com/about_haier/xinwen/20260102_123.shtml",
+		author: null, indexedPublishedAt: "2026-01-02", verification: "unverified",
+		status: "pending", discoveredAt: "2026-01-05T00:00:00.000Z",
+		reviewedAt: null, reviewedBy: null, reviewReason: null, convertedItemId: null,
+	};
+	const reviews: Array<{ body: unknown }> = [];
+	serve(defaults, {
+		"GET /api/me/user-sources": () => json({ items: [] }),
+		"GET /api/me/discovery-leads": () => json({ items: [lead] }),
+		"POST /api/me/discovery-leads/lead-1/accept": async (req) => {
+			reviews.push({ body: await req.json() });
+			return json({ ...lead, status: "accepted", reviewedAt: "2026-01-06T00:00:00.000Z", reviewedBy: "owner", convertedItemId: "haier_news:abc" });
+		},
+	});
+	mount();
+	assert.ok(await screen.findByRole("link", { name: "海尔发布新一代冰箱" }));
+	assert.ok(screen.getByText(/关联品牌：海尔/));
+	assert.ok(screen.getByText(/索引日期 2026年1月2日（未核验）/));
+	fireEvent.click(screen.getByRole("button", { name: "接受" }));
+	fireEvent.click(screen.getByRole("button", { name: "确认接受并入库" }));
+	await waitFor(() => assert.equal(reviews.length, 1));
+	assert.deepEqual(reviews[0]!.body, {}, "不修正日期时提交空对象");
+});

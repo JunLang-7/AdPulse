@@ -2005,6 +2005,282 @@
         }
       }
     },
+    "/api/me/discovery-leads": {
+      "get": {
+        "operationId": "listDiscoveryLeads",
+        "summary": "主动发现线索（discover 暂存）",
+        "description": "只返回本人范围内的发现线索（unverified）；接受才入库，拒绝后同 URL 不再出现。",
+        "security": [{"sessionCookie": []}, {"sameOriginOrigin": []}],
+        "parameters": [
+          { "name": "status", "in": "query", "required": false, "schema": { "type": "string", "enum": ["pending", "accepted", "rejected", "kept"] } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 200 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Own discovery leads",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DiscoveryLeadPage" }
+              }
+            }
+          },
+          "400": { "description": "Invalid query" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/me/discovery-leads/{leadId}/{action}": {
+      "post": {
+        "operationId": "reviewDiscoveryLead",
+        "summary": "接受 / 拒绝 / 保留主动发现线索",
+        "security": [{"sessionCookie": []}, {"sameOriginOrigin": []}],
+        "parameters": [
+          { "name": "leadId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "action", "in": "path", "required": true, "schema": { "type": "string", "enum": ["accept", "reject", "keep"] } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DiscoveryLeadReview" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reviewed lead",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DiscoveryLead" }
+              }
+            }
+          },
+          "400": { "description": "Invalid input" },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Lead not found" },
+          "409": { "description": "Already reviewed" }
+        }
+      }
+    },
+      "/api/me/user-sources": {
+        "get": {
+          "operationId": "listUserSources",
+          "summary": "本人登记的企业站点",
+          "responses": {
+            "200": {
+              "description": "Success",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/components/schemas/UserSource"
+                        }
+                      }
+                    },
+                    "required": [
+                      "items"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized"
+            }
+          }
+        },
+        "post": {
+          "operationId": "addUserSource",
+          "summary": "登记企业站点并立即采集一次",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "listUrl": {
+                      "type": "string",
+                      "maxLength": 2000
+                    },
+                    "subject": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "brand",
+                            "competitor"
+                          ]
+                        },
+                        "name": {
+                          "type": "string",
+                          "maxLength": 200
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "name"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "listUrl",
+                    "subject"
+                  ]
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": {
+              "description": "Created",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "$ref": "#/components/schemas/UserSource"
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Invalid request"
+            },
+            "401": {
+              "description": "Unauthorized"
+            },
+            "409": {
+              "description": "Host already added"
+            }
+          }
+        }
+      },
+      "/api/me/user-sources/{sourceId}/refresh": {
+        "post": {
+          "operationId": "refreshUserSource",
+          "summary": "立即采集一次该站点的列表页",
+          "parameters": [
+            {
+              "name": "sourceId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Success",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "ok",
+                          "failed"
+                        ]
+                      },
+                      "created": {
+                        "type": "integer"
+                      },
+                      "updated": {
+                        "type": "integer"
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "outcome",
+                      "created",
+                      "updated",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized"
+            },
+            "404": {
+              "description": "Not found"
+            }
+          }
+        }
+      },
+      "/api/me/user-sources/{sourceId}": {
+        "delete": {
+          "operationId": "deleteUserSource",
+          "summary": "删除登记的站点及其条目",
+          "parameters": [
+            {
+              "name": "sourceId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Success",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "ok": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "ok"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized"
+            },
+            "404": {
+              "description": "Not found"
+            }
+          }
+        }
+      },
     "/api/me/notification-selections": {
       "get": {
         "operationId": "listNotificationSelections",
@@ -4281,6 +4557,120 @@
         "required": ["leads", "sources"],
         "additionalProperties": false
       },
+      "DiscoveryLead": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "ownerId": { "type": "string" },
+          "sourceKey": { "type": "string" },
+          "topic": { "type": "string" },
+          "provider": { "type": "string", "enum": ["agent-reach/exa", "agent-reach/xiaohongshu"] },
+          "query": { "type": "string" },
+          "subject": { "oneOf": [{ "$ref": "#/components/schemas/SourceLeadSubject" }, { "type": "null" }] },
+          "title": { "type": "string" },
+          "url": { "type": "string" },
+          "dedupKey": { "type": "string" },
+          "author": { "type": ["string", "null"] },
+          "indexedPublishedAt": { "type": ["string", "null"] },
+          "verification": { "type": "string", "enum": ["unverified"] },
+          "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "kept"] },
+          "discoveredAt": { "type": "string", "format": "date-time" },
+          "reviewedAt": { "type": ["string", "null"], "format": "date-time" },
+          "reviewedBy": { "type": ["string", "null"] },
+          "reviewReason": { "type": ["string", "null"] },
+          "convertedItemId": { "type": ["string", "null"] }
+        },
+        "required": ["id", "ownerId", "sourceKey", "topic", "provider", "query", "subject", "title", "url", "dedupKey", "author", "indexedPublishedAt", "verification", "status", "discoveredAt", "reviewedAt", "reviewedBy", "reviewReason", "convertedItemId"],
+        "additionalProperties": false
+      },
+      "DiscoveryLeadPage": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/DiscoveryLead" } }
+        },
+        "required": ["items"],
+        "additionalProperties": false
+      },
+      "DiscoveryLeadReview": {
+        "type": "object",
+        "properties": {
+          "correctedPublishedAt": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "accept 时可选修正发布日期" },
+          "reason": { "type": "string", "maxLength": 1000, "description": "reject 时填写拒绝理由" }
+        },
+        "additionalProperties": false
+      },
+        "UserSource": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "ownerId": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "listUrl": {
+              "type": "string"
+            },
+            "subject": {
+              "$ref": "#/components/schemas/SourceLeadSubject"
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "lastRefreshAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "lastOutcome": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "ok",
+                "failed",
+                null
+              ]
+            },
+            "lastReason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "active",
+                "stopped"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "ownerId",
+            "label",
+            "host",
+            "listUrl",
+            "subject",
+            "createdAt",
+            "lastRefreshAt",
+            "lastOutcome",
+            "lastReason",
+            "status"
+          ],
+          "additionalProperties": false
+        },
       "SubscriptionSchedule": {
         "type": "object",
         "properties": {

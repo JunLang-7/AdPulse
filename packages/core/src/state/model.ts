@@ -795,6 +795,23 @@ export interface SourceSnapshot {
 	contentHash: string;
 	createdAt: string;
 }
+/**
+ * 用户自加的企业站点（每用户）：只登记站点身份与列表页位置，不改动 #41 的 allowlist。
+ * 采集仍只取标题与链接，与内置来源同一套证据纪律。
+ */
+export interface UserSource {
+	id: string;
+	ownerId: string;
+	label: string;
+	host: string;
+	listUrl: string;
+	subject: { kind: "brand" | "competitor"; name: string };
+	createdAt: string;
+	lastRefreshAt: string | null;
+	lastOutcome: "ok" | "failed" | null;
+	lastReason: string | null;
+	status: "active" | "stopped";
+}
 export interface SourceItem {
 	id: string;
 	sourceKey: string;
@@ -817,6 +834,37 @@ export interface SourceState {
 	resumedAt: string | null;
 	resumedBy: string | null;
 	lastPrunedAt: string | null;
+}
+/**
+ * 主动发现线索（discovery-lead-intake）：手动 discovery 命令的暂存结果。
+ * 一律 `unverified`，不直接入库/推送；接受后作为 source item 入库，拒绝后同 URL 不再出现。
+ */
+export type DiscoveryLeadStatus = "pending" | "accepted" | "rejected" | "kept";
+export interface DiscoveryLead {
+	id: string;
+	ownerId: string;
+	sourceKey: string;
+	topic: string;
+	provider: "agent-reach/exa" | "agent-reach/xiaohongshu";
+	/** 原始查询词，保留给审核者理解发现来源。 */
+	query: string;
+	/** 操作人声明的关注对象；发现侧不做标题/域名推断。 */
+	subject: { kind: "brand" | "competitor"; name: string } | null;
+	title: string;
+	/** 访问用原文链接；小红书保留 xsec_token，不截断。 */
+	url: string;
+	/** 归一化身份：与现有 source items 及历史 leads 去重用，不用于访问。 */
+	dedupKey: string;
+	author: string | null;
+	/** 来自搜索索引的日期，未核验；对照原文后由审核者修正。 */
+	indexedPublishedAt: string | null;
+	verification: "unverified";
+	status: DiscoveryLeadStatus;
+	discoveredAt: string;
+	reviewedAt: string | null;
+	reviewedBy: string | null;
+	reviewReason: string | null;
+	convertedItemId: string | null;
 }
 /**
  * 个人模型连接（#86）：只存非敏感投影。密钥单独放在 UserModelCredential 的密文记录里，
@@ -1012,10 +1060,12 @@ export interface Entities {
 	comparisonOperations: ComparisonOperation;
 	comparisonFollowUps: ComparisonFollowUp;
 	investigationAlerts: InvestigationAlert;
+	userSources: UserSource;
 	sourceStates: SourceState;
 	sourceRuns: SourceRun;
 	sourceSnapshots: SourceSnapshot;
 	sourceItems: SourceItem;
+	discoveryLeads: DiscoveryLead;
 	lifecycleDeletions: LifecycleDeletion;
 	auditEvents: AuditRecord;
 	sessions: Session;
