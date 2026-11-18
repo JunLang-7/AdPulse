@@ -24,6 +24,7 @@
   **生产备份目标、加密、RPO/RTO 与受控备份仍未实现**（目前只有手工备份 + 一次性演练库验证不复活）；
   恢复重放会撤销恢复库中的全部会话，清理进度可在任务页按人查看。
 - 受限来源采集：已实现两站列表页的标题/链接采集，**默认关闭**，见下文「受限来源采集」（#41）；
+- 主动发现线索（#39 方案 A 之后）：`discover --persist` 把小梅书/Exa 搜索结果写入 `discoveryLeads`，一律 `unverified`，不直接入库、不推送；控制台逐条接受/拒绝/保留，接受才生成 source item；可用 `discover xiaohongshu` 走 Agent-Reach 笔记搜索（需登录态，未真机签核）。本人还可登记企业站点（`userSources`），采集仍只取标题与链接。
   #39 方案 A 只把条目作为「待确认线索」按本人逐来源开关展示，不自动建事件、不自动推送；
   来源清单与许可登记见 [sources/registry.md](sources/registry.md)（登记不等于合规结论）。
 - 主动通知（#37）：已实现批次/去重、09:30 调度与发送前重检、退订取消、记录与解释（PR1/PR2/PR4）；
@@ -101,7 +102,7 @@ version 是决策版本，每次成功处理选择都会递增，即使 changes 
 到期评估只读取同一任务版本、接受之后产生、可评估的比较结果，记录 `observedOutcome`（指标低于/高于阈值）与证据引用；没有可比证据、任务已删除或规则版本已变更时记为 `inconclusive` 并写原因。它不推断因果、不修改策略、不触发广告平台操作。检查点随会话详情返回，仅 owner 可见；任务清理时一并删除。下一轮 `PolicyEngine` 可选收到同一任务最近 5 条检查点作为只读上下文，默认策略忽略。
 
 模型见 [model.ts](../packages/core/src/state/model.ts)，实际 DDL 与索引见 [postgres.ts](../packages/storage/src/postgres.ts)。
-当前为 49 张 id + jsonb 表，采用应用层引用关系。结构变更走 `initialize()` 内的版本化迁移（版本 1–18，顺序、加法式，在 advisory lock 下执行）。存储端口仍采用全表读取，通知记录与筛选记录接口提供分页，面向小规模验证。
+当前为 51 张 id + jsonb 表，采用应用层引用关系。结构变更走 `initialize()` 内的版本化迁移（版本 1–20，顺序、加法式，在 advisory lock 下执行）。存储端口仍采用全表读取，通知记录与筛选记录接口提供分页，面向小规模验证。
 
 迁移 13 由 #86 PR1 新增 `userModelConnections`、`userModelCredentials` 与 `userModelPreferences`，分别保存连接信息、AES-256-GCM 密文和默认模型。唯一索引分别约束 `(ownerId, providerId)`、`(ownerId, connectionId)` 与 `ownerId`。加密端口在 core，实现在 runtime。AAD 绑定 owner、连接、凭据版本、目标地址和协议。服务只在主密钥配置有效时装配，主密钥由部署侧配置。
 
@@ -110,6 +111,10 @@ version 是决策版本，每次成功处理选择都会递增，即使 changes 
 迁移 17 新增假设偏差的四张表（假设、版本、判定与幂等操作），随 #161 落地。
 
 迁移 18 新增 `validationChecks`，保存已应用变更的验证状态与证据引用；不改变策略、证据与投放记录。
+
+迁移 19 新增 `discoveryLeads`，暂存主动发现（Agent-Reach / 小红书搜索）返回的未核验线索；同一人同一归一化 URL 唯一，拒绝后不再复活。
+
+迁移 20 新增 `userSources`，保存本人登记的企业站点与列表页位置（同一人同一 host 唯一）；不改动 #41 的 allowlist，采集纪律一致（只取标题与链接）。
 
 模型额度分两层：按 owner（6 次/分钟、并发 1）与实例总量（8 次/分钟、并发 2），测试、发现与抽取共用计数，均在网络请求前判定；`createUserRequestBudgets()` 只约束单进程，不是分布式限流。
 
