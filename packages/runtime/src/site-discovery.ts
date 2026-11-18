@@ -86,6 +86,27 @@ const NON_OFFICIAL_HOSTS =
 	/baidu\.com|zhihu\.com|qq\.com|163\.com|126\.net|sohu\.com|sina\.com|douyin\.com|toutiao\.com|xinhuanet\.com|people\.com\.cn|wikipedia\.org|gov\.cn|tianyancha\.com|qcc\.com|maigoo\.com|csdn\.net|jianshu\.com|juejin\.cn|cnblogs\.com|36kr\.com|netease\.com|ifeng\.com|thepaper\.cn|cntv\.cn|chinanews\.com|ce\.cn|cctv\.com|baike\./i;
 const NEWS_TOKEN = /news|xinwen|xwzx|xwtt|新闻|动态|资讯|信息|media|press/i;
 
+/**
+ * 搜索源频率保护：Bing/Exa 在连续请求下会降级（返回无关结果或限流）。
+ * 同一进程内相邻搜索至少隔 3 秒；同一企业名的结果缓存 6 小时，避免重复消耗配额。
+ */
+const MIN_SEARCH_INTERVAL_MS = 3_000;
+const SEARCH_CACHE_TTL_MS = 6 * 3_600_000;
+let lastSearchAt = 0;
+const searchCache = new Map<string, { at: number; items: Array<{ title: string; url: string }> }>();
+
+async function throttleSearch(): Promise<void> {
+	const wait = lastSearchAt + MIN_SEARCH_INTERVAL_MS - Date.now();
+	if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+	lastSearchAt = Date.now();
+}
+
+/** 测试用：清空节流与缓存状态。 */
+export function resetDiscoveryThrottle(): void {
+	lastSearchAt = 0;
+	searchCache.clear();
+}
+
 export interface CompanySite {
 	host: string;
 	listUrl: string;
@@ -140,6 +161,9 @@ export async function resolveNewsListPage(
  * 结构稳定无广告；查询按变体轮询直到拿到结果。
  */
 export async function searchBing(brand: string, fetcherFor?: (hosts: string[]) => SourceFetcher): Promise<Array<{ title: string; url: string }>> {
+	const cacheKey = `bing:${brand}`;
+	const cached = searchCache.get(cacheKey);
+	if (cached && Date.now() - cached.at < SEARCH_CACHE_TTL_MS) return cached.items;
 	const fetcher = fetcherFor?.(["www.bing.com", "cn.bing.com"]) ?? new HttpSourceFetcher(["www.bing.com", "cn.bing.com"]);
 	// Bing 对中文公司名分词不稳定：官网后缀会带偏，拆词/去尾/纯品牌各有命中，全部合并。
 	const spaced = brand.length >= 4 ? `${brand.slice(0, -2)} ${brand.slice(-2)}` : null;
@@ -153,6 +177,8 @@ export async function searchBing(brand: string, fetcherFor?: (hosts: string[]) =
 	];
 	const merged = new Map<string, { title: string; url: string }>();
 	for (const query of queries) {
+		// 连续请求会触发降级：変体之间也拉开间隔。
+		await throttleSearch();
 		try {
 			const page = await fetcher.fetchText(
 				`https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss&setlang=zh-cn`,
@@ -170,8 +196,10 @@ export async function searchBing(brand: string, fetcherFor?: (hosts: string[]) =
 			// 下一个查询变体。
 		}
 	}
-	return [...merged.values()];
-	return [];
+	const items = [...merged.values()];
+	// 只缓存非空结果：搜索源回归空集时应当下次重试，而不是记住“没有”。
+	if (items.length > 0) searchCache.set(cacheKey, { at: Date.now(), items });
+	return items;
 }
 
 /**
