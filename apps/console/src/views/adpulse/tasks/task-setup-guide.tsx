@@ -86,6 +86,11 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const productIdea = stage?.id === "overview" && recommendations?.product?.value !== form.product.trim()
 		? recommendations?.product : undefined;
 	const goalIdeas = stage?.id === "overview" && !form.objective.trim() ? recommendations?.objectives ?? [] : [];
+	// 投放方式只作为参考提示，不写入表单：材料里的说法不等于已确定的投放安排。
+	const placementIdeas = stage?.id === "channels"
+		? (recommendations?.placementTypes ?? []).map((value) =>
+			value === "influencer" ? "达人合作" : value === "seeding" ? "内容种草" : "平台付费广告")
+		: [];
 	const addable = (field: ChoiceField, values?: readonly string[]) => {
 		const selected = selectedValues(form, field);
 		return [...new Set(values ?? [])].filter((value) => !selected.includes(value) && !excluded[field]?.includes(value));
@@ -329,10 +334,11 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 							</div>
 							<Button type="button" disabled={busy || !brief || (remaining < 0 && !canUseFileStart)}
 								onClick={() => void submitStage(true)}>{processing ? "正在整理…" : canUseFileStart ? "用前 2,500 字生成建议" : "生成建议"}</Button>
-							{draft && (additions.length > 0 || ideas.length > 0) ? (
+							{draft && (additions.length > 0 || ideas.length > 0 || placementIdeas.length > 0) ? (
 								<div className="space-y-2 rounded-md bg-muted/40 p-2 text-sm">
 									<p className="font-medium">待核对建议</p>
 									<p className="text-xs text-muted-foreground">根据你的描述整理，勾选的内容会填入下方表单。</p>
+									{placementIdeas.length ? <p className="text-xs text-muted-foreground">投放方式参考建议（请自行核对，不会自动填入）：{placementIdeas.join("、")}。</p> : null}
 									{additions.map((field) => <p key={field}>{fieldLabels[field]} · {stageValue(draft, field)}</p>)}
 									{ideas.map((idea) => (
 										<label key={ideaKey(idea)} className="flex items-center gap-2">

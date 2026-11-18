@@ -6,6 +6,7 @@ import { Button } from "../../../components/ui/button";
 import { formatReviewAmount, formatReviewCost, reportChoiceLabel, reviewReasonLabels } from "./review-display";
 import { ReviewSection } from "./review-section";
 import { formatBeijingPeriod, formatBeijingTime } from "./task-form";
+import { placementLabels } from "./placement-display";
 
 type EvidenceVersion = components["schemas"]["EvidenceVersion"];
 type EvidenceRef = components["schemas"]["EvidenceRef"];
@@ -321,6 +322,8 @@ function ComparisonHistoryItem({ item, reports }: { item: ComparisonResult; repo
 	const currency = current?.currency;
 	const { spendMinor, consultations, costPerConsultation } = item.comparisons;
 	const threshold = item.thresholdEvaluation;
+	// 比较结果沿用通用投影字段名，展示标签必须按投放方式口径决定。
+	const spec = placementLabels(item.placementType ?? current?.placementType);
 	const reasons = [...new Set(item.reasons
 		.filter((reason) => reason.axis === "both" || reason.axis === (comparing ? "period_comparison" : "current_threshold"))
 		.map((reason) => reviewReasonLabels[reason.code]))];
@@ -333,9 +336,10 @@ function ComparisonHistoryItem({ item, reports }: { item: ComparisonResult; repo
 			</div>
 			{current && <p className="text-muted-foreground">本期报表 · {formatBeijingPeriod(current.period)}</p>}
 			{baseline && <p className="text-muted-foreground">对照报表 · {formatBeijingPeriod(baseline.period)}</p>}
+			<p className="text-xs text-muted-foreground">{spec.name} · {spec.attributionNote}</p>
 			{!comparing && <p>
 				{threshold.value && currency ? (
-					<>每次咨询 <strong>{formatReviewCost(threshold.value, currency)}</strong> · </>
+					<>{spec.derived} <strong>{formatReviewCost(threshold.value, currency)}</strong> · </>
 				) : null}
 				{thresholdLabels[threshold.status]}
 				{threshold.thresholdMinor !== undefined && currency && threshold.currency === currency.code
@@ -343,14 +347,14 @@ function ComparisonHistoryItem({ item, reports }: { item: ComparisonResult; repo
 					: ""}
 			</p>}
 			{spendMinor && currency && (
-				<p>投放花费 · {formatReviewAmount(spendMinor.baseline, currency)} → {formatReviewAmount(spendMinor.current, currency)}</p>
+				<p>{spec.spend} · {formatReviewAmount(spendMinor.baseline, currency)} → {formatReviewAmount(spendMinor.current, currency)}</p>
 			)}
 			{consultations && (
-				<p>咨询次数 · {consultations.baseline} 次 → {consultations.current} 次</p>
+				<p>{spec.count} · {consultations.baseline} → {consultations.current}</p>
 			)}
 			{costPerConsultation && currency && (
 				<p>
-					每次咨询成本{directionLabels[costPerConsultation.direction]} · {formatReviewCost(costPerConsultation.baseline, currency)}
+					{spec.derived}{directionLabels[costPerConsultation.direction]} · {formatReviewCost(costPerConsultation.baseline, currency)}
 					{" → "}{formatReviewCost(costPerConsultation.current, currency)}
 				</p>
 			)}

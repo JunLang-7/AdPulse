@@ -13,6 +13,7 @@ import { Input } from "../../../components/ui/input";
 import { ComparisonPanel, ReviewFollowUps } from "./comparison-panel";
 import { readEvidenceCorrection, readEvidenceImport, type ReportSummary } from "./evidence-file";
 import { InvestigationAlertsPanel } from "./investigation-alerts-panel";
+import { placementLabels } from "./placement-display";
 import { formatReviewAmount, formatReviewCount } from "./review-display";
 import { QuickReviewPanel } from "./review-quick-panel";
 import { ReviewSection } from "./review-section";
@@ -242,14 +243,15 @@ function ReportUpload<T>({
 }
 
 function ReportTable({ rows }: { rows: ReportSummary[] }) {
+	const spec = placementLabels(rows[0]?.placementType);
 	return (
 		<div className="mt-2 overflow-x-auto">
 			<table className="w-full text-left text-sm">
 				<thead className="text-xs text-muted-foreground">
 					<tr>
 						<th scope="col" className="p-2 font-medium">统计时间（北京）</th>
-						<th scope="col" className="p-2 font-medium">投放花费</th>
-						<th scope="col" className="p-2 font-medium">咨询次数</th>
+						<th scope="col" className="p-2 font-medium">{spec.spend}</th>
+						<th scope="col" className="p-2 font-medium">{spec.count}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -257,7 +259,7 @@ function ReportTable({ rows }: { rows: ReportSummary[] }) {
 						<tr key={index} className="border-t">
 							<td className="p-2">{formatBeijingPeriod(row.period)}</td>
 							<td className="p-2 tabular-nums">{formatSpend(row)}</td>
-							<td className="p-2 tabular-nums">{formatReviewCount(row.values.consultations)}</td>
+							<td className="p-2 tabular-nums">{formatReviewCount(row.values[placementLabels(row.placementType).countKey])}</td>
 						</tr>
 					))}
 				</tbody>
@@ -268,6 +270,7 @@ function ReportTable({ rows }: { rows: ReportSummary[] }) {
 
 function EvidenceItem({ item }: { item: EvidenceVersion }) {
 	const [expanded, setExpanded] = useState(false);
+	const spec = placementLabels(item.placementType);
 	const [reason, setReason] = useState("");
 	const [revisionError, setRevisionError] = useState("");
 	const [revisionConfirmation, setRevisionConfirmation] = useState("");
@@ -352,14 +355,15 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 			</div>
 			<dl className="mt-4 grid grid-cols-2 gap-3 border-t pt-3">
 				<div>
-					<dt className="text-muted-foreground">投放花费</dt>
+					<dt className="text-muted-foreground">{spec.spend}</dt>
 					<dd className="break-words text-xl font-semibold tabular-nums">{formatSpend(item)}</dd>
 				</div>
 				<div className="border-l pl-3">
-					<dt className="text-muted-foreground">咨询次数</dt>
-					<dd className="break-words text-xl font-semibold tabular-nums">{formatReviewCount(item.values.consultations)}</dd>
+					<dt className="text-muted-foreground">{spec.count}</dt>
+					<dd className="break-words text-xl font-semibold tabular-nums">{formatReviewCount(item.values[spec.countKey])}</dd>
 				</div>
 			</dl>
+			<p className="mt-2 text-xs text-muted-foreground">{spec.name} · {spec.attributionNote}</p>
 			{expanded ? (
 				<div className="mt-3 space-y-3 border-t pt-3">
 					{detail.isLoading ? <p>正在读取详情…</p> : null}
@@ -418,6 +422,6 @@ function EvidenceItem({ item }: { item: EvidenceVersion }) {
 	);
 }
 
-function formatSpend({ values, currency }: ReportSummary): string {
-	return formatReviewAmount(values.spendMinor, currency);
+function formatSpend({ values, currency, placementType }: ReportSummary): string {
+	return formatReviewAmount(values[placementLabels(placementType).spendKey], currency);
 }

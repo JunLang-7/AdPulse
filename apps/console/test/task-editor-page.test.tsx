@@ -53,3 +53,34 @@ test("两种创建方式都可以只填产品名称，提交相同的任务内�
 	assert.equal(bodies.length, 2);
 	assert.deepEqual(bodies[1], bodies[0]);
 });
+
+test("达人合作与内容种草渠道不显示每次点击出价", async (t) => {
+	t.after(cleanup);
+	const task = {
+		id: "task:1", taskId: "task-1", version: 1, createdAt: "2026-11-08T00:00:00.000Z",
+		product: "达人任务",
+		strategy: { objective: "", audience: [], sellingPoints: [], channels: { "小红书": { type: "paid_ads", budget: 100, bidCpc: 1 } } },
+		observation: {},
+		rules: { placementType: "paid_ads", metricKey: "cost_per_consultation" },
+	};
+	serve({
+		"GET /api/tasks/task-1": () => json({ task, versions: [task] }),
+		"GET /api/tasks/task-1/lifecycle": () => json({ taskId: "task-1", state: "active", anchorAt: task.createdAt, expiresAt: "2027-11-08T00:00:00.000Z" }),
+	});
+	render(<QueryClientProvider client={new QueryClient()}>
+		<MemoryRouter initialEntries={["/tasks/task-1"]}>
+			<Routes>
+				<Route path="/tasks/:taskId" element={<TaskEditorPage />} />
+			</Routes>
+		</MemoryRouter>
+	</QueryClientProvider>);
+	fireEvent.click(await screen.findByText("投放渠道"));
+	const placement = await screen.findByRole("combobox", { name: /投放方式/ });
+	assert.ok(screen.queryByLabelText(/每次点击出价/));
+	fireEvent.change(placement, { target: { value: "influencer" } });
+	assert.equal(screen.queryByLabelText(/每次点击出价/), null);
+	fireEvent.change(placement, { target: { value: "seeding" } });
+	assert.equal(screen.queryByLabelText(/每次点击出价/), null);
+	fireEvent.change(placement, { target: { value: "paid_ads" } });
+	assert.ok(screen.queryByLabelText(/每次点击出价/));
+});

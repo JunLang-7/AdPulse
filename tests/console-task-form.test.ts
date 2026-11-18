@@ -112,3 +112,38 @@ test("invalid dates, amounts and duplicate channels get plain-language errors", 
 	const row = { ...emptyChannel, name: "小红书" };
 	assert.throws(() => toInput({ ...form, channels: [row, row] }), /渠道.*重复/);
 });
+
+test("投放方式：达人/种草保存类型、不写出价，规则口径随任务保存", () => {
+	const form = { ...emptyForm, product: "测试任务", placementType: "influencer" as const, metricKey: "cost_per_engagement" as const };
+	const result = toInput({ ...form, channels: [
+		{ ...emptyChannel, name: "小红书", type: "influencer" as const, budget: "100" },
+		{ ...emptyChannel, name: "搜索广告", type: "paid_ads" as const, bidCpc: "1.2" },
+	] });
+	assert.deepEqual(result.strategy.channels, {
+		小红书: { type: "influencer", budget: 100 },
+		搜索广告: { type: "paid_ads", bidCpc: 1.2 },
+	});
+	assert.equal(result.rules.placementType, "influencer");
+	assert.equal(result.rules.metricKey, "cost_per_engagement");
+	assert.throws(
+		() => toInput({ ...form, channels: [{ ...emptyChannel, name: "小红书", type: "seeding" as const, bidCpc: "1" }] }),
+		/没有每次点击出价/,
+	);
+	// 旧任务没有 type 时不凭空补一个类型。
+	assert.deepEqual(toInput({ ...emptyForm, product: "旧任务", channels: [{ ...emptyChannel, name: "旧渠道", budget: "1" }] }).strategy.channels, { 旧渠道: { budget: 1 } });
+});
+
+test("编辑任务时读回渠道投放方式与衡量口径", () => {
+	const task: components["schemas"]["TaskVersion"] = {
+		id: "task:1", taskId: "task", version: 1, createdAt: "2026-11-08T00:00:00.000Z",
+		product: "达人任务",
+		strategy: { objective: "", audience: [], sellingPoints: [], channels: { "小红书": { type: "influencer", budget: 100 } } },
+		observation: {},
+		rules: { placementType: "influencer", metricKey: "cost_per_engagement" },
+	};
+	const form = fromVersion(task);
+	assert.equal(form.channels[0]?.type, "influencer");
+	assert.equal(form.placementType, "influencer");
+	assert.equal(form.metricKey, "cost_per_engagement");
+	assert.equal(toInput({ ...form, product: "达人任务" }).strategy.channels["小红书"]?.type, "influencer");
+});
