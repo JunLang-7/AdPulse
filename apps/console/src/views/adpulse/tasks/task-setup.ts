@@ -90,6 +90,15 @@ export function stageValue(form: FormState, field: DraftField): string {
 	return field === "product" ? form.product.trim() : selectedValues(form, field).join("、");
 }
 
+/** 只拼某一个阶段的说明：给“按阶段一次次给”的整理方式用。 */
+export function stageBrief(form: FormState, stage: { fields: readonly DraftField[] }, notes: string): string {
+	const known = stage.fields.flatMap((field) => {
+		const value = stageValue(form, field);
+		return value ? [fieldLabels[field] + "：" + value] : [];
+	});
+	return [...known, notes.trim()].filter(Boolean).join("\n");
+}
+
 export function withSelectedValue(form: FormState, field: ChoiceField, value: string): FormState {
 	const items = selectedValues(form, field);
 	const selected = items.includes(value);

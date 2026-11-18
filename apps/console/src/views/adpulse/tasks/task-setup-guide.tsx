@@ -1,8 +1,16 @@
-import { Upload } from "lucide-react";
+import { Sparkles, Upload } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { consoleClient, type components } from "../../../adpulse-client";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent } from "../../../components/ui/card";
+import {
+	Dialog,
+	DialogCloseButton,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import {
 	applyTaskSuggestions,
@@ -14,6 +22,7 @@ import {
 	missingFields,
 	selectedValues,
 	setupBrief,
+	stageBrief,
 	stageValue,
 	suggestionKey,
 	taskStages,
@@ -24,6 +33,13 @@ import {
 	type TaskDraftStage,
 	type TaskSuggestion,
 } from "./task-setup.js";
+import {
+	assistModeLabel,
+	assistModeOptions,
+	readAssistMode,
+	writeAssistMode,
+	type AssistMode,
+} from "./task-assist-mode.js";
 import { TASK_SETUP_BRIEF_LIMIT } from "./task-setup-file.js";
 import { readTaskSetupAttachment, TASK_SETUP_ATTACHMENT_ACCEPT, TASK_SETUP_PREVIEW_LIMIT } from "./task-setup-attachment.js";
 import type { FormState } from "./task-form.js";
@@ -52,6 +68,9 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 }) {
 	const [step, setStep] = useState(0);
 	const [provider, setProvider] = useState<TaskModelChoice>();
+	/** 没选过就为 undefined：首次打开先问一次，选完记下来。 */
+	const [mode, setMode] = useState<AssistMode | undefined>(() => readAssistMode());
+	const [modeDialog, setModeDialog] = useState(false);
 	const [suggestion, setSuggestion] = useState<{ brief: string; data?: Suggestions }>();
 	/** 用户对单条建议的勾选：没记录的按来源给默认值（原话默认勾，AI 建议默认不勾）。 */
 	const [choices, setChoices] = useState<Record<string, boolean>>({});
@@ -70,20 +89,34 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 	const [dragging, setDragging] = useState(false);
 	const stage = taskStages[step];
 	const busy = processing || reading || saving;
-	const brief = setupBrief(form, notes);
+	const stageOnly = mode === "stage";
+	const brief = stageOnly && stage ? stageBrief(form, stage, notes[stage.id]) : setupBrief(form, notes);
 	const remaining = TASK_SETUP_BRIEF_LIMIT - brief.length;
 	const attachment = stage ? attached[stage.id] : undefined;
 	const canUseFileStart = remaining < 0 && Boolean(attachment);
 	const suggestionCurrent = suggestion?.brief === brief ? suggestion : undefined;
-	const items = suggestionCurrent?.data ? taskSuggestions(form, suggestionCurrent.data, excluded) : [];
+	const allItems = suggestionCurrent?.data ? taskSuggestions(form, suggestionCurrent.data, excluded) : [];
+	// 按阶段整理时只显示本阶段的字段；整表单则一次列出全部。
+	const stageFieldNames = new Set<string>(stage ? stage.fields : []);
+	const items = stageOnly && stage ? allItems.filter((item) => stageFieldNames.has(item.field)) : allItems;
 	const isPicked = (item: TaskSuggestion) => choices[suggestionKey(item)] ?? item.source === "quote";
 	const pickedItems = items.filter(isPicked);
-	const missing = missingFields(form);
+	const missing = stageOnly && stage
+		? stage.fields.filter((field) => !stageValue(form, field))
+		: missingFields(form);
 	const stageMissing = stage ? stage.fields.filter((field) => !stageValue(form, field)) : [];
 
 	function applySelected() {
 		if (!pickedItems.length) return;
 		onChange(applyTaskSuggestions(form, pickedItems));
+		setSuggestion(undefined);
+		setChoices({});
+	}
+
+	function chooseMode(next: AssistMode) {
+		writeAssistMode(next);
+		setMode(next);
+		setModeDialog(false);
 		setSuggestion(undefined);
 		setChoices({});
 	}
@@ -140,9 +173,10 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 		setProcessing(true);
 		onBusyChange(true);
 		try {
-			const result = await consoleClient.POST("/api/task-drafts/extract", {
+		const result = await consoleClient.POST("/api/task-drafts/extract", {
 				body: {
 					brief: useFileStart ? brief.slice(0, TASK_SETUP_BRIEF_LIMIT).replace(/[\uD800-\uDBFF]$/, "") : brief,
+					...(stageOnly && stage ? { stage: stage.id } : {}),
 					...(provider
 						? "connectionId" in provider
 							? { connectionId: provider.connectionId, model: provider.model }
@@ -221,9 +255,21 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 							) : null}
 						</div>
 						<section key={stage.id} aria-labelledby={assistId} className="space-y-3 rounded-lg border border-primary/25 bg-muted/25 p-4">
-							<div className="space-y-1">
-								<h3 id={assistId} className="text-sm font-semibold">AI 辅助填写</h3>
-								<p className="text-sm text-muted-foreground">写一句话或上传已有资料，生成建议后再核对。</p>
+							<div className="space-y-2">
+								<div className="flex flex-wrap items-center justify-between gap-2">
+									<h3 id={assistId} className="flex items-center gap-1.5 text-sm font-semibold">
+										<img src="/branding/icon-color.svg" alt="" aria-hidden="true" className="size-4" />
+										AI 辅助填写
+									</h3>
+									<Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setModeDialog(true)}>
+										填写方式：{assistModeLabel(mode)} · 更换
+									</Button>
+								</div>
+								<p className="text-sm text-muted-foreground">
+									{mode === "stage"
+										? "写一句话或上传已有资料，只整理本阶段的字段，确认后再往下走。"
+										: "写一句话或上传已有资料，一次整理全部字段，勾选后再核对。"}
+								</p>
 							</div>
 							<div className="space-y-3">
 								<div className="space-y-1 text-sm">
@@ -279,7 +325,11 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 								</p>
 							</div>
 							<Button type="button" disabled={busy || !brief || (remaining < 0 && !canUseFileStart)}
-								onClick={() => void generate()}>{processing ? "正在整理…" : canUseFileStart ? "用前 2,500 字整理全部" : "一次整理全部字段"}</Button>
+								onClick={() => void generate()}>{processing
+								? "正在整理…"
+								: canUseFileStart
+									? stageOnly ? "用前 2,500 字整理本阶段" : "用前 2,500 字整理全部"
+									: stageOnly ? "整理本阶段" : "一次整理全部字段"}</Button>
 							{suggestionCurrent ? (
 								<div className="space-y-2 rounded-md bg-muted/40 p-3 text-sm">
 									<p className="font-medium">可填的内容 · 共 {items.length} 条，已选 {pickedItems.length} 条</p>
@@ -355,7 +405,10 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 						))}
 						{error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
 						<p className="text-xs text-muted-foreground">
-							只有点「一次整理全部字段」才会把上面三个阶段的说明发送给所选模型；提交本阶段只在本机校验。还没确定的信息可以暂时留空。
+							{stageOnly
+								? "只有点「整理本阶段」才会把本阶段的说明发送给所选模型；提交本阶段只在本机校验。"
+								: "只有点「一次整理全部字段」才会把三个阶段的说明发送给所选模型；提交本阶段只在本机校验。"}
+							还没确定的信息可以暂时留空。
 						</p>
 						<div className="flex flex-wrap gap-2">
 							<Button type="button" variant="outline" disabled={step === 0 || busy} onClick={() => go(step - 1, returnToReview)}>上一步</Button>
@@ -397,8 +450,51 @@ export function TaskSetupGuide({ form, onChange, onEdit, onSave, onBusyChange, s
 						</div>
 					</div>
 				)}
+				{mode === undefined || modeDialog ? (
+					<AssistModeDialog
+						onChoose={chooseMode}
+						onClose={() => setModeDialog(false)}
+					/>
+				) : null}
 			</CardContent>
 		</Card>
+	);
+}
+
+/** 第一次打开先问填写方式；之后从面板上“更换”随时可以重新选。关掉时按默认方式继续。 */
+function AssistModeDialog({ onChoose, onClose }: {
+	onChoose: (mode: AssistMode) => void;
+	onClose: () => void;
+}) {
+	return (
+		<Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+			<DialogContent>
+				<DialogHeader>
+					<div className="flex items-center gap-2">
+						<img src="/branding/icon-color.svg" alt="" aria-hidden="true" className="size-6" />
+						<DialogTitle>先选一个填写方式</DialogTitle>
+					</div>
+					<DialogCloseButton onClick={onClose} />
+				</DialogHeader>
+				<div className="space-y-3 px-5 py-4">
+					<DialogDescription>
+						两种都能用，只是给建议的节奏不同。选完会记在这台设备上，之后随时能换；先关掉也可以，默认按整表单一次给。
+					</DialogDescription>
+					<div className="grid gap-2 sm:grid-cols-2">
+						{assistModeOptions.map((option) => (
+							<button key={option.id} type="button" onClick={() => onChoose(option.id)}
+								className="flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors hover:border-primary hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+								<span className="flex items-center gap-1.5 text-sm font-semibold">
+									<Sparkles aria-hidden="true" className="size-3.5" />{option.title}
+								</span>
+								<span className="text-xs text-muted-foreground">{option.summary}</span>
+								<span className="text-xs text-muted-foreground">{option.detail}</span>
+							</button>
+						))}
+					</div>
+				</div>
+			</DialogContent>
+		</Dialog>
 	);
 }
 

@@ -6,9 +6,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import TaskEditorPage from "../src/views/adpulse/tasks/editor.tsx";
+import { assistModeStorageKey } from "../src/views/adpulse/tasks/task-assist-mode.ts";
 
 test("两种创建方式都可以只填产品名称，提交相同的任务内容", async (t) => {
 	t.after(cleanup);
+	// 已选过填写方式：不弹首次提示，直接测创建路径。
+	window.localStorage.setItem(assistModeStorageKey, "form");
 	const bodies: unknown[] = [];
 	const { calls } = serve({
 		"POST /api/tasks": async (request) => {
