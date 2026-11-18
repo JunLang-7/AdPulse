@@ -11,7 +11,11 @@ import {
 } from "./domain/strategy.js";
 import { invalidateAlertCandidate } from "./investigation-alerts.js";
 import type { Actor, ChoiceCommand, Recipient } from "./ports/channel.js";
-import type { PolicyEngine, Proposal } from "./ports/policyEngine.js";
+import type {
+	PolicyEngine,
+	Proposal,
+	ValidationCheckContext,
+} from "./ports/policyEngine.js";
 import type { Storage, Transaction } from "./ports/storage.js";
 import type {
 	Delivery,
@@ -21,6 +25,7 @@ import type {
 	Session,
 	TaskVersion,
 } from "./state/model.js";
+import { createValidationCheckIn } from "./validation-checks.js";
 
 export interface StartSession {
 	requestId: string;
@@ -317,6 +322,13 @@ export class Orchestrator {
 				version,
 				status: candidate.complete ? "completed" : "planning",
 			});
+			// 已应用变更 + 验证计划 + 完整任务口径 → 建立到期检查点，仍不自动行动。
+			await createValidationCheckIn(tx, {
+				session,
+				candidate,
+				snapshotVersion: version,
+				at: this.now(),
+			});
 			if (investigationAlert) {
 				const deferred = candidate.id === "await_evidence";
 				const at = this.now();
@@ -377,6 +389,9 @@ export class Orchestrator {
 		)
 			return;
 		// Slow model calls outside the transaction; commit only if the input version is still current.
+		const validationChecks = snapshot.investigationAlertId
+			? []
+			: await this.validationChecksFor(snapshot);
 		const proposal = snapshot.investigationAlertId
 			? {
 					card: {
@@ -395,6 +410,7 @@ export class Orchestrator {
 					limits: snapshot.limits,
 					signal: snapshot.signal,
 					roundNo: snapshot.roundNo + 1,
+					...(validationChecks.length ? { validationChecks } : {}),
 				});
 		this.validateProposal(proposal, snapshot);
 		await this.storage.transaction(async (tx) => {
@@ -522,6 +538,33 @@ export class Orchestrator {
 				});
 			}
 		});
+	}
+
+	/** 只把同一任务最近的检查点交给策略层，限制条数，避免上下文无界增长。 */
+	private async validationChecksFor(
+		session: Session,
+	): Promise<ValidationCheckContext[]> {
+		const taskRef = session.taskRef;
+		if (!taskRef) return [];
+		const checks = await this.storage.transaction((tx) =>
+			tx.validationChecks.listByOwner(session.ownerId),
+		);
+		return checks
+			.filter((check) => check.taskId === taskRef.taskId)
+			.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+			.slice(0, 5)
+			.map((check) => ({
+				id: check.id,
+				snapshotVersion: check.snapshotVersion,
+				validationPlan: check.validationPlan,
+				dueAt: check.dueAt,
+				status: check.status,
+				...(check.hypothesis ? { hypothesis: check.hypothesis } : {}),
+				...(check.observedOutcome
+					? { observedOutcome: check.observedOutcome }
+					: {}),
+				...(check.reason ? { reason: check.reason } : {}),
+			}));
 	}
 
 	private validateProposal(proposal: Proposal, session: Session): void {

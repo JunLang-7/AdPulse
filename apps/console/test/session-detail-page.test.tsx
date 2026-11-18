@@ -55,6 +55,23 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 				},
 			],
 			actions: [], inbox: [], deliveries: [],
+			validationChecks: [
+				{
+					id: "check-1", ownerId: "owner", taskId: "task-1", taskVersion: 1,
+					sessionId: "session-1", snapshotVersion: 1,
+					hypothesis: "节前需求上升", validationPlan: "观察 3 天咨询成本",
+					metricKey: "cost_per_consultation", dueAt: "2026-11-20T02:00:00Z",
+					status: "pending", createdAt: "2026-11-16T02:00:00Z",
+				},
+				{
+					id: "check-2", ownerId: "owner", taskId: "task-1", taskVersion: 1,
+					sessionId: "session-1", snapshotVersion: 1,
+					validationPlan: "观察 3 天咨询成本",
+					metricKey: "cost_per_consultation", dueAt: "2026-11-20T02:00:00Z",
+					status: "inconclusive", reason: "no_comparable_evidence",
+					createdAt: "2026-11-16T02:00:00Z",
+				},
+			],
 			snapshots: [
 				{ id: "snap-1", sessionId: "session-1", version: 1, createdAt: "2026-11-16T02:00:00Z",
 					hypothesis: "节前备货需求上升",
@@ -92,6 +109,10 @@ test("会话详情：策略变更展开显示 原值 → 新值，无变更显�
 	assert.ok(screen.getByText("内容方向：新增 产地溯源"));
 	assert.ok(screen.getByText("合作对象：新增 本地达人"));
 	assert.ok(screen.getByText("渠道 小红书：预算 1000 → 1200"));
+	assert.ok(screen.getByText("验证检查点"));
+	assert.ok(screen.getByText("待验证"));
+	assert.ok(screen.getAllByText("观察 3 天咨询成本").length > 0);
+	assert.ok(screen.getByText("到期时没有可比证据"));
 	assert.ok(await screen.findByText("策略变更记录"));
 	// from/to 明细（#11 的明确规格）：字段 + 渠道 + 原值 → 新值。
 	assert.ok(screen.getByText("预算（channel-a）：1000 → 1500"), "预算 from/to");

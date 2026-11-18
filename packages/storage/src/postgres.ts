@@ -303,6 +303,17 @@ export class PostgresStorage implements Storage {
 					"INSERT INTO adpulse_schema_migrations(version) VALUES (17)",
 				);
 			}
+			if (!current.has(18)) {
+				// 验证检查点：已应用变更与后续证据的关联，不改变策略与广告平台状态。
+				await this.createEntityTable(client, "validationChecks");
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_validation_check_session
+					ON adpulse_validationChecks ((data->>'ownerId'), (data->>'sessionId'))`);
+				await client.query(`CREATE INDEX IF NOT EXISTS adpulse_validation_check_due
+					ON adpulse_validationChecks ((data->>'status'), (data->>'dueAt'))`);
+				await client.query(
+					"INSERT INTO adpulse_schema_migrations(version) VALUES (18)",
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK");

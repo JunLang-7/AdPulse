@@ -618,6 +618,40 @@ test("sessions freeze the referenced task version and incomplete rules disable m
   assert.equal(rounds.length, 0, "unconfirmed task rules must block monetary proposals");
 });
 
+test("session detail exposes validation checks only to the owner", async (t) => {
+  const { runtime, url, headers, strangerHeaders, ownerUserId } = await serve(t);
+  assert.ok(ownerUserId);
+  const created = await fetch(`${url}/api/sessions`, {
+    method: "POST",
+    headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify(startInput()),
+  });
+  assert.equal(created.status, 201);
+  const session = await created.json();
+  await runtime.storage.transaction((tx) => tx.validationChecks.put({
+    id: `${session.id}:1`,
+    ownerId: ownerUserId,
+    taskId: "task-1",
+    taskVersion: 1,
+    sessionId: session.id,
+    snapshotVersion: 1,
+    validationPlan: "观察 7 天咨询成本",
+    metricKey: "cost_per_consultation",
+    dueAt: "2026-01-08T00:00:00.000Z",
+    status: "pending",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  }));
+  const detail = await (
+    await fetch(`${url}/api/sessions/${session.id}`, { headers })
+  ).json();
+  assert.equal(detail.validationChecks.length, 1);
+  assert.equal(detail.validationChecks[0].validationPlan, "观察 7 天咨询成本");
+  const denied = await fetch(`${url}/api/sessions/${session.id}`, {
+    headers: strangerHeaders,
+  });
+  assert.equal(denied.status, 404);
+});
+
 test("HTTP validates cookie authentication, same-origin mutations, unknown accounts and payloads", async (t) => {
   const { url, headers, publicOrigin } = await serve(t);
   assert.equal((await fetch(`${url}/api/sessions`)).status, 401);

@@ -92,14 +92,22 @@ version 是决策版本，每次成功处理选择都会递增，即使 changes 
 
 `isMonetaryChange()` 区分花钱变更（预算/出价）。任务货币口径未确认时只能提议非货币变更，人群、卖点、内容方向、合作对象与开关不受限。变更随快照以 JSONB 保存，旧版三类变更按宽化后的联合类型原样读取，无需迁移。
 
-候选可带可选的 `hypothesis` 与 `validationPlan`（各不超过 300 字、单行、不带首尾空白），内核校验后随轮次冻结；卡片把它们作为选项补充说明展示，不塞进按钮文本。用户接受候选时，这两个字段同时写入策略快照，事后可核对「当时为什么改、准备怎么验证」。缺省表示未确定，不编造；当前仍不自动关联下一轮效果证据。
+候选可带可选的 `hypothesis` 与 `validationPlan`（各不超过 300 字、单行、不带首尾空白），内核校验后随轮次冻结；卡片把它们作为选项补充说明展示，不塞进按钮文本。用户接受候选时，这两个字段同时写入策略快照，事后可核对「当时为什么改、准备怎么验证」。缺省表示未确定，不编造。
+
+## 验证检查点
+
+接受带 `validationPlan` 的候选且任务口径完整（指标、窗口、阈值、最低样本）时，在同一事务创建 `pending` 检查点，并在 `dueAt`（接受时间 + `statWindowDays`）排入 `evaluate_validation_check` 任务。没有验证计划、没有实际变更或口径不完整时不建，避免制造假验证。
+
+到期评估只读取同一任务版本、接受之后产生、可评估的比较结果，记录 `observedOutcome`（指标低于/高于阈值）与证据引用；没有可比证据、任务已删除或规则版本已变更时记为 `inconclusive` 并写原因。它不推断因果、不修改策略、不触发广告平台操作。检查点随会话详情返回，仅 owner 可见；任务清理时一并删除。下一轮 `PolicyEngine` 可选收到同一任务最近 5 条检查点作为只读上下文，默认策略忽略。
 
 模型见 [model.ts](../packages/core/src/state/model.ts)，实际 DDL 与索引见 [postgres.ts](../packages/storage/src/postgres.ts)。
-当前为 41 张 id + jsonb 表，采用应用层引用关系。结构变更走 `initialize()` 内的版本化迁移（版本 1–14，顺序、加法式，在 advisory lock 下执行）。存储端口仍采用全表读取，通知记录与筛选记录接口提供分页，面向小规模验证。
+当前为 44 张 id + jsonb 表，采用应用层引用关系。结构变更走 `initialize()` 内的版本化迁移（版本 1–17，顺序、加法式，在 advisory lock 下执行）。存储端口仍采用全表读取，通知记录与筛选记录接口提供分页，面向小规模验证。
 
 迁移 13 由 #86 PR1 新增 `userModelConnections`、`userModelCredentials` 与 `userModelPreferences`，分别保存连接信息、AES-256-GCM 密文和默认模型。唯一索引分别约束 `(ownerId, providerId)`、`(ownerId, connectionId)` 与 `ownerId`。加密端口在 core，实现在 runtime。AAD 绑定 owner、连接、凭据版本、目标地址和协议。服务只在主密钥配置有效时装配，主密钥由部署侧配置。
 
 迁移 14 新增 `userModelRevocations`，记录 owner、连接 ID、凭据版本、原因与时间。恢复备份后先用 `bun run models:revocations --replay` 重放删除记录再对外服务。撤销记录版本不低于凭据版本时拒绝解密。
+
+迁移 17 新增 `validationChecks`，保存已应用变更的验证状态与证据引用；不改变策略、证据与投放记录。
 
 模型额度分两层：按 owner（6 次/分钟、并发 1）与实例总量（8 次/分钟、并发 2），测试、发现与抽取共用计数，均在网络请求前判定；`createUserRequestBudgets()` 只约束单进程，不是分布式限流。
 
