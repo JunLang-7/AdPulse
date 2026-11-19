@@ -1,5 +1,5 @@
 ﻿import type { IncomingMessage, ServerResponse } from "node:http";
-import { UserSiteFetcher, type Runtime } from "@adpluse/runtime";
+import { UserSiteFetcher, createEventDraftExtractor, type Runtime } from "@adpluse/runtime";
 import { MarketEventError, SOURCE_DEFINITIONS } from "@adpluse/core";
 import { z } from "zod";
 import { HttpError, json, readJson } from "../http.js";
@@ -34,6 +34,15 @@ function htmlTitle(html: string): string | null {
 
 const readSourceInput = z.object({ url: z.string().max(2000) }).strict();
 
+/** 事件整理输入：材料必填（与来源材料上限一致）；来源名与链接仅作上下文。 */
+const extractInput = z
+	.object({
+		materials: z.string().trim().min(1).max(30_000),
+		publisher: z.string().max(200).optional(),
+		url: z.string().max(2000).optional(),
+	})
+	.strict();
+
 const nonBlank = (max: number) => z.string().trim().min(1).max(max);
 const citation = z.object({ sourceIndex: z.number().int().min(0).max(9), quote: nonBlank(2000) }).strict().nullable();
 const input = z.object({
@@ -53,6 +62,22 @@ const input = z.object({
 const revision = z.object({ expectedVersion: z.number().int().min(1), event: input, changeReason: nonBlank(1000) }).strict();
 
 export async function handleMarketEvents(req: IncomingMessage, res: ServerResponse, runtime: Runtime, ownerId: string, path: string): Promise<boolean> {
+	if (path === "/api/market-events/extract" && req.method === "POST") {
+		// 只做「材料 -> 待核对建议」的整理：不写库、不建事件、不调通知。
+		const models = runtime.taskDraftModels;
+		if (!models) throw new HttpError(503, "event draft extraction unavailable");
+		const body = extractInput.parse(await readJson(req));
+		const extract = createEventDraftExtractor((systemPrompt, brief, maxTokens) =>
+			models.completeJson(ownerId, systemPrompt, brief, undefined, maxTokens));
+		const items = await extract({
+			materials: body.materials,
+			...(body.publisher !== undefined ? { publisher: body.publisher } : {}),
+			...(body.url !== undefined ? { url: body.url } : {}),
+		});
+		if (!items) throw new HttpError(503, "event draft extraction unavailable");
+		json(res, 200, { items });
+		return true;
+	}
 	if (path === "/api/market-events/read-source" && req.method === "POST") {
 		const { url } = readSourceInput.parse(await readJson(req));
 		let target: URL;

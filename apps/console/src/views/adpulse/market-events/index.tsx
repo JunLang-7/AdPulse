@@ -7,6 +7,14 @@ import { Input } from "../../../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Section } from "../../../components/ui/section";
 import { formatBeijing } from "../settings/notification-records/record-view.js";
+import {
+	applyEventDraftItems,
+	defaultPicked,
+	eventDraftDisplayValue,
+	eventDraftKey,
+	groupEventDraftItems,
+	type EventDraftItem,
+} from "./event-draft.ts";
 
 type EventInput = components["schemas"]["MarketEventInput"];
 type EventVersion = components["schemas"]["MarketEventVersion"];
@@ -234,6 +242,49 @@ function EventForm({ current, prefill, attach, autoLead, saved }: { current?: Ev
 	const [reason, setReason] = useState("");
 	const [taskId, setTaskId] = useState("");
 	const [autoReadNote, setAutoReadNote] = useState<string | null>(null);
+	// AI 整理：材料 -> 待核对建议；勾选后才写入表单。
+	const [aiMaterials, setAiMaterials] = useState("");
+	const [aiItems, setAiItems] = useState<EventDraftItem[]>([]);
+	const [aiPicked, setAiPicked] = useState<Set<string>>(new Set());
+	const [aiNote, setAiNote] = useState<string | null>(null);
+	const aiExtract = useMutation({
+		mutationFn: async () => {
+			// 优先用已爬取的官网原文（主机白名单与 read-source 一致）；没读到再用粘贴的材料。
+			let materials = aiMaterials.trim();
+			const url = draft.sources[0]?.url ?? null;
+			if (!materials && url) {
+				const read = await consoleClient.POST("/api/market-events/read-source", { body: { url } });
+				materials = read.data?.content?.trim() ?? "";
+				if (materials) setAiMaterials(materials);
+			}
+			if (!materials) throw new Error("没有可用材料：请先粘贴官网原文，或填写可读取的来源链接。");
+			const result = await consoleClient.POST("/api/market-events/extract", {
+				body: {
+					materials,
+					...(draft.sources[0]?.publisher ? { publisher: draft.sources[0].publisher } : {}),
+					...(url ? { url } : {}),
+				},
+			});
+			if (!result.data) {
+				if (result.response.status === 503) throw new Error("暂时没有可用的模型连接，请先手动填写或稍后重试。");
+				throw new Error("整理失败，请稍后重试。");
+			}
+			return result.data.items as EventDraftItem[];
+		},
+		onSuccess: (items) => {
+			setAiItems(items);
+			setAiPicked(new Set(items.filter(defaultPicked).map(eventDraftKey)));
+			setAiNote(items.length
+				? `整理出 ${items.length} 条建议：原文摘录已默认勾选，模型整理的请核对后自己勾。`
+				: "这份材料没有可提取的字段，请手动填写。");
+		},
+		onError: (cause: Error) => { setAiItems([]); setAiPicked(new Set()); setAiNote(cause.message); },
+	});
+	const applyAi = () => {
+		const next = applyEventDraftItems(draft as never, aiItems, aiPicked) as EventInput;
+		setDraft(next);
+		setAiNote(`已填入 ${aiPicked.size} 项；请核对后再保存。`);
+	};
 	const operation = useRef<{ body: string; key: string } | null>(null);
 	const autoReadStarted = useRef(false);
 	// 线索转事件时自动读取官网原文并预填材料与引用；失败静默回退到手动填写。
@@ -296,6 +347,60 @@ function EventForm({ current, prefill, attach, autoLead, saved }: { current?: Ev
 				? <p className="text-sm text-amber-700">这条链接已经在本事件来源里，没有重复添加。</p>
 				: <p className="text-sm text-muted-foreground">已把线索「{attach.title}」加入下方来源列表，核对后填写修订说明并保存。</p>)}
 			{autoReadNote && <p role="status" className="text-sm text-muted-foreground">{autoReadNote}</p>}
+			<details open className="rounded-md border bg-muted/25 p-3">
+				<summary className="cursor-pointer text-sm font-medium">先让 AI 整理（可选）</summary>
+				<div className="mt-3 space-y-2">
+					<p className="text-xs text-muted-foreground">
+						优先读取来源链接的官网原文；读不到时粘贴公告文字。AI 只从材料里摘录：引用逐字、不编造；
+						来源性质、合成标记、任务关联仍由你自己选。
+					</p>
+					<textarea
+						aria-label="事件材料（官网原文或粘贴内容）"
+						className={control}
+						rows={4}
+						maxLength={30000}
+						placeholder="可留空：有来源链接时会先读取官网原文；也可以直接粘贴公告文字。"
+						value={aiMaterials}
+						onChange={e => setAiMaterials(e.target.value)}
+					/>
+					<div className="flex flex-wrap items-center gap-2">
+						<Button type="button" variant="outline" disabled={aiExtract.isPending}
+							onClick={() => aiExtract.mutate()}>{aiExtract.isPending ? "正在整理…" : "AI 整理材料"}</Button>
+						<span className="text-xs text-muted-foreground">材料长度 {aiMaterials.trim().length} / 30000</span>
+					</div>
+					{aiNote && <p role="status" className="text-xs text-muted-foreground">{aiNote}</p>}
+					{aiItems.length ? (
+						<div className="space-y-3 rounded-md bg-background p-3">
+							{groupEventDraftItems(aiItems).map(group => (
+								<fieldset key={group.field} className="space-y-1">
+									<legend className="text-xs font-medium text-muted-foreground">{group.label}</legend>
+									{group.items.map(item => {
+										const key = eventDraftKey(item);
+										const checked = aiPicked.has(key);
+										return (
+											<label key={key} className="flex items-start gap-2 text-sm">
+												<input type="checkbox" className="mt-1" checked={checked}
+													onChange={() => setAiPicked(current => {
+														const next = new Set(current);
+														if (next.has(key)) next.delete(key); else next.add(key);
+														return next;
+													})} />
+												<span className="break-words">
+													{eventDraftDisplayValue(item)}
+													<span className={`ml-2 text-xs ${item.source === "quote" ? "text-emerald-700" : "text-amber-700"}`}>
+														{item.source === "quote" ? "原文逐字" : "AI 整理·请核对"}
+													</span>
+												</span>
+											</label>
+										);
+									})}
+								</fieldset>
+							))}
+							<Button type="button" disabled={!aiPicked.size} onClick={applyAi}>填入勾选的 {aiPicked.size} 项</Button>
+						</div>
+					) : null}
+				</div>
+			</details>
 			<div className="grid gap-3 md:grid-cols-2">
 				<label>事件标题<Input required maxLength={200} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} /></label>
 				<label>类别<select className={control} value={draft.type} onChange={e => { const type = (Object.keys(types) as Array<keyof typeof types>).find(k => k === e.target.value); if (type) setDraft({ ...draft, type }); }}>{Object.entries(types).map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></label>
@@ -306,26 +411,42 @@ function EventForm({ current, prefill, attach, autoLead, saved }: { current?: Ev
 			<label className="block">适用条件（未知留空）<textarea className={control} maxLength={2000} value={draft.conditions ?? ""} onChange={e => setDraft({ ...draft, conditions: e.target.value || null })} /></label>
 			{draft.sources.map((s,index) => <fieldset key={index} className="space-y-3 rounded-md border p-4"><legend>来源 {index + 1}</legend>
 				<label className="block">来源名称<Input required maxLength={200} value={s.publisher} onChange={e => patchSource(index, { publisher: e.target.value })} /></label>
-				<label className="block">原文链接（不自动读取）<Input type="url" maxLength={2000} value={s.url ?? ""} onChange={e => patchSource(index, { url: e.target.value || null })} /></label>
-				<div className="grid gap-3 md:grid-cols-2">
-					<label>内容范围<select className={control} value={s.scope} onChange={e => { const scope = (Object.keys(scopes) as Array<keyof typeof scopes>).find(k => k === e.target.value); if (scope) patchSource(index, { scope, ...(scope === "link_only" ? { content: null } : {}) }); }}>{Object.entries(scopes).map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></label>
-					<label>来源性质<select className={control} value={s.origin} onChange={e => { const origin = (Object.keys(origins) as Array<keyof typeof origins>).find(k => k === e.target.value); if (origin) patchSource(index, { origin }); }}>{Object.entries(origins).map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></label>
-					<label>发布时间（日期或 ISO 时间，未知留空）<Input value={s.publishedAt ?? ""} onChange={e => patchSource(index, { publishedAt: e.target.value || null })} /></label>
-					<label>获取 / 录入时间（ISO 日期时间）<Input required value={s.acquiredAt} onChange={e => patchSource(index, { acquiredAt: e.target.value })} /></label>
-				</div>
+				<label className="block">原文链接（可自动读取原文）<Input type="url" maxLength={2000} value={s.url ?? ""} onChange={e => patchSource(index, { url: e.target.value || null })} /></label>
 				{s.scope !== "link_only" && <label className="block">原始材料文字<textarea className={control} required maxLength={30000} rows={5} value={s.content ?? ""} onChange={e => patchSource(index, { content: e.target.value || null })} /></label>}
-				<label className="block">缺失与局限<textarea className={control} maxLength={2000} value={s.limitations} onChange={e => patchSource(index, { limitations: e.target.value })} /></label>
+				<details className="rounded-md border p-3">
+					<summary className="cursor-pointer text-sm text-muted-foreground">更多来源信息（范围、性质、时间、局限）</summary>
+					<div className="mt-3 space-y-3">
+						<div className="grid gap-3 md:grid-cols-2">
+							<label>内容范围<select className={control} value={s.scope} onChange={e => { const scope = (Object.keys(scopes) as Array<keyof typeof scopes>).find(k => k === e.target.value); if (scope) patchSource(index, { scope, ...(scope === "link_only" ? { content: null } : {}) }); }}>{Object.entries(scopes).map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></label>
+							<label>来源性质<select className={control} value={s.origin} onChange={e => { const origin = (Object.keys(origins) as Array<keyof typeof origins>).find(k => k === e.target.value); if (origin) patchSource(index, { origin }); }}>{Object.entries(origins).map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></label>
+							<label>发布时间（日期或 ISO 时间，未知留空）<Input value={s.publishedAt ?? ""} onChange={e => patchSource(index, { publishedAt: e.target.value || null })} /></label>
+							<label>获取 / 录入时间（ISO 日期时间）<Input required value={s.acquiredAt} onChange={e => patchSource(index, { acquiredAt: e.target.value })} /></label>
+						</div>
+						<label className="block">缺失与局限<textarea className={control} maxLength={2000} value={s.limitations} onChange={e => patchSource(index, { limitations: e.target.value })} /></label>
+					</div>
+				</details>
 			<Button type="button" variant="outline" disabled={draft.sources.length === 1} onClick={() => setDraft(d => {
 					const adjust = (citation: EventInput["citations"]["subject"]) => !citation || citation.sourceIndex === index ? null : { ...citation, sourceIndex: citation.sourceIndex > index ? citation.sourceIndex - 1 : citation.sourceIndex };
 					return { ...d, sources: d.sources.filter((_s,i) => i !== index), citations: { subject: adjust(d.citations.subject), eventTime: adjust(d.citations.eventTime), conditions: adjust(d.citations.conditions) } };
 				})}>移除来源 {index + 1}</Button>
 			</fieldset>)}
 			<Button type="button" variant="outline" disabled={draft.sources.length >= 10} onClick={() => setDraft({ ...draft, sources: [...draft.sources, source()] })}>补充来源</Button>
-			<fieldset className="space-y-3 rounded-md border p-4"><legend>事实依据（可留空；引用要照抄上面的材料原文）</legend>{(Object.keys(fields) as Array<keyof typeof fields>).map(field => <div key={field} className="grid gap-2 md:grid-cols-3">
+			<details className="rounded-md border p-3">
+				<summary className="cursor-pointer text-sm text-muted-foreground">
+					事实依据（可选）：{["subject", "eventTime", "conditions"].filter(f => draft.citations[f as "subject" | "eventTime" | "conditions"]?.quote?.trim()).length} / 3 项已填
+				</summary>
+				<p className="mt-2 text-xs text-muted-foreground">引用要照抄上面的材料原文；AI 整理时已自动摘要，这里只用于核对或修改。</p>
+				<fieldset className="mt-2 space-y-3">{(Object.keys(fields) as Array<keyof typeof fields>).map(field => <div key={field} className="grid gap-2 md:grid-cols-3">
 				<label>{fields[field]}引用来源<select className={control} value={draft.citations[field]?.sourceIndex ?? 0} onChange={e => { const citation = draft.citations[field]; setDraft({ ...draft, citations: { ...draft.citations, [field]: { quote: citation?.quote ?? "", sourceIndex: Number(e.target.value) } } }); }}>{draft.sources.map((_s,i) => <option key={i} value={i}>来源 {i + 1}</option>)}</select></label>
 				<label className="md:col-span-2">{fields[field]}原文引用<Input maxLength={2000} value={draft.citations[field]?.quote ?? ""} onChange={e => setDraft({ ...draft, citations: { ...draft.citations, [field]: { sourceIndex: draft.citations[field]?.sourceIndex ?? 0, quote: e.target.value } } })} /></label>
 			</div>)}</fieldset>
-			<fieldset className="space-y-2 rounded-md border p-4"><legend>关联本人任务（可选）</legend>
+			</details>
+			<details className="rounded-md border p-3">
+				<summary className="cursor-pointer text-sm text-muted-foreground">
+					任务关联与材料标记（可选）：已关联 {draft.taskRefs.length} 个任务{draft.provenance.simulated ? " · 合成材料" : ""}
+				</summary>
+				<div className="mt-3 space-y-3">
+			<fieldset className="space-y-2"><legend className="text-sm">关联本人任务</legend>
 				{tasks.error && <p role="alert">任务列表读取失败，请刷新后重试。</p>}
 				<select aria-label="选择关联任务" className={control} value={taskId} onChange={e => setTaskId(e.target.value)}><option value="">请选择</option>{tasks.data?.filter(t => !draft.taskRefs.some(r => r.taskId === t.taskId)).map(t => <option key={t.taskId} value={t.taskId}>{t.product}</option>)}</select>
 				<Button type="button" variant="outline" disabled={!taskId || draft.taskRefs.length >= 20} onClick={() => { const task = tasks.data?.find(t => t.taskId === taskId); if (task) { setDraft({ ...draft, taskRefs: [...draft.taskRefs, { taskId: task.taskId, taskVersion: task.version, reason: "" }] }); setTaskId(""); } }}>添加任务关联</Button>
@@ -333,6 +454,8 @@ function EventForm({ current, prefill, attach, autoLead, saved }: { current?: Ev
 			</fieldset>
 			<label className="flex items-center gap-2"><input type="checkbox" checked={draft.provenance.simulated} disabled={current?.input.provenance.simulated === true} onChange={e => setDraft({ ...draft, provenance: { ...draft.provenance, simulated: e.target.checked } })} />这是合成 / 模拟材料</label>
 			{draft.provenance.simulated && <div className="space-y-2"><label className="block">样例来源与版本<Input required maxLength={2000} value={draft.provenance.reference ?? ""} onChange={e => setDraft({ ...draft, provenance: { ...draft.provenance, reference: e.target.value || null } })} /></label><label className="block">转换记录<Input required maxLength={2000} value={draft.provenance.transformation ?? ""} onChange={e => setDraft({ ...draft, provenance: { ...draft.provenance, transformation: e.target.value || null } })} /></label></div>}
+				</div>
+			</details>
 			{current && <label className="block">本次修订说明<Input required maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} /></label>}
 			{mutation.error && <p role="alert" className="text-red-600">{mutation.error.message}</p>}
 			<Button type="submit">{mutation.isPending ? "正在保存…" : current ? "保存修订" : "保存事件"}</Button>

@@ -1934,6 +1934,22 @@
         }
       }
     },
+    "/api/market-events/extract": {
+      "post": {
+        "operationId": "extractMarketEventDraft",
+        "description": "把官方原文或粘贴材料整理成待核对的事件字段建议；不写库、不建事件、不推送。",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MarketEventExtractInput" } } } },
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MarketEventExtractResult" } } } },
+          "400": { "description": "Invalid input", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Origin rejected", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "413": { "description": "Request too large", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "415": { "description": "JSON required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Model unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/api/market-events/read-source": {
       "post": {
         "operationId": "readMarketEventSource",
@@ -6520,6 +6536,35 @@
             }
           }
         }
+      },
+      "MarketEventExtractInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "materials": { "type": "string", "minLength": 1, "maxLength": 30000, "description": "已爬取的官方原文，或用户粘贴的材料。" },
+          "publisher": { "type": "string", "maxLength": 200, "description": "来源名称，仅作上下文。" },
+          "url": { "type": "string", "maxLength": 2000, "description": "来源链接，仅作上下文。" }
+        },
+        "required": ["materials"]
+      },
+      "MarketEventExtractItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": { "type": "string", "enum": ["title", "type", "subjectKind", "subjectName", "eventTime", "conditions", "scope", "limitations", "citationSubject", "citationEventTime", "citationConditions"] },
+          "value": { "type": "string" },
+          "source": { "type": "string", "enum": ["quote", "idea"], "description": "quote = 原文逐字摘录；idea = 模型整理，需用户核对。" },
+          "evidence": { "type": "string" }
+        },
+        "required": ["field", "value", "source"]
+      },
+      "MarketEventExtractResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/MarketEventExtractItem" } }
+        },
+        "required": ["items"]
       },
       "MarketEventInput": {
         "type": "object",
