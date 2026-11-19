@@ -10466,8 +10466,10 @@
           "metricKey": {
             "type": "string",
             "enum": [
-              "cost_per_consultation"
-            ]
+              "cost_per_consultation",
+              "cost_per_engagement"
+            ],
+            "description": "验证检查点的口径键，与任务的投放方式一致。"
           },
           "dueAt": {
             "type": "string"

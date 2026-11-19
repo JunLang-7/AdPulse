@@ -742,7 +742,7 @@ export interface ValidationCheck {
 	snapshotVersion: number;
 	hypothesis?: string;
 	validationPlan: string;
-	metricKey: "cost_per_consultation";
+	metricKey: PlacementMetricKey;
 	dueAt: string;
 	status: ValidationCheckStatus;
 	comparisonResultId?: string;
