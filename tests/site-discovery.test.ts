@@ -295,3 +295,44 @@ test("discoverCompanySites：一遍搜到商城站时，用「<企业> 新闻中
 	assert.equal(sites[0]?.host, "www.midea.com.cn", "补一轮搜索后选到有新闻列表的官网");
 	assert.deepEqual(queries, ["美的", "美的 新闻中心"], "只在第一遍没有可用条目时才补搜");
 });
+
+test("discoverCompanySites：第一遍没有可用条目时升级补搜，咨询全部源（不被免费源短路）", async () => {
+	const calls: Array<{ query: string; enoughHits?: number | undefined }> = [];
+	const aggregator = {
+		async search(query: string, overrides?: { enoughHits?: number }) {
+			calls.push(overrides?.enoughHits === undefined ? { query } : { query, enoughHits: overrides.enoughHits });
+			if (query.includes("新闻中心"))
+				return {
+					hits: [{ title: "美的集团-新闻中心", url: "https://www.midea.com.cn/zh/about-midea/news" }],
+					providers: [{ provider: "serper", label: "Serper", status: "ok", detail: null }],
+				};
+			// 第一遍：免费源返回 8 条垃圾（商城/字典），凑够默认门槛就会短路付费源。
+			return {
+				hits: [
+					{ title: "美的商城-官方网站", url: "https://www.midea.cn/" },
+					...Array.from({ length: 7 }, (_, i) => ({ title: `垃圾结果 ${i}`, url: `https://junk-${i}.example.com/` })),
+				],
+				providers: [{ provider: "bing", label: "Bing", status: "ok", detail: null }],
+			};
+		},
+	};
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			const parsed = new URL(url);
+			if (parsed.hostname === "www.midea.cn")
+				return { status: 200, bytes: 60, body: `<title>美的商城-官方网站</title><a href="/about">关于我们</a>` };
+			if (parsed.hostname.startsWith("junk-"))
+				return { status: 200, bytes: 40, body: "<title>垃圾</title>" };
+			if (parsed.pathname === "/")
+				return { status: 200, bytes: 60, body: `<title>美的集团-官方网站</title><a href="/zh/about-midea/news">新闻</a>` };
+			return {
+				status: 200, bytes: 120,
+				body: `<html><a href="/zh/about-midea/news/news-20220719">美的空调率先发布碳足迹评估报告 2022年7月19日</a></body></html>`,
+			};
+		},
+	};
+	const sites = await discoverCompanySites("美的", fakeBin, { aggregator, fetcher });
+	assert.equal(sites[0]?.host, "www.midea.com.cn");
+	assert.equal(calls.length, 2, "第一遍没有可用条目，只升级一次补搜");
+	assert.equal(calls[1]?.enoughHits, Number.POSITIVE_INFINITY, "补搜解除免费源短路，付费源必须被咨询");
+});

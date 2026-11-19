@@ -300,7 +300,7 @@ export async function discoverCompanySites(
 		bingFetcherFor?: (hosts: string[]) => SourceFetcher;
 		/** 多源聚合（带额度管控）；传入后不再走单源路径。 */
 		aggregator?: {
-			search(brand: string): Promise<{
+			search(brand: string, overrides?: { enoughHits?: number }): Promise<{
 				hits: Array<{ title: string; url: string }>;
 				providers: Array<{ provider: string; label: string; status: string; detail: string | null }>;
 			}>;
@@ -458,16 +458,23 @@ export async function discoverCompanySites(
 		// 只在注入聚合器时补搜：单源兼容路径（agent-reach / Bing）不做第二次请求，
 		// 避免测试与离线场景意外访问网络，也避免额度不可控。
 		if (!options.aggregator) return [];
-		const aggregated = await options.aggregator.search(`${brand} 新闻中心`).catch(() => null);
+		// 关键：按次解除「凑够 8 条就短路」。免费源（实测 Bing）会返回 8 条商城/字典站，
+		// 不解除短路的话付费源（Google）永远不会被咨询——这正是换站拿不到正确官网的原因。
+		const aggregated = await options.aggregator
+			.search(`${brand} 新闻中心`, { enoughHits: Number.POSITIVE_INFINITY })
+			.catch(() => null);
 		return aggregated?.hits ?? [];
 	};
 
 	let sites = await resolveCandidates(searchItems, new Set());
-	// 「<企业> 官网」常被商城/招聘/登录子域占满：无论第一遍是否拿到站点，都补一轮「新闻中心」搜索，
-	// 只多消耗一次搜索额度（有额度闸门），换来把真官网/新闻页带进候选。
-	const extra = await extraSearch();
-	if (Array.isArray(extra) && extra.length > 0)
-		sites = [...sites, ...(await resolveCandidates(extra, new Set(sites.map((site) => site.host))))];
+	// 「<企业> 官网」常被商城/招聘/登录子域占满：第一遍没有能解析出条目的站点时，
+	// 升级一轮「<企业> 新闻中心」搜索并咨询全部源（含付费源）。第一遍找到可用站点就不升级，
+	// 正常企业（免费源就能找到官网）不消耗付费额度。
+	if (sites.length === 0 || sites.every((site) => site.itemCount === 0)) {
+		const extra = await extraSearch();
+		if (Array.isArray(extra) && extra.length > 0)
+			sites = [...sites, ...(await resolveCandidates(extra, new Set(sites.map((site) => site.host))))];
+	}
 	if (sites.length > 0) {
 		sites.sort((a, b) => (b.itemCount > 0 ? 1 : 0) - (a.itemCount > 0 ? 1 : 0) || b.itemCount - a.itemCount || b.shape - a.shape);
 		return sites.slice(0, MAX_SITES).map(({ host, listUrl, via }) => ({ host, listUrl, via }));
