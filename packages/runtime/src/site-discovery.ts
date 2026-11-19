@@ -82,6 +82,13 @@ export function agentReachReadFallback(executable: string | undefined) {
 	};
 }
 /** 媒体聚合/门户/百科等不可能是企业官网，直接排除。 */
+/**
+ * 通用媒体/通稿平台：它们不是任何企业的官网，但标题常含企业名
+ * （「宁德时代……」出现在美通社的稿子里）。
+ */
+const AGGREGATOR_HOSTS =
+	/prnasia\.com|prnewswire\.com|businesswire\.com|reuters\.com|bloomberg\.com|caixin\.com|yicai\.com|cninfo\.com|jrj\.com|10jqka\.com|stockstar\.com|jiemian\.com|tmtpost\.com|latepost\.com|36kr\.com|lieyunwang\.com|iheima\.com|technode\.com|elecfans\.com|eechina\.com|semiinsights\.com|trendforce\.com|gasgoo\.com|evpartner\.com|nevfocus\.com|chinapower\.com\.cn|cpnn\.com\.cn|spglobal\.com|cnesa\.org|weixin\.qq\.com|mp\.weixin\./i;
+
 const NON_OFFICIAL_HOSTS =
 	/baidu\.com|zhihu\.com|qq\.com|163\.com|126\.net|sohu\.com|sina\.com|douyin\.com|toutiao\.com|xinhuanet\.com|people\.com\.cn|wikipedia\.org|gov\.cn|tianyancha\.com|qcc\.com|qichacha\.com|aiqicha\.com|maigoo\.com|csdn\.net|jianshu\.com|juejin\.cn|cnblogs\.com|36kr\.com|netease\.com|ifeng\.com|thepaper\.cn|cntv\.cn|chinanews\.com|ce\.cn|cctv\.com|baike\.|bilibili\.com|kuwo\.cn|kugou\.com|migu\.cn|eastmoney\.com|xueqiu\.com|9fzt\.com|jd\.com|tmall\.com|taobao\.com|1688\.com|weibo\.com|douban\.com|zhuanlan\.|58\.com|zhaopin\.com|51job\.com|liepin\.com|zhipin\.com|huangye88\.com|s114\.cn|hc360\.com|made-in-china\.com|globalsources\.com|ebdoor\.com|china\.cn|99114\.com|3158\.cn|jmw\.com|chachaba\.com|dianping\.com|meituan\.com|ctrip\.com|qunar\.com|autohome\.com|yiche\.com|dongchedi\.com|pconline\.com\.cn|zol\.com\.cn|ithome\.com|so\.com|sogou\.com|yandex\./i;
 /**
@@ -634,6 +641,8 @@ function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: str
 		if (url.username || url.password || !url.host) continue;
 		// http 老站保留原协议：用户站点抓取器支持 http。
 		if (NON_OFFICIAL_HOSTS.test(url.host)) continue;
+		// 通用媒体/通稿平台不是任何企业的官网，直接不进候选。
+		if (AGGREGATOR_HOSTS.test(url.host)) continue;
 		const title = typeof raw.title === "string" ? raw.title : "";
 		const officialTitle = /官方网站|官网|官方门户|official site/i.test(title) ? 3 : 0;
 		const aggregatorTitle = /新闻大全|相关新闻|新闻信息|资讯大全/i.test(title) ? -2 : 0;
