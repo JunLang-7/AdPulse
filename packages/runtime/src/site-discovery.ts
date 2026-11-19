@@ -85,6 +85,8 @@ export function agentReachReadFallback(executable: string | undefined) {
 const NON_OFFICIAL_HOSTS =
 	/baidu\.com|zhihu\.com|qq\.com|163\.com|126\.net|sohu\.com|sina\.com|douyin\.com|toutiao\.com|xinhuanet\.com|people\.com\.cn|wikipedia\.org|gov\.cn|tianyancha\.com|qcc\.com|maigoo\.com|csdn\.net|jianshu\.com|juejin\.cn|cnblogs\.com|36kr\.com|netease\.com|ifeng\.com|thepaper\.cn|cntv\.cn|chinanews\.com|ce\.cn|cctv\.com|baike\./i;
 const NEWS_TOKEN = /news|xinwen|xwzx|xwtt|新闻|动态|资讯|信息|media|press/i;
+/** 列表页解析最多试几个候选：每次最多 4 个请求，避免“发现+探测”把单次登记放大成几十个请求。 */
+const MAX_LIST_PAGE_ATTEMPTS = 3;
 
 /**
  * 搜索源频率保护：Bing/Exa 在连续请求下会降级（返回无关结果或限流）。
@@ -138,13 +140,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** 数据接口不是列表页：路径以数据文件后缀结尾时直接排除（实测有站点把 newsroom.json 当新闻页）。 */
-const DATA_LIKE_PATH = /\.(?:json|xml|rss|atom|txt|csv)(?:$|[?#])/iu;
+/** 数据接口不是列表页：路径以数据文件后缀结尾，或用查询声明 JSON/XML 输出。 */
+const DATA_LIKE_PATH = /\.(?:json|xml|rss|atom|txt|csv)$/iu;
+const DATA_LIKE_QUERY = /(?:^|&)(?:format|type|output)=(?:json|xml|rss|atom)(?:&|$)/iu;
 
 /** 候选 URL 本身是数据接口（不是可采集的 HTML 列表页）。 */
 export function isDataLikePageUrl(raw: string): boolean {
 	try {
-		return DATA_LIKE_PATH.test(new URL(raw).pathname);
+		const url = new URL(raw);
+		return DATA_LIKE_PATH.test(url.pathname) || DATA_LIKE_QUERY.test(url.search.slice(1));
 	} catch {
 		return false;
 	}
@@ -384,7 +388,8 @@ export async function discoverCompanySite(
 		passing.sort((a, b) => b.shape - a.shape);
 		const rejected: string[] = [];
 		// 首选候选的列表页可能是数据接口或非 HTML：按分数顺序试下一个，都不行就如实报错。
-		for (const { candidate } of passing) {
+		// 每次尝试最多再发 4 个请求，所以只试前几个候选，避免单次登记放大成几十个请求。
+		for (const { candidate } of passing.slice(0, MAX_LIST_PAGE_ATTEMPTS)) {
 			const fetcher = options.fetcher ?? new UserSiteFetcher([candidate.host]);
 			const listUrl = await resolveNewsListPage(
 				{ host: candidate.host, listUrl: candidate.listUrl },
