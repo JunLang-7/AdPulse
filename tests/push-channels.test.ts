@@ -98,8 +98,8 @@ test("企微：errcode 非 0 时如实报失败（HTTP 200 也可能业务失败
 });
 
 test("企微：markdown 内容包含标题、正文与跳转链接", async () => {
-	const calls = [];
-	const fetcher = (async (url, init) => {
+	const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+	const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
 		calls.push({ url: String(url), init });
 		return new Response(JSON.stringify({ errcode: 0 }), { status: 200 });
 	}) as typeof fetch;
