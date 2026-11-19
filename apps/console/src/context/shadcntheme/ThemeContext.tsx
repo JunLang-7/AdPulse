@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
 type Theme = "dark" | "light" | "system";
+type ResolvedTheme = Exclude<Theme, "system">;
 
 type ThemeProviderProps = {
 	children: React.ReactNode;
@@ -18,7 +19,28 @@ const initialState: ThemeProviderState = {
 	setTheme: () => null,
 };
 
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
+
+// 与 index.html 的首帧脚本、Light-Dark 的三态循环共用同一套规则。
+const isTheme = (value: string | null): value is Theme =>
+	value === "light" || value === "dark" || value === "system";
+
+const readSystemTheme = (): ResolvedTheme =>
+	typeof window.matchMedia === "function" && window.matchMedia(DARK_QUERY).matches
+		? "dark"
+		: "light";
+
+const resolveTheme = (theme: Theme): ResolvedTheme =>
+	theme === "system" ? readSystemTheme() : theme;
+
+const applyTheme = (theme: Theme) => {
+	const root = window.document.documentElement;
+
+	root.classList.remove("light", "dark");
+	root.classList.add(resolveTheme(theme));
+};
 
 export function ThemeProvider({
 	children,
@@ -26,26 +48,27 @@ export function ThemeProvider({
 	storageKey = "vite-ui-theme",
 	...props
 }: ThemeProviderProps) {
-	const [theme, setTheme] = useState<Theme>(
-		() => (localStorage.getItem(storageKey) as Theme) || defaultTheme,
-	);
+	const [theme, setTheme] = useState<Theme>(() => {
+		const stored = localStorage.getItem(storageKey);
+
+		return isTheme(stored) ? stored : defaultTheme;
+	});
 
 	useEffect(() => {
-		const root = window.document.documentElement;
+		applyTheme(theme);
 
-		root.classList.remove("light", "dark");
+		// 只有「跟随系统」需要跟着系统切换实时更新；手动选定的不覆盖用户选择。
+		if (theme !== "system") return;
 
-		if (theme === "system") {
-			const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-				.matches
-				? "dark"
-				: "light";
+		const media = window.matchMedia?.(DARK_QUERY);
 
-			root.classList.add(systemTheme);
-			return;
-		}
+		if (!media?.addEventListener) return;
 
-		root.classList.add(theme);
+		const onChange = () => applyTheme("system");
+
+		media.addEventListener("change", onChange);
+
+		return () => media.removeEventListener("change", onChange);
 	}, [theme]);
 
 	const value = {
