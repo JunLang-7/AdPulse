@@ -1,6 +1,9 @@
 // 具体搜索源实现：Bing RSS（免费）、agent-reach/Exa（免费但限流）、
-// Serper 与 Brave（付费 API，按环境变量密钥启用）。
+// 百度千帆 / 博查 / Serper / Brave（付费 API，按环境变量密钥启用）。
 // 所有源都只返回「标题 + URL」，不把正文当结果搬运。
+//
+// 中文企业优先用国内索引：百度千帆与博查都是官方文档化 API，
+// 不抓百度/搜狗/360 的搜索结果页（那属于未授权采集，且 robots/风控不允许）。
 import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,6 +19,8 @@ export function bingQueries(brand: string): string[] {
 	const shortName = brand.replace(/(?:葡萄酒|控股|股份|有限公司|集团|科技|公司)$/u, "").trim();
 	return [
 		`${brand} 官网`,
+		`${brand}官方网站`,
+		`${brand}首页`,
 		`${brand}集团 官网`,
 		brand,
 		...(spaced ? [spaced, `${spaced} 集团`] : []),
@@ -48,7 +53,8 @@ export function bingProvider(options: { dailyLimit?: number | null } = {}): Sear
 			for (const variant of bingQueries(query)) {
 				try {
 					const page = await fetcher.fetchText(
-						`https://www.bing.com/search?q=${encodeURIComponent(variant)}&format=rss&setlang=zh-cn`,
+						// mkt/cc 让 Bing 按简中市场返回结果；不指定时常命中英文/港台站。
+						`https://www.bing.com/search?q=${encodeURIComponent(variant)}&format=rss&setlang=zh-cn&mkt=zh-CN&cc=CN`,
 						{ maxBytes: 256 * 1024, timeoutMs: 15_000 },
 					);
 					lastStatus = page.status;
@@ -187,6 +193,95 @@ export function braveProvider(apiKey: string | undefined, options: { dailyLimit?
 	};
 }
 
+/**
+ * 百度千帆 AI 搜索（官方 API，按量计费，每月免费额度）。
+ * 契约：POST https://qianfan.baidubce.com/v2/ai_search/web_search
+ * 请求体 messages + search_source=baidu_search_v2；响应 references[] 带 title/url。
+ * 不抓 www.baidu.com/s（未授权采集）。
+ */
+export function baiduProvider(apiKey: string | undefined, options: { dailyLimit?: number | null } = {}): SearchProvider | null {
+	if (!apiKey) return null;
+	return {
+		id: "baidu",
+		label: "百度千帆 AI 搜索",
+		metered: true,
+		dailyLimit: options.dailyLimit === undefined ? 100 : options.dailyLimit,
+		async search(query) {
+			try {
+				const response = await fetch("https://qianfan.baidubce.com/v2/ai_search/web_search", {
+					method: "POST",
+					headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+					body: JSON.stringify({
+						messages: [{ role: "user", content: query }],
+						search_source: "baidu_search_v2",
+						resource_type_filter: [{ type: "web", top_k: LIMIT }],
+					}),
+					signal: AbortSignal.timeout(15_000),
+				});
+				if (response.status === 429) return { status: "rate_limited", hits: [], detail: "百度千帆限流或当日免费额度已用完" };
+				if (response.status === 401 || response.status === 403)
+					return { status: "unavailable", hits: [], detail: "百度千帆密钥无效" };
+				if (!response.ok) return { status: "failed", hits: [], detail: `百度千帆返回 ${response.status}` };
+				const body = (await response.json()) as {
+					references?: Array<{ title?: string; url?: string }>;
+					code?: number | string;
+					message?: string;
+				};
+				// 鉴权/参数错误可能以 200 + code 返回。
+				if (body.code !== undefined && body.code !== 0 && !Array.isArray(body.references))
+					return { status: "failed", hits: [], detail: `百度千帆错误 ${String(body.code)}` };
+				const hits: SearchHit[] = [];
+				for (const item of (body.references ?? []).slice(0, LIMIT))
+					if (item.url?.startsWith("http")) hits.push({ title: item.title ?? "", url: item.url });
+				return { status: "ok", hits };
+			} catch {
+				return { status: "failed", hits: [], detail: "百度千帆请求失败" };
+			}
+		},
+	};
+}
+
+/**
+ * 博查 Web Search（官方 API，中文索引）。
+ * 契约：POST https://api.bochaai.com/v1/web-search
+ * 响应 data.webPages.value[]（部分代理直接回 webPages），字段为 name + url。
+ */
+export function bochaProvider(apiKey: string | undefined, options: { dailyLimit?: number | null } = {}): SearchProvider | null {
+	if (!apiKey) return null;
+	return {
+		id: "bocha",
+		label: "博查搜索",
+		metered: true,
+		dailyLimit: options.dailyLimit === undefined ? 100 : options.dailyLimit,
+		async search(query) {
+			type Page = { webPages?: { value?: Array<{ name?: string; url?: string }> } };
+			try {
+				const response = await fetch("https://api.bochaai.com/v1/web-search", {
+					method: "POST",
+					headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+					body: JSON.stringify({ query, freshness: "noLimit", summary: false, count: LIMIT }),
+					signal: AbortSignal.timeout(15_000),
+				});
+				if (response.status === 429) return { status: "rate_limited", hits: [], detail: "博查限流或额度用完" };
+				if (response.status === 401 || response.status === 403)
+					return { status: "unavailable", hits: [], detail: "博查密钥无效" };
+				if (!response.ok) return { status: "failed", hits: [], detail: `博查返回 ${response.status}` };
+				const body = (await response.json()) as Page & { data?: Page; code?: number | string };
+				// 官方信封是 { code, data: { webPages } }；代理可能直接回 webPages。
+				const values = body.data?.webPages?.value ?? body.webPages?.value ?? [];
+				if (values.length === 0 && body.code !== undefined && body.code !== 200 && body.code !== 0)
+					return { status: "failed", hits: [], detail: `博查错误 ${String(body.code)}` };
+				const hits: SearchHit[] = [];
+				for (const item of values.slice(0, LIMIT))
+					if (item.url?.startsWith("http")) hits.push({ title: item.name ?? "", url: item.url });
+				return { status: "ok", hits };
+			} catch {
+				return { status: "failed", hits: [], detail: "博查请求失败" };
+			}
+		},
+	};
+}
+
 /** 解析 SEARCH_DAILY_LIMITS（如 "bing:200,exa:50,serper:100"）。 */
 export function parseDailyLimits(value: string | undefined): Record<string, number> {
 	const limits: Record<string, number> = {};
@@ -206,14 +301,19 @@ export function parseDailyLimits(value: string | undefined): Record<string, numb
  */
 export function providersFromEnvironment(env: Record<string, string | undefined>): SearchProvider[] {
 	const limits = parseDailyLimits(env.SEARCH_DAILY_LIMITS);
-	const providers: SearchProvider[] = [
+	// 国内索引排在前面：中文企业名在百度/博查里命中率明显高于英文语义检索。
+	const providers: SearchProvider[] = [];
+	const baidu = baiduProvider(env.BAIDU_QIANFAN_API_KEY, { dailyLimit: limits.baidu ?? 100 });
+	if (baidu) providers.push(baidu);
+	const bocha = bochaProvider(env.BOCHA_API_KEY, { dailyLimit: limits.bocha ?? 100 });
+	if (bocha) providers.push(bocha);
+	providers.push(
 		bingProvider({ dailyLimit: limits.bing ?? 200 }),
 		agentReachProvider(env.AGENT_REACH_BIN, { dailyLimit: limits.exa ?? 50 }),
-	];
+	);
 	const serper = serperProvider(env.SERPER_API_KEY, { dailyLimit: limits.serper ?? 100 });
 	if (serper) providers.push(serper);
 	const brave = braveProvider(env.BRAVE_API_KEY, { dailyLimit: limits.brave ?? 100 });
 	if (brave) providers.push(brave);
-	// 付费源已配置时，让付费源以更高优先级兜底：插到免费源之后（保持顺序即可）。
 	return providers;
 }
