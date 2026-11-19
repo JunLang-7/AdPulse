@@ -36,6 +36,14 @@ type TaskOption = { taskId: string; product: string };
 const statusOf = (error: unknown): number =>
 	(error as { status?: number } | null)?.status ?? 0;
 
+/** 即时推送的失败文案：409=没配渠道，502=渠道全失败。 */
+const instantPushStatus = (error: unknown): string => {
+	const status = statusOf(error);
+	if (status === 409) return "还没有配置任何即时推送渠道：在 .env 设置 NTFY_TOPIC（最简单）或 BARK_KEY，然后重启服务。";
+	if (status === 502) return "推送渠道全部发送失败，看一下上方每个渠道的具体原因。";
+	return "推送失败，请稍后重试。";
+};
+
 const failure = (error: unknown) =>
 	error ? errorText(statusOf(error)) : null;
 
@@ -350,6 +358,23 @@ export default function SubscriptionSettingsPage() {
 			const result = await consoleClient.GET("/api/me/notification-status");
 			if (!result.data) throw new Error("notification unavailable");
 			return result.data as unknown as NotificationStatusLike;
+		},
+	});
+	// 即时推送渠道（Bark / ntfy）：与日汇总并行，由用户主动触发。
+	const pushChannels = useQuery({
+		queryKey: ["push-channels"],
+		queryFn: async () => {
+			const result = await consoleClient.GET("/api/me/push-channels");
+			if (!result.data) return [];
+			return result.data.items;
+		},
+	});
+	const instantPush = useMutation({
+		mutationFn: async () => {
+			const result = await consoleClient.POST("/api/me/notifications/push-now");
+			if (!result.data)
+				throw Object.assign(new Error("push failed"), { status: result.response.status });
+			return result.data;
 		},
 	});
 	const tasks = useQuery({
@@ -759,6 +784,48 @@ export default function SubscriptionSettingsPage() {
 					</CardContent>
 				</Card>
 			) : null}
+
+			<Card className="max-w-3xl">
+				<CardHeader>
+					<CardTitle>立即推送（不等汇总时间）</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-3">
+					<p className="text-sm text-muted-foreground">
+						把目前「依据齐备」的事件摘要马上推到手机（Bark / ntfy），用于当场验证链路。
+						只发你自己已确认的事件，不包含未核对线索。
+					</p>
+					<ul className="space-y-1 text-sm">
+						{(pushChannels.data ?? []).map((channel) => (
+							<li key={channel.channel} className={channel.configured ? "text-muted-foreground" : "text-amber-700"}>
+								{channel.label}：{channel.configured ? "已配置" : channel.guide ?? "未配置"}
+							</li>
+						))}
+					</ul>
+					{instantPush.data ? (
+						<p role="status" className="text-sm">
+							已发送到 {instantPush.data.sent} 个渠道；包含 {instantPush.data.eventCount} 条已确认事件。
+							{instantPush.data.results.filter((item) => item.status !== "ok").map((item) => (
+								<span key={item.channel} className="ml-1 text-amber-700">
+									{item.label} 失败：{item.detail ?? "未知原因"}
+								</span>
+							))}
+						</p>
+					) : null}
+					{instantPush.error ? (
+						<p role="alert" className="text-sm text-red-600">
+							{instantPushStatus(instantPush.error)}
+						</p>
+					) : null}
+					<button
+						type="button"
+						disabled={instantPush.isPending || !(pushChannels.data ?? []).some((channel) => channel.configured)}
+						onClick={() => instantPush.mutate()}
+						className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
+					>
+						{instantPush.isPending ? "正在推送…" : "立即推送一次"}
+					</button>
+				</CardContent>
+			</Card>
 
 			<Card className="max-w-3xl">
 				<CardHeader>
