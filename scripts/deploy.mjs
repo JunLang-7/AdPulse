@@ -154,6 +154,31 @@ async function remoteSoft(script) {
 	}
 }
 
+/** 把配置里的 `~/…` 展开成远端绝对路径（`--env-file=~/…` 这类参数位不会被 shell 展开，必须自己展开）。 */
+function expandRemoteHome(val, home) {
+	const trimmed = val.trim();
+	if (trimmed === "~") return home;
+	if (trimmed.startsWith("~/")) return `${home}/${trimmed.slice(2)}`;
+	return trimmed;
+}
+
+const PATH_KEYS = [
+	"DEPLOY_RELEASE_ROOT",
+	"DEPLOY_LINK",
+	"DEPLOY_ENV_FILE",
+	"DEPLOY_LOG_DIR",
+	"DEPLOY_BACKUP_DIR",
+	"DEPLOY_NODE",
+	"DEPLOY_BUN",
+];
+
+/** 远端 HOME 决定 `~/…` 展开成什么；取不到就直接失败，不猜。 */
+async function resolveRemoteHome() {
+	const out = (await run("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15", config.DEPLOY_HOST, 'printf %s "$HOME"'])).trim();
+	if (!out.startsWith("/")) throw new Error(`无法取得远端 HOME（返回：${out || "空"}）`);
+	return out.replace(/\/+$/, "");
+}
+
 const safePath = (val, label) => {
 	if (!/^(~\/|\/)[A-Za-z0-9._~/-]*$/.test(val)) throw new Error(`${label} 只能是绝对路径或 ~/ 开头：${val}`);
 	return val;
@@ -172,9 +197,13 @@ async function main() {
 	ok(`${sha.slice(0, 12)} ${subject}`);
 	if (config.configPath) info(`配置 ${config.configPath}`);
 
-	for (const key of ["DEPLOY_RELEASE_ROOT", "DEPLOY_LINK", "DEPLOY_ENV_FILE", "DEPLOY_LOG_DIR", "DEPLOY_BACKUP_DIR"]) {
-		safePath(config[key], key);
-	}
+	step("展开远端路径");
+	const remoteHome = await resolveRemoteHome();
+	for (const key of PATH_KEYS) config[key] = expandRemoteHome(config[key], remoteHome);
+	for (const key of PATH_KEYS) safePath(config[key], key);
+	ok(`远端 HOME ${remoteHome}`);
+	info(`env 文件 ${config.DEPLOY_ENV_FILE}`);
+	info(`node ${config.DEPLOY_NODE}`);
 
 	step("本地工作区检查");
 	const dirty = (await run("git", ["status", "--porcelain", "--untracked-files=no"])).trim();
@@ -190,6 +219,7 @@ async function main() {
 test -d ${config.DEPLOY_RELEASE_ROOT} || { echo "缺少发布目录 ${config.DEPLOY_RELEASE_ROOT}"; exit 1; }
 test -f ${config.DEPLOY_ENV_FILE} || { echo "缺少环境变量文件 ${config.DEPLOY_ENV_FILE}"; exit 1; }
 test -d ${config.DEPLOY_LOG_DIR} || { echo "缺少日志目录 ${config.DEPLOY_LOG_DIR}"; exit 1; }
+${config.DEPLOY_NODE} --env-file=${config.DEPLOY_ENV_FILE} -e 'process.exit(0)' 2>/dev/null || { echo "node 无法用该 env 文件启动：${config.DEPLOY_ENV_FILE}"; exit 1; }
 test -x ${config.DEPLOY_NODE} || { echo "node 不可执行：${config.DEPLOY_NODE}"; exit 1; }
 test -x ${config.DEPLOY_BUN} || { echo "bun 不可执行：${config.DEPLOY_BUN}"; exit 1; }
 echo "host=$(hostname)"
