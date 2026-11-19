@@ -758,6 +758,25 @@ bun run sources discover weichai_news campaigns
 - 任一级命中即写库并把纠正后的 `listUrl` 写回来源；三级都空才失败，原因里写明试过哪些入口。
 - **已知限制**：纯 JS 渲染且没有可访问 HTML 列表/JSON 接口/新闻型 sitemap 条目的站点（实测 `www.midea.cn`、`www.joyoung.com`）仍然无法采集，会如实失败并提示直接填写列表页地址；不做无头渲染推断。
 
+## 6.9 部署（`scripts/deploy.mjs`）
+
+一条命令完成：数据库/环境变量备份 → 按提交 SHA 打包上传 → 服务器构建 → 切符号链接 → 重启 API → 健康检查；**任一步失败自动回滚到上一版本并重启**。
+
+```bash
+cp .deploy.example.env .deploy.local.env   # 填 ssh 主机、路径、端口、node/bun 位置
+node scripts/deploy.mjs                    # 部署 origin/main
+node scripts/deploy.mjs --ref <分支或sha>   # 部署指定版本
+node scripts/deploy.mjs --dry-run          # 只预检并打印计划
+node scripts/deploy.mjs --no-backup        # 跳过数据库备份
+node scripts/deploy.mjs --reuse            # 该 sha 已构建过：跳过解包与构建，仅切换重启
+```
+
+- **部署目标不写入仓库**：脚本没有任何实例默认值，主机/路径/端口等只能来自 `.deploy.local.env`（已 gitignore）或同名环境变量；缺项直接报错退出（退出码 2）。
+- 发布目录名恒为 `git rev-parse` 得到的 SHA，不接受手写；旧 release 不删除，回滚就是切符号链接。
+- 远端命令统一经 `ssh <host> bash -s` 走 stdin，本地不拼 shell 字符串（避免变量被本地 shell 提前展开）。
+- 健康检查：`PUBLIC_ORIGIN/` 必须 200、`DEPLOY_HEALTH_PATH`（默认 `/api/me`）返回 401/200、启动日志无 error；任一不满足即回滚。
+- 备份为手工 dump（`scripts/backup-manual.mjs`，不含删除清单、未加密），回滚**不自动回灌数据**。
+
 ## 7.1 搜索源聚合与额度（付费源用完即停）
 
 「只给企业名称」的官网自动发现由多个搜索源聚合完成。每个源按北京时自然日单独记额度，**用满即停**，不静默降级；控制台直接显示每个源今日已用/剩余。
