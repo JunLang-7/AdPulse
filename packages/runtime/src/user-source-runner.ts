@@ -40,7 +40,7 @@ export async function runUserSources(
 		const slot = latestDueSlot(stamp);
 		const sources = await storage.transaction((tx) => tx.userSources.all());
 		for (const source of sources) {
-			if (source.status !== "active") continue;
+			if (source.status !== "active" || !source.host || !source.listUrl) continue;
 			if (!isSlotPending(source.lastRefreshAt, slot)) continue;
 			try {
 				const fetcher = options.fetcherFor?.(source.host) ?? new UserSiteFetcher([source.host]);

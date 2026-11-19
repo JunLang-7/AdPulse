@@ -21,8 +21,10 @@ import {
 	ValidationCheckService,
 	resolveActiveIdentity,
 	SOURCE_DEFINITIONS,
+	SearchAggregator,
 	SourceService,
 	TaskService,
+	UserSourceService,
 	type DecisionAccountResolver,
 	type PolicyEngine,
 	type Storage,
@@ -32,7 +34,9 @@ import { MemoryStorage, PostgresStorage } from "@adpluse/storage";
 import { createModelCredentialCipher } from "./model-credential-cipher.js";
 import { discoverModels } from "./model-discovery.js";
 import { createModelEgressFetch } from "./model-egress.js";
-import { HttpSourceFetcher } from "./source-fetch.js";
+import { HttpSourceFetcher, UserSiteFetcher } from "./source-fetch.js";
+import { agentReachReadFallback, discoverCompanySite } from "./site-discovery.js";
+import { providersFromEnvironment } from "./search-providers.js";
 import type { TaskDraftExtractor } from "./task-draft-extractor.js";
 import {
 	createPersistedTaskDraftExtractor,
@@ -146,6 +150,38 @@ export function compose(
 	const digestScheduler = new DigestScheduler(storage, subscriptions, notificationQueue);
 	const lifecycleCleanup = new LifecycleCleanupService(storage);
 	const validationChecks = new ValidationCheckService(storage);
+
+	// 只填企业名时的异步发现：worker 里跑搜索 + 站点验证 + 首次采集，登记请求立即返回。
+	const userSourceDiscovery = {
+		run: async (sourceId: string) => {
+			const userSources = new UserSourceService(storage);
+			const source = await userSources.get(sourceId);
+			if (!source || source.status !== "discovering") return;
+			const now = new Date().toISOString();
+			const aggregator = new SearchAggregator(storage, providersFromEnvironment(process.env));
+			try {
+				const site = await discoverCompanySite(source.label, process.env.AGENT_REACH_BIN, { aggregator });
+				await userSources.finishDiscovery(sourceId, site, now);
+				await userSources.refresh(
+					source.ownerId,
+					sourceId,
+					new UserSiteFetcher([site.host]),
+					now,
+					{
+						readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN),
+						searchFallback: async (query: string) => (await aggregator.search(query)).hits,
+					},
+				);
+			} catch (error) {
+				await userSources.failDiscovery(
+					sourceId,
+					error instanceof Error ? error.message : "官网发现失败",
+					now,
+				);
+			}
+		},
+	};
+
 	// 目的地平台 → 渠道账号：只匹配声明了同一身份作用域的连接，避免把飞书消息发到别的账号。
 	const platformAccounts = new Map<string, string>();
 	for (const account of accounts)
@@ -186,6 +222,7 @@ export function compose(
 			options.hypothesisVerdicts,
 			validationChecks,
 			options.signalAssessments,
+			userSourceDiscovery,
 		),
 	};
 }

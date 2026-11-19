@@ -415,3 +415,57 @@ test("兜底三级：搜索结果里的首页/关于页不算条目", async () =
 	assert.equal(result.outcome, "failed", "首页/关于页不是文章，宁可失败也不入库");
 	assert.equal(result.created, 0);
 });
+
+// ===== 异步发现：只给企业名时先建 discovering 行并入队 =====
+
+test("beginDiscovery：建 discovering 行并入队一次，重复提交返回 409", async () => {
+	const storage = new MemoryStorage();
+	const service = new UserSourceService(storage);
+	const source = await service.beginDiscovery("owner-1", { label: "歌尔股份", subject: { kind: "brand", name: "歌尔股份" } }, "2026-11-19T00:00:00.000Z");
+	assert.equal(source.status, "discovering");
+	assert.equal(source.host, null);
+	assert.equal(source.listUrl, null);
+	assert.equal(source.discoveryStartedAt, "2026-11-19T00:00:00.000Z");
+
+	const jobs = await storage.transaction(async (tx) => await tx.jobs.all());
+	const queued = jobs.filter((job) => job.task.kind === "discover_user_source");
+	assert.equal(queued.length, 1, "只入队一条发现任务");
+	assert.deepEqual(queued[0]?.task, { kind: "discover_user_source", sourceId: source.id });
+
+	await assert.rejects(
+		() => service.beginDiscovery("owner-1", { label: "歌尔股份", subject: { kind: "brand", name: "歌尔股份" } }, "2026-11-19T00:00:01.000Z"),
+		(error: unknown) => error instanceof UserSourceError && error.status === 409 && error.code === "discovery_pending",
+	);
+});
+
+test("refresh：发现中、没有 host 时拒绝，不发起任何请求", async () => {
+	const storage = new MemoryStorage();
+	const service = new UserSourceService(storage);
+	const source = await service.beginDiscovery("owner-1", { label: "某企业", subject: { kind: "brand", name: "某企业" } }, "2026-11-19T00:00:00.000Z");
+	let fetches = 0;
+	const fetcher = { async fetchText() { fetches += 1; return { status: 200, bytes: 0, body: "" }; } };
+	await assert.rejects(
+		() => service.refresh("owner-1", source.id, fetcher, "2026-11-19T00:10:00.000Z"),
+		(error: unknown) => error instanceof UserSourceError && error.status === 409 && error.code === "source_not_ready",
+	);
+	assert.equal(fetches, 0);
+});
+
+test("finishDiscovery：写回站点并转为 active；host 已被本人占用时如实失败", async () => {
+	const storage = new MemoryStorage();
+	const service = new UserSourceService(storage);
+	const pending = await service.beginDiscovery("owner-1", { label: "歌尔股份", subject: { kind: "brand", name: "歌尔股份" } }, "2026-11-19T00:00:00.000Z");
+	const active = await service.finishDiscovery(pending.id, { host: "www.goertek.com", listUrl: "https://www.goertek.com/news/index.html" }, "2026-11-19T00:01:00.000Z");
+	assert.equal(active.status, "active");
+	assert.equal(active.host, "www.goertek.com");
+
+	const second = await service.beginDiscovery("owner-1", { label: "歌尔股份子公司", subject: { kind: "brand", name: "歌尔股份" } }, "2026-11-19T00:02:00.000Z");
+	await assert.rejects(
+		() => service.finishDiscovery(second.id, { host: "www.goertek.com", listUrl: "https://www.goertek.com/news/" }, "2026-11-19T00:03:00.000Z"),
+		(error: unknown) => error instanceof UserSourceError && error.status === 409 && error.code === "host_exists",
+	);
+	await service.failDiscovery(second.id, "这个网站已经添加过", "2026-11-19T00:03:00.000Z");
+	const [failed] = (await service.list("owner-1")).filter((s) => s.id === second.id);
+	assert.equal(failed?.status, "failed");
+	assert.match(failed?.lastReason ?? "", /已经添加过/);
+});

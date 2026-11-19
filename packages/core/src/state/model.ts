@@ -768,7 +768,9 @@ export type JobTask =
 			| { kind: "market_event"; eventId: string; version: number }
 			| { kind: "comparison"; comparisonResultId: string };
 	}
-	| { kind: "evaluate_validation_check"; checkId: string };
+	| { kind: "evaluate_validation_check"; checkId: string }
+	/** 只填企业名的站点：异步查找官网并采集，避免登记请求卡在发现上。 */
+	| { kind: "discover_user_source"; sourceId: string };
 export interface Job {
 	id: string;
 	task: JobTask;
@@ -809,14 +811,17 @@ export interface UserSource {
 	id: string;
 	ownerId: string;
 	label: string;
-	host: string;
-	listUrl: string;
+	/** 自动发现完成前为空：只有 label/subject，发现成功后才知道站点。 */
+	host: string | null;
+	listUrl: string | null;
 	subject: { kind: "brand" | "competitor"; name: string };
 	createdAt: string;
+	/** 进入 discovering 的时刻；用于控制台提示与卡住的发现任务。 */
+	discoveryStartedAt: string | null;
 	lastRefreshAt: string | null;
 	lastOutcome: "ok" | "failed" | null;
 	lastReason: string | null;
-	status: "active" | "stopped";
+	status: "discovering" | "active" | "stopped" | "failed";
 }
 /** 搜索源每日额度（按北京时间自然日计）；付费源用完即停，次日恢复。 */
 export interface SearchQuota {

@@ -430,3 +430,19 @@ test("市场事件页：内置试点来源（海尔/潍柴）不再出现在线�
 	assert.equal(screen.queryByText(/潍柴新闻与事件/), null, "内置来源的采集状态不再展示");
 	assert.ok(screen.getAllByText(/测试企业官网/).length > 0, "用户登记站点仍可见");
 });
+
+test("市场事件页：只填企业名的站点显示「查找中」，发现中不给采集按钮", async t => {
+	t.after(cleanup);
+	const base = {
+		ownerId: "owner", createdAt: "2026-11-19T00:00:00.000Z", lastRefreshAt: null as string | null,
+		subject: { kind: "brand" as const, name: "歌尔股份" },
+	};
+	serve({ ...defaults, "GET /api/me/user-sources": () => json({ items: [
+		{ ...base, id: "s-discovering", label: "歌尔股份", host: null, listUrl: null, discoveryStartedAt: "2026-11-19T00:00:00.000Z", lastOutcome: null, lastReason: null, status: "discovering" },
+		{ ...base, id: "s-failed", label: "美的", host: null, listUrl: null, discoveryStartedAt: "2026-11-18T00:00:00.000Z", lastOutcome: "failed", lastReason: "没能自动找到这家企业的官网新闻页", status: "failed" },
+	] }) });
+	mount();
+	await screen.findByText(/正在按企业名称查找官网/);
+	assert.equal(screen.queryAllByRole("button", { name: "采集" }).length, 0, "发现中不提供采集按钮");
+	assert.ok(screen.getByText(/上次失败：没能自动找到这家企业的官网新闻页/), "发现失败要显示原因");
+});
