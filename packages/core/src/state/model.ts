@@ -821,6 +821,13 @@ export interface UserSource {
 	lastRefreshAt: string | null;
 	lastOutcome: "ok" | "failed" | null;
 	lastReason: string | null;
+	/**
+	 * 连续失败次数（成功即清零）。换站回退要花两次搜索额度，
+	 * 坏站不能每个槽位都无限重试，否则会耗尽全站额度。
+	 */
+	failureCount?: number;
+	/** 上一次尝试自动换站的时刻；用于退避窗口，避免永久锁死。 */
+	lastSwitchAt?: string | null;
 	status: "discovering" | "active" | "stopped" | "failed";
 }
 /** 搜索源每日额度（按北京时间自然日计）；付费源用完即停，次日恢复。 */
@@ -843,6 +850,8 @@ export interface SourceItem {
 	lastSeenAt: string;
 	titleUpdatedAt: string | null;
 	contentScope: "title_link_only";
+	/** 采集到这条条目时所在站点；换站后旧条目靠它区分归属。 */
+	host?: string;
 	status: "active" | "purged";
 }
 export interface SourceState {

@@ -1526,6 +1526,8 @@ export interface components {
             itemId: string;
             title: string;
             url: string;
+            /** @description 采集到这条线索的站点；换站后旧站条目靠它区分归属。旧条目可能缺省。 */
+            sourceHost?: string;
             publishedAt: string | null;
             /** Format: date-time */
             firstSeenAt: string;
