@@ -535,3 +535,9 @@ test("three consecutive failures stop the source for manual review", async () =>
 	assert.equal(fourth.outcome, "stopped");
 	assert.equal(fetcher.calls.length, callsBefore, "no network while stopped");
 });
+
+test("抓取端口：http 默认 80、https 默认 443（http 跳转不再发到 443）", async () => {
+	const { defaultPortFor } = await import("../packages/runtime/dist/source-fetch.js");
+	assert.equal(defaultPortFor("https:"), 443);
+	assert.equal(defaultPortFor("http:"), 80, "重定向降级到 http 时必须走 80；此前一律 443 导致明文 HTTP 打到 TLS 端口被掐");
+});

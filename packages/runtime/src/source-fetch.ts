@@ -94,6 +94,11 @@ function readBody(
 	});
 }
 
+/** URL 未写端口时的默认端口：https 是 443，http 是 80（此前一律 443，http 跳转必挂）。 */
+export function defaultPortFor(protocol: string): number {
+	return protocol === "https:" ? 443 : 80;
+}
+
 function once(
 	url: URL,
 	address: string,
@@ -105,7 +110,7 @@ function once(
 			protocol: url.protocol,
 			host: address,
 			servername: url.hostname,
-			port: url.port || 443,
+			port: url.port || defaultPortFor(url.protocol),
 			path: `${url.pathname}${url.search}`,
 			method: "GET",
 			headers: {
