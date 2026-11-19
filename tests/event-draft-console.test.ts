@@ -85,6 +85,40 @@ test("未勾选的建议不写入；已有获取时间不覆盖", () => {
 	assert.equal(next.sources[0]!.acquiredAt, "2026-01-01T00:00:00.000Z");
 });
 
+test("应用建议后引用与材料必须同时存在：否则领域会以 citation not found 拒绝", () => {
+	// 回归：只勾默认项（含三组引用）时，来源正文为空 → 保存必失败。
+	const draft = baseDraft();
+	const materials = "2026年11月16日，本公司发布新款背包，仅限试点地区销售。";
+	const items = [
+		item("citationSubject", "本公司", "quote"),
+		item("citationEventTime", "2026年11月16日", "quote"),
+	];
+	const next = applyEventDraftItems(draft, items, new Set(items.map(eventDraftKey)), {
+		materials,
+		now: "2026-11-19T00:00:00.000Z",
+	});
+	assert.equal(next.sources[0]!.content, materials, "材料被同步写入来源正文");
+	assert.equal(next.sources[0]!.scope, "excerpt", "从仅链接保守提升为正文摘录，不声称全文");
+	// 引用确实能在正文里找到（领域校验的核心条件）。
+	for (const field of ["subject", "eventTime"] as const)
+		assert.ok(next.sources[0]!.content!.includes(next.citations[field]!.quote));
+
+	// 没有引用时不倒垃圾：不因为传了材料就写正文。
+	const noCitation = applyEventDraftItems(draft, [item("title", "只有标题", "quote")], new Set([eventDraftKey(item("title", "只有标题", "quote"))]), { materials });
+	assert.equal(noCitation.sources[0]!.content, null);
+	assert.equal(noCitation.sources[0]!.scope, "link_only");
+});
+
+test("已有正文时不被 AI 材料覆盖", () => {
+	const draft = baseDraft();
+	draft.sources[0]!.content = "用户自己粘的原文";
+	draft.sources[0]!.scope = "full_text";
+	const items = [item("citationSubject", "本公司", "quote")];
+	const next = applyEventDraftItems(draft, items, new Set(items.map(eventDraftKey)), { materials: "AI 读到的原文" });
+	assert.equal(next.sources[0]!.content, "用户自己粘的原文");
+	assert.equal(next.sources[0]!.scope, "full_text");
+});
+
 test("枚举值展示成人话，未知值原样保留", () => {
 	assert.equal(eventDraftDisplayValue(item("type", "product_launch")), "产品发布");
 	assert.equal(eventDraftDisplayValue(item("subjectKind", "competitor")), "竞品");

@@ -89,6 +89,8 @@ type EventDraftInput = {
  * 边界：
  * - 只动建议清单里的字段，其余字段原样保留；
  * - 引用写进第 1 个来源（与现有 UI 的「引用来源」选择器一致）；
+ * - **引用必须能在材料里找到**：勾了引用/事实项时，把材料写入来源正文，
+ *   范围从仅链接/仅标题保守提升到「正文摘录」（不自称全文）；
  * - 来源性质（origin）从不改：那是录入者声明的，模型不参与；
  * - 获取时间不是模型结论：仅当用户勾选了「代为填时间」时才写当前时刻。
  */
@@ -96,7 +98,7 @@ export function applyEventDraftItems(
 	draft: EventDraftInput,
 	items: readonly EventDraftItem[],
 	picked: ReadonlySet<string>,
-	options: { fillAcquiredAt?: boolean; now?: string } = {},
+	options: { fillAcquiredAt?: boolean; now?: string; materials?: string } = {},
 ): EventDraftInput {
 	const chosen = items.filter((item) => picked.has(eventDraftKey(item)));
 	const next = structuredClone(draft);
@@ -121,6 +123,21 @@ export function applyEventDraftItems(
 					first.scope = item.value;
 				break;
 			case "limitations": if (first) first.limitations = item.value; break;
+		}
+	}
+	// 引用写进了表单，就必须让材料也在表单里：否则领域会以
+	// 「citation not found in material」拒绝，用户看到的却是“已经填好”。
+	const hasCitation = Boolean(
+		next.citations.subject?.quote?.trim() ||
+		next.citations.eventTime?.quote?.trim() ||
+		next.citations.conditions?.quote?.trim(),
+	);
+	if (first && hasCitation && !first.content?.trim()) {
+		const materials = options.materials?.trim();
+		if (materials) {
+			first.content = materials;
+			// 保守提升：材料是抓到的一段原文，不声称是全文。
+			if (first.scope !== "excerpt" && first.scope !== "full_text") first.scope = "excerpt";
 		}
 	}
 	if (options.fillAcquiredAt !== false && first && !first.acquiredAt.trim()) {

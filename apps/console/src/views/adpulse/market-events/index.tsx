@@ -11,6 +11,7 @@ import {
 	applyEventDraftItems,
 	defaultPicked,
 	eventDraftDisplayValue,
+	eventDraftFieldLabels,
 	eventDraftKey,
 	groupEventDraftItems,
 	type EventDraftItem,
@@ -281,9 +282,16 @@ function EventForm({ current, prefill, attach, autoLead, saved }: { current?: Ev
 		onError: (cause: Error) => { setAiItems([]); setAiPicked(new Set()); setAiNote(cause.message); },
 	});
 	const applyAi = () => {
-		const next = applyEventDraftItems(draft as never, aiItems, aiPicked) as EventInput;
+		const next = applyEventDraftItems(draft as never, aiItems, aiPicked, { materials: aiMaterials }) as EventInput;
 		setDraft(next);
-		setAiNote(`已填入 ${aiPicked.size} 项；请核对后再保存。`);
+		// 类别/对象类型是枚举建议，默认不勾；不提醒的话用户会“只点填入就保存”，
+		// 结果存成默认的「公告」，而材料明明是发布。
+		const skipped = aiItems.filter((item) =>
+			!aiPicked.has(eventDraftKey(item)) && ["type", "subjectKind", "scope"].includes(item.field));
+		const hint = skipped.length
+			? `还有 ${skipped.length} 条建议未勾（${skipped.map((item) => `${eventDraftFieldLabels[item.field] ?? item.field}：${eventDraftDisplayValue(item)}`).join("、")}），需要的话再勾一次。`
+			: "";
+		setAiNote(`已填入 ${aiPicked.size} 项；材料已同步到来源正文。${hint}请核对后再保存。`);
 	};
 	const operation = useRef<{ body: string; key: string } | null>(null);
 	const autoReadStarted = useRef(false);
