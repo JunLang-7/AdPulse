@@ -57,6 +57,8 @@ export interface SubscriptionView {
 		version: number;
 		proactiveEnabled: boolean;
 		decisionCards: NonNullable<SubscriptionSettings["decisionCards"]>;
+		/** 实时推送：开启后新确认事件立即推。 */
+		realTimePush: NonNullable<SubscriptionSettings["realTimePush"]>;
 		schedule: SubscriptionSettings["schedule"];
 		enabledAt?: string;
 		disabledAt?: string;
@@ -207,6 +209,7 @@ export class SubscriptionService {
 			expectedVersion: number;
 			proactiveEnabled?: boolean;
 			decisionCardsEnabled?: boolean;
+			realTimePushEnabled?: boolean;
 			sourceFeeds?: string[];
 			schedule?: SubscriptionSettings["schedule"];
 		},
@@ -252,6 +255,16 @@ export class SubscriptionService {
 					decisionCards.disabledAt = at;
 				decisionCards.enabled = input.decisionCardsEnabled;
 			}
+			// 实时推送：开关与水位线同属一份设置；开启时以当前时间为起点，不补发历史事件。
+			const realTimePush = { ...(current?.realTimePush ?? { enabled: false }) };
+			if (input.realTimePushEnabled !== undefined && input.realTimePushEnabled !== realTimePush.enabled) {
+				realTimePush.enabled = input.realTimePushEnabled;
+				if (input.realTimePushEnabled) {
+					realTimePush.enabledAt = at;
+					realTimePush.watermark = at;
+					delete realTimePush.disabledAt;
+				} else realTimePush.disabledAt = at;
+			}
 			const sourceFeeds =
 				input.sourceFeeds === undefined
 					? current?.sourceFeeds
@@ -262,6 +275,7 @@ export class SubscriptionService {
 				version: (current?.version ?? 0) + 1,
 				proactiveEnabled,
 				decisionCards,
+				realTimePush,
 				schedule,
 				updatedAt: at,
 				...(sourceFeeds ? { sourceFeeds } : {}),
@@ -502,6 +516,7 @@ export class SubscriptionService {
 				version: settings?.version ?? 0,
 				proactiveEnabled: settings?.proactiveEnabled ?? false,
 				decisionCards: settings?.decisionCards ?? { enabled: false },
+				realTimePush: settings?.realTimePush ?? { enabled: false },
 				schedule: settings?.schedule ?? DEFAULT_SCHEDULE,
 				...(settings?.enabledAt ? { enabledAt: settings.enabledAt } : {}),
 				...(settings?.disabledAt ? { disabledAt: settings.disabledAt } : {}),

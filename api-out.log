@@ -1,2 +1,1 @@
 API ready; use a trusted HTTPS reverse proxy for public webhooks
-{"event":"auth.reject","reason":"session_missing","method":"GET","path":"/api/me/push-channels"}

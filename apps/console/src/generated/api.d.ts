@@ -1701,6 +1701,19 @@ export interface components {
             /** @description 默认关闭；保存配置不等于启用 */
             proactiveEnabled: boolean;
             decisionCards: components["schemas"]["DecisionCardPreference"];
+            /** @description 实时推送开关与水位线；开关关闭时只走定时汇总。 */
+            realTimePush?: {
+                enabled: boolean;
+                /** Format: date-time */
+                enabledAt?: string;
+                /** Format: date-time */
+                disabledAt?: string;
+                /**
+                 * Format: date-time
+                 * @description 只推这个时间之后新确认的事件
+                 */
+                watermark?: string;
+            };
             /** @description 未保存过配置时返回默认值（09:30 汇总、22:00–08:00 免打扰） */
             schedule: components["schemas"]["SubscriptionSchedule"];
             /** Format: date-time */
@@ -1871,6 +1884,8 @@ export interface components {
             proactiveEnabled?: boolean;
             /** @description 本人单独明确确认；不改变全部主动推送开关、地址或通知授权。此接口仅记录，不直接排队或发送。 */
             decisionCardsEnabled?: boolean;
+            /** @description 开关实时推送：开启后新确认（依据齐备）的事件立即推到已配置渠道；开启时以当前时刻为起点，不补发历史事件。 */
+            realTimePushEnabled?: boolean;
             schedule?: components["schemas"]["SubscriptionSchedule"];
             /** @description 自动来源（#39 方案 A）逐来源开启：只影响本人线索列表，不自动建事件、不自动推送 */
             sourceFeeds?: ("weichai_news" | "haier_news")[];

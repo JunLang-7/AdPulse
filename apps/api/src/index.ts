@@ -1,5 +1,5 @@
 import { AuthenticationService } from "@adpluse/core";
-import { agentReachReadFallback, createSourceService, fromEnvironment, runSources, runUserSources, runWorker, UserSiteFetcher } from "@adpluse/runtime";
+import { agentReachReadFallback, createSourceService, fromEnvironment, runRealTimePushLoop, runSources, runUserSources, runWorker, UserSiteFetcher } from "@adpluse/runtime";
 import { FeishuIdentityProvider } from "./feishu-auth.js";
 import { createApi } from "./server.js";
 
@@ -55,13 +55,18 @@ const sourcesLoop =
 				}),
 			])
 		: Promise.resolve();
+// 实时推送：设置里开了「实时推送」的用户，新确认事件立即推到手机；与日汇总平行。
+const realTimePushLoop = runRealTimePushLoop(runtime.storage, controller.signal, {
+	env: process.env,
+	...(process.env.REALTIME_PUSH_TICK_MS ? { tickMs: Number(process.env.REALTIME_PUSH_TICK_MS) } : {}),
+});
 let stopping = false;
 async function stop() {
 	if (stopping) return;
 	stopping = true;
 	controller.abort();
 	await new Promise<void>((resolve) => server.close(() => resolve()));
-	await Promise.all([loop, sourcesLoop]);
+	await Promise.all([loop, sourcesLoop, realTimePushLoop]);
 	await runtime.close();
 }
 process.on("SIGTERM", () => {
