@@ -3,7 +3,8 @@
 import type { Storage } from "@adpluse/core";
 import { runRealTimePush } from "./real-time-push.js";
 
-const TICK_MS = 30_000;
+/** 轮询间隔：用户要求 5 秒内到达，3 秒一跳留出调度与网络余量。 */
+const TICK_MS = 3_000;
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve) => {

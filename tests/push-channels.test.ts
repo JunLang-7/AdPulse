@@ -134,15 +134,23 @@ test("飞书：先取 tenant_access_token，再发 open_id 文本消息", async 
 	}) as typeof fetch;
 	const channel = feishuInstantChannel({ appId: "cli_x", appSecret: "sec", receiveId: "ou_abc", fetcher });
 	assert.equal(channel.configured, true);
-	const result = await channel.send({ title: "标题", body: "正文", url: "http://localhost:5174/market-events" });
-	assert.deepEqual(result, { channel: "feishu", label: "飞书单聊", status: "ok", detail: null });
+	const result = await channel.send({ title: "标题", body: "正文", url: "http://localhost:5174/market-events" });	assert.deepEqual(result, { channel: "feishu", label: "飞书单聊", status: "ok", detail: null });
 	assert.equal(calls.length, 2, "一次取 token、一次发消息");
 	const sendCall = calls[1]!;
 	assert.match(sendCall.url, /im\/v1\/messages\?receive_id_type=open_id/);
 	const body = JSON.parse(String(sendCall.init?.body));
 	assert.equal(body.receive_id, "ou_abc");
-	assert.equal(body.msg_type, "text");
-	assert.match(JSON.parse(body.content).text, /标题[\s\S]*正文[\s\S]*localhost:5174/);
+	assert.equal(body.msg_type, "interactive", "即时推送要发卡片，不是纯文本");
+	const card = JSON.parse(body.content);
+	assert.equal(card.header.title.content, "标题");
+	assert.equal(card.header.template, "blue");
+	assert.match(card.elements[0].text.content, /正文/);
+	// 有 url 时补一个跳转按钮，但不带任何决策动作。
+	const actionBlock = card.elements.find((element: { tag: string }) => element.tag === "action");
+	assert.ok(actionBlock, "带链接时应附跳转按钮");
+	assert.equal(actionBlock.actions[0].url, "http://localhost:5174/market-events");
+	assert.equal(actionBlock.actions[0].text.content, "在控制台查看");
+	assert.equal(JSON.stringify(card).includes("actionRef"), false, "展示卡不应含决策交互");
 	const headers = sendCall.init?.headers as Record<string, string>;
 	assert.equal(headers.authorization, "Bearer tok-1");
 });

@@ -214,9 +214,41 @@ export function dingtalkChannel(options: { webhook?: string | undefined; fetcher
 }
 
 /**
- * 飞书即时推送：复用应用 tenant_access_token，用文本消息直接推到你的单聊。
+ * 飞书即时推送的卡片：展示型（标题 + 正文 + 跳转按钮），不含决策交互。
+ * 与日汇总的决策卡区分：这里没有 actionRef，点按钮只跳控制台，不改任何策略。
+ */
+export function toFeishuInstantCard(message: PushMessage): Record<string, unknown> {
+	return {
+		config: { wide_screen_mode: true },
+		header: {
+			title: { tag: "plain_text", content: message.title },
+			template: "blue",
+		},
+		elements: [
+			{ tag: "div", text: { tag: "lark_md", content: message.body } },
+			...(message.url
+				? [
+						{
+							tag: "action",
+							actions: [
+								{
+									tag: "button",
+									text: { tag: "plain_text", content: "在控制台查看" },
+									url: message.url,
+									type: "primary",
+								},
+							],
+						},
+					]
+				: []),
+		],
+	};
+}
+
+/**
+ * 飞书即时推送：复用应用 tenant_access_token，发**卡片消息**到你的单聊。
  * 收件人用登录身份绑定的 open_id（与日汇总同一个，不需额外配置）。
- * 它和日汇总的区别：不经过批次调度，用户点一下立即发。
+ * 它和日汇总的区别：不经过批次调度，事件一确认就自动发。
  */
 export function feishuInstantChannel(options: {
 	appId?: string | undefined;
@@ -261,14 +293,13 @@ export function feishuInstantChannel(options: {
 				return { channel: "feishu", label: "飞书单聊", status: "not_configured", detail: "尚未在订阅页确认飞书单聊地址" };
 			try {
 				const token = await accessToken();
-				const text = message.url ? `${message.title}\n${message.body}\n${message.url}` : `${message.title}\n${message.body}`;
 				const response = await postWithRetry(fetcher, "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id", {
 					method: "POST",
 					headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
 					body: JSON.stringify({
 						receive_id: receiveId,
-						msg_type: "text",
-						content: JSON.stringify({ text }),
+						msg_type: "interactive",
+						content: JSON.stringify(toFeishuInstantCard(message)),
 					}),
 					signal: AbortSignal.timeout(10_000),
 				});
