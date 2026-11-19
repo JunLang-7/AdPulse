@@ -606,6 +606,29 @@ export class UserSourceService {
 					// 带日期路径也会被排除；站点没有新闻段路径时保持全量（按日期倒序）。
 					const newsy = sorted.filter((entry) => /(?:xinwen|xwzx|news|press|media)(?:\/|$)/iu.test(entry.url));
 					parsed = await collectSitemapItems(fetcher, host, newsy.length > 0 ? newsy : sorted);
+					// sitemap 只收录了少数新闻文章时（实测海尔 cn 地图只有一条），文章的上级目录
+					// 通常就是列表页：至多试一次父目录，能解析出更多条目就用它。
+					if (parsed.length > 0 && parsed.length < 3 && newsy.length > 0) {
+						try {
+							const article = new URL(newsy[0]!.url);
+							const parent = `${article.origin}${article.pathname.replace(/[^/]+\/?$/u, "")}`;
+							// 父目录至少两段路径（/about_haier/xinwen/ 这类）；单段（/10000/）
+							// 通常是栏目根或静态资源目录，不是新闻列表页。
+							const depth = article.pathname.replace(/\/$/u, "").split("/").filter(Boolean).length;
+							if (parent !== article.toString() && depth >= 3) {
+								const listPage = await fetcher.fetchText(parent, FETCH_LIMITS);
+								if (listPage.status < 400) {
+									const fromList = parseUserListPage(listPage.body, parent, host);
+									if (fromList.length > parsed.length) {
+										parsed = fromList;
+										resolvedListUrl = parent;
+									}
+								}
+							}
+						} catch {
+							// 父目录试探失败维持 sitemap 结果。
+						}
+					}
 					if (parsed.length > 0) break;
 				} catch {
 					// 单个站点地图失败继续。
