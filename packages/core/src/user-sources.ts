@@ -2,7 +2,7 @@
 // 与内置来源同一套纪律：只取列表页的标题与链接，robots 优先，失败不写入条目。
 // 采集触发由调用方决定（添加时与手动刷新），不接入固定槽位调度。
 import { createHash } from "node:crypto";
-import { MAX_ITEMS, articleScore, filterListableItems, isListableItem, isListableTitle } from "./item-quality.js";
+import { MAX_ITEMS, articleScore, filterListableItems, isListableItem, isListableTitle, isSimplifiedChineseTitle } from "./item-quality.js";
 import {
 	collectSitemapItems,
 	findDataListAnchor,
@@ -38,8 +38,8 @@ const COMMON_NEWS_PATHS = [
 	"/news", "/news/index.html", "/xwzx/index.html", "/news/list.shtml",
 	"/media/index.html", "/news/gh.htm",
 ] as const;
-/** sitemapindex 只下钻一个子地图，避免一次刷新把整个站点的索引都拉下来。 */
-const MAX_SITEMAP_CHILDREN = 1;
+/** sitemapindex 最多下钻几个子地图（实测海尔 cn 地图下 product/other/business…，新闻在第二个）。 */
+const MAX_SITEMAP_CHILDREN = 5;
 
 export interface UserSourceView extends UserSource {}
 
@@ -566,33 +566,28 @@ export class UserSourceService {
 				}
 			}
 		}
-		// 静态手段失败：交给渲染读取兑底（jina 可渲染 JS 页）。
-		if (parsed.length < 3 && options.readFallback) {
-			try {
-				const fromRead = await options.readFallback(resolvedListUrl);
-				const filtered = fromRead ? filterListableItems(fromRead) : [];
-				if (filtered.length > parsed.length) parsed = filtered;
-			} catch {
-				// 兑底失败（如限流）维持原结论，不冒充成功。
-			}
-		}
-		// 兜底二级：sitemap（实测美的/九阳这类无新闻入口的站）。请求有上限。
+		// 兜底二级：sitemap——先于渲染回退（免费、确定、质量常比渲染高；实测海尔的中文新闻
+		// 只有 sitemap 能带出来）。请求有上限；robots 声明多个分语言地图时优先中文地图。
 		if (parsed.length === 0) {
 			const origin = new URL(resolvedListUrl).origin;
 			const candidates = [...sitemapUrlsFromRobots(robotsBody, origin), `${origin}/sitemap.xml`]
 				.filter((url, index, all) => all.indexOf(url) === index)
+				.sort((left, right) => Number(/\/cn\//iu.test(right) || /\/zh/iu.test(right)) - Number(/\/cn\//iu.test(left) || /\/zh/iu.test(left)))
 				.slice(0, 2);
 			for (const sitemapUrl of candidates) {
 				try {
 					const map = await fetcher.fetchText(sitemapUrl, FETCH_LIMITS);
 					if (map.status >= 400) continue;
 					let { sitemaps, entries } = parseSitemapXml(map.body, sitemapUrl, host);
+					// sitemapindex（实测海尔 cn 地图下有 product/other/business 等子地图）：
+					// 逐个下钻，拿到可用条目就停。
 					for (const child of sitemaps.slice(0, MAX_SITEMAP_CHILDREN)) {
 						if (entries.length > 0) break;
 						try {
 							const childPage = await fetcher.fetchText(child, FETCH_LIMITS);
 							if (childPage.status >= 400) continue;
-							({ entries } = parseSitemapXml(childPage.body, child, host));
+							const fromChild = parseSitemapXml(childPage.body, child, host);
+							if (fromChild.entries.length > 0) ({ entries } = fromChild);
 						} catch {
 							// 单个子地图失败继续。
 						}
@@ -603,6 +598,16 @@ export class UserSourceService {
 				} catch {
 					// 单个站点地图失败继续。
 				}
+			}
+		}
+		// 静态手段失败：交给渲染读取兑底（jina 可渲染 JS 页）。
+		if (parsed.length < 3 && options.readFallback) {
+			try {
+				const fromRead = await options.readFallback(resolvedListUrl);
+				const filtered = fromRead ? filterListableItems(fromRead) : [];
+				if (filtered.length > parsed.length) parsed = filtered;
+			} catch {
+				// 兑底失败（如限流）维持原结论，不冒充成功。
 			}
 		}
 		// 兜底三级：站内搜索（标题+链接来自搜索结果）；每次最多一次，受搜索额度约束。

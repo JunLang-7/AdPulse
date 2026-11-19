@@ -368,3 +368,39 @@ test("discoverCompanySite：官网首页连不上（socket hang up）时仍可�
 	assert.equal(site.host, "www.midea.com.cn");
 	assert.equal(site.listUrl, "https://www.midea.com.cn/zh/about-midea/news", "首页挂掉不影响：沿站内新闻入口定位列表页");
 });
+
+test("挑站排序：简体中文站点优先于繁体/英文站点（简中试点偏好）", async () => {
+	// 美的形态：台湾站（繁体）与大陆站（简体）同为候选，条目数都不为零。
+	const runReach = async () => ({
+		stdout: result([
+			{ title: "美的-台湾官方網站", url: "https://www.midea.com/tw/news" },
+			{ title: "美的集团-官方网站", url: "https://www.midea.com.cn/zh" },
+		]),
+		exitCode: 0,
+	});
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			const parsed = new URL(url);
+			if (parsed.hostname === "www.midea.com") {
+				// 台湾站：繁体标题更多也不该赢过简体站。
+				return {
+					status: 200, bytes: 150,
+					body: `<html>
+<a href="/tw/news/2026/0715/a">美的正式成為巴塞隆納足球俱樂部主要合作夥伴 2026/07/15</a>
+<a href="/tw/news/2026/0902/b">美的成為巴薩足球俱樂部袖標級主要合作夥伴 2025/09/02</a>
+</body></html>`,
+				};
+			}
+			if (parsed.pathname === "/" || parsed.pathname === "/zh")
+				return { status: 200, bytes: 60, body: `<title>美的集团-官方网站</title><a href="/zh/about-midea/news">新闻</a>` };
+			return {
+				status: 200, bytes: 150,
+				body: `<html>
+<a href="/zh/about-midea/news/news-20220719">美的空调率先发布碳足迹评估报告 2022年7月19日</a>
+</body></html>`,
+			};
+		},
+	};
+	const sites = await discoverCompanySites("美的", fakeBin, { runReach, fetcher });
+	assert.equal(sites[0]?.host, "www.midea.com.cn", "简体站排第一，即使繁体站条目更多");
+});

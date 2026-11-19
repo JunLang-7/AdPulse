@@ -79,3 +79,13 @@ export function filterListableItems<
 		.sort((a, b) => articleScore(b.itemUrl, b.title) - articleScore(a.itemUrl, a.title))
 		.slice(0, MAX_ITEMS);
 }
+
+/** 常见繁体独有字（简化字已无对应形）：用于区分简体/繁体标题，只做排序倾向，不当事实断言。 */
+const TRADITIONAL_ONLY =
+	/[爲為與發國東車電樂網戶資訊動業門問間產應壓顯現廠衛習豐讓處裡後時說話長還進點經線務書無開關鳥齒龍愛備優亞價結構視環境體驗應該關於]/u;
+const HAS_CJK = /\p{Script=Han}/u;
+
+/** 标题是否为简体中文（试点面向简中用户；无汉字或含繁体独有字都算非简中）。 */
+export function isSimplifiedChineseTitle(title: string): boolean {
+	return HAS_CJK.test(title) && !TRADITIONAL_ONLY.test(title);
+}

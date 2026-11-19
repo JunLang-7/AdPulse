@@ -560,3 +560,54 @@ test("refresh：当前站 robots 不可达时仍会换到备选站点", async ()
 	assert.equal(stored?.host, "www.haier.com");
 	assert.equal(result.created, 2);
 });
+
+// ===== 简中偏好：sitemap 优先中文地图、多子地图下钻、站点排序偏好简中 =====
+
+test("sitemap 兜底：robots 声明多语言地图时优先中文地图，并下钻 sitemapindex 子地图", async () => {
+	const storage = new MemoryStorage();
+	const service = new UserSourceService(storage);
+	// 海尔形态：英文站首页采不到，robots 声明 25 个分语言 sitemap，新闻在 cn → other.xml。
+	const source = await service.add("owner-1", {
+		label: "海尔",
+		listUrl: "https://www.haier.com/press-events/news/",
+		subject: { kind: "brand", name: "海尔" },
+	}, "2026-11-19T00:00:00.000Z");
+	const robots = `User-agent: *\nDisallow: /ru/\nSitemap: https://www.haier.com/iq/sitemap.xml\nSitemap: https://www.haier.com/cn/sitemap.xml\nSitemap: https://www.haier.com/tz/sitemap.xml\n`;
+	const cnIndex = `<?xml version="1.0"?><sitemapindex>
+  <sitemap><loc>https://www.haier.com/cn/sitemap/product.xml</loc></sitemap>
+  <sitemap><loc>https://www.haier.com/cn/sitemap/other.xml</loc></sitemap>
+</sitemapindex>`;
+	const productMap = `<?xml version="1.0"?><urlset>
+  <url><loc>https://www.haier.com/cn/washers/x1.html</loc></url>
+</urlset>`;
+	const otherMap = `<?xml version="1.0"?><urlset>
+  <url><loc>https://www.haier.com/about_haier/xinwen/20260522_291331.shtml</loc><lastmod>2026-11-19</lastmod></url>
+  <url><loc>https://www.haier.com/about_haier/xinwen/20260520_291300.shtml</loc><lastmod>2026-11-18</lastmod></url>
+</urlset>`;
+	const fetched: string[] = [];
+	const fetcher = {
+		async fetchText(url: string) {
+			fetched.push(url);
+			const routes: Record<string, string> = {
+				"https://www.haier.com/robots.txt": robots,
+				"https://www.haier.com/press-events/news/": `<html><a href="/about">关于我们</a></html>`,
+				"https://www.haier.com/cn/sitemap.xml": cnIndex,
+				"https://www.haier.com/cn/sitemap/product.xml": productMap,
+				"https://www.haier.com/cn/sitemap/other.xml": otherMap,
+				"https://www.haier.com/about_haier/xinwen/20260522_291331.shtml": `<html><head><title>海尔官宣全球品牌代言人</title></head></html>`,
+				"https://www.haier.com/about_haier/xinwen/20260520_291300.shtml": `<html><head><title>海尔发布新一代智慧家庭方案</title></head></html>`,
+			};
+			const body = routes[url];
+			if (body === undefined) return { status: 404, bytes: 0, body: "" };
+			return { status: 200, bytes: body.length, body };
+		},
+	};
+	const result = await service.refresh("owner-1", source.id, fetcher, "2026-11-19T00:01:00.000Z");
+	assert.equal(result.outcome, "ok");
+	assert.equal(result.created, 2, "中文子地图里的新闻文章被采到");
+	assert.ok(!fetched.includes("https://www.haier.com/iq/sitemap.xml"), "非中文地图不优先");
+	assert.ok(fetched.includes("https://www.haier.com/cn/sitemap/other.xml"), "下钻到含新闻的子地图");
+	const items = await storage.transaction(async (tx) => (await tx.sourceItems.all()).filter((i) => i.sourceKey.startsWith("user:")));
+	assert.deepEqual(items.map((i) => i.title).sort(), ["海尔发布新一代智慧家庭方案", "海尔官宣全球品牌代言人"]);
+	assert.deepEqual(items.map((i) => i.publishedAt).sort(), ["2026-11-18", "2026-11-19"], "lastmod 作为日期");
+});
