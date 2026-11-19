@@ -63,10 +63,10 @@ const revision = z.object({ expectedVersion: z.number().int().min(1), event: inp
 
 export async function handleMarketEvents(req: IncomingMessage, res: ServerResponse, runtime: Runtime, ownerId: string, path: string): Promise<boolean> {
 	if (path === "/api/market-events/extract" && req.method === "POST") {
-		// 只做「材料 -> 待核对建议」的整理：不写库、不建事件、不调通知。
+		// 先校验输入再查模型：空材料等错误应得到 400，而不是误导性的 503。
+		const body = extractInput.parse(await readJson(req));
 		const models = runtime.taskDraftModels;
 		if (!models) throw new HttpError(503, "event draft extraction unavailable");
-		const body = extractInput.parse(await readJson(req));
 		const extract = createEventDraftExtractor((systemPrompt, brief, maxTokens) =>
 			models.completeJson(ownerId, systemPrompt, brief, undefined, maxTokens));
 		const items = await extract({
