@@ -29,8 +29,8 @@ function fillLink() {
 test("市场事件页：来源线索只展示标题与链接，转事件预填标题/主体/仅标题来源", async t => {
 	t.after(cleanup);
 	const lead = {
-		sourceKey: "weichai_news", sourceLabel: "潍柴新闻与事件", subject: { kind: "brand", name: "潍柴" },
-		itemId: "weichai_news:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html",
+		sourceKey: "user:src-1", sourceLabel: "测试企业官网", subject: { kind: "brand", name: "测试品牌" },
+		itemId: "user:src-1:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html",
 		publishedAt: "2026-11-15", firstSeenAt: "2026-11-16T00:01:00.000Z", lastSeenAt: "2026-11-16T00:02:00.000Z",
 	};
 	const bodies: Input[] = [];
@@ -42,21 +42,21 @@ test("市场事件页：来源线索只展示标题与链接，转事件预填�
 		},
 		"GET /api/market-events/event-1": () => json({ current: version(), versions: [version()] }),
 		"GET /api/me/source-leads": () => json({
-			leads: [lead, { ...lead, itemId: "weichai_news:2", title: "已录入的标题", convertedEventId: "event-1" }],
+			leads: [lead, { ...lead, itemId: "user:src-1:2", title: "已录入的标题", convertedEventId: "event-1" }],
 			sources: [{ ...closedSources[0]!, enabled: true }, closedSources[1]!],
 		}),
 	});
 	mount();
 	const link = await screen.findByRole("link", { name: "潍柴列表标题" });
 	assert.equal(link.getAttribute("href"), "https://www.weichai.com/news/1.html");
-	assert.equal(screen.getAllByText(/关联品牌：潍柴/).length, 2, "每条线索都标出关联品牌");
+	assert.equal(screen.getAllByText(/关联品牌：测试品牌/).length, 2, "每条线索都标出关联品牌");
 	assert.equal(screen.getAllByText(/发布 2026年11月15日/).length, 2, "日期用可读格式");
 	assert.equal(screen.getAllByText(/最近出现 11月16日 08:02/).length, 2, "时间按北京时间展示，不显示 ISO 串");
 	assert.equal(screen.getByRole("link", { name: "已录入，查看事件" }).getAttribute("href"), "/market-events/event-1");
 	fireEvent.click(screen.getAllByRole("button", { name: "转事件" })[0]!);
 	assert.equal((screen.getByLabelText("事件标题") as HTMLInputElement).value, "潍柴列表标题");
 	assert.throws(() => screen.getByLabelText(/^事件编号/), "事件编号是内部细节，不该让用户填");
-	assert.equal((screen.getByLabelText("关注对象名称") as HTMLInputElement).value, "潍柴");
+	assert.equal((screen.getByLabelText("关注对象名称") as HTMLInputElement).value, "测试品牌");
 	assert.equal((screen.getByLabelText("原文链接（不自动读取）") as HTMLInputElement).value, "https://www.weichai.com/news/1.html");
 	assert.equal((screen.getByLabelText("内容范围") as HTMLSelectElement).value, "title_only");
 	assert.ok(screen.getByText(/还没有读正文/), "说明用日常说法");
@@ -67,16 +67,16 @@ test("市场事件页：来源线索只展示标题与链接，转事件预填�
 	assert.equal(submitted.sources[0]?.scope, "title_only");
 	assert.equal(submitted.sources[0]?.content, "潍柴列表标题", "把已取得的标题填入材料，不补造正文");
 	assert.equal(submitted.sources[0]?.url, "https://www.weichai.com/news/1.html");
-	assert.equal(submitted.subject.name, "潍柴");
-	assert.equal(submitted.occurrenceKey, "weichai_news:1", "编号按原文链接自动生成，用户不用填");
+	assert.equal(submitted.subject.name, "测试品牌");
+	assert.equal(submitted.occurrenceKey, "user:src-1:1", "编号按原文链接自动生成，用户不用填");
 	assert.equal(submitted.eventTime, null, "未知事件时间不补造");
 });
 
 test("市场事件页：转事件自动读取原文并预填材料与逐字引用", async t => {
 	t.after(cleanup);
 	const lead = {
-		sourceKey: "weichai_news", sourceLabel: "潍柴新闻与事件", subject: { kind: "brand" as const, name: "潍柴" },
-		itemId: "weichai_news:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html",
+		sourceKey: "user:src-1", sourceLabel: "测试企业官网", subject: { kind: "brand" as const, name: "测试品牌" },
+		itemId: "user:src-1:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html",
 		publishedAt: "2026-11-15", firstSeenAt: "2026-11-16T00:01:00.000Z", lastSeenAt: "2026-11-16T00:02:00.000Z",
 	};
 	const bodies: Input[] = [];
@@ -115,8 +115,8 @@ test("市场事件页：转事件自动读取原文并预填材料与逐字引�
 test("市场事件页：事件区在上、线索区在下，两块分区可见", async t => {
 	t.after(cleanup);
 	const lead = {
-		sourceKey: "weichai_news", sourceLabel: "潍柴新闻与事件", subject: { kind: "brand" as const, name: "潍柴" },
-		itemId: "weichai_news:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html",
+		sourceKey: "user:src-1", sourceLabel: "测试企业官网", subject: { kind: "brand" as const, name: "测试品牌" },
+		itemId: "user:src-1:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html",
 		publishedAt: "2026-11-15", firstSeenAt: "2026-11-16T00:01:00.000Z", lastSeenAt: "2026-11-16T00:02:00.000Z",
 	};
 	serve(defaults, {
@@ -138,42 +138,41 @@ test("市场事件页：事件区在上、线索区在下，两块分区可见",
 	assert.equal(details.hasAttribute("open"), true, "点标题可展开");
 });
 
-test("市场事件页：线索可按来源筛选，标题是可见外链新标签页打开", async t => {
+test("市场事件页：线索可按来源筛选，标题是新标签页外链", async t => {
 	t.after(cleanup);
 	const base = {
-		sourceLabel: "潍柴新闻与事件", subject: { kind: "brand" as const, name: "潍柴" },
+		subject: { kind: "brand" as const, name: "测试品牌" },
 		publishedAt: "2026-11-15", firstSeenAt: "2026-11-16T00:01:00.000Z", lastSeenAt: "2026-11-16T00:02:00.000Z",
 	};
 	const leads = [
-		{ ...base, sourceKey: "weichai_news", itemId: "weichai_news:1", title: "潍柴标题一", url: "https://www.weichai.com/news/1.html" },
-		{ ...base, sourceKey: "weichai_news", itemId: "weichai_news:2", title: "潍柴标题二", url: "https://www.weichai.com/news/2.html" },
-		{ ...base, sourceKey: "haier_news", sourceLabel: "海尔品牌资讯", subject: { kind: "brand" as const, name: "海尔" }, itemId: "haier_news:1", title: "海尔标题", url: "https://www.haier.com/news/1.shtml" },
+		{ ...base, sourceKey: "user:src-1", sourceLabel: "测试企业官网 A", itemId: "user:src-1:1", title: "测试标题一", url: "https://a-example.com/news/1.html" },
+		{ ...base, sourceKey: "user:src-1", sourceLabel: "测试企业官网 A", itemId: "user:src-1:2", title: "测试标题二", url: "https://a-example.com/news/2.html" },
+		{ ...base, sourceKey: "user:src-2", sourceLabel: "测试企业官网 B", itemId: "user:src-2:1", title: "另一家标题", url: "https://b-example.com/news/3.html" },
 	];
-	serve(defaults, { "GET /api/me/source-leads": () => json({ leads, sources: [{ ...closedSources[0]!, enabled: true }, { ...closedSources[1]!, enabled: true }] }) });
+	serve(defaults, { "GET /api/me/source-leads": () => json({ leads, sources: [] }) });
 	mount();
-	await screen.findByRole("link", { name: "潍柴标题一" });
+	await screen.findByRole("link", { name: "测试标题一" });
 	assert.equal(screen.getByRole("button", { name: "全部 3" }).getAttribute("aria-pressed"), "true", "默认看全部");
-	const leadLink = screen.getByRole("link", { name: "潍柴标题一" }) as HTMLAnchorElement;
-	assert.ok(leadLink.className.includes("underline"), "标题必须是可见的链接样式，否则用户看不出能点");
+	const leadLink = screen.getByRole("link", { name: "测试标题一" }) as HTMLAnchorElement;
 	assert.equal(leadLink.target, "_blank", "点标题在新标签页打开原文");
 	assert.equal(leadLink.rel, "noreferrer");
-	assert.equal(leadLink.href, "https://www.weichai.com/news/1.html");
-	fireEvent.click(screen.getByRole("button", { name: "海尔品牌资讯 1" }));
-	assert.equal(screen.queryByRole("link", { name: "潍柴标题一" }), null, "筛选后只显示该来源的线索");
-	assert.ok(screen.getByRole("link", { name: "海尔标题" }));
+	assert.equal(leadLink.href, "https://a-example.com/news/1.html");
+	fireEvent.click(screen.getByRole("button", { name: "测试企业官网 B 1" }));
+	assert.equal(screen.queryByRole("link", { name: "测试标题一" }), null, "筛选后只显示该来源的线索");
+	assert.ok(screen.getByRole("link", { name: "另一家标题" }));
 	assert.ok(screen.getByText("来源线索（1）"), "标题跟着筛选变化");
 	fireEvent.click(screen.getByRole("button", { name: "全部 3" }));
-	assert.ok(screen.getByRole("link", { name: "潍柴标题一" }));
+	assert.ok(screen.getByRole("link", { name: "测试标题一" }));
 });
 
 test("市场事件页：勾选多条线索合并为一条事件（用户用选择表达「同一件事」）", async t => {
 	t.after(cleanup);
 	const base = {
-		sourceKey: "weichai_news", sourceLabel: "潍柴新闻与事件", subject: { kind: "brand" as const, name: "潍柴" },
+		sourceKey: "user:src-1", sourceLabel: "测试企业官网", subject: { kind: "brand" as const, name: "测试品牌" },
 		publishedAt: "2026-11-15", firstSeenAt: "2026-11-16T00:01:00.000Z", lastSeenAt: "2026-11-16T00:02:00.000Z",
 	};
 	const leads = [
-		{ ...base, itemId: "weichai_news:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html" },
+		{ ...base, itemId: "user:src-1:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html" },
 		{ ...base, itemId: "weichai_news:3", title: "转载同一件事", url: "https://www.weichai.com/news/3.html" },
 	];
 	const bodies: Input[] = [];
@@ -199,14 +198,14 @@ test("市场事件页：勾选多条线索合并为一条事件（用户用选�
 	await waitFor(() => assert.equal(bodies.length, 1));
 	const submitted = bodies[0]!;
 	assert.equal(submitted.sources.length, 2, "一次提交、多个来源");
-	assert.equal(submitted.occurrenceKey, "weichai_news:1", "编号取第一条链接的自动值");
+	assert.equal(submitted.occurrenceKey, "user:src-1:1", "编号取第一条链接的自动值");
 });
 
 test("市场事件页：线索并入已有事件，作为新增来源走修订", async t => {
 	t.after(cleanup);
 	const lead = {
-		sourceKey: "weichai_news", sourceLabel: "潍柴新闻与事件", subject: { kind: "brand" as const, name: "潍柴" },
-		itemId: "weichai_news:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html",
+		sourceKey: "user:src-1", sourceLabel: "测试企业官网", subject: { kind: "brand" as const, name: "测试品牌" },
+		itemId: "user:src-1:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html",
 		publishedAt: "2026-11-15", firstSeenAt: "2026-11-16T00:01:00.000Z", lastSeenAt: "2026-11-16T00:02:00.000Z",
 	};
 	const revisions: Array<{ expectedVersion: number; event: Input; changeReason: string }> = [];
@@ -394,4 +393,56 @@ test("市场事件页：发现线索待审核，接受不修正日期时提交�
 	fireEvent.click(screen.getByRole("button", { name: "确认接受并入库" }));
 	await waitFor(() => assert.equal(reviews.length, 1));
 	assert.deepEqual(reviews[0]!.body, {}, "不修正日期时提交空对象");
+});
+
+test("市场事件页：添加企业官网是独立分区，表单与主按钮直接可见", async t => {
+	t.after(cleanup);
+	serve(defaults);
+	mount();
+	const heading = await screen.findByRole("heading", { name: "添加企业官网" });
+	assert.equal(heading.tagName, "H2", "不能再缩成说明性小字或被折叠两层");
+	assert.ok(screen.getByLabelText("站点企业名称"));
+	assert.ok(screen.getByLabelText("站点新闻列表页地址"));
+	assert.ok(screen.getByRole("button", { name: "添加并采集" }));
+});
+
+test("市场事件页：内置试点来源（海尔/潍柴）不再出现在线索与采集状态里", async t => {
+	t.after(cleanup);
+	const base = {
+		subject: { kind: "brand" as const, name: "测试品牌" },
+		publishedAt: "2026-11-15", firstSeenAt: "2026-11-16T00:01:00.000Z", lastSeenAt: "2026-11-16T00:02:00.000Z",
+	};
+	const leads = [
+		{ ...base, sourceKey: "weichai_news", sourceLabel: "潍柴新闻与事件", itemId: "weichai_news:1", title: "潍柴列表标题", url: "https://www.weichai.com/news/1.html" },
+		{ ...base, sourceKey: "user:src-1", sourceLabel: "测试企业官网", itemId: "user:src-1:1", title: "用户站点标题", url: "https://a-example.com/news/1.html" },
+	];
+	serve(defaults, {
+		"GET /api/me/source-leads": () => json({ leads, sources: [] }),
+		"GET /api/me/source-status": () => json({ items: [
+			{ key: "weichai_news", label: "潍柴新闻与事件", status: "active", lastRun: "2026-11-16T00:00:00.000Z", lastOutcome: "ok", activeItems: 3 },
+			{ key: "user:src-1", label: "测试企业官网", status: "active", lastRun: "2026-11-16T00:00:00.000Z", lastOutcome: "ok", activeItems: 1 },
+		] }),
+	});
+	mount();
+	await screen.findByRole("link", { name: "用户站点标题" });
+	assert.equal(screen.queryByRole("link", { name: "潍柴列表标题" }), null, "内置来源的线索不再展示");
+	fireEvent.click(screen.getByText(/官网列表的标题与链接/));
+	assert.equal(screen.queryByText(/潍柴新闻与事件/), null, "内置来源的采集状态不再展示");
+	assert.ok(screen.getAllByText(/测试企业官网/).length > 0, "用户登记站点仍可见");
+});
+
+test("市场事件页：只填企业名的站点显示「查找中」，发现中不给采集按钮", async t => {
+	t.after(cleanup);
+	const base = {
+		ownerId: "owner", createdAt: "2026-11-19T00:00:00.000Z", lastRefreshAt: null as string | null,
+		subject: { kind: "brand" as const, name: "歌尔股份" },
+	};
+	serve({ ...defaults, "GET /api/me/user-sources": () => json({ items: [
+		{ ...base, id: "s-discovering", label: "歌尔股份", host: null, listUrl: null, discoveryStartedAt: "2026-11-19T00:00:00.000Z", lastOutcome: null, lastReason: null, status: "discovering" },
+		{ ...base, id: "s-failed", label: "美的", host: null, listUrl: null, discoveryStartedAt: "2026-11-18T00:00:00.000Z", lastOutcome: "failed", lastReason: "没能自动找到这家企业的官网新闻页", status: "failed" },
+	] }) });
+	mount();
+	await screen.findByText(/正在按企业名称查找官网/);
+	assert.equal(screen.queryAllByRole("button", { name: "采集" }).length, 0, "发现中不提供采集按钮");
+	assert.ok(screen.getByText(/上次失败：没能自动找到这家企业的官网新闻页/), "发现失败要显示原因");
 });

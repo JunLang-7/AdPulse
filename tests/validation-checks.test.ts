@@ -5,6 +5,7 @@ import {
 	TaskService,
 	ValidationCheckService,
 	Worker,
+	validationRulesComplete,
 } from "../packages/core/dist/index.js";
 import type {
 	Candidate,
@@ -386,4 +387,59 @@ test("the worker evaluates due checks and next round receives them as read-only 
 	);
 	assert.ok(check);
 	assert.equal(check.status, "inconclusive");
+});
+
+test("达人合作/内容种草的完整口径也能建验证检查点，且记录自己的口径键", async () => {
+	// 回归：此前 validationRulesComplete 写死 metricKey === "cost_per_consultation"，
+	// 导致达人/种草任务的验证检查点静默不创建。
+	for (const [placementType, metricKey, definition] of [
+		["influencer", "cost_per_engagement", "单次互动成本"],
+		["seeding", "cost_per_engagement", "单次互动成本"],
+	] as const) {
+		const fixture = setup();
+		const { session } = await fixture.start({
+			placementType,
+			metricKey,
+			metricDefinition: definition,
+			currency: "CNY",
+			unit: "分",
+			statWindowDays: 7,
+			alertThresholdMinor: 500,
+			minimumSpendMinor: 50000,
+			minimumConsultations: 3,
+		});
+		const check = await fixture.storage.transaction((tx) =>
+			tx.validationChecks.get(`${session.id}:1`),
+		);
+		assert.ok(check, `${placementType} 应创建验证检查点`);
+		assert.equal(check.metricKey, metricKey, `${placementType} 记录自己的口径键`);
+		assert.equal(check.status, "pending");
+	}
+});
+
+test("验证检查点不因投放方式与指标口径不符而建，不冒充可验证", () => {
+	// 任务创建本身会拒绝口径矛盾；这里直接测纯函数的防御性校验，
+	// 避免旧数据或绕过边界的写入伪造出可验证检查点。
+	const base = {
+		id: "task:1", taskId: "task", version: 1, createdAt: START, product: "测试产品",
+		strategy: structuredClone(strategy), observation: {},
+		rules: {
+			metricDefinition: "咨询成本", currency: "CNY", unit: "分", statWindowDays: 7,
+			alertThresholdMinor: 10000, minimumSpendMinor: 50000, minimumConsultations: 3,
+		},
+	};
+	assert.equal(
+		validationRulesComplete({ ...base, rules: { ...base.rules, placementType: "influencer", metricKey: "cost_per_consultation" } } as never),
+		false,
+		"达人口径不能用咨询成本键",
+	);
+	assert.equal(
+		validationRulesComplete({ ...base, rules: { ...base.rules, placementType: "paid_ads", metricKey: "cost_per_engagement" } } as never),
+		false,
+		"付费广告口径不能用互动成本键",
+	);
+	assert.equal(
+		validationRulesComplete({ ...base, rules: { ...base.rules, placementType: "influencer", metricKey: "cost_per_engagement" } } as never),
+		true,
+	);
 });

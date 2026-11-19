@@ -742,7 +742,7 @@ export interface ValidationCheck {
 	snapshotVersion: number;
 	hypothesis?: string;
 	validationPlan: string;
-	metricKey: "cost_per_consultation";
+	metricKey: PlacementMetricKey;
 	dueAt: string;
 	status: ValidationCheckStatus;
 	comparisonResultId?: string;
@@ -768,7 +768,9 @@ export type JobTask =
 			| { kind: "market_event"; eventId: string; version: number }
 			| { kind: "comparison"; comparisonResultId: string };
 	}
-	| { kind: "evaluate_validation_check"; checkId: string };
+	| { kind: "evaluate_validation_check"; checkId: string }
+	/** 只填企业名的站点：异步查找官网并采集，避免登记请求卡在发现上。 */
+	| { kind: "discover_user_source"; sourceId: string };
 export interface Job {
 	id: string;
 	task: JobTask;
@@ -809,14 +811,24 @@ export interface UserSource {
 	id: string;
 	ownerId: string;
 	label: string;
-	host: string;
-	listUrl: string;
+	/** 自动发现完成前为空：只有 label/subject，发现成功后才知道站点。 */
+	host: string | null;
+	listUrl: string | null;
 	subject: { kind: "brand" | "competitor"; name: string };
 	createdAt: string;
+	/** 进入 discovering 的时刻；用于控制台提示与卡住的发现任务。 */
+	discoveryStartedAt: string | null;
 	lastRefreshAt: string | null;
 	lastOutcome: "ok" | "failed" | null;
 	lastReason: string | null;
-	status: "active" | "stopped";
+	/**
+	 * 连续失败次数（成功即清零）。换站回退要花两次搜索额度，
+	 * 坏站不能每个槽位都无限重试，否则会耗尽全站额度。
+	 */
+	failureCount?: number;
+	/** 上一次尝试自动换站的时刻；用于退避窗口，避免永久锁死。 */
+	lastSwitchAt?: string | null;
+	status: "discovering" | "active" | "stopped" | "failed";
 }
 /** 搜索源每日额度（按北京时间自然日计）；付费源用完即停，次日恢复。 */
 export interface SearchQuota {
@@ -838,6 +850,8 @@ export interface SourceItem {
 	lastSeenAt: string;
 	titleUpdatedAt: string | null;
 	contentScope: "title_link_only";
+	/** 采集到这条条目时所在站点；换站后旧条目靠它区分归属。 */
+	host?: string;
 	status: "active" | "purged";
 }
 export interface SourceState {

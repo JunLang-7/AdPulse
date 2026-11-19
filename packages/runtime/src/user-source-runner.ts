@@ -30,6 +30,13 @@ export async function runUserSources(
 		now?: () => string;
 		fetcherFor?: (host: string) => SourceFetcher;
 		readFallback?: ((url: string) => Promise<Array<{ itemKey: string; title: string; itemUrl: string }> | null | undefined>) | undefined;
+		/** 换站回退：当前站点采不到内容时按企业名找备选站点。 */
+		discoverSites?: (label: string) => Promise<Array<{ host: string; listUrl: string }>>;
+		/**
+		 * 站内搜索兜底：只花一次搜索额度，比换站（两次搜索）便宜。
+		 * 两条路径都要传，否则定时采集会比手动刷新更早跳到贵的换站。
+		 */
+		searchFallback?: (query: string) => Promise<Array<{ title: string; url: string }>>;
 	} = {},
 ): Promise<void> {
 	const now = options.now ?? (() => new Date().toISOString());
@@ -40,7 +47,7 @@ export async function runUserSources(
 		const slot = latestDueSlot(stamp);
 		const sources = await storage.transaction((tx) => tx.userSources.all());
 		for (const source of sources) {
-			if (source.status !== "active") continue;
+			if (source.status !== "active" || !source.host || !source.listUrl) continue;
 			if (!isSlotPending(source.lastRefreshAt, slot)) continue;
 			try {
 				const fetcher = options.fetcherFor?.(source.host) ?? new UserSiteFetcher([source.host]);
@@ -50,7 +57,13 @@ export async function runUserSources(
 						source.id,
 						fetcher,
 						stamp,
-						options.readFallback ? { readFallback: options.readFallback } : {},
+						{
+							...(options.readFallback ? { readFallback: options.readFallback } : {}),
+							...(options.searchFallback ? { searchFallback: options.searchFallback } : {}),
+							...(options.discoverSites && options.fetcherFor
+								? { discoverSites: options.discoverSites, fetcherFor: options.fetcherFor }
+								: {}),
+						},
 					),
 				);
 			} catch {

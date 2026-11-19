@@ -1,0 +1,22 @@
+[2m15:03:43[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [optimizer] scanning dependencies...
+
+  [32m[1mVITE[22m v8.3.6[39m  [2mready in [0m[1m14804[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5174[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[2m15:03:44[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [optimizer] bundling dependencies...
+[2m15:22:43[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/css/globals.css[22m
+[2m15:23:07[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/views/adpulse/settings/subscriptions/index.tsx, /src/css/globals.css[22m
+[2m15:23:11[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/views/adpulse/settings/subscriptions/index.tsx, /src/css/globals.css[22m
+[2m15:23:46[22m [36m[1m[vite][22m[39m [32m../../.env changed, restarting server...[39m
+[2m15:23:46[22m [36m[1m[vite][22m[39m server restarted.
+[2m15:28:05[22m [36m[1m[vite][22m[39m [32m../../.env changed, restarting server...[39m
+[2m15:28:05[22m [36m[1m[vite][22m[39m server restarted.
+[2m16:49:02[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/css/globals.css, /src/views/adpulse/market-events/index.tsx[22m
+[2m16:49:02[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/css/globals.css[22m
+[2m16:49:02[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/views/adpulse/settings/subscriptions/index.tsx, /src/css/globals.css[22m
+[2m16:49:02[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/css/globals.css, /src/views/adpulse/tasks/evidence-panel.tsx, /src/views/adpulse/tasks/comparison-panel.tsx, /src/views/adpulse/tasks/investigation-alerts-panel.tsx[22m
+[2m16:49:02[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/css/globals.css[22m
+[2m16:49:02[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/css/globals.css[22m
+[2m16:49:34[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/css/globals.css[22m
+[2m16:50:21[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/css/globals.css[22m

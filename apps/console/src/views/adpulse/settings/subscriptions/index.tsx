@@ -938,47 +938,6 @@ export default function SubscriptionSettingsPage() {
 				</CardContent>
 			</Card>
 
-			<Card className="max-w-3xl">
-				<CardHeader>
-					<CardTitle>已接入的试点站点</CardTitle>
-				</CardHeader>
-				<CardContent className="space-y-3">
-					<p className="text-sm text-muted-foreground">
-						目前只接入了这两个试点站点；想接入其他官网需要先评估（站点结构验证与合规复核），评估通过后会出现在这里。
-						开启后，站点最新发布的标题和链接会出现在「市场与竞品事件」页，由你确认后才变成事件。
-						系统不会自动创建事件，也不会自动发消息。
-					</p>
-					<ul className="space-y-2">
-						{(data.sources ?? []).map((source) => (
-							<li key={source.key} className="flex items-center justify-between gap-3 rounded-md border p-3">
-								<div className="text-sm">
-									<p className="font-medium">{source.label}</p>
-									<p className="text-xs text-muted-foreground">只读取列表里的标题和链接，不读取正文</p>
-								</div>
-								<button
-									type="button"
-									className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
-									disabled={busy || updateSettings.isPending}
-									onClick={() =>
-										updateSettings.mutate({
-											// 服务端会再校验 allowlist；这里只做边界收窄。
-											sourceFeeds: data.sources
-												.map((item) =>
-													item.key === source.key ? { ...item, enabled: !item.enabled } : item,
-												)
-												.filter((item) => item.enabled)
-												.map((item) => item.key) as SourceFeedKey[],
-										})
-									}
-								>
-									{source.enabled ? "关闭" : "开启"}
-								</button>
-							</li>
-						))}
-					</ul>
-					<p className="text-xs text-muted-foreground">内容以原文为准，系统不改写标题。</p>
-				</CardContent>
-			</Card>
 		</div>
 	);
 }

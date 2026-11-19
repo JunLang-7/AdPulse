@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
-import { normalizeItemUrl } from "@adpluse/core";
+import { isSimplifiedChineseTitle, normalizeItemUrl, parseJsonListPayload, parseUserListPage } from "@adpluse/core";
 import type { SourceFetcher } from "@adpluse/core";
 import { UserSiteFetcher } from "./source-fetch.js";
 const HttpSourceFetcher = UserSiteFetcher;
@@ -83,8 +83,14 @@ export function agentReachReadFallback(executable: string | undefined) {
 }
 /** 媒体聚合/门户/百科等不可能是企业官网，直接排除。 */
 const NON_OFFICIAL_HOSTS =
-	/baidu\.com|zhihu\.com|qq\.com|163\.com|126\.net|sohu\.com|sina\.com|douyin\.com|toutiao\.com|xinhuanet\.com|people\.com\.cn|wikipedia\.org|gov\.cn|tianyancha\.com|qcc\.com|maigoo\.com|csdn\.net|jianshu\.com|juejin\.cn|cnblogs\.com|36kr\.com|netease\.com|ifeng\.com|thepaper\.cn|cntv\.cn|chinanews\.com|ce\.cn|cctv\.com|baike\./i;
+	/baidu\.com|zhihu\.com|qq\.com|163\.com|126\.net|sohu\.com|sina\.com|douyin\.com|toutiao\.com|xinhuanet\.com|people\.com\.cn|wikipedia\.org|gov\.cn|tianyancha\.com|qcc\.com|maigoo\.com|csdn\.net|jianshu\.com|juejin\.cn|cnblogs\.com|36kr\.com|netease\.com|ifeng\.com|thepaper\.cn|cntv\.cn|chinanews\.com|ce\.cn|cctv\.com|baike\.|bilibili\.com|kuwo\.cn|kugou\.com|migu\.cn|eastmoney\.com|xueqiu\.com|9fzt\.com|jd\.com|tmall\.com|taobao\.com|1688\.com|weibo\.com|douban\.com|zhuanlan\./i;
 const NEWS_TOKEN = /news|xinwen|xwzx|xwtt|新闻|动态|资讯|信息|media|press/i;
+/** 列表页解析最多试几个候选：每次最多 4 个请求，避免“发现+探测”把单次登记放大成几十个请求。 */
+const MAX_LIST_PAGE_ATTEMPTS = 3;
+/** 首页验证最多试几个候选：搜索前几名常是音乐/股票/百科，真正的官网可能在第 6–8 位。 */
+const MAX_VERIFY_CANDIDATES = 8;
+/** 备选站点最多返回几个：主站采不到时按顺序换站重试。 */
+const MAX_SITES = 3;
 
 /**
  * 搜索源频率保护：Bing/Exa 在连续请求下会降级（返回无关结果或限流）。
@@ -138,31 +144,101 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** 在官网站内找新闻列表页：锚文本/href 含新闻词即用；找不到就用命中的原始页面。 */
+/** 数据接口不是列表页：路径以数据文件后缀结尾，或用查询声明 JSON/XML 输出。 */
+const DATA_LIKE_PATH = /\.(?:json|xml|rss|atom|txt|csv)$/iu;
+const DATA_LIKE_QUERY = /(?:^|&)(?:format|type|output)=(?:json|xml|rss|atom)(?:&|$)/iu;
+
+/** 候选 URL 本身是数据接口（不是可采集的 HTML 列表页）。 */
+export function isDataLikePageUrl(raw: string): boolean {
+	try {
+		const url = new URL(raw);
+		return DATA_LIKE_PATH.test(url.pathname) || DATA_LIKE_QUERY.test(url.search.slice(1));
+	} catch {
+		return false;
+	}
+}
+
+/** 抓取器不返回 content-type，只能按结构嗅探：数据接口不会是 HTML 页面。 */
+export function looksLikeHtmlPage(body: string): boolean {
+	const trimmed = body.trimStart();
+	if (trimmed.startsWith("{") || trimmed.startsWith("[")) return false;
+	return /<!doctype html|<html[\s>]|<head[\s>]|<body[\s>]|<a\b/iu.test(body);
+}
+
+interface FetchedPage {
+	status: number;
+	body: string;
+}
+
+async function fetchQuietly(fetcher: SourceFetcher, url: string): Promise<FetchedPage | null> {
+	try {
+		return await fetcher.fetchText(url, { maxBytes: 512 * 1024, timeoutMs: 15_000 });
+	} catch {
+		return null;
+	}
+}
+
+/** 在页面里找第一个指向站内新闻页的锚文本。 */
+function firstNewsAnchor(html: string, base: string, host: string): string | null {
+	const anchor = /<a\b[^>]*href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/giu;
+	let match: RegExpExecArray | null;
+	while ((match = anchor.exec(html))) {
+		const href = match[2] ?? match[3] ?? match[4] ?? "";
+		const text = (match[5] ?? "").replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim();
+		const target = normalizeItemUrl(href, base, [host]);
+		if (!target || isDataLikePageUrl(target)) continue;
+		if (NEWS_TOKEN.test(new URL(target).pathname) || NEWS_TOKEN.test(text)) return target;
+	}
+	return null;
+}
+
+/**
+ * 在官网站内找新闻列表页：锚文本/href 含新闻词即用；找不到就用命中的原始页面。
+ * 只接受验证过的 HTML 页面：数据接口（.json/.xml/.rss 等）或非 HTML 响应返回 null，
+ * 由调用方换下一个候选，避免把 newsroom.json 这类接口地址存成列表页。
+ */
 export async function resolveNewsListPage(
 	candidate: { host: string; listUrl: string },
 	fetcher: SourceFetcher,
-): Promise<string> {
-	if (NEWS_TOKEN.test(new URL(candidate.listUrl).pathname)) return candidate.listUrl;
-	try {
-		const page = await fetcher.fetchText(candidate.listUrl, { maxBytes: 512 * 1024, timeoutMs: 15_000 });
-		if (page.status < 400) {
-			const anchor = /<a\b[^>]*href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/giu;
-			let match: RegExpExecArray | null;
-			while ((match = anchor.exec(page.body))) {
-				const href = match[2] ?? match[3] ?? match[4] ?? "";
-				const text = (match[5] ?? "").replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim();
-				const target = normalizeItemUrl(href, candidate.listUrl, [candidate.host]);
-				if (!target) continue;
-				const path = new URL(target).pathname;
-				if (NEWS_TOKEN.test(path) || NEWS_TOKEN.test(text))
-					return target;
+): Promise<string | null> {
+	const resolved = await resolveNewsListPageDetailed(candidate, fetcher);
+	return resolved?.listUrl ?? null;
+}
+
+/** 与 resolveNewsListPage 相同，但把页面正文带回来，供“能不能解析出条目”的排序使用。 */
+export async function resolveNewsListPageDetailed(
+	candidate: { host: string; listUrl: string },
+	fetcher: SourceFetcher,
+): Promise<{ listUrl: string; body: string } | null> {
+	const { host, listUrl } = candidate;
+	if (!isDataLikePageUrl(listUrl)) {
+		const page = await fetchQuietly(fetcher, listUrl);
+		if (page && page.status < 400 && looksLikeHtmlPage(page.body)) {
+			if (NEWS_TOKEN.test(new URL(listUrl).pathname)) return { listUrl, body: page.body };
+			const entry = firstNewsAnchor(page.body, listUrl, host);
+			if (entry) {
+				const entryPage = await fetchQuietly(fetcher, entry);
+				if (entryPage && entryPage.status < 400 && looksLikeHtmlPage(entryPage.body))
+					return { listUrl: entry, body: entryPage.body };
+			}
+			return { listUrl, body: page.body };
+		}
+	}
+	// 候选是数据接口或非 HTML：改在站点首页找一个验证过的新闻入口；找不到就如实返回 null。
+	const origin = new URL(listUrl).origin;
+	const homeUrl = `${origin}/`;
+	if (homeUrl !== listUrl) {
+		const home = await fetchQuietly(fetcher, homeUrl);
+		if (home && home.status < 400 && looksLikeHtmlPage(home.body)) {
+			const entry = firstNewsAnchor(home.body, homeUrl, host);
+			if (entry) {
+				const entryPage = await fetchQuietly(fetcher, entry);
+				if (entryPage && entryPage.status < 400 && looksLikeHtmlPage(entryPage.body))
+					return { listUrl: entry, body: entryPage.body };
 			}
 		}
-	} catch {
-		// 站内探测失败不阻塞登记：退回搜索命中的原始页面。
 	}
-	return candidate.listUrl;
+	return null;
 }
 
 /**
@@ -212,10 +288,10 @@ export async function searchBing(brand: string, fetcherFor?: (hosts: string[]) =
 }
 
 /**
- * 企业名称 → {host, listUrl}。优先 agent-reach（Exa）；限流/失败时兑底 Bing 结果页。
- * 结果未经核验，登记后由用户在来源列表里确认采集结果是否正确。
+ * 企业名称 → 最多 MAX_SITES 个已验证的 {host, listUrl}（按分数与域名质量排序）。
+ * 只要一个站点时用 discoverCompanySite；主站采集不到内容时按这份列表换站重试。
  */
-export async function discoverCompanySite(
+export async function discoverCompanySites(
 	name: string,
 	executable: string | undefined,
 	options: {
@@ -224,16 +300,15 @@ export async function discoverCompanySite(
 		bingFetcherFor?: (hosts: string[]) => SourceFetcher;
 		/** 多源聚合（带额度管控）；传入后不再走单源路径。 */
 		aggregator?: {
-			search(brand: string): Promise<{
+			search(brand: string, overrides?: { enoughHits?: number }): Promise<{
 				hits: Array<{ title: string; url: string }>;
 				providers: Array<{ provider: string; label: string; status: string; detail: string | null }>;
 			}>;
 		};
 	} = {},
-): Promise<CompanySite> {
+): Promise<CompanySite[]> {
 	const brand = name.replace(/\s+/gu, " ").trim();
 	if (!brand) throw new Error("company name required");
-	// 比对时忽略空格：用户可能输入“某 企业”，页面写的是“某企业”。
 	const brandCompact = brand.replace(/\s+/gu, "");
 	let searchItems: unknown;
 	// 聚合搜索：给了 aggregator 就走多源（带额度管控），否则走旧的单源兼容路径。
@@ -282,57 +357,161 @@ export async function discoverCompanySite(
 	} else {
 		searchItems = await searchBing(brand, options.bingFetcherFor);
 	}
-	// 挑出候选后逐个验证首页；所有通过者再按域名质量择优（短域名 > 品牌镜像子域）。
+	// 挑出候选后逐个验证首页；所有通过者再解析列表页，并按「能否解析出条目」排序。
 	// 网络抖动会让个别候选假失败：整段验证重试一轮，仍无通过才报错。
-	const ranked = rankCompanyCandidates(searchItems, brand);
-	if (ranked.length === 0) throw new Error("site discovery found no usable official site");
 	let lastError: Error | null = null;
-	const passing: Array<{ candidate: { host: string; listUrl: string; via: string }; shape: number }> = [];
-	for (const round of [0, 1]) {
-	if (round === 1 && passing.length > 0) break;
-	for (const candidate of ranked.slice(0, 5)) {
-		if (passing.some((p) => p.candidate.host === candidate.host)) continue;
-		const fetcher = options.fetcher ?? new UserSiteFetcher([candidate.host]);
-		try {
-			// 验证页跟随候选协议（老站可能只有 http）；网络抖动重试一次。
-			const origin = new URL(candidate.listUrl).origin;
-			let home;
-			try {
-				home = await fetcher.fetchText(`${origin}/`, { maxBytes: 512 * 1024, timeoutMs: 20_000 });
-			} catch {
-				home = await fetcher.fetchText(`${origin}/`, { maxBytes: 512 * 1024, timeoutMs: 20_000 });
+	const rejectedHosts: string[] = [];
+	/** 验证阶段顺带解析过的列表页：resolve 循环直接复用，不重复请求。 */
+	const preResolved = new Map<string, { listUrl: string; body: string }>();
+	const resolveCandidates = async (
+		items: unknown,
+		skipHosts: Set<string>,
+	): Promise<Array<CompanySite & { shape: number; itemCount: number; simplifiedCount: number }>> => {
+		const ranked = rankCompanyCandidates(items, brand).filter((candidate) => !skipHosts.has(candidate.host));
+		if (ranked.length === 0) return [];
+		const passing: Array<{ candidate: { host: string; listUrl: string; via: string }; shape: number }> = [];
+		for (const round of [0, 1]) {
+			if (round === 1 && passing.length > 0) break;
+			for (const candidate of ranked.slice(0, MAX_VERIFY_CANDIDATES)) {
+				if (passing.some((p) => p.candidate.host === candidate.host)) continue;
+				const fetcher = options.fetcher ?? new UserSiteFetcher([candidate.host]);
+				try {
+					// 验证页跟随候选协议（老站可能只有 http）；网络抖动重试一次。
+					// 首页可能整个连不上（实测 www.midea.com.cn/ socket hang up），
+					// 抓不到不算判死：下面还有「列表页判归属」这条兜底。
+					const origin = new URL(candidate.listUrl).origin;
+					let home: { status: number; body: string } | null = null;
+					try {
+						home = await fetcher.fetchText(`${origin}/`, { maxBytes: 512 * 1024, timeoutMs: 20_000 });
+					} catch {
+						home = await fetcher.fetchText(`${origin}/`, { maxBytes: 512 * 1024, timeoutMs: 20_000 }).catch(() => null);
+					}
+					const brandPrefix = brandCompact.replace(/(?:集团|股份|控股|有限公司|公司)$/u, "") || brandCompact;
+					const shape = /^(?:www\.)?[^.]+\.(?:com|cn|com\.cn|net|org)$/iu.test(candidate.host) ? 1 : 0;
+					if (home && home.status < 400) {
+						const title = /<title[^>]*>([\s\S]{0,200}?)<\/title>/iu.exec(home.body)?.[1]?.replace(/<[^>]+>/gu, "").replace(/\s+/gu, " ") ?? "";
+						const head = home.body.replace(/<[^>]+>/gu, "").replace(/\s+/gu, "").slice(0, 2000);
+						const titleCompact = title.replace(/\s+/gu, "");
+						const strict = titleCompact.includes(brandCompact) || head.includes(brandCompact);
+						// 短域名 + 品牌前缀也算官网：真站标题常写简称（如「浪潮」而非「浪潮集团」）。
+						const relaxed = shape === 1 && (titleCompact.includes(brandPrefix) || head.includes(brandPrefix));
+						if (strict || relaxed) {
+							passing.push({ candidate, shape });
+							continue;
+						}
+					}
+					// 首页抓不到、是英文/跳转页（实测 midea.com.cn → /en）、或没写品牌名时，
+					// 用“能解析出的列表页 + 页面/条目标题里有品牌”作为归属判据。
+					try {
+						const resolved = await resolveNewsListPageDetailed(candidate, fetcher);
+						if (resolved) {
+							const titles = [
+								...parseUserListPage(resolved.body, resolved.listUrl, candidate.host),
+								...parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host),
+							]
+								.map((item) => item.title)
+								.join("");
+							const pageText = `${resolved.listUrl}${titles}${resolved.body.replace(/<[^>]+>/gu, "")}`
+								.replace(/\s+/gu, "")
+								.slice(0, 6000);
+							if (pageText.includes(brandCompact) || pageText.includes(brandPrefix)) {
+								preResolved.set(candidate.host, resolved);
+								passing.push({ candidate, shape });
+								continue;
+							}
+						}
+					} catch {
+						// 目标页抓不到就按原结论处理。
+					}
+					if (home && [401, 403, 418, 429, 503].includes(home.status))
+						lastError = new Error(`official site ${candidate.host} blocks automated access (WAF/challenge)`);
+					else
+						lastError = new Error(`candidate ${candidate.host} homepage does not mention the company`);
+				} catch (caught) {
+					lastError = caught instanceof Error ? caught : new Error(String(caught));
+				}
 			}
-			const title = /<title[^>]*>([\s\S]{0,200}?)<\/title>/iu.exec(home.body)?.[1]?.replace(/<[^>]+>/gu, "").replace(/\s+/gu, " ") ?? "";
-			const head = home.body.replace(/<[^>]+>/gu, "").replace(/\s+/gu, "").slice(0, 2000);
-			const titleCompact = title.replace(/\s+/gu, "");
-			const brandPrefix = brandCompact.replace(/(?:集团|股份|控股|有限公司|公司)$/u, "") || brandCompact;
-			const shape = /^(?:www\.)?[^.]+\.(?:com|cn|com\.cn|net|org)$/iu.test(candidate.host) ? 1 : 0;
-			const strict = titleCompact.includes(brandCompact) || head.includes(brandCompact);
-			// 短域名 + 品牌前缀也算官网：真站标题常写简称（如「浪潮」而非「浪潮集团」）。
-			const relaxed = shape === 1 && (titleCompact.includes(brandPrefix) || head.includes(brandPrefix));
-			if (home.status < 400 && (strict || relaxed)) {
-				passing.push({ candidate, shape });
+		}
+		passing.sort((a, b) => b.shape - a.shape);
+		const sites: Array<CompanySite & { shape: number; itemCount: number; simplifiedCount: number }> = [];
+		// 首选候选的列表页可能是数据接口或非 HTML：按分数顺序试下一个。
+		// 每次尝试最多再发 4 个请求，所以只试前几个候选，避免单次登记放大成几十个请求。
+		for (const { candidate, shape } of passing.slice(0, MAX_LIST_PAGE_ATTEMPTS)) {
+			const fetcher = options.fetcher ?? new UserSiteFetcher([candidate.host]);
+			const resolved =
+				preResolved.get(candidate.host) ??
+				(await resolveNewsListPageDetailed({ host: candidate.host, listUrl: candidate.listUrl }, fetcher));
+			if (!resolved) {
+				rejectedHosts.push(candidate.host);
 				continue;
 			}
-			if ([401, 403, 418, 429, 503].includes(home.status))
-				lastError = new Error(`official site ${candidate.host} blocks automated access (WAF/challenge)`);
-			else
-				lastError = new Error(`candidate ${candidate.host} homepage does not mention the company`);
-		} catch (caught) {
-			lastError = caught instanceof Error ? caught : new Error(String(caught));
+			// 同一个品牌常有多个站（集团站/商城站/品牌站）：列表页真能解析出条目的优先；
+			// 试点面向简中用户，条目以简体中文为主体的站点优先（实测美的台湾站/海尔全球站会先被搜到）。
+			const htmlItems = parseUserListPage(resolved.body, resolved.listUrl, candidate.host);
+			const items = htmlItems.length > 0
+				? htmlItems
+				: parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host);
+			const itemCount = items.length;
+			const simplifiedCount = items.filter((item) => isSimplifiedChineseTitle(item.title)).length;
+			sites.push({ host: candidate.host, listUrl: resolved.listUrl, via: candidate.via, shape, itemCount, simplifiedCount });
 		}
+		return sites;
+	};
+
+	// 「<企业> 官网」常被商城/集团站占满：一遍都解析不出条目时，再用「<企业> 新闻中心」补一轮，
+	// 实测这一句能把 midea.com.cn、haier.com 这类真正有新闻列表的站带出来。
+	const extraSearch = async (): Promise<unknown> => {
+		// 只在注入聚合器时补搜：单源兼容路径（agent-reach / Bing）不做第二次请求，
+		// 避免测试与离线场景意外访问网络，也避免额度不可控。
+		if (!options.aggregator) return [];
+		// 关键：按次解除「凑够 8 条就短路」。免费源（实测 Bing）会返回 8 条商城/字典站，
+		// 不解除短路的话付费源（Google）永远不会被咨询——这正是换站拿不到正确官网的原因。
+		const aggregated = await options.aggregator
+			.search(`${brand} 新闻中心`, { enoughHits: Number.POSITIVE_INFINITY })
+			.catch(() => null);
+		return aggregated?.hits ?? [];
+	};
+
+	let sites = await resolveCandidates(searchItems, new Set());
+	// 「<企业> 官网」常被商城/招聘/登录子域占满：第一遍没有能解析出条目的站点时，
+	// 升级一轮「<企业> 新闻中心」搜索并咨询全部源（含付费源）。第一遍找到可用站点就不升级，
+	// 正常企业（免费源就能找到官网）不消耗付费额度。
+	if (sites.length === 0 || sites.every((site) => site.itemCount === 0)) {
+		const extra = await extraSearch();
+		if (Array.isArray(extra) && extra.length > 0)
+			sites = [...sites, ...(await resolveCandidates(extra, new Set(sites.map((site) => site.host))))];
 	}
+	if (sites.length > 0) {
+		sites.sort(
+			(a, b) =>
+				(b.itemCount > 0 ? 1 : 0) - (a.itemCount > 0 ? 1 : 0) ||
+				(b.simplifiedCount > 0 ? 1 : 0) - (a.simplifiedCount > 0 ? 1 : 0) ||
+				b.simplifiedCount - a.simplifiedCount ||
+				b.itemCount - a.itemCount ||
+				b.shape - a.shape,
+		);
+		return sites.slice(0, MAX_SITES).map(({ host, listUrl, via }) => ({ host, listUrl, via }));
 	}
-	if (passing.length > 0) {
-		passing.sort((a, b) => b.shape - a.shape);
-		const chosen = passing[0]!.candidate;
-		const fetcher = options.fetcher ?? new UserSiteFetcher([chosen.host]);
-		const listUrl = await resolveNewsListPage({ host: chosen.host, listUrl: chosen.listUrl }, fetcher);
-		return { host: chosen.host, listUrl, via: chosen.via };
-	}
+	if (rejectedHosts.length > 0)
+		throw new Error(
+			`no usable HTML news list page on ${rejectedHosts.join(", ")} (candidate page was a data endpoint or not HTML)`,
+		);
 	throw lastError ?? new Error("site discovery found no usable official site");
 }
 
+/**
+ * 企业名称 → 单个 {host, listUrl}。优先 agent-reach（Exa）；限流/失败时兑底 Bing 结果页。
+ * 结果未经核验，登记后由用户在来源列表里确认采集结果是否正确。
+ */
+export async function discoverCompanySite(
+	name: string,
+	executable: string | undefined,
+	options: Parameters<typeof discoverCompanySites>[2] = {},
+): Promise<CompanySite> {
+	const [first] = await discoverCompanySites(name, executable, options);
+	if (!first) throw new Error("site discovery found no usable official site");
+	return first;
+}
 /** 挑站排序：同名标题优先，其次官网声明；同 host 保留新闻 URL；搜索排名靠前有微弱加分。 */
 function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: string; listUrl: string; via: string; score: number }> {
 	const byHost = new Map<string, { host: string; listUrl: string; via: string; score: number }>();
@@ -354,6 +533,8 @@ function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: str
 		const title = typeof raw.title === "string" ? raw.title : "";
 		const officialTitle = /官方网站|官网|官方门户|official site/i.test(title) ? 3 : 0;
 		const aggregatorTitle = /新闻大全|相关新闻|新闻信息|资讯大全/i.test(title) ? -2 : 0;
+		// 字典/组词站的标题常含品牌名（「美的拼音_美组词_怎么读」），不重罚会压过真官网。
+		const dictionaryTitle = /拼音|组词|词典|读音|什么意思|怎么读|翻译|解释/i.test(title) ? -6 : 0;
 		const newsInUrl = NEWS_TOKEN.test(`${url.pathname}${url.hostname}`) ? 1 : 0;
 		const brandMatch = brandName && title.replace(/\s+/gu, "").includes(brandName) ? 5 : 0;
 		// 短域名（如 inspur.com）比品牌镜像子域（inspur.ainet.cn）更可能是官网；
@@ -364,7 +545,7 @@ function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: str
 		// 搜索排名越靠前越可能是官网：用微弱加分在平票时倾斜。
 		const positionBonus = Math.max(0, 1 - position * 0.05);
 		position += 1;
-		const score = brandMatch + officialTitle + aggregatorTitle + newsInUrl + hostShape + positionBonus;
+		const score = brandMatch + officialTitle + aggregatorTitle + dictionaryTitle + newsInUrl + hostShape + positionBonus;
 		const previous = byHost.get(url.host);
 		if (!previous || score > previous.score) {
 			byHost.set(url.host, {

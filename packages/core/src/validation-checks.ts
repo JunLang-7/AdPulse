@@ -1,5 +1,6 @@
 import type { Candidate } from "./ports/policyEngine.js";
 import type { Storage, Transaction } from "./ports/storage.js";
+import { isMetricKeyForPlacement, placementSpec, type PlacementMetricKey } from "./domain/placement.js";
 import type {
 	Session,
 	TaskVersion,
@@ -11,12 +12,15 @@ const MS_PER_DAY = 86_400_000;
 /**
  * 只有任务口径完整时才建检查点：没有明确指标、窗口与阈值，
  * 到期也无法判断「达标/未达标」，不如不建，避免制造假验证。
+ *
+ * 指标键必须与任务的投放方式口径一致（付费广告 = 单次咨询成本，
+ * 达人/种草 = 单次互动成本）；不一致说明口径本身矛盾，不建检查点。
  */
 export function validationRulesComplete(
 	taskVersion: TaskVersion | null,
 ): taskVersion is TaskVersion & {
 	rules: TaskVersion["rules"] & {
-		metricKey: "cost_per_consultation";
+		metricKey: PlacementMetricKey;
 		currency: string;
 		unit: string;
 		statWindowDays: number;
@@ -28,7 +32,8 @@ export function validationRulesComplete(
 	const rules = taskVersion?.rules;
 	return Boolean(
 		rules &&
-			rules.metricKey === "cost_per_consultation" &&
+			rules.metricKey !== undefined &&
+			isMetricKeyForPlacement(rules.metricKey, rules.placementType) &&
 			rules.currency &&
 			rules.unit &&
 			rules.statWindowDays !== undefined &&
@@ -75,7 +80,8 @@ export async function createValidationCheckIn(
 		snapshotVersion,
 		...(candidate.hypothesis ? { hypothesis: candidate.hypothesis } : {}),
 		validationPlan: candidate.validationPlan,
-		metricKey: "cost_per_consultation",
+		// 记录任务自己的口径键，不写死付费广告的指标名。
+		metricKey: taskVersion.rules.metricKey,
 		dueAt: new Date(
 			Date.parse(at) + taskVersion.rules.statWindowDays * MS_PER_DAY,
 		).toISOString(),

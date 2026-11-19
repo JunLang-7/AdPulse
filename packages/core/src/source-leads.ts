@@ -13,6 +13,8 @@ export interface SourceLead {
 	itemId: string;
 	title: string;
 	url: string;
+	/** 采集到这条线索的站点；换站后旧站条目靠它区分归属。 */
+	sourceHost?: string;
 	publishedAt: string | null;
 	firstSeenAt: string;
 	lastSeenAt: string;
@@ -173,6 +175,8 @@ export class SourceLeadService {
 						itemId: item.id,
 						title: item.title,
 						url: item.itemUrl,
+						// 旧条目没记站点时不猜测，缺省不下发。
+						...(item.host ? { sourceHost: item.host } : {}),
 						publishedAt: item.publishedAt,
 						firstSeenAt: item.firstSeenAt,
 						lastSeenAt: item.lastSeenAt,

@@ -16,6 +16,11 @@ const scopes = { link_only: "仅链接（未读取）", title_only: "仅标题",
 const origins = { unknown: "来源未核验", official: "官方原文（录入者声明）", repost: "转载", search: "搜索结果" };
 const fields = { subject: "公告主体", eventTime: "事件时间", conditions: "适用条件" };
 const control = "w-full rounded-md border bg-background px-3 py-2 text-sm";
+/**
+ * #41 的内置试点来源（海尔 / 潍柴）：早期联调用，产品里不再展示。
+ * 采集代码保留；这里只把它们的线索与采集状态从界面隐藏。
+ */
+const INTERNAL_SOURCE_KEYS: ReadonlySet<string> = new Set(["haier_news", "weichai_news"]);
 const source = (): Source => ({ url: null, publisher: "", content: null, scope: "link_only", origin: "unknown", publishedAt: null, acquiredAt: new Date().toISOString(), limitations: "" });
 const blank = (): EventInput => ({ occurrenceKey: `manual:${crypto.randomUUID()}`, title: "", type: "announcement", subject: { kind: "brand", name: "" }, eventTime: null, conditions: null, sources: [source()], citations: { subject: null, eventTime: null, conditions: null }, taskRefs: [], provenance: { simulated: false, reference: null, transformation: null } });
 function failure(status: number): Error {
@@ -32,6 +37,8 @@ const addStatusText = (error: unknown): string => {
 	// 搜索额度用完与采集冷却都是 429，必须按码区分，不能共用一条文案。
 	if (code === "search_quota_exhausted")
 		return "今日搜索额度已用完：次日 00:00（北京时间）自动恢复。也可以现在直接填写官网新闻列表页地址。";
+	if (code === "discovery_pending") return "这个企业正在查找官网，请稍候（通常 1 分钟内完成）。";
+	if (code === "source_not_ready") return "站点还在查找官网，等它变成「已接入」再采集。";
 	if (status === 409) return "这个网站已经添加过，不需要重复登记。";
 	if (status === 429) return "刚刚采集过这个站点，5 分钟内不重复采集，请稍后再试。";
 	if (status === 400) return "地址或填写内容不合法：列表页必须是 https 的站点地址，企业名称与关注对象名称不能为空。";
@@ -364,7 +371,7 @@ function DiscoveryLeadItem({ lead, busy, onReview }: {
 	const relationLabel = (value: string) => value === "direct" ? "直接相关" : value === "indirect" ? "间接相关" : "关系不明";
 	return <li className="space-y-2 rounded-md border p-3">
 		<div className="min-w-0 space-y-1">
-			<a className="block break-all font-medium text-blue-600 underline underline-offset-2 hover:text-blue-800" href={lead.url} target="_blank" rel="noreferrer" title="在新标签页打开原文">{lead.title}</a>
+			<a className="block break-all font-medium hover:underline" href={lead.url} target="_blank" rel="noreferrer" title="在新标签页打开原文">{lead.title}</a>
 			<p className="text-xs text-muted-foreground">
 				来源 {lead.sourceKey} · {lead.topic} · {lead.provider}
 				{lead.subject ? ` · 关联${lead.subject.kind === "brand" ? "品牌" : "竞品"}：${lead.subject.name}` : ""}
@@ -439,7 +446,13 @@ export default function MarketEventsPage() {
 	// 用户自加企业站点：登记即采，失败可见，可手动重采或删除。
 	const [siteForm, setSiteForm] = useState({ label: "", listUrl: "", kind: "brand", name: "" });
 	const [siteError, setSiteError] = useState<string | null>(null);
-	const userSources = useQuery({ queryKey: ["user-sources"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/me/user-sources"); if (!r.data) throw new Error("无法读取站点列表"); return r.data.items; } });
+	const userSources = useQuery({
+		queryKey: ["user-sources"],
+		enabled: !eventId,
+		queryFn: async () => { const r = await consoleClient.GET("/api/me/user-sources"); if (!r.data) throw new Error("无法读取站点列表"); return r.data.items; },
+		// 只给企业名时官网发现是异步的：有站点在 discovering 就短轮询，全部落地后停止。
+		refetchInterval: (query) => ((query.state.data ?? []).some((s) => s.status === "discovering") ? 3000 : false),
+	});
 	// 搜索源额度：付费源用完即停，界面必须提前告知，不要让用户白点。
 	const searchProviders = useQuery({ queryKey: ["search-providers"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/me/search-providers"); if (!r.data) return []; return r.data.items; } });
 	const allQuotaExhausted = (searchProviders.data ?? []).length > 0 && (searchProviders.data ?? []).every((p) => p.exhausted);
@@ -472,16 +485,17 @@ export default function MarketEventsPage() {
 	}, onSuccess: async () => {
 		await invalidateSources();
 	} });
+	const sourceLeads = (leads.data?.leads ?? []).filter((lead) => !INTERNAL_SOURCE_KEYS.has(lead.sourceKey));
 	const leadGroups = (() => {
 		const groups = new Map<string, { key: string; label: string; count: number }>();
-		for (const lead of leads.data?.leads ?? []) {
+		for (const lead of sourceLeads) {
 			const group = groups.get(lead.sourceKey);
 			if (group) group.count += 1;
 			else groups.set(lead.sourceKey, { key: lead.sourceKey, label: lead.sourceLabel, count: 1 });
 		}
 		return [...groups.values()].sort((left, right) => right.count - left.count);
 	})();
-	const visibleLeads = (leads.data?.leads ?? []).filter((lead) => !leadSource || lead.sourceKey === leadSource);
+	const visibleLeads = sourceLeads.filter((lead) => !leadSource || lead.sourceKey === leadSource);
 	const lifecycle = useQuery({ queryKey: ["market-events", eventId, "lifecycle"], enabled: !!eventId, queryFn: async () => {
 		const r = await consoleClient.GET("/api/market-events/{eventId}/lifecycle", { params: { path: { eventId: eventId! } } });
 		if (!r.data) throw new Error("无法读取保留期");
@@ -549,6 +563,75 @@ export default function MarketEventsPage() {
 			{list.data?.length === 0 && <p className="rounded-md border border-dashed p-6">还没有录入事件。可先保存链接，缺失信息保持未知。</p>}
 			<div className="grid gap-4 md:grid-cols-2">{list.data?.map(v => <Link key={v.eventId} to={`/market-events/${v.eventId}`}><Card className="h-full transition hover:ring-foreground/25"><CardHeader><CardTitle>{v.input.provenance.simulated ? "【模拟】" : ""}{v.input.title}</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><p>{types[v.input.type]} · {v.input.subject.name} · 第 {v.version} 版</p><p>{v.candidate.status === "evidence_ready" ? "依据齐备" : "还缺依据"}</p><p>{v.input.taskRefs.length ? `关联 ${v.input.taskRefs.length} 个任务` : "未关联任务"}</p></CardContent></Card></Link>)}</div>
 		</Section>
+		<Section title="添加企业官网" hint="只填企业名称即可自动发现官网新闻页；也可直接填写列表页地址">
+			<div className="space-y-3">
+				<div className="grid gap-2 sm:grid-cols-2">
+					<input aria-label="站点企业名称" placeholder="企业名称，如：海尔" maxLength={200} value={siteForm.label} onChange={e => setSiteForm({ ...siteForm, label: e.target.value })} className={control} />
+					<input aria-label="站点新闻列表页地址" placeholder="可留空：按企业名称自动查找官网新闻页" maxLength={2000} value={siteForm.listUrl} onChange={e => setSiteForm({ ...siteForm, listUrl: e.target.value })} className={control} />
+					<select aria-label="站点对象类型" value={siteForm.kind} onChange={e => setSiteForm({ ...siteForm, kind: e.target.value })} className={control}><option value="brand">品牌</option><option value="competitor">竞品</option></select>
+					<input aria-label="站点关注对象名称" placeholder="关注对象名称，如：海尔" maxLength={200} value={siteForm.name} onChange={e => setSiteForm({ ...siteForm, name: e.target.value })} className={control} />
+				</div>
+				<div className="flex flex-wrap items-center gap-3">
+					<Button
+						type="button"
+						size="lg"
+						disabled={addSite.isPending}
+						onClick={() => {
+							if (!siteForm.label.trim() || !siteForm.name.trim()) { setSiteError("请填写企业名称与关注对象名称；列表页地址可留空，自动按名称查找。"); return; }
+							setSiteError(null);
+							addSite.mutate();
+						}}
+					>
+						{addSite.isPending ? "添加并采集中…" : "添加并采集"}
+					</Button>
+					<span className="text-xs text-muted-foreground">登记后立即抓一次列表页；之后每个时段自动重采，也可手动重采。</span>
+				</div>
+				{siteError ? <p role="alert" className="text-sm text-red-600">{siteError}</p> : null}
+				{addSite.error ? <p role="alert" className="text-sm text-red-600">{addStatusText(addSite.error)}</p> : null}
+				{/* 搜索源额度状态：让用户在点之前就知道今天还能不能用。 */}
+				{(searchProviders.data ?? []).length > 0 ? (
+					<div className="space-y-1 rounded-md border bg-muted/30 p-2 text-xs">
+						<p className="text-muted-foreground">搜索源（今日额度）</p>
+						<ul className="space-y-0.5">
+							{(searchProviders.data ?? []).map((p) => (
+								<li key={p.provider} className={p.exhausted ? "text-amber-700" : "text-muted-foreground"}>
+									{p.label}{p.metered ? "（付费）" : ""}：
+									{p.dailyLimit === null ? `已用 ${p.used} 次` : p.exhausted ? `今日已用完（${p.used}/${p.dailyLimit}），次日 00:00 恢复` : `剩余 ${p.remaining} / ${p.dailyLimit} 次`}
+								</li>
+							))}
+						</ul>
+						{allQuotaExhausted ? <p className="text-amber-700">今天的搜索额度已全部用完；你仍可以直接填写官网新闻列表页地址，其余链路不受影响。</p> : null}
+					</div>
+				) : null}
+				{(userSources.data ?? []).length > 0 ? (
+					<div className="space-y-2">
+						<p className="text-xs text-muted-foreground">已登记站点</p>
+						{(userSources.data ?? []).map(s => {
+							const discovering = s.status === "discovering";
+							return <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-sm">
+								<span className="font-medium">{s.label}</span>
+								{discovering
+									? <span className="text-muted-foreground">正在按企业名称查找官网…</span>
+									: <span className="text-muted-foreground">{s.host}</span>}
+								{discovering
+									? null
+									: <span className="text-muted-foreground">{s.lastOutcome === "ok" ? "上次采集成功" : s.lastOutcome === "failed" ? `上次失败：${s.lastReason ?? "未知原因"}` : "还没采集过"}</span>}
+								<div className="ml-auto flex items-center gap-2">
+									{/* 还没落到具体站点（发现中或发现失败）时不给采集入口，只保留删除。 */}
+									{s.host
+										? <Button type="button" variant="outline" size="sm" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => refreshSite.mutate(s.id)}>{refreshSite.variables === s.id && refreshSite.isPending ? "采集中…" : "采集"}</Button>
+										: null}
+									<Button type="button" variant="outline" size="sm" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => removeSite.mutate(s.id)}>删除</Button>
+								</div>
+							</div>;
+						})}
+					</div>
+				) : null}
+				{refreshSite.data ? <p role="status" className="text-sm">本次采集：新增 {refreshSite.data.created} 条，更新 {refreshSite.data.updated} 条{refreshSite.data.reason ? `（${refreshSite.data.reason}）` : ""}</p> : null}
+				{refreshSite.error ? <p role="alert" className="text-sm text-red-600">{addStatusText(refreshSite.error)}</p> : null}
+				{removeSite.error ? <p role="alert" className="text-sm text-red-600">删除失败，请稍后重试。</p> : null}
+			</div>
+		</Section>
 		{discoveryLeads.data && discoveryLeads.data.length > 0 && <Section
 			collapsible
 			defaultOpen
@@ -565,7 +648,7 @@ export default function MarketEventsPage() {
 			</div>
 		</Section>}
 		{leads.error && <p role="alert">{leads.error.message}</p>}
-		{leads.data && leads.data.leads.length > 0 && <Section
+		{leads.data && sourceLeads.length > 0 && <Section
 			collapsible
 			defaultOpen={false}
 			title={`来源线索（${visibleLeads.length}）`}
@@ -577,56 +660,14 @@ export default function MarketEventsPage() {
 					点「转事件」。如果几个链接说的是同一件事，先勾选这几条再点「合并为一条事件」；
 					之后由你补上时间、适用条件和原文引用。
 				</p>
-				{feedStatus.data && feedStatus.data.length > 0 ? <ul className="space-y-1 text-xs text-muted-foreground">
-					{feedStatus.data.map((feed) => <li key={feed.key}>
+				{(feedStatus.data ?? []).some((feed) => !INTERNAL_SOURCE_KEYS.has(feed.key)) ? <ul className="space-y-1 text-xs text-muted-foreground">
+					{(feedStatus.data ?? []).filter((feed) => !INTERNAL_SOURCE_KEYS.has(feed.key)).map((feed) => <li key={feed.key}>
 						{feed.status === "stopped"
 							? `${feed.label}：已停止采集，需要人工恢复`
 							: `${feed.label}：${feed.lastRun ? `最近一次采集在 ${formatBeijing(feed.lastRun)}` : "还没有采集记录"}，${feed.lastOutcome ? outcomeLabel(feed.lastOutcome) : "暂无结果"}，现有 ${feed.activeItems} 条`}
 					</li>)}
 				</ul> : null}
 				{feedStatus.error ? <p role="alert" className="text-xs text-red-600">读取来源状态失败，不影响线索列表。</p> : null}
-				<details className="text-xs">
-					<summary className="cursor-pointer text-muted-foreground">添加任意企业官网（不限内置两家）</summary>
-					<div className="mt-2 space-y-2">
-						{/* 搜索源额度状态：让用户在点之前就知道今天还能不能用。 */}
-						{(searchProviders.data ?? []).length > 0 ? <div className="space-y-1 rounded-md border bg-muted/30 p-2">
-							<p className="text-muted-foreground">搜索源（今日额度）</p>
-							<ul className="space-y-0.5">
-								{(searchProviders.data ?? []).map((p) => <li key={p.provider} className={p.exhausted ? "text-amber-700" : "text-muted-foreground"}>
-									{p.label}{p.metered ? "（付费）" : ""}：
-									{p.dailyLimit === null ? `已用 ${p.used} 次` : p.exhausted ? `今日已用完（${p.used}/${p.dailyLimit}），次日 00:00 恢复` : `剩余 ${p.remaining} / ${p.dailyLimit} 次`}
-								</li>)}
-							</ul>
-							{allQuotaExhausted ? <p className="text-amber-700">今天的搜索额度已全部用完；你仍可以直接填写官网新闻列表页地址，其余链路不受影响。</p> : null}
-						</div> : null}
-						<div className="grid gap-2 sm:grid-cols-2">
-							<input aria-label="站点企业名称" placeholder="企业名称，如：海尔" maxLength={200} value={siteForm.label} onChange={e => setSiteForm({ ...siteForm, label: e.target.value })} className={control} />
-							<input aria-label="站点新闻列表页地址" placeholder="可留空：按企业名称自动查找官网新闻页" maxLength={2000} value={siteForm.listUrl} onChange={e => setSiteForm({ ...siteForm, listUrl: e.target.value })} className={control} />
-							<select aria-label="站点对象类型" value={siteForm.kind} onChange={e => setSiteForm({ ...siteForm, kind: e.target.value })} className={control}><option value="brand">品牌</option><option value="competitor">竞品</option></select>
-							<input aria-label="站点关注对象名称" placeholder="关注对象名称，如：海尔" maxLength={200} value={siteForm.name} onChange={e => setSiteForm({ ...siteForm, name: e.target.value })} className={control} />
-						</div>
-						<div className="flex flex-wrap items-center gap-2">
-							<Button type="button" disabled={addSite.isPending} onClick={() => {
-								if (!siteForm.label.trim() || !siteForm.name.trim()) { setSiteError("请填写企业名称与关注对象名称；列表页地址可留空，自动按名称查找。"); return; }
-								setSiteError(null);
-								addSite.mutate();
-							}}>{addSite.isPending ? "添加并采集中…" : "添加并采集"}</Button>
-							<span className="text-muted-foreground">登记后立即抓一次列表页；之后每个时段自动重采，也可手动重采。</span>
-						</div>
-						{siteError ? <p role="alert" className="text-red-600">{siteError}</p> : null}
-						{addSite.error ? <p role="alert" className="text-red-600">{addStatusText(addSite.error)}</p> : null}
-						{(userSources.data ?? []).map(s => <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
-							<span className="font-medium">{s.label}</span>
-							<span className="text-muted-foreground">{s.host}</span>
-							<span className="text-muted-foreground">{s.lastOutcome === "ok" ? "上次采集成功" : s.lastOutcome === "failed" ? `上次失败：${s.lastReason ?? "未知原因"}` : "还没采集过"}</span>
-							<Button type="button" variant="outline" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => refreshSite.mutate(s.id)}>{refreshSite.variables === s.id && refreshSite.isPending ? "采集中…" : "采集"}</Button>
-							<Button type="button" variant="outline" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => removeSite.mutate(s.id)}>删除</Button>
-						</div>)}
-						{refreshSite.data ? <p role="status">本次采集：新增 {refreshSite.data.created} 条，更新 {refreshSite.data.updated} 条{refreshSite.data.reason ? `（${refreshSite.data.reason}）` : ""}</p> : null}
-						{refreshSite.error ? <p role="alert" className="text-red-600">{addStatusText(refreshSite.error)}</p> : null}
-						{removeSite.error ? <p role="alert" className="text-red-600">删除失败，请稍后重试。</p> : null}
-					</div>
-				</details>
 				{leadGroups.length > 1 ? <div className="flex flex-wrap items-center gap-2" role="group" aria-label="按来源筛选线索">
 					<button
 						type="button"
@@ -664,7 +705,7 @@ export default function MarketEventsPage() {
 										checked={selectedLeads.includes(lead.itemId)}
 										onChange={() => setSelectedLeads(ids => ids.includes(lead.itemId) ? ids.filter(id => id !== lead.itemId) : [...ids, lead.itemId])}
 									/> : null}
-									<a className="block font-medium break-all text-blue-600 underline underline-offset-2 hover:text-blue-800" href={lead.url} target="_blank" rel="noreferrer" title="在新标签页打开原文">{lead.title}</a>
+									<a className="block font-medium break-all hover:underline" href={lead.url} target="_blank" rel="noreferrer" title="在新标签页打开原文">{lead.title}</a>
 								</div>
 								<p className="text-xs text-muted-foreground">
 									来自 {lead.sourceLabel} · 关联{lead.subject.kind === "brand" ? "品牌" : "竞品"}：{lead.subject.name}

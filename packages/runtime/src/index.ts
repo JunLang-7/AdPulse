@@ -21,8 +21,10 @@ import {
 	ValidationCheckService,
 	resolveActiveIdentity,
 	SOURCE_DEFINITIONS,
+	SearchAggregator,
 	SourceService,
 	TaskService,
+	UserSourceService,
 	type DecisionAccountResolver,
 	type PolicyEngine,
 	type Storage,
@@ -32,7 +34,9 @@ import { MemoryStorage, PostgresStorage } from "@adpluse/storage";
 import { createModelCredentialCipher } from "./model-credential-cipher.js";
 import { discoverModels } from "./model-discovery.js";
 import { createModelEgressFetch } from "./model-egress.js";
-import { HttpSourceFetcher } from "./source-fetch.js";
+import { HttpSourceFetcher, UserSiteFetcher } from "./source-fetch.js";
+import { agentReachReadFallback, discoverCompanySite, discoverCompanySites } from "./site-discovery.js";
+import { providersFromEnvironment } from "./search-providers.js";
 import type { TaskDraftExtractor } from "./task-draft-extractor.js";
 import {
 	createPersistedTaskDraftExtractor,
@@ -146,6 +150,46 @@ export function compose(
 	const digestScheduler = new DigestScheduler(storage, subscriptions, notificationQueue);
 	const lifecycleCleanup = new LifecycleCleanupService(storage);
 	const validationChecks = new ValidationCheckService(storage);
+
+	// 只填企业名时的异步发现 + 换站回退共用同一个聚合器（额度按 storage 计）。
+	const userSourceAggregator = new SearchAggregator(storage, providersFromEnvironment(process.env));
+	const discoverAlternates = (label: string) =>
+		discoverCompanySites(label, process.env.AGENT_REACH_BIN, { aggregator: userSourceAggregator })
+			.then((sites) => sites.map(({ host, listUrl }) => ({ host, listUrl })));
+	// 站内搜索兑底：只花一次额度。定时采集也用它，避免直接跳到两次搜索的换站。
+	const searchUserSource = async (query: string) =>
+		(await userSourceAggregator.search(query)).hits;
+	const userSourceDiscovery = {
+		run: async (sourceId: string) => {
+			const userSources = new UserSourceService(storage);
+			const source = await userSources.get(sourceId);
+			if (!source || source.status !== "discovering") return;
+			const now = new Date().toISOString();
+			try {
+				const site = await discoverCompanySite(source.label, process.env.AGENT_REACH_BIN, { aggregator: userSourceAggregator });
+				await userSources.finishDiscovery(sourceId, site, now);
+				await userSources.refresh(
+					source.ownerId,
+					sourceId,
+					new UserSiteFetcher([site.host]),
+					now,
+					{
+						readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN),
+						searchFallback: async (query: string) => (await userSourceAggregator.search(query)).hits,
+						discoverSites: discoverAlternates,
+						fetcherFor: (host: string) => new UserSiteFetcher([host]),
+					},
+				);
+			} catch (error) {
+				await userSources.failDiscovery(
+					sourceId,
+					error instanceof Error ? error.message : "官网发现失败",
+					now,
+				);
+			}
+		},
+	};
+
 	// 目的地平台 → 渠道账号：只匹配声明了同一身份作用域的连接，避免把飞书消息发到别的账号。
 	const platformAccounts = new Map<string, string>();
 	for (const account of accounts)
@@ -155,6 +199,8 @@ export function compose(
 		storage,
 		channels,
 		decisions,
+		discoverAlternates,
+		searchUserSource,
 		tasks,
 		evidence,
 		marketEvents: new MarketEventService(storage),
@@ -186,6 +232,7 @@ export function compose(
 			options.hypothesisVerdicts,
 			validationChecks,
 			options.signalAssessments,
+			userSourceDiscovery,
 		),
 	};
 }
@@ -253,7 +300,7 @@ isPublicAddress,} from "./source-fetch.js";
 export { runSources } from "./source-runner.js";
 export { bingProvider, agentReachProvider, serperProvider, braveProvider, providersFromEnvironment, parseDailyLimits, bingQueries } from "./search-providers.js";
 export { runUserSources } from "./user-source-runner.js";
-export { discoverCompanySite, pickCompanySite, resolveNewsListPage, searchBing, readViaAgentReach, parseMarkdownLinks, agentReachReadFallback, AgentReachLimitError, resetDiscoveryThrottle , SearchQuotaExhaustedError } from "./site-discovery.js";
+export { discoverCompanySite, discoverCompanySites, pickCompanySite, resolveNewsListPage, searchBing, readViaAgentReach, parseMarkdownLinks, agentReachReadFallback, AgentReachLimitError, resetDiscoveryThrottle , SearchQuotaExhaustedError } from "./site-discovery.js";
 export { discoverSource } from "./source-discovery.js";
 export { barkChannel, dingtalkChannel, ntfyChannel, pushChannelsFromEnvironment, pushChannelGuide, composeInstantPush, wecomChannel } from "./push-channels.js";
 export type { PushChannel, PushChannelResult, PushChannelStatus, PushChannelId, PushMessage } from "./push-channels.js";
