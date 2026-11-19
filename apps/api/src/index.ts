@@ -1,5 +1,5 @@
 import { AuthenticationService } from "@adpluse/core";
-import { agentReachReadFallback, createSourceService, fromEnvironment, runSources, runUserSources, runWorker } from "@adpluse/runtime";
+import { agentReachReadFallback, createSourceService, fromEnvironment, runSources, runUserSources, runWorker, UserSiteFetcher } from "@adpluse/runtime";
 import { FeishuIdentityProvider } from "./feishu-auth.js";
 import { createApi } from "./server.js";
 
@@ -48,6 +48,8 @@ const sourcesLoop =
 				runUserSources(runtime.storage, controller.signal, {
 					...(process.env.SOURCE_TICK_MS ? { tickMs: Number(process.env.SOURCE_TICK_MS) } : {}),
 					...(process.env.AGENT_REACH_BIN ? { readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN) } : {}),
+					fetcherFor: (host: string) => new UserSiteFetcher([host]),
+					discoverSites: runtime.discoverAlternates,
 				}),
 			])
 		: Promise.resolve();
