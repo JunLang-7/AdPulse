@@ -11,6 +11,7 @@ export interface SubscriptionSettingsLike {
 	proactiveEnabled: boolean;
 	/** 缺省兼容旧 API，但绝不视为已确认。 */
 	decisionCards?: components["schemas"]["DecisionCardPreference"];
+	realTimePush?: { enabled: boolean; enabledAt?: string; disabledAt?: string; watermark?: string };
 	schedule: {
 		timezone: string;
 		digestAt: string;

@@ -27,7 +27,7 @@ import {
 	TaskInputValidationError,
 } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
-import { agentReachReadFallback, composeInstantPush, discoverCompanySites, feishuInstantChannel, providersFromEnvironment, pushChannelGuide, pushChannelsFromEnvironment, SearchQuotaExhaustedError, UserSiteFetcher } from "@adpluse/runtime";
+import { agentReachReadFallback, composeInstantPush, discoverCompanySites, feishuInstantChannel, providersFromEnvironment, pushChannelGuide, pushChannelsFromEnvironment, runRealTimePush, runRealTimePushLoop, SearchQuotaExhaustedError, UserSiteFetcher } from "@adpluse/runtime";
 import { ZodError } from "zod";
 import type { IdentityProvider } from "./feishu-auth.js";
 import { HttpError, json, readJson } from "./http.js";
@@ -525,6 +525,9 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 							...(body?.sourceFeeds === undefined
 								? {}
 								: { sourceFeeds: body.sourceFeeds as never }),
+							...(typeof body?.realTimePushEnabled === "boolean"
+								? { realTimePushEnabled: body.realTimePushEnabled }
+								: {}),
 						});
 						audit({ event: "subscription.settings.updated", path });
 						return json(res, 200, view);

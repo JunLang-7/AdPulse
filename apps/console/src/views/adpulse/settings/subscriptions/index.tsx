@@ -433,6 +433,7 @@ export default function SubscriptionSettingsPage() {
 		mutationFn: async (body: {
 			proactiveEnabled?: boolean;
 			decisionCardsEnabled?: boolean;
+			realTimePushEnabled?: boolean;
 			sourceFeeds?: SourceFeedKey[];
 			schedule?: {
 				timezone: "Asia/Shanghai";
@@ -787,23 +788,44 @@ export default function SubscriptionSettingsPage() {
 
 			<Card className="max-w-3xl">
 				<CardHeader>
-					<CardTitle>立即推送（不等汇总时间）</CardTitle>
+					<CardTitle>实时推送设置</CardTitle>
 				</CardHeader>
 				<CardContent className="space-y-3">
 					<p className="text-sm text-muted-foreground">
-						把目前「依据齐备」的事件摘要马上推到手机（Bark / ntfy），用于当场验证链路。
-						只发你自己已确认的事件，不包含未核对线索。
+						开启后，新出现「依据齐备」的事件会自动推到下方渠道（默认飞书单聊），不用等到汇总时间。
+						关闭则只保留定时汇总。
 					</p>
-					<ul className="space-y-1 text-sm">
-						{(pushChannels.data ?? []).map((channel) => (
-							<li key={channel.channel} className={channel.configured ? "text-muted-foreground" : "text-amber-700"}>
-								{channel.label}：{channel.configured ? "已配置" : channel.guide ?? "未配置"}
-							</li>
-						))}
-					</ul>
+					<div className="flex items-center justify-between gap-3 rounded-md border p-3">
+						<div className="text-sm">
+							<p className="font-medium">实时推送：{data.settings.realTimePush?.enabled ? "已开启" : "未开启"}</p>
+							<p className="text-xs text-muted-foreground">
+								开启时以当前时刻为起点，不补发之前的事件；一条事件只推一次。
+							</p>
+						</div>
+						<button
+							type="button"
+							disabled={busy}
+							onClick={() =>
+								updateSettings.mutate({ realTimePushEnabled: !data.settings.realTimePush?.enabled })
+							}
+							className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+						>
+							{data.settings.realTimePush?.enabled ? "关闭实时推送" : "开启实时推送"}
+						</button>
+					</div>
+					<div className="space-y-1">
+						<p className="text-sm text-muted-foreground">推送渠道</p>
+						<ul className="space-y-1 text-sm">
+							{(pushChannels.data ?? []).map((channel) => (
+								<li key={channel.channel} className={channel.configured ? "text-muted-foreground" : "text-amber-700"}>
+									{channel.label}：{channel.configured ? "已配置" : channel.guide ?? "未配置"}
+								</li>
+							))}
+						</ul>
+					</div>
 					{instantPush.data ? (
 						<p role="status" className="text-sm">
-							已发送到 {instantPush.data.sent} 个渠道；包含 {instantPush.data.eventCount} 条已确认事件。
+							测试推送已发送到 {instantPush.data.sent} 个渠道；包含 {instantPush.data.eventCount} 条已确认事件。
 							{instantPush.data.results.filter((item) => item.status !== "ok").map((item) => (
 								<span key={item.channel} className="ml-1 text-amber-700">
 									{item.label} 失败：{item.detail ?? "未知原因"}
@@ -820,9 +842,9 @@ export default function SubscriptionSettingsPage() {
 						type="button"
 						disabled={instantPush.isPending || !(pushChannels.data ?? []).some((channel) => channel.configured)}
 						onClick={() => instantPush.mutate()}
-						className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
+						className="rounded-md border px-3 py-2 text-sm text-muted-foreground disabled:opacity-50"
 					>
-						{instantPush.isPending ? "正在推送…" : "立即推送一次"}
+						{instantPush.isPending ? "正在推送…" : "发一条测试推送"}
 					</button>
 				</CardContent>
 			</Card>

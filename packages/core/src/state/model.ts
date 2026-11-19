@@ -121,6 +121,18 @@ export interface SubscriptionSettings {
 		confirmedVersion?: number;
 	};
 	/**
+	 * 实时推送：开启后，新出现「依据齐备」的事件就立即推到已确认的飞书单聊，
+	 * 不用等到汇总时间。与日汇总是两条平行通道，互不影响。
+	 * `watermark` 记录已经推过的时间点，避免重复推送同一批事件。
+	 */
+	realTimePush?: {
+		enabled: boolean;
+		enabledAt?: string;
+		disabledAt?: string;
+		/** 最近一次自动推送的 ISO 时间；只推这个时间之后新确认的事件。 */
+		watermark?: string;
+	};
+	/**
 	 * #39 方案 A：本人逐来源开启的自动采集列表（`SOURCE_DEFINITIONS` 的 key）。
 	 * 缺省为空 = 不采集、不产生线索；不会替用户在其私人空间创建事件。
 	 */

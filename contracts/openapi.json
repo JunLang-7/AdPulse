@@ -7785,6 +7785,18 @@
           "decisionCards": {
             "$ref": "#/components/schemas/DecisionCardPreference"
           },
+          "realTimePush": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "实时推送开关与水位线；开关关闭时只走定时汇总。",
+            "properties": {
+              "enabled": { "type": "boolean" },
+              "enabledAt": { "type": "string", "format": "date-time" },
+              "disabledAt": { "type": "string", "format": "date-time" },
+              "watermark": { "type": "string", "format": "date-time", "description": "只推这个时间之后新确认的事件" }
+            },
+            "required": ["enabled"]
+          },
           "schedule": {
             "$ref": "#/components/schemas/SubscriptionSchedule",
             "description": "未保存过配置时返回默认值（09:30 汇总、22:00–08:00 免打扰）"
@@ -8357,6 +8369,10 @@
           "decisionCardsEnabled": {
             "type": "boolean",
             "description": "本人单独明确确认；不改变全部主动推送开关、地址或通知授权。此接口仅记录，不直接排队或发送。"
+          },
+          "realTimePushEnabled": {
+            "type": "boolean",
+            "description": "开关实时推送：开启后新确认（依据齐备）的事件立即推到已配置渠道；开启时以当前时刻为起点，不补发历史事件。"
           },
           "schedule": {
             "$ref": "#/components/schemas/SubscriptionSchedule"
