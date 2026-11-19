@@ -2,7 +2,7 @@
 // 与内置来源同一套纪律：只取列表页的标题与链接，robots 优先，失败不写入条目。
 // 采集触发由调用方决定（添加时与手动刷新），不接入固定槽位调度。
 import { createHash } from "node:crypto";
-import { MAX_ITEMS, articleScore, filterListableItems, isListableItem, isListableTitle } from "./item-quality.js";
+import { MAX_ITEMS, articleScore, filterListableItems, isListableItem, isListableTitle, isSimplifiedChineseTitle } from "./item-quality.js";
 import {
 	collectSitemapItems,
 	findDataListAnchor,
@@ -38,8 +38,8 @@ const COMMON_NEWS_PATHS = [
 	"/news", "/news/index.html", "/xwzx/index.html", "/news/list.shtml",
 	"/media/index.html", "/news/gh.htm",
 ] as const;
-/** sitemapindex 只下钻一个子地图，避免一次刷新把整个站点的索引都拉下来。 */
-const MAX_SITEMAP_CHILDREN = 1;
+/** sitemapindex 最多下钻几个子地图（实测海尔 cn 地图下 product/other/business…，新闻在第二个）。 */
+const MAX_SITEMAP_CHILDREN = 5;
 
 export interface UserSourceView extends UserSource {}
 
@@ -566,6 +566,75 @@ export class UserSourceService {
 				}
 			}
 		}
+		// 兜底二级：sitemap——先于渲染回退（免费、确定、质量常比渲染高；实测海尔的中文新闻
+		// 只有 sitemap 能带出来）。请求有上限；robots 声明多个分语言地图时优先中文地图。
+		if (parsed.length === 0) {
+			const origin = new URL(resolvedListUrl).origin;
+			const candidates = [...sitemapUrlsFromRobots(robotsBody, origin), `${origin}/sitemap.xml`]
+				.filter((url, index, all) => all.indexOf(url) === index)
+				.sort((left, right) => Number(/\/cn\//iu.test(right) || /\/zh/iu.test(right)) - Number(/\/cn\//iu.test(left) || /\/zh/iu.test(left)))
+				.slice(0, 2);
+			for (const sitemapUrl of candidates) {
+				try {
+					const map = await fetcher.fetchText(sitemapUrl, FETCH_LIMITS);
+					if (map.status >= 400) continue;
+					const { sitemaps, entries } = parseSitemapXml(map.body, sitemapUrl, host);
+					// sitemapindex（实测海尔 cn 地图下有 product/other/business 等子地图）：
+					// 全部下钻后合并，不提前停——product.xml 里带日期的促销页也能过条目过滤，
+					// 先停就永远到不了 other.xml 里的真新闻。
+					const merged = new Map(entries.map((entry) => [entry.url, entry]));
+					for (const child of sitemaps.slice(0, MAX_SITEMAP_CHILDREN)) {
+						try {
+							const childPage = await fetcher.fetchText(child, FETCH_LIMITS);
+							if (childPage.status >= 400) continue;
+							for (const entry of parseSitemapXml(childPage.body, child, host).entries)
+								if (!merged.has(entry.url)) merged.set(entry.url, entry);
+						} catch {
+							// 单个子地图失败继续。
+						}
+					}
+					// 合并后按新闻性排序：URL 含新闻段的排最前（xinwen/news/press），
+					// 其次按 lastmod 倒序；促销/产品页自然沉底。
+					const sorted = [...merged.values()].sort(
+						(left, right) =>
+							Number(/(?:xinwen|xwzx|news|press|media)(?:\/|$)/iu.test(right.url)) -
+								Number(/(?:xinwen|xwzx|news|press|media)(?:\/|$)/iu.test(left.url)) ||
+							(right.lastmod ?? "").localeCompare(left.lastmod ?? ""),
+					);
+					if (sorted.length === 0) continue;
+					// 存在带新闻段（xinwen/news/press…）的条目时就只用它们：促销/产品页即使
+					// 带日期路径也会被排除；站点没有新闻段路径时保持全量（按日期倒序）。
+					const newsy = sorted.filter((entry) => /(?:xinwen|xwzx|news|press|media)(?:\/|$)/iu.test(entry.url));
+					parsed = await collectSitemapItems(fetcher, host, newsy.length > 0 ? newsy : sorted);
+					// sitemap 只收录了少数新闻文章时（实测海尔 cn 地图只有一条），文章的上级目录
+					// 通常就是列表页：至多试一次父目录，能解析出更多条目就用它。
+					if (parsed.length > 0 && parsed.length < 3 && newsy.length > 0) {
+						try {
+							const article = new URL(newsy[0]!.url);
+							const parent = `${article.origin}${article.pathname.replace(/[^/]+\/?$/u, "")}`;
+							// 父目录至少两段路径（/about_haier/xinwen/ 这类）；单段（/10000/）
+							// 通常是栏目根或静态资源目录，不是新闻列表页。
+							const depth = article.pathname.replace(/\/$/u, "").split("/").filter(Boolean).length;
+							if (parent !== article.toString() && depth >= 3) {
+								const listPage = await fetcher.fetchText(parent, FETCH_LIMITS);
+								if (listPage.status < 400) {
+									const fromList = parseUserListPage(listPage.body, parent, host);
+									if (fromList.length > parsed.length) {
+										parsed = fromList;
+										resolvedListUrl = parent;
+									}
+								}
+							}
+						} catch {
+							// 父目录试探失败维持 sitemap 结果。
+						}
+					}
+					if (parsed.length > 0) break;
+				} catch {
+					// 单个站点地图失败继续。
+				}
+			}
+		}
 		// 静态手段失败：交给渲染读取兑底（jina 可渲染 JS 页）。
 		if (parsed.length < 3 && options.readFallback) {
 			try {
@@ -574,35 +643,6 @@ export class UserSourceService {
 				if (filtered.length > parsed.length) parsed = filtered;
 			} catch {
 				// 兑底失败（如限流）维持原结论，不冒充成功。
-			}
-		}
-		// 兜底二级：sitemap（实测美的/九阳这类无新闻入口的站）。请求有上限。
-		if (parsed.length === 0) {
-			const origin = new URL(resolvedListUrl).origin;
-			const candidates = [...sitemapUrlsFromRobots(robotsBody, origin), `${origin}/sitemap.xml`]
-				.filter((url, index, all) => all.indexOf(url) === index)
-				.slice(0, 2);
-			for (const sitemapUrl of candidates) {
-				try {
-					const map = await fetcher.fetchText(sitemapUrl, FETCH_LIMITS);
-					if (map.status >= 400) continue;
-					let { sitemaps, entries } = parseSitemapXml(map.body, sitemapUrl, host);
-					for (const child of sitemaps.slice(0, MAX_SITEMAP_CHILDREN)) {
-						if (entries.length > 0) break;
-						try {
-							const childPage = await fetcher.fetchText(child, FETCH_LIMITS);
-							if (childPage.status >= 400) continue;
-							({ entries } = parseSitemapXml(childPage.body, child, host));
-						} catch {
-							// 单个子地图失败继续。
-						}
-					}
-					if (entries.length === 0) continue;
-					parsed = await collectSitemapItems(fetcher, host, entries);
-					if (parsed.length > 0) break;
-				} catch {
-					// 单个站点地图失败继续。
-				}
 			}
 		}
 		// 兜底三级：站内搜索（标题+链接来自搜索结果）；每次最多一次，受搜索额度约束。

@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
-import { normalizeItemUrl, parseJsonListPayload, parseUserListPage } from "@adpluse/core";
+import { isSimplifiedChineseTitle, normalizeItemUrl, parseJsonListPayload, parseUserListPage } from "@adpluse/core";
 import type { SourceFetcher } from "@adpluse/core";
 import { UserSiteFetcher } from "./source-fetch.js";
 const HttpSourceFetcher = UserSiteFetcher;
@@ -366,7 +366,7 @@ export async function discoverCompanySites(
 	const resolveCandidates = async (
 		items: unknown,
 		skipHosts: Set<string>,
-	): Promise<Array<CompanySite & { shape: number; itemCount: number }>> => {
+	): Promise<Array<CompanySite & { shape: number; itemCount: number; simplifiedCount: number }>> => {
 		const ranked = rankCompanyCandidates(items, brand).filter((candidate) => !skipHosts.has(candidate.host));
 		if (ranked.length === 0) return [];
 		const passing: Array<{ candidate: { host: string; listUrl: string; via: string }; shape: number }> = [];
@@ -433,7 +433,7 @@ export async function discoverCompanySites(
 			}
 		}
 		passing.sort((a, b) => b.shape - a.shape);
-		const sites: Array<CompanySite & { shape: number; itemCount: number }> = [];
+		const sites: Array<CompanySite & { shape: number; itemCount: number; simplifiedCount: number }> = [];
 		// 首选候选的列表页可能是数据接口或非 HTML：按分数顺序试下一个。
 		// 每次尝试最多再发 4 个请求，所以只试前几个候选，避免单次登记放大成几十个请求。
 		for (const { candidate, shape } of passing.slice(0, MAX_LIST_PAGE_ATTEMPTS)) {
@@ -445,12 +445,15 @@ export async function discoverCompanySites(
 				rejectedHosts.push(candidate.host);
 				continue;
 			}
-			// 同一个品牌常有多个站（集团站/商城站/品牌站）：列表页真能解析出条目的优先。
+			// 同一个品牌常有多个站（集团站/商城站/品牌站）：列表页真能解析出条目的优先；
+			// 试点面向简中用户，条目以简体中文为主体的站点优先（实测美的台湾站/海尔全球站会先被搜到）。
 			const htmlItems = parseUserListPage(resolved.body, resolved.listUrl, candidate.host);
-			const itemCount = htmlItems.length > 0
-				? htmlItems.length
-				: parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host).length;
-			sites.push({ host: candidate.host, listUrl: resolved.listUrl, via: candidate.via, shape, itemCount });
+			const items = htmlItems.length > 0
+				? htmlItems
+				: parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host);
+			const itemCount = items.length;
+			const simplifiedCount = items.filter((item) => isSimplifiedChineseTitle(item.title)).length;
+			sites.push({ host: candidate.host, listUrl: resolved.listUrl, via: candidate.via, shape, itemCount, simplifiedCount });
 		}
 		return sites;
 	};
@@ -479,7 +482,14 @@ export async function discoverCompanySites(
 			sites = [...sites, ...(await resolveCandidates(extra, new Set(sites.map((site) => site.host))))];
 	}
 	if (sites.length > 0) {
-		sites.sort((a, b) => (b.itemCount > 0 ? 1 : 0) - (a.itemCount > 0 ? 1 : 0) || b.itemCount - a.itemCount || b.shape - a.shape);
+		sites.sort(
+			(a, b) =>
+				(b.itemCount > 0 ? 1 : 0) - (a.itemCount > 0 ? 1 : 0) ||
+				(b.simplifiedCount > 0 ? 1 : 0) - (a.simplifiedCount > 0 ? 1 : 0) ||
+				b.simplifiedCount - a.simplifiedCount ||
+				b.itemCount - a.itemCount ||
+				b.shape - a.shape,
+		);
 		return sites.slice(0, MAX_SITES).map(({ host, listUrl, via }) => ({ host, listUrl, via }));
 	}
 	if (rejectedHosts.length > 0)
