@@ -445,10 +445,11 @@ export async function discoverCompanySites(
 				rejectedHosts.push(candidate.host);
 				continue;
 			}
-			// 代表 URL 解析不出条目时（被首页/投资者页占位），试同 host 的新闻型备选 URL。
+			// 代表 URL 解析不出足够条目时（被首页/投资者页/单篇文章占位——文章页常带
+			// 1–2 条相关文章链接，0 条判断会漏），试同 host 的新闻列表型备选 URL。
 			let items = parseUserListPage(resolved.body, resolved.listUrl, candidate.host);
 			if (items.length === 0) items = parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host);
-			if (items.length === 0 && candidate.newsAlt) {
+			if (items.length < 3 && candidate.newsAlt) {
 				const altResolved = await resolveNewsListPageDetailed(
 					{ host: candidate.host, listUrl: candidate.newsAlt.listUrl },
 					fetcher,
@@ -584,12 +585,22 @@ function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: str
 			newsByHost.set(url.host, list);
 		}
 	}
-	// 同一 host 的代表 URL 常被品牌分更高的首页/投资者页占据（实测 midea.com.cn 选到
-	// /zh/Investors/…，标题「美的首页」拿满品牌分但页面没有新闻锚点，解析 0 条）；
-	// 额外记录该 host 分数最高的「新闻型 URL」供解析失败时重试。
+	// 同一 host 的代表 URL 常被品牌分更高的首页/投资者页/单篇文章占据（实测 midea.com.cn
+	// 先选到 /zh/Investors/…，第二轮又选到文章 /news/15_ai，都解析 0 条）；
+	// 额外记录该 host 的「新闻列表型 URL」供解析失败时重试：新闻段在路径末尾的
+	// （/about-midea/news）是列表页，后面还挂段落的（/news/15_ai）是单篇文章。
 	for (const entry of byHost.values()) {
-		const alts = [...newsByHost.get(entry.host) ?? []].sort((a, b) => b.score - a.score);
-		if (alts[0] && alts[0].listUrl !== entry.listUrl) entry.newsAlt = { listUrl: alts[0].listUrl, via: alts[0].via };
+		const alts = [...(newsByHost.get(entry.host) ?? [])].sort((a, b) => b.score - a.score);
+		const endsWithNewsSegment = (listUrl: string) => {
+			try {
+				return /(?:xinwen|xwzx|news|press|media)\/?$/iu.test(new URL(listUrl).pathname);
+			} catch {
+				return false;
+			}
+		};
+		const listLike = alts.find((alt) => alt.listUrl !== entry.listUrl && endsWithNewsSegment(alt.listUrl));
+		const chosen = listLike ?? alts.find((alt) => alt.listUrl !== entry.listUrl);
+		if (chosen) entry.newsAlt = { listUrl: chosen.listUrl, via: chosen.via };
 	}
 	return [...byHost.values()].sort((a, b) => b.score - a.score);
 }
