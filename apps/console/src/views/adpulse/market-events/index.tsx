@@ -364,7 +364,7 @@ function DiscoveryLeadItem({ lead, busy, onReview }: {
 	const relationLabel = (value: string) => value === "direct" ? "直接相关" : value === "indirect" ? "间接相关" : "关系不明";
 	return <li className="space-y-2 rounded-md border p-3">
 		<div className="min-w-0 space-y-1">
-			<a className="block break-all font-medium text-blue-600 underline underline-offset-2 hover:text-blue-800" href={lead.url} target="_blank" rel="noreferrer" title="在新标签页打开原文">{lead.title}</a>
+			<a className="block break-all font-medium hover:underline" href={lead.url} target="_blank" rel="noreferrer" title="在新标签页打开原文">{lead.title}</a>
 			<p className="text-xs text-muted-foreground">
 				来源 {lead.sourceKey} · {lead.topic} · {lead.provider}
 				{lead.subject ? ` · 关联${lead.subject.kind === "brand" ? "品牌" : "竞品"}：${lead.subject.name}` : ""}
@@ -664,7 +664,7 @@ export default function MarketEventsPage() {
 										checked={selectedLeads.includes(lead.itemId)}
 										onChange={() => setSelectedLeads(ids => ids.includes(lead.itemId) ? ids.filter(id => id !== lead.itemId) : [...ids, lead.itemId])}
 									/> : null}
-									<a className="block font-medium break-all text-blue-600 underline underline-offset-2 hover:text-blue-800" href={lead.url} target="_blank" rel="noreferrer" title="在新标签页打开原文">{lead.title}</a>
+									<a className="block font-medium break-all hover:underline" href={lead.url} target="_blank" rel="noreferrer" title="在新标签页打开原文">{lead.title}</a>
 								</div>
 								<p className="text-xs text-muted-foreground">
 									来自 {lead.sourceLabel} · 关联{lead.subject.kind === "brand" ? "品牌" : "竞品"}：{lead.subject.name}
