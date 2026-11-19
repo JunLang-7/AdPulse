@@ -88,15 +88,27 @@ const NON_OFFICIAL_HOSTS =
  * 标题侧的非官网信号：经销商/加盟/招标/价格页常带品牌名，但并不是企业官网。
  * 命中只降权，不直接删：一个站可能既发官网新闻又发招商，完全剔除会误伤。
  */
-const NON_OFFICIAL_TITLE = /经销商|代理商|加盟|招商|批发|供应|求购|招标|投标|中标|招聘|求职|价格表|报价|旗舰店|专营店|专卖店|官网大全|网址大全|导航|下载站|破解|小说/i;
+const NON_OFFICIAL_TITLE = /经销商|代理商|加盟|招商|批发|供应|求购|招标|投标|中标|招聘|求职|价格表|报价|旗舰店|专营店|专卖店|官网大全|网址大全|导航|下载站|破解|小说|贴吧|论坛|股票|行情|股价|讨论区/i;
 /**
  * 中文品牌后面允许直接跟的「公司/行业后缀」。
  * 「美的」这类二字品牌光靠包含关系会命中「海尔曼」这种更长词，
  * 只有前后不在词中、或后面跟这些后缀时才算提到该品牌。
  */
 const BRAND_CONTINUATIONS =
-	/^(?:集团|股份|有限|公司|官网|官方|首页|门户|网站|控股|实业|科技|电器|电气|电机|电子|智能|暖通|空调|冰箱|洗衣机|厨卫|厨电|家居|生活|置业|地产|物业|物流|金融|银行|证券|保险|医疗|医药|食品|乳业|酒业|饮料|汽车|新能源|半导体|微电子|软件|网络|数据|云|物联|通信|光电|照明|建材|化工|钢铁|有色|矿业|重工|装备|机械|工程|建设|环保|能源|电力|航空|船舶|航天|纺织|服装|农业|牧业|旅游|文化|传媒|教育|健康|美妆|日化|纸业|包装|啤酒|茶业|药业|生物|新材|机床|塑机|模具|轴承|泵业|阀门|电缆|变压器|锅炉|压力|仪器|仪表|光学|激光|机器人|自动化|轮胎|玻璃|水泥|陶瓷|涂料|地板|家具|家电|厨柜|照明|电池|光伏|风电|核电|水务|燃气|煤炭|港口|航运|铁路|轨道|民航|机场|高速|隧道|桥梁|市政|园林|装修|装饰|设计院|研究院|研究所|工业|园区|工贸|商贸|贸易|国际|全球|中国|控股集团|电气集团|实业集团|智家|智造|智联|技术|数字|信息|发展|管理|服务|商业|超市|百货|商场|酒店|文旅|演艺|院线|出版)/u;
+	/^(?:集团|股份|有限|公司|官网|官方|首页|门户|网站|控股|实业|科技|电器|电气|电机|电子|智能|暖通|空调|冰箱|洗衣机|厨卫|厨电|家居|生活|置业|地产|物业|物流|金融|银行|证券|保险|医疗|医药|食品|乳业|酒业|饮料|汽车|新能源|半导体|微电子|软件|网络|数据|云|物联|通信|光电|照明|建材|化工|钢铁|有色|矿业|重工|装备|机械|工程|建设|环保|能源|电力|航空|船舶|航天|纺织|服装|农业|牧业|旅游|文化|传媒|教育|健康|美妆|日化|纸业|包装|啤酒|茶业|药业|生物|新材|机床|塑机|模具|轴承|泵业|阀门|电缆|变压器|锅炉|压力|仪器|仪表|光学|激光|机器人|自动化|轮胎|玻璃|水泥|陶瓷|涂料|地板|家具|家电|厨柜|照明|电池|光伏|风电|核电|水务|燃气|煤炭|港口|航运|铁路|轨道|民航|机场|高速|隧道|桥梁|市政|园林|装修|装饰|设计院|研究院|研究所|工业|园区|工贸|商贸|贸易|国际|全球|中国|控股集团|电气集团|实业集团|智家|智造|智联|技术|数字|信息|发展|管理|服务|商业|超市|百货|商场|酒店|文旅|演艺|院线|出版|动力|重工|装备|机床|电机|车辆|商用车|乘用车|客车|工程机械|机械|设备|系统|集成|解决方案|官方商城)/u;
 const CJK = /[\u3400-\u9fff\uf900-\ufaff]/u;
+
+/**
+ * 标题是否可以作为「这家企业的官网」的证据。
+ *
+ * 两步：先排除经销商/招聘/价格/导航类标题（它们常带品牌名），
+ * 再要求标题里真的以品牌边界形式出现。
+ */
+export function isOfficialCandidateTitle(title: string, brand: string): boolean {
+	if (!title) return false;
+	if (NON_OFFICIAL_TITLE.test(title)) return false;
+	return mentionsBrand(title, brand);
+}
 
 /**
  * 判断一段文字是否“真的提到这个企业”。
@@ -438,13 +450,13 @@ export async function discoverCompanySites(
 						const head = home.body.replace(/<[^>]+>/gu, "").replace(/\s+/gu, "").slice(0, 2000);
 						// 官网标题词：只有这类标题才允许用正文里的品牌提及作补充证据。
 						const officialTitle = /官网|官方网站|官方门户|首页|关于我们|公司简介|官网首页/i.test(title);
-						const titleMentions = mentionsBrand(title, brandCompact) || mentionsBrand(title, brandPrefix);
+						// 标题必须自己带品牌（且不是经销商/招聘/价格页），
+						// 或标题是官网类词且正文提到品牌——两条都把干扰标题排在前一步。
+						const titleOk = isOfficialCandidateTitle(title, brandCompact) || isOfficialCandidateTitle(title, brandPrefix);
 						const bodyMentions = mentionsBrand(head, brandCompact) || mentionsBrand(head, brandPrefix);
-						// 正文提到品牌但标题无关（资讯门户、经销商页）不得当成官网：
-						// 标题必须自己带品牌，或至少是官网类标题才接受正文证据。
-						const strict = titleMentions || (bodyMentions && officialTitle);
+						const strict = titleOk || (bodyMentions && officialTitle && !NON_OFFICIAL_TITLE.test(title));
 						// 「短域名 + 品牌前缀」只在标题里认，且标题要像官网。
-						const relaxed = shape === 1 && officialTitle && mentionsBrand(title, brandPrefix);
+						const relaxed = shape === 1 && officialTitle && !NON_OFFICIAL_TITLE.test(title) && mentionsBrand(title, brandPrefix);
 						if (strict || relaxed) {
 							passing.push({ candidate, shape });
 							continue;
