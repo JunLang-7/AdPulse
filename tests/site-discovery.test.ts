@@ -404,3 +404,34 @@ test("挑站排序：简体中文站点优先于繁体/英文站点（简中试�
 	const sites = await discoverCompanySites("美的", fakeBin, { runReach, fetcher });
 	assert.equal(sites[0]?.host, "www.midea.com.cn", "简体站排第一，即使繁体站条目更多");
 });
+
+test("挑站：同 host 代表 URL 被投资者/首页页占位解析 0 条时，改试新闻型备选 URL", async () => {
+	// 美的实测形态：搜索结果里 midea.com.cn 的最高分 URL 是 /zh/Investors/…（标题「美的首页」，
+	// 无新闻锚点），同 host 还有一条 /zh/about-midea/news（标题「新闻」，分数低）。
+	const runReach = async () => ({
+		stdout: result([
+			{ title: "美的首页", url: "https://www.midea.com.cn/zh/Investors/Stock_Information" },
+			{ title: "新闻", url: "https://www.midea.com.cn/zh/about-midea/news" },
+		]),
+		exitCode: 0,
+	});
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			const parsed = new URL(url);
+			if (parsed.pathname.startsWith("/zh/Investors"))
+				return { status: 200, bytes: 90, body: `<title>美的首页-投资者关系</title><a href="/zh/Investors/Report">财务报告</a>` };
+			if (parsed.pathname === "/")
+				return { status: 200, bytes: 80, body: `<title>美的首页</title><a href="/zh/about-midea/news">新闻</a>` };
+			return {
+				status: 200, bytes: 130,
+				body: `<html>
+<a href="/zh/about-midea/news/news-20220719">美的空调率先发布碳足迹评估报告 2022年7月19日</a>
+<a href="/zh/about-midea/news/news-20210325">美的集团与上海交通大学签订战略合作协议 2021年3月25日</a>
+</body></html>`,
+			};
+		},
+	};
+	const sites = await discoverCompanySites("美的", fakeBin, { runReach, fetcher });
+	assert.equal(sites[0]?.host, "www.midea.com.cn");
+	assert.equal(sites[0]?.listUrl, "https://www.midea.com.cn/zh/about-midea/news", "投资者页解析 0 条时落到新闻型备选 URL");
+});

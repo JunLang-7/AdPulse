@@ -369,7 +369,7 @@ export async function discoverCompanySites(
 	): Promise<Array<CompanySite & { shape: number; itemCount: number; simplifiedCount: number }>> => {
 		const ranked = rankCompanyCandidates(items, brand).filter((candidate) => !skipHosts.has(candidate.host));
 		if (ranked.length === 0) return [];
-		const passing: Array<{ candidate: { host: string; listUrl: string; via: string }; shape: number }> = [];
+		const passing: Array<{ candidate: { host: string; listUrl: string; via: string; newsAlt?: { listUrl: string; via: string } }; shape: number }> = [];
 		for (const round of [0, 1]) {
 			if (round === 1 && passing.length > 0) break;
 			for (const candidate of ranked.slice(0, MAX_VERIFY_CANDIDATES)) {
@@ -438,19 +438,34 @@ export async function discoverCompanySites(
 		// 每次尝试最多再发 4 个请求，所以只试前几个候选，避免单次登记放大成几十个请求。
 		for (const { candidate, shape } of passing.slice(0, MAX_LIST_PAGE_ATTEMPTS)) {
 			const fetcher = options.fetcher ?? new UserSiteFetcher([candidate.host]);
-			const resolved =
+			let resolved =
 				preResolved.get(candidate.host) ??
 				(await resolveNewsListPageDetailed({ host: candidate.host, listUrl: candidate.listUrl }, fetcher));
 			if (!resolved) {
 				rejectedHosts.push(candidate.host);
 				continue;
 			}
+			// 代表 URL 解析不出条目时（被首页/投资者页占位），试同 host 的新闻型备选 URL。
+			let items = parseUserListPage(resolved.body, resolved.listUrl, candidate.host);
+			if (items.length === 0) items = parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host);
+			if (items.length === 0 && candidate.newsAlt) {
+				const altResolved = await resolveNewsListPageDetailed(
+					{ host: candidate.host, listUrl: candidate.newsAlt.listUrl },
+					fetcher,
+				).catch(() => null);
+				if (altResolved) {
+					const altItems = parseUserListPage(altResolved.body, altResolved.listUrl, candidate.host);
+					const altFinal = altItems.length > 0
+						? altItems
+						: parseJsonListPayload(altResolved.body, altResolved.listUrl, candidate.host);
+					if (altFinal.length > items.length) {
+						resolved = altResolved;
+						items = altFinal;
+					}
+				}
+			}
 			// 同一个品牌常有多个站（集团站/商城站/品牌站）：列表页真能解析出条目的优先；
 			// 试点面向简中用户，条目以简体中文为主体的站点优先（实测美的台湾站/海尔全球站会先被搜到）。
-			const htmlItems = parseUserListPage(resolved.body, resolved.listUrl, candidate.host);
-			const items = htmlItems.length > 0
-				? htmlItems
-				: parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host);
 			const itemCount = items.length;
 			const simplifiedCount = items.filter((item) => isSimplifiedChineseTitle(item.title)).length;
 			sites.push({ host: candidate.host, listUrl: resolved.listUrl, via: candidate.via, shape, itemCount, simplifiedCount });
@@ -514,7 +529,8 @@ export async function discoverCompanySite(
 }
 /** 挑站排序：同名标题优先，其次官网声明；同 host 保留新闻 URL；搜索排名靠前有微弱加分。 */
 function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: string; listUrl: string; via: string; score: number }> {
-	const byHost = new Map<string, { host: string; listUrl: string; via: string; score: number }>();
+	const byHost = new Map<string, { host: string; listUrl: string; via: string; score: number; newsAlt?: { listUrl: string; via: string } }>();
+	const newsByHost = new Map<string, Array<{ host: string; listUrl: string; via: string; score: number }>>();
 	if (!Array.isArray(items)) return [];
 	const brandName = brand.replace(/\s+/gu, "").trim();
 	let position = 0;
@@ -546,15 +562,21 @@ function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: str
 		const positionBonus = Math.max(0, 1 - position * 0.05);
 		position += 1;
 		const score = brandMatch + officialTitle + aggregatorTitle + dictionaryTitle + newsInUrl + hostShape + positionBonus;
+		const candidate = { host: url.host, listUrl: url.toString(), via: title.slice(0, 80), score };
 		const previous = byHost.get(url.host);
-		if (!previous || score > previous.score) {
-			byHost.set(url.host, {
-				host: url.host,
-				listUrl: url.toString(),
-				via: title.slice(0, 80),
-				score,
-			});
+		if (!previous || score > previous.score) byHost.set(url.host, candidate);
+		if (NEWS_TOKEN.test(url.pathname)) {
+			const list = newsByHost.get(url.host) ?? [];
+			list.push(candidate);
+			newsByHost.set(url.host, list);
 		}
+	}
+	// 同一 host 的代表 URL 常被品牌分更高的首页/投资者页占据（实测 midea.com.cn 选到
+	// /zh/Investors/…，标题「美的首页」拿满品牌分但页面没有新闻锚点，解析 0 条）；
+	// 额外记录该 host 分数最高的「新闻型 URL」供解析失败时重试。
+	for (const entry of byHost.values()) {
+		const alts = [...newsByHost.get(entry.host) ?? []].sort((a, b) => b.score - a.score);
+		if (alts[0] && alts[0].listUrl !== entry.listUrl) entry.newsAlt = { listUrl: alts[0].listUrl, via: alts[0].via };
 	}
 	return [...byHost.values()].sort((a, b) => b.score - a.score);
 }
