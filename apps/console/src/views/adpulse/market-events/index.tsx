@@ -603,8 +603,10 @@ export default function MarketEventsPage() {
 								<span className="font-medium">{s.label}</span>
 								<span className="text-muted-foreground">{s.host}</span>
 								<span className="text-muted-foreground">{s.lastOutcome === "ok" ? "上次采集成功" : s.lastOutcome === "failed" ? `上次失败：${s.lastReason ?? "未知原因"}` : "还没采集过"}</span>
-								<Button type="button" variant="outline" size="sm" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => refreshSite.mutate(s.id)}>{refreshSite.variables === s.id && refreshSite.isPending ? "采集中…" : "采集"}</Button>
-								<Button type="button" variant="outline" size="sm" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => removeSite.mutate(s.id)}>删除</Button>
+								<div className="ml-auto flex items-center gap-2">
+									<Button type="button" variant="outline" size="sm" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => refreshSite.mutate(s.id)}>{refreshSite.variables === s.id && refreshSite.isPending ? "采集中…" : "采集"}</Button>
+									<Button type="button" variant="outline" size="sm" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => removeSite.mutate(s.id)}>删除</Button>
+								</div>
 							</div>
 						))}
 					</div>
