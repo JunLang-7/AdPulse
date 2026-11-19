@@ -138,31 +138,88 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** 在官网站内找新闻列表页：锚文本/href 含新闻词即用；找不到就用命中的原始页面。 */
+/** 数据接口不是列表页：路径以数据文件后缀结尾时直接排除（实测有站点把 newsroom.json 当新闻页）。 */
+const DATA_LIKE_PATH = /\.(?:json|xml|rss|atom|txt|csv)(?:$|[?#])/iu;
+
+/** 候选 URL 本身是数据接口（不是可采集的 HTML 列表页）。 */
+export function isDataLikePageUrl(raw: string): boolean {
+	try {
+		return DATA_LIKE_PATH.test(new URL(raw).pathname);
+	} catch {
+		return false;
+	}
+}
+
+/** 抓取器不返回 content-type，只能按结构嗅探：数据接口不会是 HTML 页面。 */
+export function looksLikeHtmlPage(body: string): boolean {
+	const trimmed = body.trimStart();
+	if (trimmed.startsWith("{") || trimmed.startsWith("[")) return false;
+	return /<!doctype html|<html[\s>]|<head[\s>]|<body[\s>]|<a\b/iu.test(body);
+}
+
+interface FetchedPage {
+	status: number;
+	body: string;
+}
+
+async function fetchQuietly(fetcher: SourceFetcher, url: string): Promise<FetchedPage | null> {
+	try {
+		return await fetcher.fetchText(url, { maxBytes: 512 * 1024, timeoutMs: 15_000 });
+	} catch {
+		return null;
+	}
+}
+
+/** 在页面里找第一个指向站内新闻页的锚文本。 */
+function firstNewsAnchor(html: string, base: string, host: string): string | null {
+	const anchor = /<a\b[^>]*href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/giu;
+	let match: RegExpExecArray | null;
+	while ((match = anchor.exec(html))) {
+		const href = match[2] ?? match[3] ?? match[4] ?? "";
+		const text = (match[5] ?? "").replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim();
+		const target = normalizeItemUrl(href, base, [host]);
+		if (!target || isDataLikePageUrl(target)) continue;
+		if (NEWS_TOKEN.test(new URL(target).pathname) || NEWS_TOKEN.test(text)) return target;
+	}
+	return null;
+}
+
+/**
+ * 在官网站内找新闻列表页：锚文本/href 含新闻词即用；找不到就用命中的原始页面。
+ * 只接受验证过的 HTML 页面：数据接口（.json/.xml/.rss 等）或非 HTML 响应返回 null，
+ * 由调用方换下一个候选，避免把 newsroom.json 这类接口地址存成列表页。
+ */
 export async function resolveNewsListPage(
 	candidate: { host: string; listUrl: string },
 	fetcher: SourceFetcher,
-): Promise<string> {
-	if (NEWS_TOKEN.test(new URL(candidate.listUrl).pathname)) return candidate.listUrl;
-	try {
-		const page = await fetcher.fetchText(candidate.listUrl, { maxBytes: 512 * 1024, timeoutMs: 15_000 });
-		if (page.status < 400) {
-			const anchor = /<a\b[^>]*href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/giu;
-			let match: RegExpExecArray | null;
-			while ((match = anchor.exec(page.body))) {
-				const href = match[2] ?? match[3] ?? match[4] ?? "";
-				const text = (match[5] ?? "").replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim();
-				const target = normalizeItemUrl(href, candidate.listUrl, [candidate.host]);
-				if (!target) continue;
-				const path = new URL(target).pathname;
-				if (NEWS_TOKEN.test(path) || NEWS_TOKEN.test(text))
-					return target;
+): Promise<string | null> {
+	const { host, listUrl } = candidate;
+	if (!isDataLikePageUrl(listUrl)) {
+		const page = await fetchQuietly(fetcher, listUrl);
+		if (page && page.status < 400 && looksLikeHtmlPage(page.body)) {
+			if (NEWS_TOKEN.test(new URL(listUrl).pathname)) return listUrl;
+			const entry = firstNewsAnchor(page.body, listUrl, host);
+			if (entry) {
+				const entryPage = await fetchQuietly(fetcher, entry);
+				if (entryPage && entryPage.status < 400 && looksLikeHtmlPage(entryPage.body)) return entry;
+			}
+			return listUrl;
+		}
+	}
+	// 候选是数据接口或非 HTML：改在站点首页找一个验证过的新闻入口；找不到就如实返回 null。
+	const origin = new URL(listUrl).origin;
+	const homeUrl = `${origin}/`;
+	if (homeUrl !== listUrl) {
+		const home = await fetchQuietly(fetcher, homeUrl);
+		if (home && home.status < 400 && looksLikeHtmlPage(home.body)) {
+			const entry = firstNewsAnchor(home.body, homeUrl, host);
+			if (entry) {
+				const entryPage = await fetchQuietly(fetcher, entry);
+				if (entryPage && entryPage.status < 400 && looksLikeHtmlPage(entryPage.body)) return entry;
 			}
 		}
-	} catch {
-		// 站内探测失败不阻塞登记：退回搜索命中的原始页面。
 	}
-	return candidate.listUrl;
+	return null;
 }
 
 /**
@@ -325,10 +382,20 @@ export async function discoverCompanySite(
 	}
 	if (passing.length > 0) {
 		passing.sort((a, b) => b.shape - a.shape);
-		const chosen = passing[0]!.candidate;
-		const fetcher = options.fetcher ?? new UserSiteFetcher([chosen.host]);
-		const listUrl = await resolveNewsListPage({ host: chosen.host, listUrl: chosen.listUrl }, fetcher);
-		return { host: chosen.host, listUrl, via: chosen.via };
+		const rejected: string[] = [];
+		// 首选候选的列表页可能是数据接口或非 HTML：按分数顺序试下一个，都不行就如实报错。
+		for (const { candidate } of passing) {
+			const fetcher = options.fetcher ?? new UserSiteFetcher([candidate.host]);
+			const listUrl = await resolveNewsListPage(
+				{ host: candidate.host, listUrl: candidate.listUrl },
+				fetcher,
+			);
+			if (listUrl) return { host: candidate.host, listUrl, via: candidate.via };
+			rejected.push(candidate.host);
+		}
+		throw new Error(
+			`no usable HTML news list page on ${rejected.join(", ")} (candidate page was a data endpoint or not HTML)`,
+		);
 	}
 	throw lastError ?? new Error("site discovery found no usable official site");
 }
