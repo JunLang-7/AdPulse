@@ -414,7 +414,7 @@ export async function discoverCompanySites(
 	): Promise<Array<CompanySite & { shape: number; itemCount: number; simplifiedCount: number }>> => {
 		const ranked = rankCompanyCandidates(items, brand).filter((candidate) => !skipHosts.has(candidate.host));
 		if (ranked.length === 0) return [];
-		const passing: Array<{ candidate: { host: string; listUrl: string; via: string }; shape: number }> = [];
+		const passing: Array<{ candidate: { host: string; listUrl: string; via: string; newsAlt?: { listUrl: string; via: string } }; shape: number }> = [];
 		for (const round of [0, 1]) {
 			if (round === 1 && passing.length > 0) break;
 			for (const candidate of ranked.slice(0, MAX_VERIFY_CANDIDATES)) {
@@ -488,19 +488,35 @@ export async function discoverCompanySites(
 		// 每次尝试最多再发 4 个请求，所以只试前几个候选，避免单次登记放大成几十个请求。
 		for (const { candidate, shape } of passing.slice(0, MAX_LIST_PAGE_ATTEMPTS)) {
 			const fetcher = options.fetcher ?? new UserSiteFetcher([candidate.host]);
-			const resolved =
+			let resolved =
 				preResolved.get(candidate.host) ??
 				(await resolveNewsListPageDetailed({ host: candidate.host, listUrl: candidate.listUrl }, fetcher));
 			if (!resolved) {
 				rejectedHosts.push(candidate.host);
 				continue;
 			}
+			// 代表 URL 解析不出足够条目时（被首页/投资者页/单篇文章占位——文章页常带
+			// 1–2 条相关文章链接），试同 host 的新闻列表型备选 URL。
+			let items = parseUserListPage(resolved.body, resolved.listUrl, candidate.host);
+			if (items.length === 0) items = parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host);
+			if (items.length < 3 && candidate.newsAlt) {
+				const altResolved = await resolveNewsListPageDetailed(
+					{ host: candidate.host, listUrl: candidate.newsAlt.listUrl },
+					fetcher,
+				).catch(() => null);
+				if (altResolved) {
+					const altItems = parseUserListPage(altResolved.body, altResolved.listUrl, candidate.host);
+					const altFinal = altItems.length > 0
+						? altItems
+						: parseJsonListPayload(altResolved.body, altResolved.listUrl, candidate.host);
+					if (altFinal.length > items.length) {
+						resolved = altResolved;
+						items = altFinal;
+					}
+				}
+			}
 			// 同一个品牌常有多个站（集团站/商城站/品牌站）：列表页真能解析出条目的优先；
 			// 试点面向简中用户，条目以简体中文为主体的站点优先（实测美的台湾站/海尔全球站会先被搜到）。
-			const htmlItems = parseUserListPage(resolved.body, resolved.listUrl, candidate.host);
-			const items = htmlItems.length > 0
-				? htmlItems
-				: parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host);
 			const itemCount = items.length;
 			const simplifiedCount = items.filter((item) => isSimplifiedChineseTitle(item.title)).length;
 			sites.push({ host: candidate.host, listUrl: resolved.listUrl, via: candidate.via, shape, itemCount, simplifiedCount });
@@ -526,10 +542,22 @@ export async function discoverCompanySites(
 	// 「<企业> 官网」常被商城/招聘/登录子域占满：第一遍没有能解析出条目的站点时，
 	// 升级一轮「<企业> 新闻中心」搜索并咨询全部源（含付费源）。第一遍找到可用站点就不升级，
 	// 正常企业（免费源就能找到官网）不消耗付费额度。
-	if (sites.length === 0 || sites.every((site) => site.itemCount === 0)) {
+	// 质量门：第一遍「没有任何带简中条目的站点」就升级（含全部 0 条目，或只有繁体/英文条目——
+	// 实测美的 pass 1 会先命中台湾站 2 条繁体，不升级就永远找不到 midea.com.cn 的 20 条简体）。
+	if (!sites.some((site) => site.itemCount > 0 && site.simplifiedCount > 0)) {
 		const extra = await extraSearch();
-		if (Array.isArray(extra) && extra.length > 0)
-			sites = [...sites, ...(await resolveCandidates(extra, new Set(sites.map((site) => site.host))))];
+		if (Array.isArray(extra) && extra.length > 0) {
+			// 只跳过「已解析出条目」的 host：0 条目的 host（代表 URL 被首页/投资者页/文章占位）
+			// 必须允许第二轮重新验证——Google 的新闻 URL 常在第二轮才出现（实测美的）。
+			const skip = new Set(sites.filter((site) => site.itemCount > 0).map((site) => site.host));
+			const more = await resolveCandidates(extra, skip);
+			const byHost = new Map(sites.map((site) => [site.host, site]));
+			for (const site of more) {
+				const previous = byHost.get(site.host);
+				if (!previous || site.itemCount > previous.itemCount) byHost.set(site.host, site);
+			}
+			sites = [...byHost.values()];
+		}
 	}
 	if (sites.length > 0) {
 		sites.sort(
@@ -564,7 +592,8 @@ export async function discoverCompanySite(
 }
 /** 挑站排序：同名标题优先，其次官网声明；同 host 保留新闻 URL；搜索排名靠前有微弱加分。 */
 function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: string; listUrl: string; via: string; score: number }> {
-	const byHost = new Map<string, { host: string; listUrl: string; via: string; score: number }>();
+	const byHost = new Map<string, { host: string; listUrl: string; via: string; score: number; newsAlt?: { listUrl: string; via: string } }>();
+	const newsByHost = new Map<string, Array<{ host: string; listUrl: string; via: string; score: number }>>();
 	if (!Array.isArray(items)) return [];
 	const brandName = brand.replace(/\s+/gu, "").trim();
 	let position = 0;
@@ -598,15 +627,31 @@ function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: str
 		const positionBonus = Math.max(0, 1 - position * 0.05);
 		position += 1;
 		const score = brandMatch + officialTitle + aggregatorTitle + dictionaryTitle + newsInUrl + hostShape + positionBonus + dealerPenalty;
+		const candidate = { host: url.host, listUrl: url.toString(), via: title.slice(0, 80), score };
 		const previous = byHost.get(url.host);
-		if (!previous || score > previous.score) {
-			byHost.set(url.host, {
-				host: url.host,
-				listUrl: url.toString(),
-				via: title.slice(0, 80),
-				score,
-			});
+		if (!previous || score > previous.score) byHost.set(url.host, candidate);
+		if (NEWS_TOKEN.test(url.pathname)) {
+			const list = newsByHost.get(url.host) ?? [];
+			list.push(candidate);
+			newsByHost.set(url.host, list);
 		}
+	}
+	// 同一 host 的代表 URL 常被品牌分更高的首页/投资者页/单篇文章占据（实测 midea.com.cn
+	// 先选到 /zh/Investors/…，第二轮又选到文章 /news/15_ai，都解析 0 条）；
+	// 额外记录该 host 的「新闻列表型 URL」供解析失败时重试：新闻段在路径末尾的
+	// （/about-midea/news）是列表页，后面还挂段落的（/news/15_ai）是单篇文章。
+	for (const entry of byHost.values()) {
+		const alts = [...(newsByHost.get(entry.host) ?? [])].sort((a, b) => b.score - a.score);
+		const endsWithNewsSegment = (listUrl: string) => {
+			try {
+				return /(?:xinwen|xwzx|news|press|media)\/?$/iu.test(new URL(listUrl).pathname);
+			} catch {
+				return false;
+			}
+		};
+		const listLike = alts.find((alt) => alt.listUrl !== entry.listUrl && endsWithNewsSegment(alt.listUrl));
+		const chosen = listLike ?? alts.find((alt) => alt.listUrl !== entry.listUrl);
+		if (chosen) entry.newsAlt = { listUrl: chosen.listUrl, via: chosen.via };
 	}
 	return [...byHost.values()].sort((a, b) => b.score - a.score);
 }
