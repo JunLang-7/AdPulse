@@ -770,6 +770,8 @@ bun run sources discover weichai_news campaigns
 | Exa 语义检索 | `AGENT_REACH_BIN` 已配 | 50 | `SEARCH_DAILY_LIMITS=exa:N` |
 | Serper（Google，付费） | `SERPER_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=serper:N` |
 | Brave 搜索（付费） | `BRAVE_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=brave:N` |
+| Exa 官方 API（付费） | `EXA_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=exa-api:N` |
+| Tavily 搜索（付费） | `TAVILY_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=tavily:N` |
 
 搜索短路与质量升级：
 
