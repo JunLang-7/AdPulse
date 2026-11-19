@@ -75,6 +75,8 @@ export function ThemeProvider({
 		theme,
 		setTheme: (theme: Theme) => {
 			localStorage.setItem(storageKey, theme);
+			// 立即落 DOM：view-transition 在回调返回后就截「新快照」，等 React effect 会截到旧配色。
+			applyTheme(theme);
 			setTheme(theme);
 		},
 	};

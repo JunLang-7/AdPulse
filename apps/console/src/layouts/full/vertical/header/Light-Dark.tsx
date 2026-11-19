@@ -1,13 +1,16 @@
 import { Monitor, Moon, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "src/context/shadcntheme/ThemeContext";
 import { Button } from "@/components/ui/button";
 
+type ViewTransitionLike = { ready: Promise<unknown> };
+
 type ViewTransitionDocument = Document & {
-	startViewTransition?: (callback: () => void) => unknown;
+	startViewTransition?: (callback: () => void) => ViewTransitionLike | undefined;
 };
 
 const THEME_CYCLE = ["light", "dark", "system"] as const;
+type Theme = (typeof THEME_CYCLE)[number];
 
 const THEME_META = {
 	light: { icon: Sun, label: "浅色", next: "深色" },
@@ -15,44 +18,52 @@ const THEME_META = {
 	system: { icon: Monitor, label: "跟随系统", next: "浅色" },
 } as const;
 
+const nextTheme = (theme: Theme): Theme =>
+	THEME_CYCLE[(THEME_CYCLE.indexOf(theme) + 1) % THEME_CYCLE.length] ?? "light";
+
 const LightDark = () => {
 	const { theme: activeMode, setTheme: setActiveMode } = useTheme();
 	const [isMounted, setIsMounted] = useState(false);
+	// 连点/连按 Enter 时 React 状态还没提交，下一态要按「已排队的最新选择」算，否则一次点击会白丢。
+	const pendingTheme = useRef<Theme>(activeMode);
 
 	useEffect(() => {
 		setIsMounted(true);
 	}, []);
 
-	const toggleTheme = async () => {
-		const index = THEME_CYCLE.indexOf(activeMode);
-		const nextMode = THEME_CYCLE[(index + 1) % THEME_CYCLE.length] ?? "light";
+	useEffect(() => {
+		pendingTheme.current = activeMode;
+	}, [activeMode]);
 
-		const toggleMode = () => {
-			setActiveMode(nextMode);
-		};
+	const toggleTheme = () => {
+		const next = nextTheme(pendingTheme.current);
+		pendingTheme.current = next;
+
+		const commit = () => setActiveMode(next);
 
 		const doc = document as ViewTransitionDocument;
 		if (!doc.startViewTransition) {
-			toggleMode();
+			commit();
 			return;
 		}
 
-		const transition = doc.startViewTransition(() => {
-			toggleMode();
-		});
+		const transition = doc.startViewTransition(commit);
 
-		await transition.ready;
-
-		document.documentElement.animate(
-			{
-				clipPath: ["inset(0 0 100% 0)", "inset(0)"],
-			},
-			{
-				duration: 800,
-				easing: "ease-in-out",
-				pseudoElement: "::view-transition-new(root)",
-			},
-		);
+		// 后一次点击会跳过进行中的过渡，ready 以 AbortError 拒绝；配色已提交，跳过动画即可。
+		transition?.ready
+			?.then(() => {
+				document.documentElement.animate(
+					{
+						clipPath: ["inset(0 0 100% 0)", "inset(0)"],
+					},
+					{
+						duration: 800,
+						easing: "ease-in-out",
+						pseudoElement: "::view-transition-new(root)",
+					},
+				);
+			})
+			.catch(() => undefined);
 	};
 
 	if (!isMounted) {

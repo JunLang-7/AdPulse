@@ -1,7 +1,9 @@
 // 主题三态与「跟随系统」的回归测试：
 // 1) 系统偏好变化时（不刷新页面）要实时跟随；
 // 2) 头部按钮点一次换一态：浅色 → 深色 → 跟随系统；
-// 3) 手动态不能被系统变化覆盖，回到「跟随系统」后又能继续跟随。
+// 3) 手动态不能被系统变化覆盖，回到「跟随系统」后又能继续跟随；
+// 4) 连点/连按 Enter 不能丢态，被跳过的过渡不留未处理的 AbortError；
+// 5) 过渡截「新快照」时根元素已换好配色（不靠 React effect 补）。
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -137,4 +139,121 @@ test("重新加载时沿用已保存的手动态", async t => {
 	await waitForRootClass("light", "存的是浅色，即使系统是深色也用浅色");
 	assert.equal(toggle.getAttribute("data-theme-mode"), "light");
 	assert.equal(media.listenerCount(), 0);
+});
+
+type TransitionRecord = { ready: Promise<unknown>; finished: Promise<unknown> };
+
+// 模拟 Chrome 的 View Transition：更新回调延后执行（新快照在回调返回后截），
+// 进行中的过渡被下一次调用跳过时 ready 以 AbortError 拒绝。
+function installViewTransition() {
+	const captures: string[] = [];
+	const animated: { keyframes: unknown; options: unknown }[] = [];
+	const rejections: unknown[] = [];
+	let active: { skip: () => void } | null = null;
+
+	const onUnhandled = (reason: unknown) => rejections.push(reason);
+	process.on("unhandledRejection", onUnhandled);
+
+	const target = document as unknown as Record<string, unknown>;
+	target.startViewTransition = (callback: () => void): TransitionRecord => {
+		active?.skip();
+
+		let resolveReady: () => void = () => undefined;
+		let rejectReady: (error: unknown) => void = () => undefined;
+		const ready = new Promise<void>((resolve, reject) => {
+			resolveReady = resolve;
+			rejectReady = reject;
+		});
+		const self = {
+			skip: () => rejectReady(new DOMException("Transition was skipped", "AbortError")),
+		};
+		active = self;
+
+		queueMicrotask(() => {
+			callback();
+			// 回调返回的这一刻就是截「新快照」的时刻：这里必须已经是新配色。
+			captures.push(
+				["light", "dark"]
+					.filter(name => document.documentElement.classList.contains(name))
+					.join(" "),
+			);
+			if (active !== self) return; // 已被后一次点击跳过，ready 已经拒绝
+			active = null;
+			resolveReady();
+		});
+
+		return { ready, finished: Promise.resolve() };
+	};
+
+	const element = document.documentElement as unknown as Record<string, unknown>;
+	element.animate = (keyframes: unknown, options: unknown) => {
+		animated.push({ keyframes, options });
+		return { finished: Promise.resolve() };
+	};
+
+	return {
+		captures,
+		animated,
+		rejections,
+		restore() {
+			process.off("unhandledRejection", onUnhandled);
+			delete target.startViewTransition;
+			delete element.animate;
+		},
+	};
+}
+
+test("连点两次推进两态，不丢点击也不留未处理的 AbortError", async t => {
+	const media = installMatchMedia(false); // 系统浅色
+	const viewTransition = installViewTransition();
+	t.after(() => {
+		cleanup();
+		viewTransition.restore();
+		media.restore();
+		localStorage.clear();
+	});
+
+	localStorage.setItem("theme-test-rapid", "light");
+	mount("theme-test-rapid");
+
+	const toggle = await screen.findByRole("button", { name: /主题：浅色/ });
+	// 同一个同步任务里连点两次：第一次的提交还卡在过渡回调里，第二次不能按旧值再算一遍。
+	fireEvent.click(toggle);
+	fireEvent.click(toggle);
+
+	await waitFor(() => assert.equal(localStorage.getItem("theme-test-rapid"), "system"));
+	await waitFor(() => {
+		const mode = screen.getByRole("button").getAttribute("data-theme-mode");
+
+		assert.equal(mode, "system", "两次有效操作应推进两态（浅色 → 深色 → 跟随系统）");
+	});
+	await waitForRootClass("light", "跟随浅色系统");
+
+	assert.deepEqual(viewTransition.captures, ["dark", "light"], "每次过渡截到的新快照都已是新配色");
+	assert.equal(viewTransition.animated.length, 1, "被跳过的过渡不播动画，后一次正常播");
+	assert.deepEqual(viewTransition.rejections, [], "被跳过的过渡不能留下未处理的 AbortError");
+});
+
+test("过渡正常兑现时播裁切动画", async t => {
+	const media = installMatchMedia(false);
+	const viewTransition = installViewTransition();
+	t.after(() => {
+		cleanup();
+		viewTransition.restore();
+		media.restore();
+		localStorage.clear();
+	});
+
+	localStorage.setItem("theme-test-animate", "light");
+	mount("theme-test-animate");
+
+	const toggle = await screen.findByRole("button", { name: /主题：浅色/ });
+	fireEvent.click(toggle);
+
+	await waitFor(() => assert.equal(localStorage.getItem("theme-test-animate"), "dark"));
+	await waitFor(() => assert.equal(viewTransition.animated.length, 1, "过渡就绪后播动画"));
+	assert.equal(
+		(viewTransition.animated[0]?.options as { pseudoElement: string }).pseudoElement,
+		"::view-transition-new(root)",
+	);
 });
