@@ -83,7 +83,52 @@ export function agentReachReadFallback(executable: string | undefined) {
 }
 /** 媒体聚合/门户/百科等不可能是企业官网，直接排除。 */
 const NON_OFFICIAL_HOSTS =
-	/baidu\.com|zhihu\.com|qq\.com|163\.com|126\.net|sohu\.com|sina\.com|douyin\.com|toutiao\.com|xinhuanet\.com|people\.com\.cn|wikipedia\.org|gov\.cn|tianyancha\.com|qcc\.com|maigoo\.com|csdn\.net|jianshu\.com|juejin\.cn|cnblogs\.com|36kr\.com|netease\.com|ifeng\.com|thepaper\.cn|cntv\.cn|chinanews\.com|ce\.cn|cctv\.com|baike\.|bilibili\.com|kuwo\.cn|kugou\.com|migu\.cn|eastmoney\.com|xueqiu\.com|9fzt\.com|jd\.com|tmall\.com|taobao\.com|1688\.com|weibo\.com|douban\.com|zhuanlan\./i;
+	/baidu\.com|zhihu\.com|qq\.com|163\.com|126\.net|sohu\.com|sina\.com|douyin\.com|toutiao\.com|xinhuanet\.com|people\.com\.cn|wikipedia\.org|gov\.cn|tianyancha\.com|qcc\.com|qichacha\.com|aiqicha\.com|maigoo\.com|csdn\.net|jianshu\.com|juejin\.cn|cnblogs\.com|36kr\.com|netease\.com|ifeng\.com|thepaper\.cn|cntv\.cn|chinanews\.com|ce\.cn|cctv\.com|baike\.|bilibili\.com|kuwo\.cn|kugou\.com|migu\.cn|eastmoney\.com|xueqiu\.com|9fzt\.com|jd\.com|tmall\.com|taobao\.com|1688\.com|weibo\.com|douban\.com|zhuanlan\.|58\.com|zhaopin\.com|51job\.com|liepin\.com|zhipin\.com|huangye88\.com|s114\.cn|hc360\.com|made-in-china\.com|globalsources\.com|ebdoor\.com|china\.cn|99114\.com|3158\.cn|jmw\.com|chachaba\.com|dianping\.com|meituan\.com|ctrip\.com|qunar\.com|autohome\.com|yiche\.com|dongchedi\.com|pconline\.com\.cn|zol\.com\.cn|ithome\.com|so\.com|sogou\.com|yandex\./i;
+/**
+ * 标题侧的非官网信号：经销商/加盟/招标/价格页常带品牌名，但并不是企业官网。
+ * 命中只降权，不直接删：一个站可能既发官网新闻又发招商，完全剔除会误伤。
+ */
+const NON_OFFICIAL_TITLE = /经销商|代理商|加盟|招商|批发|供应|求购|招标|投标|中标|招聘|求职|价格表|报价|旗舰店|专营店|专卖店|官网大全|网址大全|导航|下载站|破解|小说/i;
+/**
+ * 中文品牌后面允许直接跟的「公司/行业后缀」。
+ * 「美的」这类二字品牌光靠包含关系会命中「海尔曼」这种更长词，
+ * 只有前后不在词中、或后面跟这些后缀时才算提到该品牌。
+ */
+const BRAND_CONTINUATIONS =
+	/^(?:集团|股份|有限|公司|官网|官方|首页|门户|网站|控股|实业|科技|电器|电气|电机|电子|智能|暖通|空调|冰箱|洗衣机|厨卫|厨电|家居|生活|置业|地产|物业|物流|金融|银行|证券|保险|医疗|医药|食品|乳业|酒业|饮料|汽车|新能源|半导体|微电子|软件|网络|数据|云|物联|通信|光电|照明|建材|化工|钢铁|有色|矿业|重工|装备|机械|工程|建设|环保|能源|电力|航空|船舶|航天|纺织|服装|农业|牧业|旅游|文化|传媒|教育|健康|美妆|日化|纸业|包装|啤酒|茶业|药业|生物|新材|机床|塑机|模具|轴承|泵业|阀门|电缆|变压器|锅炉|压力|仪器|仪表|光学|激光|机器人|自动化|轮胎|玻璃|水泥|陶瓷|涂料|地板|家具|家电|厨柜|照明|电池|光伏|风电|核电|水务|燃气|煤炭|港口|航运|铁路|轨道|民航|机场|高速|隧道|桥梁|市政|园林|装修|装饰|设计院|研究院|研究所|工业|园区|工贸|商贸|贸易|国际|全球|中国|控股集团|电气集团|实业集团|智家|智造|智联|技术|数字|信息|发展|管理|服务|商业|超市|百货|商场|酒店|文旅|演艺|院线|出版)/u;
+const CJK = /[\u3400-\u9fff\uf900-\ufaff]/u;
+
+/**
+ * 判断一段文字是否“真的提到这个企业”。
+ *
+ * 纯 includes 匹配在中文短品牌上假阳性很高（如「海尔曼」「美的好家」），
+ * 这里要求命中位置的前后不在词中，或后面跟着明确的公司/行业后缀。
+ * 拉丁品牌按词边界判断，避免 midea 命中 mideas。
+ */
+export function mentionsBrand(text: string, brand: string): boolean {
+	const needle = brand.replace(/\s+/gu, "").trim();
+	if (!needle) return false;
+	const cjkBrand = [...needle].some((char) => CJK.test(char));
+	if (!cjkBrand) {
+		// 拉丁品牌：在原文本上按词边界匹配（不能先删空格，否则 Midea Group 会粘成一词）。
+		const escaped = needle.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+		return new RegExp(`(?:^|[^A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, "iu").test(text);
+	}
+	const haystack = text.replace(/\s+/gu, "");
+	let from = 0;
+	for (;;) {
+		const index = haystack.indexOf(needle, from);
+		if (index < 0) return false;
+		const before = index > 0 ? haystack[index - 1] ?? "" : "";
+		const afterIndex = index + needle.length;
+		const after = haystack.slice(afterIndex, afterIndex + 4);
+		const startsCleanly = !before || !CJK.test(before);
+		// 后面跟「集团/电器/工业」这类公司或行业后缀，就算句中提到也算真品牌；
+		// 否则要求后面不是汉字（避免「美的很安静」这类形容词用法）。
+		if (BRAND_CONTINUATIONS.test(after) || (startsCleanly && !CJK.test(after[0] ?? ""))) return true;
+		from = index + 1;
+	}
+}
 const NEWS_TOKEN = /news|xinwen|xwzx|xwtt|新闻|动态|资讯|信息|media|press/i;
 /** 列表页解析最多试几个候选：每次最多 4 个请求，避免“发现+探测”把单次登记放大成几十个请求。 */
 const MAX_LIST_PAGE_ATTEMPTS = 3;
@@ -391,10 +436,10 @@ export async function discoverCompanySites(
 					if (home && home.status < 400) {
 						const title = /<title[^>]*>([\s\S]{0,200}?)<\/title>/iu.exec(home.body)?.[1]?.replace(/<[^>]+>/gu, "").replace(/\s+/gu, " ") ?? "";
 						const head = home.body.replace(/<[^>]+>/gu, "").replace(/\s+/gu, "").slice(0, 2000);
-						const titleCompact = title.replace(/\s+/gu, "");
-						const strict = titleCompact.includes(brandCompact) || head.includes(brandCompact);
-						// 短域名 + 品牌前缀也算官网：真站标题常写简称（如「浪潮」而非「浪潮集团」）。
-						const relaxed = shape === 1 && (titleCompact.includes(brandPrefix) || head.includes(brandPrefix));
+						const strict = mentionsBrand(title, brandCompact) || mentionsBrand(head, brandCompact) || mentionsBrand(title, brandPrefix) || mentionsBrand(head, brandPrefix);
+						// 「短域名 + 品牌前缀」只在标题里认：首页正文里提到品牌太容易误中经销商/媒体页。
+						const officialTitle = /官网|官方网站|官方门户|集团|股份有限公司|首页|公司简介|关于我们/i.test(title);
+						const relaxed = shape === 1 && officialTitle && mentionsBrand(title, brandPrefix);
 						if (strict || relaxed) {
 							passing.push({ candidate, shape });
 							continue;
@@ -536,7 +581,9 @@ function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: str
 		// 字典/组词站的标题常含品牌名（「美的拼音_美组词_怎么读」），不重罚会压过真官网。
 		const dictionaryTitle = /拼音|组词|词典|读音|什么意思|怎么读|翻译|解释/i.test(title) ? -6 : 0;
 		const newsInUrl = NEWS_TOKEN.test(`${url.pathname}${url.hostname}`) ? 1 : 0;
-		const brandMatch = brandName && title.replace(/\s+/gu, "").includes(brandName) ? 5 : 0;
+		// 用边界匹配：二字品牌（美的/海尔）光靠 includes 会命中「海尔曼」这类无关词。
+		const brandMatch = brandName && mentionsBrand(title, brandName) ? 5 : 0;
+		const dealerPenalty = NON_OFFICIAL_TITLE.test(title) ? -5 : 0;
 		// 短域名（如 inspur.com）比品牌镜像子域（inspur.ainet.cn）更可能是官网；
 		// 带渠道/店铺/子品牌词的子域是镜像或专题页，常冒充主站。
 		const shortHost = /^(?:www\.)?[^.]+\.(?:com|cn|com\.cn|net|org)$/iu.test(url.host);
@@ -545,7 +592,7 @@ function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: str
 		// 搜索排名越靠前越可能是官网：用微弱加分在平票时倾斜。
 		const positionBonus = Math.max(0, 1 - position * 0.05);
 		position += 1;
-		const score = brandMatch + officialTitle + aggregatorTitle + dictionaryTitle + newsInUrl + hostShape + positionBonus;
+		const score = brandMatch + officialTitle + aggregatorTitle + dictionaryTitle + newsInUrl + hostShape + positionBonus + dealerPenalty;
 		const previous = byHost.get(url.host);
 		if (!previous || score > previous.score) {
 			byHost.set(url.host, {

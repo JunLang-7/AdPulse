@@ -764,6 +764,8 @@ bun run sources discover weichai_news campaigns
 
 | 源 | 启用条件 | 默认日额度 | 环境变量 |
 | --- | --- | --- | --- |
+| 百度千帆 AI 搜索（官方 API，付费） | `BAIDU_QIANFAN_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=baidu:N` |
+| 博查搜索（官方 API，付费） | `BOCHA_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=bocha:N` |
 | Bing 网页检索（RSS） | 总是启用 | 200 | `SEARCH_DAILY_LIMITS=bing:N` |
 | Exa 语义检索 | `AGENT_REACH_BIN` 已配 | 50 | `SEARCH_DAILY_LIMITS=exa:N` |
 | Serper（Google，付费） | `SERPER_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=serper:N` |
