@@ -2125,7 +2125,87 @@
         }
       }
     },
-      "/api/me/search-providers": {
+      "/api/me/push-channels": {
+      "get": {
+        "operationId": "listPushChannels",
+        "summary": "即时推送渠道（Bark / ntfy）与配置状态",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": { "type": "string", "enum": ["bark", "ntfy", "wecom", "dingtalk"] },
+                          "label": { "type": "string" },
+                          "configured": { "type": "boolean" },
+                          "guide": { "type": ["string", "null"] }
+                        },
+                        "required": ["channel", "label", "configured", "guide"]
+                      }
+                    }
+                  },
+                  "required": ["items"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/me/notifications/push-now": {
+      "post": {
+        "operationId": "pushNow",
+        "summary": "立即推送一次（不等待汇总时间）",
+        "description": "只汇总本人已确认（依据齐备）的事件摘要，通过已配置的 Bark/ntfy 渠道发送。",
+        "responses": {
+          "200": {
+            "description": "Sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "sent": { "type": "integer" },
+                    "eventCount": { "type": "integer" },
+                    "targetCount": { "type": "integer" },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": { "type": "string" },
+                          "label": { "type": "string" },
+                          "status": { "type": "string", "enum": ["ok", "not_configured", "failed"] },
+                          "detail": { "type": ["string", "null"] }
+                        },
+                        "required": ["channel", "label", "status", "detail"]
+                      }
+                    }
+                  },
+                  "required": ["sent", "eventCount", "targetCount", "results"]
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "409": { "description": "No push channel configured" },
+          "502": { "description": "All channels failed" }
+        }
+      }
+    },
+    "/api/me/search-providers": {
       "get": {
         "operationId": "listSearchProviders",
         "summary": "本人可用的搜索源与今日额度",

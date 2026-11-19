@@ -590,6 +590,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/push-channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 即时推送渠道（Bark / ntfy）与配置状态 */
+        get: operations["listPushChannels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/notifications/push-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 立即推送一次（不等待汇总时间）
+         * @description 只汇总本人已确认（依据齐备）的事件摘要，通过已配置的 Bark/ntfy 渠道发送。
+         */
+        post: operations["pushNow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/search-providers": {
         parameters: {
             query?: never;
@@ -5342,6 +5379,93 @@ export interface operations {
             };
             /** @description Already reviewed */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listPushChannels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** @enum {string} */
+                            channel: "bark" | "ntfy" | "wecom" | "dingtalk";
+                            label: string;
+                            configured: boolean;
+                            guide: string | null;
+                        }[];
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    pushNow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sent: number;
+                        eventCount: number;
+                        targetCount: number;
+                        results: {
+                            channel: string;
+                            label: string;
+                            /** @enum {string} */
+                            status: "ok" | "not_configured" | "failed";
+                            detail: string | null;
+                        }[];
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No push channel configured */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description All channels failed */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

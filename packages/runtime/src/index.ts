@@ -255,6 +255,8 @@ export { bingProvider, agentReachProvider, serperProvider, braveProvider, provid
 export { runUserSources } from "./user-source-runner.js";
 export { discoverCompanySite, pickCompanySite, resolveNewsListPage, searchBing, readViaAgentReach, parseMarkdownLinks, agentReachReadFallback, AgentReachLimitError, resetDiscoveryThrottle , SearchQuotaExhaustedError } from "./site-discovery.js";
 export { discoverSource } from "./source-discovery.js";
+export { barkChannel, dingtalkChannel, ntfyChannel, pushChannelsFromEnvironment, pushChannelGuide, composeInstantPush, wecomChannel } from "./push-channels.js";
+export type { PushChannel, PushChannelResult, PushChannelStatus, PushChannelId, PushMessage } from "./push-channels.js";
 export { discoverXiaohongshu } from "./xiaohongshu-discovery.js";
 export type { XiaohongshuNoteCandidate, RunXiaohongshu } from "./xiaohongshu-discovery.js";
 export { discoverModels, isDiscoveryProtocolWired, modelDiscoveryMaxModels } from "./model-discovery.js";

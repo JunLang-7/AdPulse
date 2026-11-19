@@ -27,7 +27,7 @@ import {
 	TaskInputValidationError,
 } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
-import { agentReachReadFallback, discoverCompanySite, providersFromEnvironment, SearchQuotaExhaustedError, UserSiteFetcher } from "@adpluse/runtime";
+import { agentReachReadFallback, composeInstantPush, discoverCompanySite, providersFromEnvironment, pushChannelGuide, pushChannelsFromEnvironment, SearchQuotaExhaustedError, UserSiteFetcher } from "@adpluse/runtime";
 import { ZodError } from "zod";
 import type { IdentityProvider } from "./feishu-auth.js";
 import { HttpError, json, readJson } from "./http.js";
@@ -63,6 +63,7 @@ export interface NotificationAuditEvent {
 		| "notification.destination.verified"
 		| "notification.consent.granted"
 		| "notification.consent.revoked"
+	| "notification.instant.sent"
 		| "subscription.settings.updated"
 		| "subscription.target.added"
 		| "subscription.target.updated";
@@ -168,6 +169,8 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 		runtime.storage,
 		providersFromEnvironment(process.env),
 	);
+	// 即时推送渠道（Bark / ntfy）：与日汇总并行，用户主动触发。
+	const pushChannels = pushChannelsFromEnvironment(process.env);
 	const lifecycleDeletions = new LifecycleDeletionService(runtime.storage);
 	const subscriptions = new SubscriptionService(runtime.storage);
 	const subscriptionErrorStatus = (reason: SubscriptionError["reason"]): number => {
@@ -667,6 +670,40 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				}
 				if (path === "/api/me/search-providers" && req.method === "GET")
 					return json(res, 200, { items: await searchAggregator.quotas() });
+				if (path === "/api/me/push-channels" && req.method === "GET")
+					return json(res, 200, {
+						items: pushChannels.map((channel) => ({
+							channel: channel.channel,
+							label: channel.label,
+							configured: channel.configured,
+							guide: channel.configured ? null : pushChannelGuide(channel.channel),
+						})),
+					});
+				if (path === "/api/me/notifications/push-now" && req.method === "POST") {
+					// 即时推送：只取本人已确认（依据齐备）的事件摘要，不需等汇总时间。
+					const enabled = pushChannels.filter((channel) => channel.configured);
+					if (enabled.length === 0)
+						throw new HttpError(409, "no_push_channel_configured");
+					const versions = (await runtime.marketEvents.list(session.userId)).filter(
+						(item) => item.candidate.status === "evidence_ready",
+					);
+					const view = await subscriptions.view(session.userId);
+					const message = composeInstantPush({
+						eventTitles: versions.map((item) => item.input.title),
+						taskCount: new Set(versions.flatMap((item) => item.input.taskRefs.map((ref) => ref.taskId))).size,
+						now: new Date(),
+					});
+					const results = [];
+					for (const channel of enabled) results.push(await channel.send(message));
+					const sent = results.filter((item) => item.status === "ok").length;
+					audit({ event: "notification.instant.sent", path });
+					return json(res, sent > 0 ? 200 : 502, {
+						sent,
+						results,
+						eventCount: versions.length,
+						targetCount: view.targets.length,
+					});
+				}
 				if (path === "/api/me/user-sources" && req.method === "GET")
 					return json(res, 200, { items: await userSources.list(session.userId) });
 				if (path === "/api/me/user-sources" && req.method === "POST") {
