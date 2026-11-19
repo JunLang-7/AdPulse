@@ -74,8 +74,11 @@ test("事件 AI 整理：原文项默认勾选、整理项不勾，填入后写�
 	assert.equal((screen.getByLabelText("事件标题") as HTMLInputElement).value, "关于新品发布的公告");
 	assert.equal((screen.getByLabelText("关注对象名称") as HTMLInputElement).value, "本公司");
 	assert.equal((screen.getByLabelText("事件时间（未知留空）") as HTMLInputElement).value, "2026年11月16日");
-	// 模型整理项未勾选 → 类别仍保持默认公告。
+	// 模型整理项未勾选 → 类别仍保持默认公告，但要点名提醒还有未勾的类别建议。
 	assert.equal((screen.getByLabelText("类别") as HTMLSelectElement).value, "announcement");
-	// 引用已填入，但来源性质仍是录入者选的「来源未核验」。
+	assert.match(screen.getByText(/还有 \d+ 条建议未勾/).textContent ?? "", /类别：产品发布/);
+	// 引用已填入且材料同步到正文，否则保存会被领域拒绝。
 	assert.equal((screen.getByLabelText("来源性质") as HTMLSelectElement).value, "unknown");
+	assert.match((screen.getByLabelText("原始材料文字") as HTMLTextAreaElement).value, /本公司于2026年11月16日发布/);
+	assert.equal((screen.getByLabelText("内容范围") as HTMLSelectElement).value, "excerpt");
 });
