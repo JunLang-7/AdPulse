@@ -711,11 +711,28 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					);
 					const view = await subscriptions.view(session.userId);
 					const message = composeInstantPush({
-						eventTitles: versions.map((item) => item.input.title),
+						events: versions.map((item) => ({
+							title: item.input.title,
+							type: item.input.type,
+							subjectName: item.input.subject.name,
+							eventTime: item.input.eventTime,
+							url: item.input.sources[0]?.url ?? undefined,
+							publishedAt: item.input.sources[0]?.publishedAt ?? null,
+						})),
 						taskCount: new Set(versions.flatMap((item) => item.input.taskRefs.map((ref) => ref.taskId))).size,
 						now: new Date(),
+						...(process.env.PUBLIC_ORIGIN ? { consoleUrl: `${process.env.PUBLIC_ORIGIN}/market-events` } : {}),
 					});
 					const results = [];
+					// 没有可推送内容（无事件或无来源链接）就不发：卡片校验要求每条带来源，不造假。
+					if (!message.card)
+						return json(res, 200, {
+							sent: 0,
+							results: [],
+							eventCount: versions.length,
+							targetCount: view.targets.length,
+							reason: "no_pushable_events",
+						});
 					for (const channel of enabled) results.push(await channel.send(message));
 					const sent = results.filter((item) => item.status === "ok").length;
 					audit({ event: "notification.instant.sent", path });

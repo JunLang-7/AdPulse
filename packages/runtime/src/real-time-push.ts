@@ -59,11 +59,22 @@ export async function runRealTimePush(
 		return { eventCount: 0, sent: 0, results: [], reason: null };
 
 	const message = composeInstantPush({
-		eventTitles: events.map((version) => version.input.title),
+		events: events.map((version) => ({
+			title: version.input.title,
+			type: version.input.type,
+			subjectName: version.input.subject.name,
+			eventTime: version.input.eventTime,
+			url: version.input.sources[0]?.url ?? undefined,
+			publishedAt: version.input.sources[0]?.publishedAt ?? null,
+		})),
 		taskCount: new Set(events.flatMap((version) => version.input.taskRefs.map((ref) => ref.taskId))).size,
 		now: now(),
+		...(env.PUBLIC_ORIGIN ? { consoleUrl: `${env.PUBLIC_ORIGIN}/market-events` } : {}),
 	});
 	const results = [];
+	// 没有可推送内容（无事件或无来源链接）不发送：卡片要求每条带来源。
+	if (!message.card)
+		return { eventCount: events.length, sent: 0, results: [], reason: "no_pushable_events" };
 	for (const channel of channels) results.push(await channel.send(message));
 	const sent = results.filter((item) => item.status === "ok").length;
 

@@ -1,6 +1,7 @@
-// 即时推送渠道：Bark（iOS）与 ntfy（跨平台）。
-// 与日汇总的飞书投递并行：日汇总按订阅时间走，即时推送由用户主动触发。
-// 两者都不属于「主动提醒」的授权范畴，因此不受 proactiveEnabled 约束，但内容只取本人数据。
+// 即时推送渠道：飞书（复用项目已有的 InfoCard 渲染器，保持卡片格式与日汇总一致）。
+// 其他渠道实现保留但不对外暴露。
+import { validateInfoCard, type InfoCard } from "@adpluse/core";
+import { toFeishuCard } from "@adpluse/channels";
 import type { Storage } from "@adpluse/core";
 
 export interface PushMessage {
@@ -8,6 +9,8 @@ export interface PushMessage {
 	body: string;
 	/** 点击跳转地址（控制台详情页）。 */
 	url?: string;
+	/** 可选的完整信息卡：给了就用它渲染，与日汇总同一种卡片。 */
+	card?: InfoCard;
 }
 
 export type PushChannelStatus = "ok" | "not_configured" | "failed";
@@ -214,35 +217,16 @@ export function dingtalkChannel(options: { webhook?: string | undefined; fetcher
 }
 
 /**
- * 飞书即时推送的卡片：展示型（标题 + 正文 + 跳转按钮），不含决策交互。
- * 与日汇总的决策卡区分：这里没有 actionRef，点按钮只跳控制台，不改任何策略。
+ * 飞书即时推送的卡片：**直接复用项目已有的 InfoCard 渲染器**（与日汇总同一种卡）。
+ * 使用前会跑 validateInfoCard：它要求每条带来源、限长度与条数，
+ * 所以无来源的内容根本发不出去——这是项目既有的证据纪律，不在这里绕开。
+ * 与决策卡的区别：没有任何 callback/actionRef，点按钮只跳控制台。
  */
 export function toFeishuInstantCard(message: PushMessage): Record<string, unknown> {
-	return {
-		config: { wide_screen_mode: true },
-		header: {
-			title: { tag: "plain_text", content: message.title },
-			template: "blue",
-		},
-		elements: [
-			{ tag: "div", text: { tag: "lark_md", content: message.body } },
-			...(message.url
-				? [
-						{
-							tag: "action",
-							actions: [
-								{
-									tag: "button",
-									text: { tag: "plain_text", content: "在控制台查看" },
-									url: message.url,
-									type: "primary",
-								},
-							],
-						},
-					]
-				: []),
-		],
-	};
+	if (!message.card) throw new Error("instant push requires an InfoCard");
+	validateInfoCard(message.card);
+	// toFeishuCard 的 InfoCard 分支只读 delivery.card，不碰 actions。
+	return toFeishuCard({ card: message.card, actions: [] } as never);
 }
 
 /**
@@ -350,25 +334,70 @@ export function pushChannelGuide(channel: PushChannelId): string {
 	}
 }
 
-/** 组装即时推送内容：只取本人已确认事件的摘要，不掺未核对线索。 */
+/** 渲染器只接受 https 链接（安全约束）；非 https 时不带跳转，而不是让整张卡发不出去。 */
+function httpsOnly(url: string | null | undefined): string | undefined {
+	if (!url) return undefined;
+	try {
+		return new URL(url).protocol === "https:" ? url : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** 组装即时推送内容：复用项目已有的 InfoCard 结构，与日汇总卡片同形。 */
 export function composeInstantPush(input: {
-	eventTitles: string[];
+	events: Array<{
+		title: string;
+		type?: string | undefined;
+		subjectName?: string | undefined;
+		eventTime?: string | null | undefined;
+		url?: string | undefined;
+		publishedAt?: string | null | undefined;
+	}>;
 	taskCount: number;
 	now: Date;
+	/** 控制台跳转地址。 */
+	consoleUrl?: string;
 }): PushMessage {
 	const beijing = new Date(input.now.getTime() + 8 * 3_600_000);
 	const stamp = `${beijing.getUTCMonth() + 1}月${beijing.getUTCDate()}日 ${String(beijing.getUTCHours()).padStart(2, "0")}:${String(beijing.getUTCMinutes()).padStart(2, "0")}`;
-	const lines: string[] = [];
-	if (input.eventTitles.length === 0) {
-		lines.push("目前没有已确认的市场事件；先在线索区把线索转成事件并补齐依据。");
-	} else {
-		lines.push(`已确认事件 ${input.eventTitles.length} 条：`);
-		for (const title of input.eventTitles.slice(0, 5)) lines.push(`· ${title}`);
-		if (input.eventTitles.length > 5) lines.push(`· 还有 ${input.eventTitles.length - 5} 条`);
+	const titles = input.events.slice(0, 5).filter((event) => Boolean(event.url));
+
+	if (titles.length === 0) {
+		// 无事件或无来源链接：不发卡片（validateInfoCard 要求每条有来源，不伪造）。
+		return {
+			title: "AdPulse 即时推送",
+			body: `目前没有可推送的已确认事件（${stamp}）`,
+		};
 	}
-	if (input.taskCount > 0) lines.push(`关联推广任务 ${input.taskCount} 个`);
-	lines.push(`（手动触发 ${stamp}，不是定时汇总）`);
-	return { title: "AdPulse 即时推送", body: lines.join("\n") };
+
+	const card: InfoCard = {
+		title: "AdPulse 即时推送",
+		intro: `已确认事件 ${input.events.length} 条${input.taskCount > 0 ? `，关联推广任务 ${input.taskCount} 个` : ""}`,
+		items: titles.map((event) => {
+			const link = httpsOnly(event.url);
+			return {
+				title: event.title,
+				summary: [event.type, event.subjectName, event.eventTime ? `事件时间 ${event.eventTime}` : "事件时间未知"]
+					.filter(Boolean)
+					.join(" · "),
+				relevance: event.subjectName ? `你关注的对象：${event.subjectName}` : "未确定",
+				sources: [{ label: event.subjectName ?? "原文", url: event.url!, publishedAt: event.publishedAt ?? null }],
+				...(link ? { detailUrl: link } : {}),
+			};
+		}),
+		...(input.events.length > 5 ? { footer: `另有 ${input.events.length - 5} 条未展开` } : {}),
+		...(httpsOnly(input.consoleUrl) ? { detailUrl: httpsOnly(input.consoleUrl)! } : {}),
+	};
+
+	// 纯文本退给非飞书渠道用；飞书走 card。
+	const body = [
+		`已确认事件 ${input.events.length} 条：`,
+		...titles.map((event) => `· ${event.title}`),
+		...(input.events.length > 5 ? [`· 还有 ${input.events.length - 5} 条`] : []),
+		`（手动触发 ${stamp}，不是定时汇总）`,
+	].join("\n");
+	return { title: "AdPulse 即时推送", body, ...(input.consoleUrl ? { url: input.consoleUrl } : {}), card };
 }
 
 export type { Storage };
