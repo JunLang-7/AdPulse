@@ -2,15 +2,22 @@
 // 与内置来源同一套纪律：只取列表页的标题与链接，robots 优先，失败不写入条目。
 // 采集触发由调用方决定（添加时与手动刷新），不接入固定槽位调度。
 import { createHash } from "node:crypto";
+import { MAX_ITEMS, articleScore, filterListableItems, isListableItem, isListableTitle } from "./item-quality.js";
+import {
+	collectSitemapItems,
+	parseJsonListPayload,
+	parseSitemapXml,
+	searchFallbackItems,
+	sitemapUrlsFromRobots,
+} from "./user-source-fallbacks.js";
 import { normalizeItemUrl } from "./sources.js";
 import { parseRobots, robotsAllows, SourceFetcher } from "./source-service.js";
 import type { Storage } from "./ports/storage.js";
 import type { SourceItem, UserSource } from "./state/model.js";
 
-const MAX_ITEMS = 20;
 const FETCH_LIMITS = { maxBytes: 512 * 1024, timeoutMs: 15_000 };
 /**
- * 刷新冷却：一次刷新最多会发 robots + 列表页 + 探测候选 + 新闻入口若干请求，
+ * 刷新冷却：一次刷新最多会发 robots + 列表页 + 探测候选 + 新闻入口 + 兜底若干请求，
  * 用户连点或脚本重复调用会对第三方站点造成持续压力。5 分钟内不重复采集同一站点。
  * 尚未实现“每日每站配额”，此处为当前边界（见开发指南「用户自加来源」）。
  */
@@ -20,24 +27,8 @@ const COMMON_NEWS_PATHS = [
 	"/news", "/news/index.html", "/xwzx/index.html", "/news/list.shtml",
 	"/media/index.html", "/news/gh.htm",
 ] as const;
-const MIN_TITLE = 8;
-const NAV_NOISE = /^(首页|网站首页|新闻中心|更多|详情|查看更多|更多动态|浏览更多|read more|more|next|prev)$/i;
-/**
- * “像不像文章”的信号：只靠长度与导航词过滤不住实测页面（潍柴导航、浪潮产品列）。
- * 强信号：标题带日期（4）、URL 带日期（3）、URL 带 ≥8 位文章 id（2）；
- * 弱信号：.html/.shtml（1）、路径含新闻段（1）。低于阈值的一律不当条目。
- */
-const MIN_ARTICLE_SCORE = 2;
-const TITLE_DATE = /(?:20\d{2})\s*[-/.年]\s*\d{1,2}\s*[-/.月]\s*\d{1,2}/u;
-const URL_DATE = /(?:^|\D)20\d{2}(?:[-/]?\d{2}){2}(?:\D|$)/u;
-const URL_LONG_ID = /\d{8,}/u;
-const URL_PAGE_EXT = /\.s?html?$/iu;
-const URL_NEWS_SEGMENT = /(?:^|\/)(?:news|xinwen|xwzx|xwtt|press|media|article|story|newsroom)(?:\/|$)/iu;
-/** 标题看着像路径/URL（实测 newsroom.json 的条目标题是 /content/…/ifa-2026）。 */
-const PATH_SHAPED_TITLE = /^(?:https?:\/\/|\/)/iu;
-const SLUG_SHAPED_TITLE = /^[\w./-]+$/u;
-/** 纯数字/电话/符号串（实测 400-618-3066 混进了线索）。 */
-const NOISE_TITLE = /^[\d\s()+-_.:,\u00b7/]+$/u;
+/** sitemapindex 只下钻一个子地图，避免一次刷新把整个站点的索引都拉下来。 */
+const MAX_SITEMAP_CHILDREN = 1;
 
 export interface UserSourceView extends UserSource {}
 
@@ -104,47 +95,6 @@ export function findNewsEntry(html: string, base: string, host: string): string[
 		found.set(target, Math.max(found.get(target) ?? 0, score));
 	}
 	return [...found.entries()].sort((a, b) => b[1] - a[1]).map(([url]) => url).slice(0, 2);
-}
-
-/** 文章信号打分：见 MIN_ARTICLE_SCORE 的说明，0 表示不像文章。 */
-export function articleScore(itemUrl: string, title: string): number {
-	let path = "";
-	try {
-		path = new URL(itemUrl).pathname;
-	} catch {
-		return 0;
-	}
-	let score = 0;
-	if (TITLE_DATE.test(title)) score += 4;
-	if (URL_DATE.test(path)) score += 3;
-	else if (URL_LONG_ID.test(path)) score += 2;
-	if (URL_PAGE_EXT.test(path)) score += 1;
-	if (URL_NEWS_SEGMENT.test(path)) score += 1;
-	return score;
-}
-
-/**
- * 条目筛选：标题必须是可读文本，且地址要有文章信号。
- * 导航/产品页的锚文本（电话号、产品名、路径片段）在这里被排除；
- * 一页都被排除时 parseUserListPage 返回空，调用方据此换页或如实失败。
- */
-export function isListableItem(title: string, itemUrl: string): boolean {
-	if (title.length < MIN_TITLE || title.length > 200) return false;
-	if (NAV_NOISE.test(title)) return false;
-	if (!/\p{L}/u.test(title)) return false;
-	if (PATH_SHAPED_TITLE.test(title) || SLUG_SHAPED_TITLE.test(title)) return false;
-	if (NOISE_TITLE.test(title)) return false;
-	return articleScore(itemUrl, title) >= MIN_ARTICLE_SCORE;
-}
-
-/** 对已经取到的条目（如渲染读取兑底）套同一套文章规则。 */
-export function filterListableItems(
-	items: Array<{ itemKey: string; title: string; itemUrl: string }>,
-): Array<{ itemKey: string; title: string; itemUrl: string }> {
-	return items
-		.filter((item) => isListableItem(item.title, item.itemUrl))
-		.sort((a, b) => articleScore(b.itemUrl, b.title) - articleScore(a.itemUrl, a.title))
-		.slice(0, MAX_ITEMS);
 }
 
 /** 从列表页 HTML 抽取站内文章链接与标题；只留像文章的条目（见 isListableItem）。 */
@@ -248,6 +198,8 @@ export class UserSourceService {
 		now: string,
 		options: {
 			readFallback?: (url: string) => Promise<Array<{ itemKey: string; title: string; itemUrl: string }> | null | undefined>;
+			/** 搜索回退（注入聚合器，便于测试与额度管控）；只取同域命中。 */
+			searchFallback?: (query: string) => Promise<Array<{ title: string; url: string }>>;
 		} = {},
 	): Promise<UserSourceRefreshResult> {
 		const source = await this.storage.transaction(async (tx) => {
@@ -272,12 +224,14 @@ export class UserSourceService {
 			return { outcome: "failed", created: 0, updated: 0, reason };
 		};
 
-		// robots：2xx 遵从，4xx 视为无限制，5xx/不可达保守放弃。
+		// robots：2xx 遵从，4xx 视为无限制，5xx/不可达保守放弃。body 留作 sitemap 兜底。
+		let robotsBody = "";
 		try {
 			const robots = await fetcher.fetchText(`https://${source.host}/robots.txt`, FETCH_LIMITS);
 			if (robots.status >= 500)
 				return await failure("robots 检查不可达，保守跳过本次采集");
 			if (robots.status < 400) {
+				robotsBody = robots.body;
 				const path = new URL(source.listUrl).pathname;
 				if (!robotsAllows(parseRobots(robots.body), path))
 					return await failure("robots 不允许采集这个列表页");
@@ -295,7 +249,10 @@ export class UserSourceService {
 		if (page.status >= 400) return await failure(`列表页返回 ${page.status}`);
 
 		let listUrl = source.listUrl;
-		let parsed = parseUserListPage(page.body, listUrl, source.host);
+		// 兜底一级：同域 JSON 列表（实测 newsroom.json 这类数据接口）。零额外请求。
+		let parsed: Array<{ itemKey: string; title: string; itemUrl: string; publishedAt?: string | null }> =
+			parseUserListPage(page.body, listUrl, source.host);
+		if (parsed.length === 0) parsed = parseJsonListPayload(page.body, listUrl, source.host);
 		// 列表页可能是 JS 渲染或选错了页面：条目过少也可疑，退回官网首页与常见新闻路径比一比，谁多用谁。
 		if (parsed.length < 3) {
 			const candidates = [`https://${source.host}/`, ...COMMON_NEWS_PATHS.map((path) => `https://${source.host}${path}`)]
@@ -343,9 +300,49 @@ export class UserSourceService {
 				// 兑底失败（如限流）维持原结论，不冒充成功。
 			}
 		}
+		// 兜底二级：sitemap（实测美的/九阳这类无新闻入口的站）。请求有上限。
+		if (parsed.length === 0) {
+			const origin = new URL(source.listUrl).origin;
+			const candidates = [
+				...sitemapUrlsFromRobots(robotsBody, origin),
+				`${origin}/sitemap.xml`,
+			].filter((url, index, all) => all.indexOf(url) === index).slice(0, 2);
+			for (const sitemapUrl of candidates) {
+				try {
+					const map = await fetcher.fetchText(sitemapUrl, FETCH_LIMITS);
+					if (map.status >= 400) continue;
+					let { sitemaps, entries } = parseSitemapXml(map.body, sitemapUrl, source.host);
+					for (const child of sitemaps.slice(0, MAX_SITEMAP_CHILDREN)) {
+						if (entries.length > 0) break;
+						try {
+							const childPage = await fetcher.fetchText(child, FETCH_LIMITS);
+							if (childPage.status >= 400) continue;
+							({ entries } = parseSitemapXml(childPage.body, child, source.host));
+						} catch {
+							// 单个子地图失败继续。
+						}
+					}
+					if (entries.length === 0) continue;
+					// 标题缺失时按上限抓文章 <title>；拿不到就跳过，不编造标题。
+					parsed = await collectSitemapItems(fetcher, source.host, entries);
+					if (parsed.length > 0) break;
+				} catch {
+					// 单个站点地图失败继续。
+				}
+			}
+		}
+		// 兜底三级：站内搜索（标题+链接来自搜索结果）；每次刷新最多一次，受搜索额度约束。
+		if (parsed.length === 0 && options.searchFallback) {
+			try {
+				const hits = await options.searchFallback(`${source.label} 新闻`);
+				parsed = searchFallbackItems(hits, source.host);
+			} catch {
+				// 搜索失败或额度用尽都维持原结论，不冒充成功。
+			}
+		}
 		if (parsed.length === 0)
 			return await failure(
-				"列表页没有解析出可用条目（可能是 JS 渲染站点，或选到了导航/数据页）",
+				"列表页、sitemap 与搜索都没有找到可用条目（可能是 JS 渲染站点或选到了导航/数据页）",
 			);
 
 		const result = await this.storage.transaction(async (tx) => {
@@ -365,7 +362,7 @@ export class UserSourceService {
 							...previous,
 							title: entry.title,
 							itemUrl: entry.itemUrl,
-							publishedAt: extractDate(entry.itemUrl, entry.title) ?? previous.publishedAt,
+							publishedAt: entry.publishedAt ?? extractDate(entry.itemUrl, entry.title) ?? previous.publishedAt,
 							lastSeenAt: now,
 							titleUpdatedAt: previous.title === entry.title ? previous.titleUpdatedAt : now,
 						}
@@ -375,7 +372,7 @@ export class UserSourceService {
 							itemKey: entry.itemKey,
 							title: entry.title,
 							itemUrl: entry.itemUrl,
-							publishedAt: extractDate(entry.itemUrl, entry.title),
+							publishedAt: entry.publishedAt ?? extractDate(entry.itemUrl, entry.title),
 							firstSeenAt: now,
 							lastSeenAt: now,
 							titleUpdatedAt: null,

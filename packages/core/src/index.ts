@@ -24,6 +24,8 @@ export * from "./comparison-service.js";
 export * from "./sources.js";
 export * from "./source-leads.js";
 export * from "./source-service.js";
+export * from "./item-quality.js";
+export * from "./user-source-fallbacks.js";
 export * from "./user-sources.js";
 export * from "./search-providers.js";
 export * from "./discovery-leads.js";
