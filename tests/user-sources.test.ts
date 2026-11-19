@@ -532,3 +532,31 @@ test("refresh：备选站点已被本人登记过时不抢，失败原因列出�
 	assert.match(result.reason ?? "", /已尝试备选站点：www\.midea\.com\.cn/);
 	assert.equal((await service.list("owner-1")).find((s) => s.id === first.id)?.host, "www.midea.cn", "不抢已登记的站");
 });
+
+test("refresh：当前站 robots 不可达时仍会换到备选站点", async () => {
+	const storage = new MemoryStorage();
+	const service = new UserSourceService(storage);
+	const source = await service.add("owner-1", {
+		label: "海尔",
+		listUrl: "https://www.haier.net/",
+		subject: { kind: "brand", name: "海尔" },
+	}, "2026-11-19T00:00:00.000Z");
+	const result = await service.refresh("owner-1", source.id, fakeFetcher({}), "2026-11-19T00:01:00.000Z", {
+		discoverSites: async () => [
+			{ host: "www.haier.com", listUrl: "https://www.haier.com/about_haier/xinwen/" },
+		],
+		fetcherFor: (host) => host === "www.haier.com"
+			? fakeFetcher({
+				"https://www.haier.com/robots.txt": { status: 404, body: "not found" },
+				"https://www.haier.com/about_haier/xinwen/": { status: 200, body: `<html><body>
+<a href="/about_haier/xinwen/2026/1118/1.shtml">海尔官宣全球品牌代言人 2026年11月18日</a>
+<a href="/about_haier/xinwen/2026/1110/2.shtml">海尔发布新一代智慧家庭方案 2026年11月10日</a>
+</body></html>` },
+			})
+			: fakeFetcher({}),
+	});
+	assert.equal(result.outcome, "ok", "robots 被挡不应直接放弃换站");
+	const [stored] = await service.list("owner-1");
+	assert.equal(stored?.host, "www.haier.com");
+	assert.equal(result.created, 2);
+});

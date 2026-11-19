@@ -314,9 +314,6 @@ export class UserSourceService {
 		}
 		if (!source.host || !source.listUrl)
 			throw new UserSourceError(409, "source_not_ready", "站点还在查找官网，稍后再试");
-		const host = source.host;
-		let currentHost = host;
-		const listUrl = source.listUrl;
 		const sourceKey = userSourceKey(sourceId);
 		const failure = async (reason: string): Promise<UserSourceRefreshResult> => {
 			await this.storage.transaction(async (tx) => {
@@ -327,137 +324,17 @@ export class UserSourceService {
 			return { outcome: "failed", created: 0, updated: 0, reason };
 		};
 
-		// robots：2xx 遵从，4xx 视为无限制，5xx/不可达保守放弃。body 留作 sitemap 兜底。
-		let robotsBody = "";
-		try {
-			const robots = await fetcher.fetchText(`https://${host}/robots.txt`, FETCH_LIMITS);
-			if (robots.status >= 500)
-				return await failure("robots 检查不可达，保守跳过本次采集");
-			if (robots.status < 400) {
-				robotsBody = robots.body;
-				const path = new URL(listUrl).pathname;
-				if (!robotsAllows(parseRobots(robots.body), path))
-					return await failure("robots 不允许采集这个列表页");
-			}
-		} catch {
-			return await failure("robots 检查失败，保守跳过本次采集");
-		}
+		const current = await this.collectFromHost({
+			label: source.label,
+			host: source.host,
+			listUrl: source.listUrl,
+			fetcher,
+			options,
+		});
+		let currentHost = source.host;
+		let resolvedListUrl = current.listUrl;
+		let parsed = current.items;
 
-		let page;
-		try {
-			page = await fetcher.fetchText(listUrl, FETCH_LIMITS);
-		} catch {
-			return await failure("列表页抓取失败");
-		}
-		if (page.status >= 400) return await failure(`列表页返回 ${page.status}`);
-
-		let resolvedListUrl = listUrl;
-		// 兜底一级：同域 JSON 列表（实测 newsroom.json 这类数据接口）。零额外请求。
-		let parsed: Array<{ itemKey: string; title: string; itemUrl: string; publishedAt?: string | null }> =
-			parseUserListPage(page.body, resolvedListUrl, host);
-		if (parsed.length === 0) parsed = parseJsonListPayload(page.body, resolvedListUrl, host);
-		// 页面本身不是 JSON，但可能指向一个数据接口（实测海信 /cn/zh/newsroom.json）。至多 1 个请求。
-		if (parsed.length === 0) {
-			const dataListUrl = findDataListAnchor(page.body, resolvedListUrl, host);
-			if (dataListUrl) {
-				try {
-					const dataPage = await fetcher.fetchText(dataListUrl, FETCH_LIMITS);
-					if (dataPage.status < 400) {
-						parsed = parseJsonListPayload(dataPage.body, dataListUrl, host);
-						if (parsed.length > 0) resolvedListUrl = dataListUrl;
-					}
-				} catch {
-					// 数据接口抓不到就继续后面的兜底。
-				}
-			}
-		}
-		// 列表页可能是 JS 渲染或选错了页面：条目过少也可疑，退回官网首页与常见新闻路径比一比，谁多用谁。
-		if (parsed.length < 3) {
-			const candidates = [`https://${host}/`, ...COMMON_NEWS_PATHS.map((path) => `https://${host}${path}`)]
-				.filter((url) => url.replace(/\/+$/u, "") !== resolvedListUrl.replace(/\/+$/u, ""));
-			for (const candidate of candidates) {
-				try {
-					const probe = await fetcher.fetchText(candidate, FETCH_LIMITS);
-					if (probe.status >= 400) continue;
-					const fromProbe = parseUserListPage(probe.body, candidate, host);
-					if (fromProbe.length > parsed.length) {
-						parsed = fromProbe;
-						resolvedListUrl = candidate;
-						if (parsed.length >= 3) break;
-					}
-					// 官网站内常有“新闻中心”入口：沿着它深入一层再试，比首页更能拿到文章列表。
-					for (const entry of findNewsEntry(probe.body, candidate, host)) {
-						if (entry === candidate) continue;
-						try {
-							const listPage = await fetcher.fetchText(entry, FETCH_LIMITS);
-							if (listPage.status >= 400) continue;
-							const fromList = parseUserListPage(listPage.body, entry, host);
-							if (fromList.length > parsed.length) {
-								parsed = fromList;
-								resolvedListUrl = entry;
-								if (parsed.length >= 3) break;
-							}
-						} catch {
-							// 单个入口失败继续下一个。
-						}
-					}
-					if (parsed.length >= 3) break;
-				} catch {
-					// 单个探测失败不阻塞其余候选。
-				}
-			}
-		}
-		// 静态手段全部失败：交给注入的渲染读取兑底（jina 可渲染 JS 页），仍不行才报失败。
-		if (parsed.length < 3 && options.readFallback) {
-			try {
-				const fromRead = await options.readFallback(resolvedListUrl);
-				// 渲染读取同样要过文章规则：否则产品/导航页会被兑底重新拉回 20 条噪音。
-				const filtered = fromRead ? filterListableItems(fromRead) : [];
-				if (filtered.length > parsed.length) parsed = filtered;
-			} catch {
-				// 兑底失败（如限流）维持原结论，不冒充成功。
-			}
-		}
-		// 兜底二级：sitemap（实测美的/九阳这类无新闻入口的站）。请求有上限。
-		if (parsed.length === 0) {
-			const origin = new URL(resolvedListUrl).origin;
-			const candidates = [
-				...sitemapUrlsFromRobots(robotsBody, origin),
-				`${origin}/sitemap.xml`,
-			].filter((url, index, all) => all.indexOf(url) === index).slice(0, 2);
-			for (const sitemapUrl of candidates) {
-				try {
-					const map = await fetcher.fetchText(sitemapUrl, FETCH_LIMITS);
-					if (map.status >= 400) continue;
-					let { sitemaps, entries } = parseSitemapXml(map.body, sitemapUrl, host);
-					for (const child of sitemaps.slice(0, MAX_SITEMAP_CHILDREN)) {
-						if (entries.length > 0) break;
-						try {
-							const childPage = await fetcher.fetchText(child, FETCH_LIMITS);
-							if (childPage.status >= 400) continue;
-							({ entries } = parseSitemapXml(childPage.body, child, host));
-						} catch {
-							// 单个子地图失败继续。
-						}
-					}
-					if (entries.length === 0) continue;
-					// 标题缺失时按上限抓文章 <title>；拿不到就跳过，不编造标题。
-					parsed = await collectSitemapItems(fetcher, host, entries);
-					if (parsed.length > 0) break;
-				} catch {
-					// 单个站点地图失败继续。
-				}
-			}
-		}
-		// 兜底三级：站内搜索（标题+链接来自搜索结果）；每次刷新最多一次，受搜索额度约束。
-		if (parsed.length === 0 && options.searchFallback) {
-			try {
-				const hits = await options.searchFallback(`${source.label} 新闻`);
-				parsed = searchFallbackItems(hits, host);
-			} catch {
-				// 搜索失败或额度用尽都维持原结论，不冒充成功。
-			}
-		}
 		// 换站重试：同一家企业常有多个站（集团站/商城站/品牌站）。当前站采不到内容时，
 		// 按发现结果换 1–2 个已验证站点再试；成功就把 host 与 listUrl 一起改过去。
 		const triedAlternates: string[] = [];
@@ -471,53 +348,31 @@ export class UserSourceService {
 				// 已经登记过的站点不抢：host 唯一，换过去只会冲突。
 				if (ownerSources.some((s) => s.id !== sourceId && s.host === alternate.host)) continue;
 				try {
-					const altFetcher = options.fetcherFor(alternate.host);
-					const altRobots = await altFetcher
-						.fetchText(`https://${alternate.host}/robots.txt`, FETCH_LIMITS)
-						.catch(() => null);
-					if (altRobots && altRobots.status >= 500) continue;
-					if (
-						altRobots &&
-						altRobots.status < 400 &&
-						!robotsAllows(parseRobots(altRobots.body), new URL(alternate.listUrl).pathname)
-					)
-						continue;
-					const altPage = await altFetcher.fetchText(alternate.listUrl, FETCH_LIMITS);
-					if (altPage.status >= 400) continue;
-					let altParsed = parseUserListPage(altPage.body, alternate.listUrl, alternate.host);
-					if (altParsed.length === 0)
-						altParsed = parseJsonListPayload(altPage.body, alternate.listUrl, alternate.host);
-					if (altParsed.length === 0) {
-						const dataListUrl = findDataListAnchor(altPage.body, alternate.listUrl, alternate.host);
-						if (dataListUrl) {
-							const dataPage = await altFetcher.fetchText(dataListUrl, FETCH_LIMITS);
-							if (dataPage.status < 400)
-								altParsed = parseJsonListPayload(dataPage.body, dataListUrl, alternate.host);
-							if (altParsed.length > 0) {
-								parsed = altParsed;
-								currentHost = alternate.host;
-								resolvedListUrl = dataListUrl;
-								break;
-							}
-						}
-					}
-					if (altParsed.length > 0) {
-						parsed = altParsed;
-						currentHost = alternate.host;
-						resolvedListUrl = alternate.listUrl;
-						break;
-					}
+					const alt = await this.collectFromHost({
+						label: source.label,
+						host: alternate.host,
+						listUrl: alternate.listUrl,
+						fetcher: options.fetcherFor(alternate.host),
+						options,
+					});
+					if (alt.items.length === 0) continue;
+					parsed = alt.items;
+					currentHost = alternate.host;
+					resolvedListUrl = alt.listUrl;
+					break;
 				} catch {
 					// 单个备选站点失败继续下一个。
 				}
 			}
 		}
-		if (parsed.length === 0)
+		if (parsed.length === 0) {
+			const base =
+				current.reason ??
+				"列表页、sitemap 与搜索都没有找到可用条目：该站可能需要 JS 渲染，或没有可访问的 HTML 列表页/JSON 接口；可直接填写具体的新闻列表页地址再试。";
 			return await failure(
-				triedAlternates.length > 0
-					? `列表页、sitemap 与搜索都没有找到可用条目（已尝试备选站点：${triedAlternates.join("、")}）：该站可能需要 JS 渲染，或没有可访问的 HTML 列表页/JSON 接口；可直接填写具体的新闻列表页地址再试。`
-					: "列表页、sitemap 与搜索都没有找到可用条目：该站可能需要 JS 渲染，或没有可访问的 HTML 列表页/JSON 接口；可直接填写具体的新闻列表页地址再试。",
+				triedAlternates.length > 0 ? `${base}（已尝试备选站点：${triedAlternates.join("、")}）` : base,
 			);
+		}
 
 		const result = await this.storage.transaction(async (tx) => {
 			const existing = new Map(
@@ -572,6 +427,155 @@ export class UserSourceService {
 		});
 		return result;
 	}
+
+	/**
+	 * 在单个站点采集一次：robots → 列表页 → HTML/JSON → 探测页 → 渲染回退 → sitemap → 搜索回退。
+	 * 返回 items 与最终采用的 listUrl；站点被 robots 挡住或抓不到页时用 reason 说明。
+	 */
+	private async collectFromHost(input: {
+		label: string;
+		host: string;
+		listUrl: string;
+		fetcher: SourceFetcher;
+		options: {
+			readFallback?: (url: string) => Promise<Array<{ itemKey: string; title: string; itemUrl: string }> | null | undefined>;
+			searchFallback?: (query: string) => Promise<Array<{ title: string; url: string }>>;
+		};
+	}): Promise<{
+		items: Array<{ itemKey: string; title: string; itemUrl: string; publishedAt?: string | null }>;
+		listUrl: string;
+		reason: string | null;
+	}> {
+		const { label, host, fetcher, options } = input;
+		let resolvedListUrl = input.listUrl;
+		let robotsBody = "";
+		let reason: string | null = null;
+
+		// robots：2xx 遵从，4xx 视为无限制，5xx/不可达保守放弃。
+		try {
+			const robots = await fetcher.fetchText(`https://${host}/robots.txt`, FETCH_LIMITS);
+			if (robots.status >= 500) reason = "robots 检查不可达，保守跳过本次采集";
+			else if (robots.status < 400) {
+				robotsBody = robots.body;
+				if (!robotsAllows(parseRobots(robots.body), new URL(input.listUrl).pathname))
+					reason = "robots 不允许采集这个列表页";
+			}
+		} catch {
+			reason = "robots 检查失败，保守跳过本次采集";
+		}
+		if (reason) return { items: [], listUrl: resolvedListUrl, reason };
+
+		let page;
+		try {
+			page = await fetcher.fetchText(input.listUrl, FETCH_LIMITS);
+		} catch {
+			return { items: [], listUrl: resolvedListUrl, reason: "列表页抓取失败" };
+		}
+		if (page.status >= 400) return { items: [], listUrl: resolvedListUrl, reason: `列表页返回 ${page.status}` };
+
+		let parsed = parseUserListPage(page.body, resolvedListUrl, host);
+		if (parsed.length === 0) parsed = parseJsonListPayload(page.body, resolvedListUrl, host);
+		// 页面本身不是 JSON，但可能指向一个数据接口（实测海信 /cn/zh/newsroom.json）。至多 1 个请求。
+		if (parsed.length === 0) {
+			const dataListUrl = findDataListAnchor(page.body, resolvedListUrl, host);
+			if (dataListUrl) {
+				try {
+					const dataPage = await fetcher.fetchText(dataListUrl, FETCH_LIMITS);
+					if (dataPage.status < 400) {
+						parsed = parseJsonListPayload(dataPage.body, dataListUrl, host);
+						if (parsed.length > 0) resolvedListUrl = dataListUrl;
+					}
+				} catch {
+					// 数据接口抓不到就继续后面的兜底。
+				}
+			}
+		}
+		// 列表页可能是 JS 渲染或选错了页面：条目过少也可疑，退回官网首页与常见新闻路径比一比，谁多用谁。
+		if (parsed.length < 3) {
+			const candidates = [`https://${host}/`, ...COMMON_NEWS_PATHS.map((path) => `https://${host}${path}`)]
+				.filter((url) => url.replace(/\/+$/u, "") !== resolvedListUrl.replace(/\/+$/u, ""));
+			for (const candidate of candidates) {
+				try {
+					const probe = await fetcher.fetchText(candidate, FETCH_LIMITS);
+					if (probe.status >= 400) continue;
+					const fromProbe = parseUserListPage(probe.body, candidate, host);
+					if (fromProbe.length > parsed.length) {
+						parsed = fromProbe;
+						resolvedListUrl = candidate;
+						if (parsed.length >= 3) break;
+					}
+					for (const entry of findNewsEntry(probe.body, candidate, host)) {
+						if (entry === candidate) continue;
+						try {
+							const listPage = await fetcher.fetchText(entry, FETCH_LIMITS);
+							if (listPage.status >= 400) continue;
+							const fromList = parseUserListPage(listPage.body, entry, host);
+							if (fromList.length > parsed.length) {
+								parsed = fromList;
+								resolvedListUrl = entry;
+								if (parsed.length >= 3) break;
+							}
+						} catch {
+							// 单个入口失败继续下一个。
+						}
+					}
+					if (parsed.length >= 3) break;
+				} catch {
+					// 单个探测失败不阻塞其余候选。
+				}
+			}
+		}
+		// 静态手段失败：交给渲染读取兑底（jina 可渲染 JS 页）。
+		if (parsed.length < 3 && options.readFallback) {
+			try {
+				const fromRead = await options.readFallback(resolvedListUrl);
+				const filtered = fromRead ? filterListableItems(fromRead) : [];
+				if (filtered.length > parsed.length) parsed = filtered;
+			} catch {
+				// 兑底失败（如限流）维持原结论，不冒充成功。
+			}
+		}
+		// 兜底二级：sitemap（实测美的/九阳这类无新闻入口的站）。请求有上限。
+		if (parsed.length === 0) {
+			const origin = new URL(resolvedListUrl).origin;
+			const candidates = [...sitemapUrlsFromRobots(robotsBody, origin), `${origin}/sitemap.xml`]
+				.filter((url, index, all) => all.indexOf(url) === index)
+				.slice(0, 2);
+			for (const sitemapUrl of candidates) {
+				try {
+					const map = await fetcher.fetchText(sitemapUrl, FETCH_LIMITS);
+					if (map.status >= 400) continue;
+					let { sitemaps, entries } = parseSitemapXml(map.body, sitemapUrl, host);
+					for (const child of sitemaps.slice(0, MAX_SITEMAP_CHILDREN)) {
+						if (entries.length > 0) break;
+						try {
+							const childPage = await fetcher.fetchText(child, FETCH_LIMITS);
+							if (childPage.status >= 400) continue;
+							({ entries } = parseSitemapXml(childPage.body, child, host));
+						} catch {
+							// 单个子地图失败继续。
+						}
+					}
+					if (entries.length === 0) continue;
+					parsed = await collectSitemapItems(fetcher, host, entries);
+					if (parsed.length > 0) break;
+				} catch {
+					// 单个站点地图失败继续。
+				}
+			}
+		}
+		// 兜底三级：站内搜索（标题+链接来自搜索结果）；每次最多一次，受搜索额度约束。
+		if (parsed.length === 0 && options.searchFallback) {
+			try {
+				const hits = await options.searchFallback(`${label} 新闻`);
+				parsed = searchFallbackItems(hits, host);
+			} catch {
+				// 搜索失败或额度用尽都维持原结论，不冒充成功。
+			}
+		}
+		return { items: parsed, listUrl: resolvedListUrl, reason: null };
+	}
+
 }
 
 export function userSourceKey(sourceId: string): string {

@@ -5,6 +5,7 @@ import {
 	pickCompanySite,
 	resolveNewsListPage,
 	discoverCompanySite,
+	discoverCompanySites,
 } from "../packages/runtime/dist/index.js";
 import type { SourceFetcher } from "../packages/core/dist/index.js";
 
@@ -257,4 +258,40 @@ test("discoverCompanySite：同一品牌多个站时，列表页真能解析出�
 	};
 	const site = await discoverCompanySite("美的", fakeBin, { runReach, fetcher });
 	assert.equal(site.listUrl, "https://www.midea.com.cn/zh/about-midea/news", "选能解析出新闻的站，而不是商城首页");
+});
+
+test("discoverCompanySites：一遍搜到商城站时，用「<企业> 新闻中心」补一轮找到真官网", async () => {
+	const queries: string[] = [];
+	const aggregator = {
+		async search(query: string) {
+			queries.push(query);
+			if (query.includes("新闻中心"))
+				return {
+					hits: [{ title: "美的集团-新闻中心", url: "https://www.midea.com.cn/zh/about-midea/news" }],
+					providers: [{ provider: "bing", label: "Bing", status: "ok", detail: null }],
+				};
+			return {
+				hits: [{ title: "美的商城-官方网站", url: "https://www.midea.cn/" }],
+				providers: [{ provider: "bing", label: "Bing", status: "ok", detail: null }],
+			};
+		},
+	};
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			const parsed = new URL(url);
+			if (parsed.hostname === "www.midea.cn")
+				return { status: 200, bytes: 60, body: `<title>美的商城-官方网站</title><a href="/about">关于我们</a>` };
+			if (parsed.pathname === "/")
+				return { status: 200, bytes: 60, body: `<title>美的集团-官方网站</title><a href="/zh/about-midea/news">新闻</a>` };
+			return {
+				status: 200, bytes: 120,
+				body: `<html>
+<a href="/zh/about-midea/news/news-20220719">美的空调率先发布碳足迹评估报告 2022年7月19日</a>
+</body></html>`,
+			};
+		},
+	};
+	const sites = await discoverCompanySites("美的", fakeBin, { aggregator, fetcher });
+	assert.equal(sites[0]?.host, "www.midea.com.cn", "补一轮搜索后选到有新闻列表的官网");
+	assert.deepEqual(queries, ["美的", "美的 新闻中心"], "只在第一遍没有可用条目时才补搜");
 });
