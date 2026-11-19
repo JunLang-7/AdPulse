@@ -520,6 +520,8 @@ function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: str
 		const title = typeof raw.title === "string" ? raw.title : "";
 		const officialTitle = /官方网站|官网|官方门户|official site/i.test(title) ? 3 : 0;
 		const aggregatorTitle = /新闻大全|相关新闻|新闻信息|资讯大全/i.test(title) ? -2 : 0;
+		// 字典/组词站的标题常含品牌名（「美的拼音_美组词_怎么读」），不重罚会压过真官网。
+		const dictionaryTitle = /拼音|组词|词典|读音|什么意思|怎么读|翻译|解释/i.test(title) ? -6 : 0;
 		const newsInUrl = NEWS_TOKEN.test(`${url.pathname}${url.hostname}`) ? 1 : 0;
 		const brandMatch = brandName && title.replace(/\s+/gu, "").includes(brandName) ? 5 : 0;
 		// 短域名（如 inspur.com）比品牌镜像子域（inspur.ainet.cn）更可能是官网；
@@ -530,7 +532,7 @@ function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: str
 		// 搜索排名越靠前越可能是官网：用微弱加分在平票时倾斜。
 		const positionBonus = Math.max(0, 1 - position * 0.05);
 		position += 1;
-		const score = brandMatch + officialTitle + aggregatorTitle + newsInUrl + hostShape + positionBonus;
+		const score = brandMatch + officialTitle + aggregatorTitle + dictionaryTitle + newsInUrl + hostShape + positionBonus;
 		const previous = byHost.get(url.host);
 		if (!previous || score > previous.score) {
 			byHost.set(url.host, {

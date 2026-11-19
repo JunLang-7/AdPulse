@@ -336,3 +336,13 @@ test("discoverCompanySites：第一遍没有可用条目时升级补搜，咨询
 	assert.equal(calls.length, 2, "第一遍没有可用条目，只升级一次补搜");
 	assert.equal(calls[1]?.enoughHits, Number.POSITIVE_INFINITY, "补搜解除免费源短路，付费源必须被咨询");
 });
+
+test("挑站排序：字典/组词站标题含品牌名不再压过真官网", () => {
+	const pick = pickCompanySite([
+		{ title: "美的拼音_美组词_怎么读_什么意思-字典-组词典", url: "https://www.zcdian.com/zi/513gso.html" },
+		{ title: "美的首页", url: "https://www.midea.com.cn/zh" },
+		{ title: "美的商城 - 智慧生活可以更美的", url: "https://www.midea.cn/" },
+	]);
+	assert.ok(pick);
+	assert.equal(pick.host, "www.midea.com.cn", "官网排第一，字典站被重罚、商城站没有新闻信号");
+});
