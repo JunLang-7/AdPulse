@@ -229,3 +229,32 @@ test("discoverCompanySite：搜索前几名是音乐/股票站时，仍能找到
 	assert.equal(site.listUrl, "https://www.goertek.com/news/index.html");
 	assert.equal(homeFetches, 0, "非官方站被黑名单直接过滤，不发请求");
 });
+
+test("discoverCompanySite：同一品牌多个站时，列表页真能解析出条目的优先", async () => {
+	// 实测：midea.cn 是商城站（首页无新闻、列表页解析不出条目），官网是 midea.com.cn。
+	const runReach = async () => ({
+		stdout: result([
+			{ title: "美的-官方网站", url: "https://www.midea.cn/" },
+			{ title: "美的集团-官方网站", url: "https://www.midea.com.cn/" },
+		]),
+		exitCode: 0,
+	});
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			const parsed = new URL(url);
+			if (parsed.hostname === "www.midea.cn")
+				return { status: 200, bytes: 60, body: `<title>美的-官方网站</title><a href="/about">关于美的</a>` };
+			if (parsed.pathname === "/")
+				return { status: 200, bytes: 60, body: `<title>美的集团-官方网站</title><a href="/zh/about-midea/news">新闻</a>` };
+			return {
+				status: 200, bytes: 120,
+				body: `<html>
+<a href="/zh/about-midea/news/news-20220719">美的空调率先发布碳足迹评估报告 2022年7月19日</a>
+<a href="/zh/about-midea/news/news-20210325">美的集团与上海交通大学签订战略合作协议 2021年3月25日</a>
+</html>`,
+			};
+		},
+	};
+	const site = await discoverCompanySite("美的", fakeBin, { runReach, fetcher });
+	assert.equal(site.listUrl, "https://www.midea.com.cn/zh/about-midea/news", "选能解析出新闻的站，而不是商城首页");
+});

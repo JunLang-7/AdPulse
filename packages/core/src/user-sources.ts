@@ -294,6 +294,10 @@ export class UserSourceService {
 			readFallback?: (url: string) => Promise<Array<{ itemKey: string; title: string; itemUrl: string }> | null | undefined>;
 			/** 搜索回退（注入聚合器，便于测试与额度管控）；只取同域命中。 */
 			searchFallback?: (query: string) => Promise<Array<{ title: string; url: string }>>;
+			/** 当前站点采不到内容时，按企业名再找几个备选站点换站重试（注入发现）。 */
+			discoverSites?: (label: string) => Promise<Array<{ host: string; listUrl: string }>>;
+			/** 换站重试时为每个 host 生成允许列表抓取器。 */
+			fetcherFor?: (host: string) => SourceFetcher;
 		} = {},
 	): Promise<UserSourceRefreshResult> {
 		const source = await this.storage.transaction(async (tx) => {
@@ -311,6 +315,7 @@ export class UserSourceService {
 		if (!source.host || !source.listUrl)
 			throw new UserSourceError(409, "source_not_ready", "站点还在查找官网，稍后再试");
 		const host = source.host;
+		let currentHost = host;
 		const listUrl = source.listUrl;
 		const sourceKey = userSourceKey(sourceId);
 		const failure = async (reason: string): Promise<UserSourceRefreshResult> => {
@@ -453,9 +458,65 @@ export class UserSourceService {
 				// 搜索失败或额度用尽都维持原结论，不冒充成功。
 			}
 		}
+		// 换站重试：同一家企业常有多个站（集团站/商城站/品牌站）。当前站采不到内容时，
+		// 按发现结果换 1–2 个已验证站点再试；成功就把 host 与 listUrl 一起改过去。
+		const triedAlternates: string[] = [];
+		if (parsed.length === 0 && options.discoverSites && options.fetcherFor) {
+			const alternates = (await options.discoverSites(source.label).catch(() => []))
+				.filter((site) => site.host !== currentHost)
+				.slice(0, 2);
+			const ownerSources = await this.list(source.ownerId);
+			for (const alternate of alternates) {
+				triedAlternates.push(alternate.host);
+				// 已经登记过的站点不抢：host 唯一，换过去只会冲突。
+				if (ownerSources.some((s) => s.id !== sourceId && s.host === alternate.host)) continue;
+				try {
+					const altFetcher = options.fetcherFor(alternate.host);
+					const altRobots = await altFetcher
+						.fetchText(`https://${alternate.host}/robots.txt`, FETCH_LIMITS)
+						.catch(() => null);
+					if (altRobots && altRobots.status >= 500) continue;
+					if (
+						altRobots &&
+						altRobots.status < 400 &&
+						!robotsAllows(parseRobots(altRobots.body), new URL(alternate.listUrl).pathname)
+					)
+						continue;
+					const altPage = await altFetcher.fetchText(alternate.listUrl, FETCH_LIMITS);
+					if (altPage.status >= 400) continue;
+					let altParsed = parseUserListPage(altPage.body, alternate.listUrl, alternate.host);
+					if (altParsed.length === 0)
+						altParsed = parseJsonListPayload(altPage.body, alternate.listUrl, alternate.host);
+					if (altParsed.length === 0) {
+						const dataListUrl = findDataListAnchor(altPage.body, alternate.listUrl, alternate.host);
+						if (dataListUrl) {
+							const dataPage = await altFetcher.fetchText(dataListUrl, FETCH_LIMITS);
+							if (dataPage.status < 400)
+								altParsed = parseJsonListPayload(dataPage.body, dataListUrl, alternate.host);
+							if (altParsed.length > 0) {
+								parsed = altParsed;
+								currentHost = alternate.host;
+								resolvedListUrl = dataListUrl;
+								break;
+							}
+						}
+					}
+					if (altParsed.length > 0) {
+						parsed = altParsed;
+						currentHost = alternate.host;
+						resolvedListUrl = alternate.listUrl;
+						break;
+					}
+				} catch {
+					// 单个备选站点失败继续下一个。
+				}
+			}
+		}
 		if (parsed.length === 0)
 			return await failure(
-				"列表页、sitemap 与搜索都没有找到可用条目：该站可能需要 JS 渲染，或没有可访问的 HTML 列表页/JSON 接口；可直接填写具体的新闻列表页地址再试。",
+				triedAlternates.length > 0
+					? `列表页、sitemap 与搜索都没有找到可用条目（已尝试备选站点：${triedAlternates.join("、")}）：该站可能需要 JS 渲染，或没有可访问的 HTML 列表页/JSON 接口；可直接填写具体的新闻列表页地址再试。`
+					: "列表页、sitemap 与搜索都没有找到可用条目：该站可能需要 JS 渲染，或没有可访问的 HTML 列表页/JSON 接口；可直接填写具体的新闻列表页地址再试。",
 			);
 
 		const result = await this.storage.transaction(async (tx) => {
@@ -500,7 +561,8 @@ export class UserSourceService {
 			if (current)
 				await tx.userSources.put({
 					...current,
-					// 探测后选到更好的页面时把纠正结果写回，避免每次刷新重复探测同一批候选。
+					// 探测/换站后选到更好的页面时把纠正结果写回，避免每次刷新重复探测同一批候选。
+					host: currentHost,
 					listUrl: resolvedListUrl,
 					lastRefreshAt: now,
 					lastOutcome: "ok",

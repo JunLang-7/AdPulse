@@ -35,7 +35,7 @@ import { createModelCredentialCipher } from "./model-credential-cipher.js";
 import { discoverModels } from "./model-discovery.js";
 import { createModelEgressFetch } from "./model-egress.js";
 import { HttpSourceFetcher, UserSiteFetcher } from "./source-fetch.js";
-import { agentReachReadFallback, discoverCompanySite } from "./site-discovery.js";
+import { agentReachReadFallback, discoverCompanySite, discoverCompanySites } from "./site-discovery.js";
 import { providersFromEnvironment } from "./search-providers.js";
 import type { TaskDraftExtractor } from "./task-draft-extractor.js";
 import {
@@ -151,16 +151,19 @@ export function compose(
 	const lifecycleCleanup = new LifecycleCleanupService(storage);
 	const validationChecks = new ValidationCheckService(storage);
 
-	// 只填企业名时的异步发现：worker 里跑搜索 + 站点验证 + 首次采集，登记请求立即返回。
+	// 只填企业名时的异步发现 + 换站回退共用同一个聚合器（额度按 storage 计）。
+	const userSourceAggregator = new SearchAggregator(storage, providersFromEnvironment(process.env));
+	const discoverAlternates = (label: string) =>
+		discoverCompanySites(label, process.env.AGENT_REACH_BIN, { aggregator: userSourceAggregator })
+			.then((sites) => sites.map(({ host, listUrl }) => ({ host, listUrl })));
 	const userSourceDiscovery = {
 		run: async (sourceId: string) => {
 			const userSources = new UserSourceService(storage);
 			const source = await userSources.get(sourceId);
 			if (!source || source.status !== "discovering") return;
 			const now = new Date().toISOString();
-			const aggregator = new SearchAggregator(storage, providersFromEnvironment(process.env));
 			try {
-				const site = await discoverCompanySite(source.label, process.env.AGENT_REACH_BIN, { aggregator });
+				const site = await discoverCompanySite(source.label, process.env.AGENT_REACH_BIN, { aggregator: userSourceAggregator });
 				await userSources.finishDiscovery(sourceId, site, now);
 				await userSources.refresh(
 					source.ownerId,
@@ -169,7 +172,9 @@ export function compose(
 					now,
 					{
 						readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN),
-						searchFallback: async (query: string) => (await aggregator.search(query)).hits,
+						searchFallback: async (query: string) => (await userSourceAggregator.search(query)).hits,
+						discoverSites: discoverAlternates,
+						fetcherFor: (host: string) => new UserSiteFetcher([host]),
 					},
 				);
 			} catch (error) {
@@ -191,6 +196,7 @@ export function compose(
 		storage,
 		channels,
 		decisions,
+		discoverAlternates,
 		tasks,
 		evidence,
 		marketEvents: new MarketEventService(storage),
@@ -290,7 +296,7 @@ isPublicAddress,} from "./source-fetch.js";
 export { runSources } from "./source-runner.js";
 export { bingProvider, agentReachProvider, serperProvider, braveProvider, providersFromEnvironment, parseDailyLimits, bingQueries } from "./search-providers.js";
 export { runUserSources } from "./user-source-runner.js";
-export { discoverCompanySite, pickCompanySite, resolveNewsListPage, searchBing, readViaAgentReach, parseMarkdownLinks, agentReachReadFallback, AgentReachLimitError, resetDiscoveryThrottle , SearchQuotaExhaustedError } from "./site-discovery.js";
+export { discoverCompanySite, discoverCompanySites, pickCompanySite, resolveNewsListPage, searchBing, readViaAgentReach, parseMarkdownLinks, agentReachReadFallback, AgentReachLimitError, resetDiscoveryThrottle , SearchQuotaExhaustedError } from "./site-discovery.js";
 export { discoverSource } from "./source-discovery.js";
 export { discoverXiaohongshu } from "./xiaohongshu-discovery.js";
 export type { XiaohongshuNoteCandidate, RunXiaohongshu } from "./xiaohongshu-discovery.js";

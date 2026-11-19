@@ -30,6 +30,8 @@ export async function runUserSources(
 		now?: () => string;
 		fetcherFor?: (host: string) => SourceFetcher;
 		readFallback?: ((url: string) => Promise<Array<{ itemKey: string; title: string; itemUrl: string }> | null | undefined>) | undefined;
+		/** 换站回退：当前站点采不到内容时按企业名找备选站点。 */
+		discoverSites?: (label: string) => Promise<Array<{ host: string; listUrl: string }>>;
 	} = {},
 ): Promise<void> {
 	const now = options.now ?? (() => new Date().toISOString());
@@ -50,7 +52,12 @@ export async function runUserSources(
 						source.id,
 						fetcher,
 						stamp,
-						options.readFallback ? { readFallback: options.readFallback } : {},
+						{
+							...(options.readFallback ? { readFallback: options.readFallback } : {}),
+							...(options.discoverSites && options.fetcherFor
+								? { discoverSites: options.discoverSites, fetcherFor: options.fetcherFor }
+								: {}),
+						},
 					),
 				);
 			} catch {

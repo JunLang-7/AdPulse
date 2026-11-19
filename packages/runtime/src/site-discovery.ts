@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
-import { normalizeItemUrl } from "@adpluse/core";
+import { normalizeItemUrl, parseJsonListPayload, parseUserListPage } from "@adpluse/core";
 import type { SourceFetcher } from "@adpluse/core";
 import { UserSiteFetcher } from "./source-fetch.js";
 const HttpSourceFetcher = UserSiteFetcher;
@@ -89,6 +89,8 @@ const NEWS_TOKEN = /news|xinwen|xwzx|xwtt|新闻|动态|资讯|信息|media|pres
 const MAX_LIST_PAGE_ATTEMPTS = 3;
 /** 首页验证最多试几个候选：搜索前几名常是音乐/股票/百科，真正的官网可能在第 6–8 位。 */
 const MAX_VERIFY_CANDIDATES = 8;
+/** 备选站点最多返回几个：主站采不到时按顺序换站重试。 */
+const MAX_SITES = 3;
 
 /**
  * 搜索源频率保护：Bing/Exa 在连续请求下会降级（返回无关结果或限流）。
@@ -199,17 +201,27 @@ export async function resolveNewsListPage(
 	candidate: { host: string; listUrl: string },
 	fetcher: SourceFetcher,
 ): Promise<string | null> {
+	const resolved = await resolveNewsListPageDetailed(candidate, fetcher);
+	return resolved?.listUrl ?? null;
+}
+
+/** 与 resolveNewsListPage 相同，但把页面正文带回来，供“能不能解析出条目”的排序使用。 */
+export async function resolveNewsListPageDetailed(
+	candidate: { host: string; listUrl: string },
+	fetcher: SourceFetcher,
+): Promise<{ listUrl: string; body: string } | null> {
 	const { host, listUrl } = candidate;
 	if (!isDataLikePageUrl(listUrl)) {
 		const page = await fetchQuietly(fetcher, listUrl);
 		if (page && page.status < 400 && looksLikeHtmlPage(page.body)) {
-			if (NEWS_TOKEN.test(new URL(listUrl).pathname)) return listUrl;
+			if (NEWS_TOKEN.test(new URL(listUrl).pathname)) return { listUrl, body: page.body };
 			const entry = firstNewsAnchor(page.body, listUrl, host);
 			if (entry) {
 				const entryPage = await fetchQuietly(fetcher, entry);
-				if (entryPage && entryPage.status < 400 && looksLikeHtmlPage(entryPage.body)) return entry;
+				if (entryPage && entryPage.status < 400 && looksLikeHtmlPage(entryPage.body))
+					return { listUrl: entry, body: entryPage.body };
 			}
-			return listUrl;
+			return { listUrl, body: page.body };
 		}
 	}
 	// 候选是数据接口或非 HTML：改在站点首页找一个验证过的新闻入口；找不到就如实返回 null。
@@ -221,7 +233,8 @@ export async function resolveNewsListPage(
 			const entry = firstNewsAnchor(home.body, homeUrl, host);
 			if (entry) {
 				const entryPage = await fetchQuietly(fetcher, entry);
-				if (entryPage && entryPage.status < 400 && looksLikeHtmlPage(entryPage.body)) return entry;
+				if (entryPage && entryPage.status < 400 && looksLikeHtmlPage(entryPage.body))
+					return { listUrl: entry, body: entryPage.body };
 			}
 		}
 	}
@@ -275,10 +288,10 @@ export async function searchBing(brand: string, fetcherFor?: (hosts: string[]) =
 }
 
 /**
- * 企业名称 → {host, listUrl}。优先 agent-reach（Exa）；限流/失败时兑底 Bing 结果页。
- * 结果未经核验，登记后由用户在来源列表里确认采集结果是否正确。
+ * 企业名称 → 最多 MAX_SITES 个已验证的 {host, listUrl}（按分数与域名质量排序）。
+ * 只要一个站点时用 discoverCompanySite；主站采集不到内容时按这份列表换站重试。
  */
-export async function discoverCompanySite(
+export async function discoverCompanySites(
 	name: string,
 	executable: string | undefined,
 	options: {
@@ -293,10 +306,9 @@ export async function discoverCompanySite(
 			}>;
 		};
 	} = {},
-): Promise<CompanySite> {
+): Promise<CompanySite[]> {
 	const brand = name.replace(/\s+/gu, " ").trim();
 	if (!brand) throw new Error("company name required");
-	// 比对时忽略空格：用户可能输入“某 企业”，页面写的是“某企业”。
 	const brandCompact = brand.replace(/\s+/gu, "");
 	let searchItems: unknown;
 	// 聚合搜索：给了 aggregator 就走多源（带额度管控），否则走旧的单源兼容路径。
@@ -389,16 +401,29 @@ export async function discoverCompanySite(
 	if (passing.length > 0) {
 		passing.sort((a, b) => b.shape - a.shape);
 		const rejected: string[] = [];
+		const sites: Array<CompanySite & { shape: number; itemCount: number }> = [];
 		// 首选候选的列表页可能是数据接口或非 HTML：按分数顺序试下一个，都不行就如实报错。
 		// 每次尝试最多再发 4 个请求，所以只试前几个候选，避免单次登记放大成几十个请求。
-		for (const { candidate } of passing.slice(0, MAX_LIST_PAGE_ATTEMPTS)) {
+		for (const { candidate, shape } of passing.slice(0, MAX_LIST_PAGE_ATTEMPTS)) {
 			const fetcher = options.fetcher ?? new UserSiteFetcher([candidate.host]);
-			const listUrl = await resolveNewsListPage(
+			const resolved = await resolveNewsListPageDetailed(
 				{ host: candidate.host, listUrl: candidate.listUrl },
 				fetcher,
 			);
-			if (listUrl) return { host: candidate.host, listUrl, via: candidate.via };
-			rejected.push(candidate.host);
+			if (!resolved) {
+				rejected.push(candidate.host);
+				continue;
+			}
+			// 同一个品牌常有多个站（集团站/商城站/品牌站）：列表页真能解析出条目的优先。
+			const htmlItems = parseUserListPage(resolved.body, resolved.listUrl, candidate.host);
+			const itemCount = htmlItems.length > 0
+				? htmlItems.length
+				: parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host).length;
+			sites.push({ host: candidate.host, listUrl: resolved.listUrl, via: candidate.via, shape, itemCount });
+		}
+		if (sites.length > 0) {
+			sites.sort((a, b) => (b.itemCount > 0 ? 1 : 0) - (a.itemCount > 0 ? 1 : 0) || b.itemCount - a.itemCount || b.shape - a.shape);
+			return sites.slice(0, MAX_SITES).map(({ host, listUrl, via }) => ({ host, listUrl, via }));
 		}
 		throw new Error(
 			`no usable HTML news list page on ${rejected.join(", ")} (candidate page was a data endpoint or not HTML)`,
@@ -407,6 +432,19 @@ export async function discoverCompanySite(
 	throw lastError ?? new Error("site discovery found no usable official site");
 }
 
+/**
+ * 企业名称 → 单个 {host, listUrl}。优先 agent-reach（Exa）；限流/失败时兑底 Bing 结果页。
+ * 结果未经核验，登记后由用户在来源列表里确认采集结果是否正确。
+ */
+export async function discoverCompanySite(
+	name: string,
+	executable: string | undefined,
+	options: Parameters<typeof discoverCompanySites>[2] = {},
+): Promise<CompanySite> {
+	const [first] = await discoverCompanySites(name, executable, options);
+	if (!first) throw new Error("site discovery found no usable official site");
+	return first;
+}
 /** 挑站排序：同名标题优先，其次官网声明；同 host 保留新闻 URL；搜索排名靠前有微弱加分。 */
 function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: string; listUrl: string; via: string; score: number }> {
 	const byHost = new Map<string, { host: string; listUrl: string; via: string; score: number }>();

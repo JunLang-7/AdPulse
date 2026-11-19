@@ -469,3 +469,66 @@ test("finishDiscovery：写回站点并转为 active；host 已被本人占用�
 	assert.equal(failed?.status, "failed");
 	assert.match(failed?.lastReason ?? "", /已经添加过/);
 });
+
+// ===== 换站回退：一个网站不行就换另一个 =====
+
+const MD_ARTICLES = `<html><body>
+<a href="/zh/about-midea/news/news-20220719">美的空调率先发布碳足迹和减碳量评估报告 2022年7月19日</a>
+<a href="/zh/about-midea/news/news-20210325">美的集团与上海交通大学签订战略合作协议 2021年3月25日</a>
+</body></html>`;
+
+test("refresh：注册站采不到内容时换到备选官网，并把 host 一起写回", async () => {
+	const storage = new MemoryStorage();
+	const service = new UserSourceService(storage);
+	const source = await service.add("owner-1", {
+		label: "美的",
+		listUrl: "https://www.midea.cn/",
+		subject: { kind: "brand", name: "美的" },
+	}, "2026-11-19T00:00:00.000Z");
+	const result = await service.refresh("owner-1", source.id, fakeFetcher({
+		"https://www.midea.cn/robots.txt": { status: 404, body: "not found" },
+		"https://www.midea.cn/": { status: 200, body: `<html><a href="/about">关于我们</a></html>` },
+	}), "2026-11-19T00:01:00.000Z", {
+		discoverSites: async () => [
+			{ host: "www.midea.com.cn", listUrl: "https://www.midea.com.cn/zh/about-midea/news" },
+		],
+		fetcherFor: (host) => host === "www.midea.com.cn"
+			? fakeFetcher({
+				"https://www.midea.com.cn/robots.txt": { status: 404, body: "not found" },
+				"https://www.midea.com.cn/zh/about-midea/news": { status: 200, body: MD_ARTICLES },
+			})
+			: fakeFetcher({}),
+	});
+	assert.equal(result.outcome, "ok");
+	assert.equal(result.created, 2, "备选站点采到了真实新闻");
+	const [stored] = await service.list("owner-1");
+	assert.equal(stored?.host, "www.midea.com.cn", "host 换成真正能采的站");
+	assert.equal(stored?.listUrl, "https://www.midea.com.cn/zh/about-midea/news");
+});
+
+test("refresh：备选站点已被本人登记过时不抢，失败原因列出试过的站", async () => {
+	const storage = new MemoryStorage();
+	const service = new UserSourceService(storage);
+	const first = await service.add("owner-1", {
+		label: "美的商城",
+		listUrl: "https://www.midea.cn/",
+		subject: { kind: "brand", name: "美的" },
+	}, "2026-11-19T00:00:00.000Z");
+	await service.add("owner-1", {
+		label: "美的集团",
+		listUrl: "https://www.midea.com.cn/zh/about-midea/news",
+		subject: { kind: "brand", name: "美的" },
+	}, "2026-11-19T00:00:01.000Z");
+	const result = await service.refresh("owner-1", first.id, fakeFetcher({
+		"https://www.midea.cn/robots.txt": { status: 404, body: "not found" },
+		"https://www.midea.cn/": { status: 200, body: `<html><a href="/about">关于我们</a></html>` },
+	}), "2026-11-19T00:01:00.000Z", {
+		discoverSites: async () => [
+			{ host: "www.midea.com.cn", listUrl: "https://www.midea.com.cn/zh/about-midea/news" },
+		],
+		fetcherFor: () => fakeFetcher({}),
+	});
+	assert.equal(result.outcome, "failed");
+	assert.match(result.reason ?? "", /已尝试备选站点：www\.midea\.com\.cn/);
+	assert.equal((await service.list("owner-1")).find((s) => s.id === first.id)?.host, "www.midea.cn", "不抢已登记的站");
+});

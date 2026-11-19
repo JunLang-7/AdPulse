@@ -27,7 +27,7 @@ import {
 	TaskInputValidationError,
 } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
-import { agentReachReadFallback, providersFromEnvironment, UserSiteFetcher } from "@adpluse/runtime";
+import { agentReachReadFallback, discoverCompanySites, providersFromEnvironment, UserSiteFetcher } from "@adpluse/runtime";
 import { ZodError } from "zod";
 import type { IdentityProvider } from "./feishu-auth.js";
 import { HttpError, json, readJson } from "./http.js";
@@ -168,6 +168,11 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 		runtime.storage,
 		providersFromEnvironment(process.env),
 	);
+	// 当前站点采不到内容时换站重试：同一企业常有集团站/商城站/品牌站多个入口。
+	const discoverAlternates = (label: string) =>
+		discoverCompanySites(label, process.env.AGENT_REACH_BIN, { aggregator: searchAggregator })
+			.then((sites) => sites.map(({ host, listUrl }) => ({ host, listUrl })));
+	const fetcherForHost = (host: string) => new UserSiteFetcher([host]);
 	const lifecycleDeletions = new LifecycleDeletionService(runtime.storage);
 	const subscriptions = new SubscriptionService(runtime.storage);
 	const subscriptionErrorStatus = (reason: SubscriptionError["reason"]): number => {
@@ -712,6 +717,8 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 								{
 									readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN),
 									searchFallback: async (query) => (await searchAggregator.search(query)).hits,
+									discoverSites: discoverAlternates,
+									fetcherFor: fetcherForHost,
 								},
 							);
 						} catch {
@@ -746,6 +753,8 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 								{
 									readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN),
 									searchFallback: async (query) => (await searchAggregator.search(query)).hits,
+									discoverSites: discoverAlternates,
+									fetcherFor: fetcherForHost,
 								},
 							);
 							return json(res, 200, result);
