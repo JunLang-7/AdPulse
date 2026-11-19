@@ -435,3 +435,43 @@ test("挑站：同 host 代表 URL 被投资者/首页页占位解析 0 条时�
 	assert.equal(sites[0]?.host, "www.midea.com.cn");
 	assert.equal(sites[0]?.listUrl, "https://www.midea.com.cn/zh/about-midea/news", "投资者页解析 0 条时落到新闻型备选 URL");
 });
+
+test("升级补搜：0 条目的 host 不被跳过，第二轮的更好结果覆盖第一轮", async () => {
+	const calls: string[] = [];
+	const aggregator = {
+		async search(query: string, overrides?: { enoughHits?: number }) {
+			calls.push(`${query}${overrides?.enoughHits ? "+esc" : ""}`);
+			if (query.includes("新闻中心"))
+				return {
+					hits: [
+						{ title: "美的首页", url: "https://www.midea.com.cn/zh" },
+						{ title: "新闻", url: "https://www.midea.com.cn/zh/about-midea/news" },
+					],
+					providers: [{ provider: "serper", label: "Serper", status: "ok", detail: null }],
+				};
+			// 第一轮：只有投资者页（无新闻锚点）——解析 0 条。
+			return {
+				hits: [{ title: "美的首页", url: "https://www.midea.com.cn/zh/Investors/Stock_Information" }],
+				providers: [{ provider: "bing", label: "Bing", status: "ok", detail: null }],
+			};
+		},
+	};
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			const parsed = new URL(url);
+			if (parsed.pathname.startsWith("/zh/Investors"))
+				return { status: 200, bytes: 90, body: `<title>美的首页-投资者关系</title><a href="/zh/Investors/Report">财务报告</a>` };
+			if (parsed.pathname === "/" || parsed.pathname === "/zh")
+				return { status: 200, bytes: 80, body: `<title>美的首页</title><a href="/zh/about-midea/news">新闻</a>` };
+			return {
+				status: 200, bytes: 130,
+				body: `<html><a href="/zh/about-midea/news/news-20220719">美的空调率先发布碳足迹评估报告 2022年7月19日</a></body></html>`,
+			};
+		},
+	};
+	const sites = await discoverCompanySites("美的", fakeBin, { aggregator, fetcher });
+	assert.equal(sites.length, 1, "同 host 只保留一份（第二轮覆盖第一轮）");
+	assert.equal(sites[0]?.host, "www.midea.com.cn");
+	assert.equal(sites[0]?.listUrl, "https://www.midea.com.cn/zh/about-midea/news", "0 条目的 host 在第二轮被新闻 URL 覆盖");
+	assert.ok(calls.includes("美的 新闻中心+esc"), "第一轮全部 0 条目时升级补搜");
+});

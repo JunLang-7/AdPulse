@@ -493,8 +493,18 @@ export async function discoverCompanySites(
 	// 正常企业（免费源就能找到官网）不消耗付费额度。
 	if (sites.length === 0 || sites.every((site) => site.itemCount === 0)) {
 		const extra = await extraSearch();
-		if (Array.isArray(extra) && extra.length > 0)
-			sites = [...sites, ...(await resolveCandidates(extra, new Set(sites.map((site) => site.host))))];
+		if (Array.isArray(extra) && extra.length > 0) {
+			// 只跳过「已解析出条目」的 host：0 条目的 host（代表 URL 被首页/投资者页占位）
+			// 必须允许第二轮重新验证——Google 的新闻 URL 常在第二轮才出现（实测美的）。
+			const skip = new Set(sites.filter((site) => site.itemCount > 0).map((site) => site.host));
+			const more = await resolveCandidates(extra, skip);
+			const byHost = new Map(sites.map((site) => [site.host, site]));
+			for (const site of more) {
+				const previous = byHost.get(site.host);
+				if (!previous || site.itemCount > previous.itemCount) byHost.set(site.host, site);
+			}
+			sites = [...byHost.values()];
+		}
 	}
 	if (sites.length > 0) {
 		sites.sort(
