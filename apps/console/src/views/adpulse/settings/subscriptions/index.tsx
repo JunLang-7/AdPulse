@@ -817,8 +817,9 @@ export default function SubscriptionSettingsPage() {
 						<p className="text-sm text-muted-foreground">推送渠道</p>
 						<ul className="space-y-1 text-sm">
 							{(pushChannels.data ?? []).map((channel) => (
-								<li key={channel.channel} className={channel.configured ? "text-muted-foreground" : "text-amber-700"}>
-									{channel.label}：{channel.configured ? "已配置" : channel.guide ?? "未配置"}
+								<li key={channel.channel} className="text-muted-foreground">
+									{channel.label}：{channel.configured ? "已配置" : "未确认单聊地址"}
+									{channel.configured ? null : <span className="ml-1">（先完成上方三步引导的第 1 步）</span>}
 								</li>
 							))}
 						</ul>

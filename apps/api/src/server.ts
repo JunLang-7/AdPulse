@@ -679,16 +679,15 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 				if (path === "/api/me/search-providers" && req.method === "GET")
 					return json(res, 200, { items: await searchAggregator.quotas() });
 				if (path === "/api/me/push-channels" && req.method === "GET") {
-					// 飞书渠道的可用性取决于本人是否已确认单聊地址，所以要动态拼进来。
+					// 目前只做飞书：其他渠道（企微/钉钉/ntfy/Bark）未接入，不展示、不宣传。
 					const status = await notifications.status(session.userId);
-					const feishuReady = status.destination?.status === "verified";
 					const feishu = feishuInstantChannel({
 						appId: process.env.FEISHU_APP_ID,
 						appSecret: process.env.FEISHU_APP_SECRET,
-						receiveId: feishuReady ? status.destination?.externalId : undefined,
+						receiveId: status.destination?.status === "verified" ? status.destination.externalId : undefined,
 					});
 					return json(res, 200, {
-						items: [feishu, ...pushChannels].map((channel) => ({
+						items: [feishu].map((channel) => ({
 							channel: channel.channel,
 							label: channel.label,
 							configured: channel.configured,
@@ -697,14 +696,14 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 					});
 				}
 				if (path === "/api/me/notifications/push-now" && req.method === "POST") {
-					// 即时推送：只取本人已确认（依据齐备）的事件摘要，不需等汇总时间。
+					// 即时推送：只取本人已确认（依据齐备）的事件摘要，不需等汇总时间。只走飞书。
 					const status = await notifications.status(session.userId);
 					const feishu = feishuInstantChannel({
 						appId: process.env.FEISHU_APP_ID,
 						appSecret: process.env.FEISHU_APP_SECRET,
 						receiveId: status.destination?.status === "verified" ? status.destination.externalId : undefined,
 					});
-					const enabled = [feishu, ...pushChannels].filter((channel) => channel.configured);
+					const enabled = [feishu].filter((channel) => channel.configured);
 					if (enabled.length === 0)
 						throw new HttpError(409, "no_push_channel_configured");
 					const versions = (await runtime.marketEvents.list(session.userId)).filter(

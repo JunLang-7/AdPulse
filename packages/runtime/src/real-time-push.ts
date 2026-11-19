@@ -45,8 +45,8 @@ export async function runRealTimePush(
 		appSecret: env.FEISHU_APP_SECRET,
 		receiveId: openId ?? undefined,
 	});
-	const channels = (deps.pushChannelsOverride ?? [feishu, ...pushChannelsFromEnvironment(env)])
-		.filter((channel) => channel.configured);
+	// 目前只走飞书；其他渠道未接入，不参与发送。
+	const channels = (deps.pushChannelsOverride ?? [feishu]).filter((channel) => channel.configured);
 	if (channels.length === 0)
 		return { eventCount: 0, sent: 0, results: [], reason: "no_push_channel_configured" };
 
