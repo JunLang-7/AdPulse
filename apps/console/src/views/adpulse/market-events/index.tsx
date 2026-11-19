@@ -16,6 +16,11 @@ const scopes = { link_only: "仅链接（未读取）", title_only: "仅标题",
 const origins = { unknown: "来源未核验", official: "官方原文（录入者声明）", repost: "转载", search: "搜索结果" };
 const fields = { subject: "公告主体", eventTime: "事件时间", conditions: "适用条件" };
 const control = "w-full rounded-md border bg-background px-3 py-2 text-sm";
+/**
+ * #41 的内置试点来源（海尔 / 潍柴）：早期联调用，产品里不再展示。
+ * 采集代码保留；这里只把它们的线索与采集状态从界面隐藏。
+ */
+const INTERNAL_SOURCE_KEYS: ReadonlySet<string> = new Set(["haier_news", "weichai_news"]);
 const source = (): Source => ({ url: null, publisher: "", content: null, scope: "link_only", origin: "unknown", publishedAt: null, acquiredAt: new Date().toISOString(), limitations: "" });
 const blank = (): EventInput => ({ occurrenceKey: `manual:${crypto.randomUUID()}`, title: "", type: "announcement", subject: { kind: "brand", name: "" }, eventTime: null, conditions: null, sources: [source()], citations: { subject: null, eventTime: null, conditions: null }, taskRefs: [], provenance: { simulated: false, reference: null, transformation: null } });
 function failure(status: number): Error {
@@ -472,16 +477,17 @@ export default function MarketEventsPage() {
 	}, onSuccess: async () => {
 		await invalidateSources();
 	} });
+	const sourceLeads = (leads.data?.leads ?? []).filter((lead) => !INTERNAL_SOURCE_KEYS.has(lead.sourceKey));
 	const leadGroups = (() => {
 		const groups = new Map<string, { key: string; label: string; count: number }>();
-		for (const lead of leads.data?.leads ?? []) {
+		for (const lead of sourceLeads) {
 			const group = groups.get(lead.sourceKey);
 			if (group) group.count += 1;
 			else groups.set(lead.sourceKey, { key: lead.sourceKey, label: lead.sourceLabel, count: 1 });
 		}
 		return [...groups.values()].sort((left, right) => right.count - left.count);
 	})();
-	const visibleLeads = (leads.data?.leads ?? []).filter((lead) => !leadSource || lead.sourceKey === leadSource);
+	const visibleLeads = sourceLeads.filter((lead) => !leadSource || lead.sourceKey === leadSource);
 	const lifecycle = useQuery({ queryKey: ["market-events", eventId, "lifecycle"], enabled: !!eventId, queryFn: async () => {
 		const r = await consoleClient.GET("/api/market-events/{eventId}/lifecycle", { params: { path: { eventId: eventId! } } });
 		if (!r.data) throw new Error("无法读取保留期");
@@ -624,7 +630,7 @@ export default function MarketEventsPage() {
 			</div>
 		</Section>}
 		{leads.error && <p role="alert">{leads.error.message}</p>}
-		{leads.data && leads.data.leads.length > 0 && <Section
+		{leads.data && sourceLeads.length > 0 && <Section
 			collapsible
 			defaultOpen={false}
 			title={`来源线索（${visibleLeads.length}）`}
@@ -636,8 +642,8 @@ export default function MarketEventsPage() {
 					点「转事件」。如果几个链接说的是同一件事，先勾选这几条再点「合并为一条事件」；
 					之后由你补上时间、适用条件和原文引用。
 				</p>
-				{feedStatus.data && feedStatus.data.length > 0 ? <ul className="space-y-1 text-xs text-muted-foreground">
-					{feedStatus.data.map((feed) => <li key={feed.key}>
+				{(feedStatus.data ?? []).some((feed) => !INTERNAL_SOURCE_KEYS.has(feed.key)) ? <ul className="space-y-1 text-xs text-muted-foreground">
+					{(feedStatus.data ?? []).filter((feed) => !INTERNAL_SOURCE_KEYS.has(feed.key)).map((feed) => <li key={feed.key}>
 						{feed.status === "stopped"
 							? `${feed.label}：已停止采集，需要人工恢复`
 							: `${feed.label}：${feed.lastRun ? `最近一次采集在 ${formatBeijing(feed.lastRun)}` : "还没有采集记录"}，${feed.lastOutcome ? outcomeLabel(feed.lastOutcome) : "暂无结果"}，现有 ${feed.activeItems} 条`}
