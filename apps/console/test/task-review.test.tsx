@@ -92,7 +92,7 @@ test("复盘用报表日期和金额展示结果，补充报表时自动提交�
 	assert.ok(costView.getByText(/超过提醒线（提醒线 1 元\/次）/));
 	assert.ok(costView.getByText(/本期报表 · 2026-11-14 00:00/));
 	assert.equal(costView.queryByLabelText("对照报表"), null);
-	assert.ok(await comparisonView.findByText("两份报表认定哪些咨询来自广告的方式不同"));
+	assert.ok(await comparisonView.findByText("两份报表认定结果来自广告的方式不同"));
 	assert.equal(comparisonView.queryByText(/超过提醒线（提醒线/), null);
 
 	fireEvent.change(costView.getByLabelText("本期报表"), { target: { value: current.evidenceId } });

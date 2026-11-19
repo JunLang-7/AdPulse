@@ -2398,8 +2398,11 @@ export interface components {
             snapshotVersion: number;
             hypothesis?: string;
             validationPlan: string;
-            /** @enum {string} */
-            metricKey: "cost_per_consultation";
+            /**
+             * @description 验证检查点的口径键，与任务的投放方式一致。
+             * @enum {string}
+             */
+            metricKey: "cost_per_consultation" | "cost_per_engagement";
             dueAt: string;
             /** @enum {string} */
             status: "pending" | "observed" | "inconclusive" | "cancelled";
