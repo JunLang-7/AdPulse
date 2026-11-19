@@ -361,6 +361,8 @@ export async function discoverCompanySites(
 	// 网络抖动会让个别候选假失败：整段验证重试一轮，仍无通过才报错。
 	let lastError: Error | null = null;
 	const rejectedHosts: string[] = [];
+	/** 验证阶段顺带解析过的列表页：resolve 循环直接复用，不重复请求。 */
+	const preResolved = new Map<string, { listUrl: string; body: string }>();
 	const resolveCandidates = async (
 		items: unknown,
 		skipHosts: Set<string>,
@@ -394,14 +396,26 @@ export async function discoverCompanySites(
 						passing.push({ candidate, shape });
 						continue;
 					}
-					// 有些官网首页是英文/跳转页（实测 midea.com.cn → /en），中文品牌名只在目标页。
+					// 有些官网首页是英文/跳转页（实测 midea.com.cn → /en），品牌名只在新闻页；
+					// 此时用“能解析出的列表页 + 条目标题里有品牌”作为归属判据。
 					if (home.status < 400) {
 						try {
-							const hit = await fetcher.fetchText(candidate.listUrl, { maxBytes: 512 * 1024, timeoutMs: 20_000 });
-							const hitTitle = /<title[^>]*>([\s\S]{0,200}?)<\/title>/iu.exec(hit.body)?.[1] ?? "";
-							const hitText = `${hitTitle}${hit.body.replace(/<[^>]+>/gu, "")}`.replace(/\s+/gu, "").slice(0, 4000);
-							if (hit.status < 400 && (hitText.includes(brandCompact) || hitText.includes(brandPrefix)))
-								passing.push({ candidate, shape });
+							const resolved = await resolveNewsListPageDetailed(candidate, fetcher);
+							if (resolved) {
+								const titles = [
+									...parseUserListPage(resolved.body, resolved.listUrl, candidate.host),
+									...parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host),
+								]
+									.map((item) => item.title)
+									.join("");
+								const pageText = `${resolved.listUrl}${titles}${resolved.body.replace(/<[^>]+>/gu, "")}`
+									.replace(/\s+/gu, "")
+									.slice(0, 6000);
+								if (pageText.includes(brandCompact) || pageText.includes(brandPrefix)) {
+									preResolved.set(candidate.host, resolved);
+									passing.push({ candidate, shape });
+								}
+							}
 						} catch {
 							// 目标页抓不到就按原结论处理。
 						}
@@ -421,10 +435,9 @@ export async function discoverCompanySites(
 		// 每次尝试最多再发 4 个请求，所以只试前几个候选，避免单次登记放大成几十个请求。
 		for (const { candidate, shape } of passing.slice(0, MAX_LIST_PAGE_ATTEMPTS)) {
 			const fetcher = options.fetcher ?? new UserSiteFetcher([candidate.host]);
-			const resolved = await resolveNewsListPageDetailed(
-				{ host: candidate.host, listUrl: candidate.listUrl },
-				fetcher,
-			);
+			const resolved =
+				preResolved.get(candidate.host) ??
+				(await resolveNewsListPageDetailed({ host: candidate.host, listUrl: candidate.listUrl }, fetcher));
 			if (!resolved) {
 				rejectedHosts.push(candidate.host);
 				continue;
