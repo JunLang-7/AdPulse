@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	barkChannel,
+	feishuInstantChannel,
 	ntfyChannel,
 	composeInstantPush,
 	pushChannelsFromEnvironment,
@@ -111,6 +112,81 @@ test("企微：markdown 内容包含标题、正文与跳转链接", async () =>
 	assert.match(payload.markdown.content, /\*\*即时推送\*\*/);
 	assert.match(payload.markdown.content, /第一行/);
 	assert.match(payload.markdown.content, /localhost:5174/);
+});
+
+test("飞书：未确认单聊地址时不发请求，提示去确认", async () => {
+	const { calls, fetcher } = recorder();
+	const channel = feishuInstantChannel({ appId: "cli_x", appSecret: "s", receiveId: undefined, fetcher });
+	assert.equal(channel.configured, false);
+	const result = await channel.send({ title: "t", body: "b" });
+	assert.equal(result.status, "not_configured");
+	assert.match(result.detail ?? "", /确认飞书单聊地址/);
+	assert.equal(calls.length, 0);
+});
+
+test("飞书：先取 tenant_access_token，再发 open_id 文本消息", async () => {
+	const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+	const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+		calls.push({ url: String(url), init });
+		if (String(url).includes("tenant_access_token"))
+			return new Response(JSON.stringify({ code: 0, tenant_access_token: "tok-1", expire: 7200 }), { status: 200 });
+		return new Response(JSON.stringify({ code: 0, data: { message_id: "om_1" } }), { status: 200 });
+	}) as typeof fetch;
+	const channel = feishuInstantChannel({ appId: "cli_x", appSecret: "sec", receiveId: "ou_abc", fetcher });
+	assert.equal(channel.configured, true);
+	const result = await channel.send({ title: "标题", body: "正文", url: "http://localhost:5174/market-events" });
+	assert.deepEqual(result, { channel: "feishu", label: "飞书单聊", status: "ok", detail: null });
+	assert.equal(calls.length, 2, "一次取 token、一次发消息");
+	const sendCall = calls[1]!;
+	assert.match(sendCall.url, /im\/v1\/messages\?receive_id_type=open_id/);
+	const body = JSON.parse(String(sendCall.init?.body));
+	assert.equal(body.receive_id, "ou_abc");
+	assert.equal(body.msg_type, "text");
+	assert.match(JSON.parse(body.content).text, /标题[\s\S]*正文[\s\S]*localhost:5174/);
+	const headers = sendCall.init?.headers as Record<string, string>;
+	assert.equal(headers.authorization, "Bearer tok-1");
+});
+
+test("飞书：token 缓存复用，不每次重复鉴权", async () => {
+	let tokenCalls = 0;
+	const fetcher = (async (url: string | URL | Request) => {
+		if (String(url).includes("tenant_access_token")) {
+			tokenCalls += 1;
+			return new Response(JSON.stringify({ code: 0, tenant_access_token: "tok", expire: 7200 }), { status: 200 });
+		}
+		return new Response(JSON.stringify({ code: 0 }), { status: 200 });
+	}) as typeof fetch;
+	const channel = feishuInstantChannel({ appId: "cli", appSecret: "s", receiveId: "ou_x", fetcher });
+	await channel.send({ title: "a", body: "b" });
+	await channel.send({ title: "a", body: "b" });
+	assert.equal(tokenCalls, 1, "第二次应复用缓存");
+});
+
+test("飞书：业务错误码非 0 时如实报失败", async () => {
+	const fetcher = (async (url: string | URL | Request) => {
+		if (String(url).includes("tenant_access_token"))
+			return new Response(JSON.stringify({ code: 0, tenant_access_token: "tok", expire: 7200 }), { status: 200 });
+		return new Response(JSON.stringify({ code: 230002, msg: "open_id not exist" }), { status: 200 });
+	}) as typeof fetch;
+	const channel = feishuInstantChannel({ appId: "cli", appSecret: "s", receiveId: "ou_bad", fetcher });
+	const result = await channel.send({ title: "t", body: "b" });
+	assert.equal(result.status, "failed");
+	assert.match(result.detail ?? "", /230002/);
+});
+
+test("飞书：鉴权失败时报失败，不尝试发消息", async () => {
+	let sendCalls = 0;
+	const fetcher = (async (url: string | URL | Request) => {
+		if (String(url).includes("tenant_access_token"))
+			return new Response(JSON.stringify({ code: 10014, msg: "app secret invalid" }), { status: 200 });
+		sendCalls += 1;
+		return new Response("{}", { status: 200 });
+	}) as typeof fetch;
+	const channel = feishuInstantChannel({ appId: "cli", appSecret: "bad", receiveId: "ou_x", fetcher });
+	const result = await channel.send({ title: "t", body: "b" });
+	assert.equal(result.status, "failed");
+	assert.match(result.detail ?? "", /10014/);
+	assert.equal(sendCalls, 0, "鉴权失败不继续发消息");
 });
 
 test("composeInstantPush：无已确认事件时明确说明，不假装有内容", () => {
