@@ -650,15 +650,17 @@ function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: str
 		const dictionaryTitle = /拼音|组词|词典|读音|什么意思|怎么读|翻译|解释/i.test(title) ? -6 : 0;
 		const newsInUrl = NEWS_TOKEN.test(`${url.pathname}${url.hostname}`) ? 1 : 0;
 		// 用边界匹配：二字品牌（美的/海尔）光靠 includes 会命中「海尔曼」这类无关词。
-		const brandMatch = brandName && mentionsBrand(title, brandName) ? 5 : 0;
+		// 权重只给弱信号：第三方站/资讯站也会把企业全名写进标题，不能靠这个判断官网。
+		const brandMatch = brandName && mentionsBrand(title, brandName) ? 2 : 0;
 		const dealerPenalty = NON_OFFICIAL_TITLE.test(title) ? -5 : 0;
-		// 短域名（如 inspur.com）比品牌镜像子域（inspur.ainet.cn）更可能是官网；
-		// 带渠道/店铺/子品牌词的子域是镜像或专题页，常冒充主站。
-		const shortHost = /^(?:www\.)?[^.]+\.(?:com|cn|com\.cn|net|org)$/iu.test(url.host);
+		// 短域名（如 inspur.com / www.haier.com）比品牌镜像子域（haier.ces.cn）更可能是官网。
+		const shortHost = /^(?:www\.)?[^.]+(?:\.com)?\.(?:com|cn|com\.cn|net|org)$/iu.test(url.host)
+			|| /^(?:www\.)?[^.]+\.(?:com|cn|com\.cn|net|org)$/iu.test(url.host);
 		const mirrorish = !shortHost && /^(?:[a-z0-9-]+\.)+/iu.test(url.host) && /\b(?:\w+)\.(?:[a-z0-9-]+\.)?/iu.test(url.host);
-		const hostShape = shortHost ? 3 : mirrorish ? 0 : 1;
-		// 搜索排名越靠前越可能是官网：用微弱加分在平票时倾斜。
-		const positionBonus = Math.max(0, 1 - position * 0.05);
+		const hostShape = shortHost ? 4 : mirrorish ? 0 : 1;
+		// 搜索源原始排名是最强信号：百度/Bing 的第 1 条几乎总是官网，
+		// 而第三方站往往排在后面。权重必须高于「标题含全名」。
+		const positionBonus = Math.max(0, 6 - position * 1.2);
 		position += 1;
 		const score = brandMatch + officialTitle + aggregatorTitle + dictionaryTitle + newsInUrl + hostShape + positionBonus + dealerPenalty;
 		const candidate = { host: url.host, listUrl: url.toString(), via: title.slice(0, 80), score };
