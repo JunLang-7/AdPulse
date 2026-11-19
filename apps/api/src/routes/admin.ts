@@ -632,6 +632,11 @@ export async function handleAdmin(
 				personal = { connectionId: preference.connectionId, modelId: preference.modelId };
 			} else if (matching) {
 				personal = { connectionId: matching.id, modelId: matching.models[0]?.id };
+			} else if (provider === undefined) {
+				// 已配置连接但没显式选默认：自动取第一条可用，避免每处都要选一次。
+				const first = connections.find((item) =>
+					item.status === "active" && item.hasCredential && item.models.length > 0);
+				if (first) personal = { connectionId: first.id, modelId: first.models[0]!.id };
 			}
 		}
 		if (personal) {

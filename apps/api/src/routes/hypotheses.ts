@@ -67,8 +67,6 @@ export async function handleHypotheses(req: IncomingMessage, res: ServerResponse
 	const drafts = path.match(/^\/api\/tasks\/([^/]+)\/hypotheses\/drafts$/);
 	if (drafts?.[1] && req.method === "POST") {
 		const taskId = decodeURIComponent(drafts[1]);
-		const models = runtime.taskDraftModels;
-		if (!models) throw new HttpError(503, "hypothesis draft generation unavailable");
 		const body = draftsBody.parse(await readJson(req));
 		const context = await runtime.storage.transaction(async (tx) => {
 			const task = await tx.tasks.get(taskId);
@@ -82,8 +80,12 @@ export async function handleHypotheses(req: IncomingMessage, res: ServerResponse
 				.map((item) => item.input.title);
 			return { version, eventTitles };
 		});
-		const reasoning = createHypothesisReasoning((systemPrompt, brief, maxTokens) =>
-			models.completeJson(ownerId, systemPrompt, brief, undefined, maxTokens));
+		// 统一模型出口：自动使用「模型配置」里保存的默认连接，无需逐处选择。
+		const complete = (systemPrompt: string, brief: string, maxTokens?: number) =>
+			runtime.jsonCompleter
+				? runtime.jsonCompleter(ownerId, systemPrompt, brief, maxTokens)
+				: runtime.taskDraftModels?.completeJson(ownerId, systemPrompt, brief, undefined, maxTokens) ?? Promise.resolve(null);
+		const reasoning = createHypothesisReasoning(complete);
 		const brief = [context.version.product, body.materials].filter((item) => item && item.length > 0).join("\n");
 		const result = await reasoning.drafts({
 			brief,
