@@ -452,23 +452,35 @@ export async function discoverCompanySites(
 					}
 					// 首页抓不到、是英文/跳转页（实测 midea.com.cn → /en）、或没写品牌名时，
 					// 用「能解析出的列表页地址 + 条目标题」作为归属判据。
+					// 代表 URL 是英文新闻页时（实测 haier.com 的 press-events/news，标题全英文）
+					// 判据会漏掉品牌中文名——同 host 的新闻型备选 URL 也要作为证据试一次。
+					const evidenceOf = async (listUrl: string) => {
+						const resolved = await resolveNewsListPageDetailed(
+							{ host: candidate.host, listUrl },
+							fetcher,
+						).catch(() => null);
+						if (!resolved) return null;
+						const titles = [
+							...parseUserListPage(resolved.body, resolved.listUrl, candidate.host),
+							...parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host),
+						]
+							.map((item) => item.title)
+							.join("");
+						// 只看列表页地址与条目标题，不看整页正文：
+						// 正文里提到品牌是资讯门户/经销商页的典型特征，不能当作官网归属证据。
+						const evidence = `${resolved.listUrl}${titles}`;
+						return mentionsBrand(evidence, brandCompact) || mentionsBrand(evidence, brandPrefix)
+							? resolved
+							: null;
+					};
 					try {
-						const resolved = await resolveNewsListPageDetailed(candidate, fetcher);
+						const resolved =
+							(await evidenceOf(candidate.listUrl)) ??
+							(candidate.newsAlt ? await evidenceOf(candidate.newsAlt.listUrl) : null);
 						if (resolved) {
-							const titles = [
-								...parseUserListPage(resolved.body, resolved.listUrl, candidate.host),
-								...parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host),
-							]
-								.map((item) => item.title)
-								.join("");
-							// 只看列表页地址与条目标题，不看整页正文：
-							// 正文里提到品牌是资讯门户/经销商页的典型特征，不能当作官网归属证据。
-							const evidence = `${resolved.listUrl}${titles}`;
-							if (mentionsBrand(evidence, brandCompact) || mentionsBrand(evidence, brandPrefix)) {
-								preResolved.set(candidate.host, resolved);
-								passing.push({ candidate, shape });
-								continue;
-							}
+							preResolved.set(candidate.host, resolved);
+							passing.push({ candidate, shape });
+							continue;
 						}
 					} catch {
 						// 目标页抓不到就按原结论处理。
@@ -592,7 +604,7 @@ export async function discoverCompanySite(
 	return first;
 }
 /** 挑站排序：同名标题优先，其次官网声明；同 host 保留新闻 URL；搜索排名靠前有微弱加分。 */
-function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: string; listUrl: string; via: string; score: number }> {
+function rankCompanyCandidates(items: unknown, brand: string): Array<{ host: string; listUrl: string; via: string; score: number; newsAlt?: { listUrl: string; via: string } }> {
 	const byHost = new Map<string, { host: string; listUrl: string; via: string; score: number; newsAlt?: { listUrl: string; via: string } }>();
 	const newsByHost = new Map<string, Array<{ host: string; listUrl: string; via: string; score: number }>>();
 	if (!Array.isArray(items)) return [];
