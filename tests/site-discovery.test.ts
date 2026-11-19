@@ -195,3 +195,37 @@ test("discoverCompanySite：列表页解析最多试 3 个候选，不放大请�
 	);
 	assert.equal(listFetches, 3, "4 个候选里只检查前 3 个，避免单次登记放大请求");
 });
+
+test("discoverCompanySite：搜索前几名是音乐/股票站时，仍能找到第 9 位的真官网", async () => {
+	// 2026-11-19 实测：「歌尔股份」Bing 结果前 8 位是音乐/视频/股票/百科，官网在第 9 位。
+	const hits = [
+		{ title: "歌尔股份的歌单 - 酷我音乐", url: "https://www.kuwo.cn/playlist/1" },
+		{ title: "歌尔股份 - QQ音乐", url: "https://y.qq.com/n/ryqq/singer/1" },
+		{ title: "歌尔股份相关视频 - 哔哩哔哩", url: "https://www.bilibili.com/video/BV1xx" },
+		{ title: "歌尔股份 - 抖音", url: "https://www.douyin.com/user/1" },
+		{ title: "歌尔股份 - 咪咕音乐", url: "https://music.migu.cn/v3/music/1" },
+		{ title: "歌尔股份 - 网易云音乐", url: "https://music.163.com/#/artist?id=1" },
+		{ title: "歌尔股份_百度百科", url: "https://baike.baidu.com/item/歌尔股份" },
+		{ title: "歌尔股份 - 酷狗音乐", url: "https://www.kugou.com/singer/1.html" },
+		{ title: "歌尔股份有限公司-官方网站", url: "https://www.goertek.com/" },
+		{ title: "歌尔股份 - 东方财富", url: "https://quote.eastmoney.com/sz002241.html" },
+	];
+	const runReach = async () => ({ stdout: result(hits), exitCode: 0 });
+	let homeFetches = 0;
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			const parsed = new URL(url);
+			if (parsed.hostname === "www.goertek.com") {
+				if (parsed.pathname === "/")
+					return { status: 200, bytes: 80, body: `<title>歌尔股份有限公司-官方网站</title><a href="/news/index.html">新闻中心</a>` };
+				return { status: 200, bytes: 60, body: `<html><a href="/news/2026/1118/1.html">歌尔发布新一代声学方案</a></html>` };
+			}
+			homeFetches += 1;
+			return { status: 200, bytes: 40, body: "<title>歌尔股份</title>" };
+		},
+	};
+	const site = await discoverCompanySite("歌尔股份", fakeBin, { runReach, fetcher });
+	assert.equal(site.host, "www.goertek.com", "音乐/视频/股票站先被排除，不再占用验证名额");
+	assert.equal(site.listUrl, "https://www.goertek.com/news/index.html");
+	assert.equal(homeFetches, 0, "非官方站被黑名单直接过滤，不发请求");
+});
