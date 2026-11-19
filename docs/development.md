@@ -767,6 +767,8 @@ bun run sources discover weichai_news campaigns
 
 调用顺序：免费源优先（Bing → Exa），结果不够时才用付费源兑底；已够则不消耗付费额度。
 
+站点发现顺序：聚合搜索 → 排除门户/音乐/视频/股票/企业信息平台等非官网域名 → 按分数验证前 **8** 个候选的首页（标题或头部须写到品牌名，短域名可用品牌前缀）→ 定位列表页（最多试 3 个候选）。黑名单与上限是为了让「第 9 位的真官网」也能被验证到，同时不把一次登记放大成几十个请求。
+
 - **失败退额度**：源抛错、上游失败、限流、密钥失效都不计费；只有真正返回结果的调用才计一次。
 - **额度用尽**：`POST /api/me/user-sources` 在 `listUrl` 留空且所有源都无额度时返回 `429 search_quota_exhausted`（与采集冷却的 429 靠错误码区分）。
 - **状态可见**：`GET /api/me/search-providers` 返回每源 `used`/`remaining`/`exhausted`/`day`。
