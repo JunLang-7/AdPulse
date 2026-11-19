@@ -436,9 +436,14 @@ export async function discoverCompanySites(
 					if (home && home.status < 400) {
 						const title = /<title[^>]*>([\s\S]{0,200}?)<\/title>/iu.exec(home.body)?.[1]?.replace(/<[^>]+>/gu, "").replace(/\s+/gu, " ") ?? "";
 						const head = home.body.replace(/<[^>]+>/gu, "").replace(/\s+/gu, "").slice(0, 2000);
-						const strict = mentionsBrand(title, brandCompact) || mentionsBrand(head, brandCompact) || mentionsBrand(title, brandPrefix) || mentionsBrand(head, brandPrefix);
-						// 「短域名 + 品牌前缀」只在标题里认：首页正文里提到品牌太容易误中经销商/媒体页。
-						const officialTitle = /官网|官方网站|官方门户|集团|股份有限公司|首页|公司简介|关于我们/i.test(title);
+						// 官网标题词：只有这类标题才允许用正文里的品牌提及作补充证据。
+						const officialTitle = /官网|官方网站|官方门户|首页|关于我们|公司简介|官网首页/i.test(title);
+						const titleMentions = mentionsBrand(title, brandCompact) || mentionsBrand(title, brandPrefix);
+						const bodyMentions = mentionsBrand(head, brandCompact) || mentionsBrand(head, brandPrefix);
+						// 正文提到品牌但标题无关（资讯门户、经销商页）不得当成官网：
+						// 标题必须自己带品牌，或至少是官网类标题才接受正文证据。
+						const strict = titleMentions || (bodyMentions && officialTitle);
+						// 「短域名 + 品牌前缀」只在标题里认，且标题要像官网。
 						const relaxed = shape === 1 && officialTitle && mentionsBrand(title, brandPrefix);
 						if (strict || relaxed) {
 							passing.push({ candidate, shape });
@@ -446,7 +451,7 @@ export async function discoverCompanySites(
 						}
 					}
 					// 首页抓不到、是英文/跳转页（实测 midea.com.cn → /en）、或没写品牌名时，
-					// 用“能解析出的列表页 + 页面/条目标题里有品牌”作为归属判据。
+					// 用「能解析出的列表页地址 + 条目标题」作为归属判据。
 					try {
 						const resolved = await resolveNewsListPageDetailed(candidate, fetcher);
 						if (resolved) {
@@ -456,10 +461,10 @@ export async function discoverCompanySites(
 							]
 								.map((item) => item.title)
 								.join("");
-							const pageText = `${resolved.listUrl}${titles}${resolved.body.replace(/<[^>]+>/gu, "")}`
-								.replace(/\s+/gu, "")
-								.slice(0, 6000);
-							if (pageText.includes(brandCompact) || pageText.includes(brandPrefix)) {
+							// 只看列表页地址与条目标题，不看整页正文：
+							// 正文里提到品牌是资讯门户/经销商页的典型特征，不能当作官网归属证据。
+							const evidence = `${resolved.listUrl}${titles}`;
+							if (mentionsBrand(evidence, brandCompact) || mentionsBrand(evidence, brandPrefix)) {
 								preResolved.set(candidate.host, resolved);
 								passing.push({ candidate, shape });
 								continue;

@@ -282,6 +282,78 @@ export function bochaProvider(apiKey: string | undefined, options: { dailyLimit?
 	};
 }
 
+/**
+ * Exa 官方 API（不经 agent-reach CLI）。
+ * 契约：POST https://api.exa.ai/search，x-api-key 头，body {query,type,numResults}；
+ * 响应 results[] 带 title/url。
+ */
+export function exaProvider(apiKey: string | undefined, options: { dailyLimit?: number | null } = {}): SearchProvider | null {
+	if (!apiKey) return null;
+	return {
+		id: "exa-api",
+		label: "Exa 官方 API",
+		metered: true,
+		dailyLimit: options.dailyLimit === undefined ? 100 : options.dailyLimit,
+		async search(query) {
+			try {
+				const response = await fetch("https://api.exa.ai/search", {
+					method: "POST",
+					headers: { "x-api-key": apiKey, "content-type": "application/json" },
+					body: JSON.stringify({ query, type: "auto", numResults: LIMIT }),
+					signal: AbortSignal.timeout(15_000),
+				});
+				if (response.status === 429) return { status: "rate_limited", hits: [], detail: "Exa 限流或额度用完" };
+				if (response.status === 401 || response.status === 403)
+					return { status: "unavailable", hits: [], detail: "Exa 密钥无效" };
+				if (!response.ok) return { status: "failed", hits: [], detail: `Exa 返回 ${response.status}` };
+				const body = (await response.json()) as { results?: Array<{ title?: string; url?: string }> };
+				const hits: SearchHit[] = [];
+				for (const item of (body.results ?? []).slice(0, LIMIT))
+					if (item.url?.startsWith("http")) hits.push({ title: item.title ?? "", url: item.url });
+				return { status: "ok", hits };
+			} catch {
+				return { status: "failed", hits: [], detail: "Exa 请求失败" };
+			}
+		},
+	};
+}
+
+/**
+ * Tavily Search API（官方，付费，有免费额度）。
+ * 契约：POST https://api.tavily.com/search，Authorization: Bearer，
+ * body {query,max_results,search_depth}；响应 results[] 带 title/url。
+ */
+export function tavilyProvider(apiKey: string | undefined, options: { dailyLimit?: number | null } = {}): SearchProvider | null {
+	if (!apiKey) return null;
+	return {
+		id: "tavily",
+		label: "Tavily 搜索",
+		metered: true,
+		dailyLimit: options.dailyLimit === undefined ? 100 : options.dailyLimit,
+		async search(query) {
+			try {
+				const response = await fetch("https://api.tavily.com/search", {
+					method: "POST",
+					headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+					body: JSON.stringify({ query, max_results: LIMIT, search_depth: "basic", include_raw_content: false }),
+					signal: AbortSignal.timeout(15_000),
+				});
+				if (response.status === 429) return { status: "rate_limited", hits: [], detail: "Tavily 限流或额度用完" };
+				if (response.status === 401 || response.status === 403)
+					return { status: "unavailable", hits: [], detail: "Tavily 密钥无效" };
+				if (!response.ok) return { status: "failed", hits: [], detail: `Tavily 返回 ${response.status}` };
+				const body = (await response.json()) as { results?: Array<{ title?: string; url?: string }> };
+				const hits: SearchHit[] = [];
+				for (const item of (body.results ?? []).slice(0, LIMIT))
+					if (item.url?.startsWith("http")) hits.push({ title: item.title ?? "", url: item.url });
+				return { status: "ok", hits };
+			} catch {
+				return { status: "failed", hits: [], detail: "Tavily 请求失败" };
+			}
+		},
+	};
+}
+
 /** 解析 SEARCH_DAILY_LIMITS（如 "bing:200,exa:50,serper:100"）。 */
 export function parseDailyLimits(value: string | undefined): Record<string, number> {
 	const limits: Record<string, number> = {};
@@ -315,5 +387,9 @@ export function providersFromEnvironment(env: Record<string, string | undefined>
 	if (serper) providers.push(serper);
 	const brave = braveProvider(env.BRAVE_API_KEY, { dailyLimit: limits.brave ?? 100 });
 	if (brave) providers.push(brave);
+	const exa = exaProvider(env.EXA_API_KEY, { dailyLimit: limits["exa-api"] ?? 100 });
+	if (exa) providers.push(exa);
+	const tavily = tavilyProvider(env.TAVILY_API_KEY, { dailyLimit: limits.tavily ?? 100 });
+	if (tavily) providers.push(tavily);
 	return providers;
 }
