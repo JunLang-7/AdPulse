@@ -96,3 +96,102 @@ test("discoverCompanySite：搜索→挑站→定位列表页；无 Exa 时走 B
 	});
 	assert.equal(viaBing.host, "www.fallback-example.com");
 });
+
+// ===== 回归：数据接口/非 HTML 候选不能当列表页（#180） =====
+
+test("resolveNewsListPage：候选是数据接口时改用站内已验证的新闻页", async () => {
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			if (url.endsWith("newsroom.json")) return { status: 200, bytes: 19, body: '{"newsroom":[]}' };
+			if (url === "https://www.hisense-example.com/")
+				return { status: 200, bytes: 60, body: `<html><a href="/xwzx/index.html">新闻中心</a></html>` };
+			return { status: 200, bytes: 60, body: `<html><a href="/xwzx/2026/1118/1.html">新闻</a></html>` };
+		},
+	};
+	const resolved = await resolveNewsListPage({
+		host: "www.hisense-example.com",
+		listUrl: "https://www.hisense-example.com/cn/zh/newsroom.json",
+	}, fetcher);
+	assert.equal(resolved, "https://www.hisense-example.com/xwzx/index.html", "数据接口地址不进入来源");
+});
+
+test("resolveNewsListPage：非 HTML 响应返回 null，不猜地址", async () => {
+	const fetcher: SourceFetcher = {
+		async fetchText() {
+			return { status: 200, bytes: 10, body: '{"ok":true}' };
+		},
+	};
+	assert.equal(await resolveNewsListPage({ host: "api-example.com", listUrl: "https://api-example.com/api/list" }, fetcher), null);
+});
+
+test("resolveNewsListPage：抓不到候选页时返回 null（不回落未验证地址）", async () => {
+	const fetcher: SourceFetcher = {
+		async fetchText() {
+			throw new Error("blocked by WAF");
+		},
+	};
+	assert.equal(await resolveNewsListPage({ host: "blocked-example.com", listUrl: "https://blocked-example.com/news" }, fetcher), null);
+});
+
+test("discoverCompanySite：首选候选的列表页是数据接口时换下一个候选", async () => {
+	const runReach = async () => ({
+		stdout: result([
+			{ title: "某企业官网", url: "https://www.first-example.com/cn/newsroom.json" },
+			{ title: "某企业官网", url: "https://www.second-example.com/" },
+		]),
+		exitCode: 0,
+	});
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			const parsed = new URL(url);
+			if (parsed.pathname === "/")
+				return { status: 200, bytes: 80, body: `<title>某企业官方网站</title><a href="/news/index.html">新闻动态</a>` };
+			if (parsed.host === "www.first-example.com")
+				return { status: 200, bytes: 19, body: '{"newsroom":[]}' };
+			return { status: 200, bytes: 60, body: `<html><a href="/news/index.html">新闻动态</a></html>` };
+		},
+	};
+	const site = await discoverCompanySite("某企业", fakeBin, { runReach, fetcher });
+	assert.equal(site.host, "www.second-example.com", "首选候选的列表页不可用时换下一个候选");
+	assert.equal(site.listUrl, "https://www.second-example.com/news/index.html");
+});
+
+test("resolveNewsListPage：查询声明 JSON 输出的地址也不算列表页", async () => {
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			if (url.endsWith("/news?format=json")) return { status: 200, bytes: 12, body: '{"list":[]}' };
+			if (url === "https://www.query-example.com/")
+				return { status: 200, bytes: 60, body: `<html><a href="/xwzx/index.html">新闻中心</a></html>` };
+			return { status: 200, bytes: 60, body: `<html><a href="/xwzx/2026/1118/1.html">新闻</a></html>` };
+		},
+	};
+	const resolved = await resolveNewsListPage({
+		host: "www.query-example.com",
+		listUrl: "https://www.query-example.com/news?format=json",
+	}, fetcher);
+	assert.equal(resolved, "https://www.query-example.com/xwzx/index.html");
+});
+
+test("discoverCompanySite：列表页解析最多试 3 个候选，不放大请求", async () => {
+	const hosts = ["h1", "h2", "h3", "h4"].map((prefix) => `${prefix}.example.com`);
+	const runReach = async () => ({
+		stdout: result(hosts.map((host) => ({ title: "某企业官网", url: `https://${host}/list` }))),
+		exitCode: 0,
+	});
+	let listFetches = 0;
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			const parsed = new URL(url);
+			if (parsed.pathname === "/list") {
+				listFetches += 1;
+				return { status: 200, bytes: 8, body: '{"a":1}' };
+			}
+			return { status: 200, bytes: 60, body: `<title>某企业官方网站</title><a href="/about">关于我们</a>` };
+		},
+	};
+	await assert.rejects(
+		() => discoverCompanySite("某企业", fakeBin, { runReach, fetcher }),
+		/no usable HTML news list page/,
+	);
+	assert.equal(listFetches, 3, "4 个候选里只检查前 3 个，避免单次登记放大请求");
+});
