@@ -12,7 +12,7 @@ export interface PushMessage {
 
 export type PushChannelStatus = "ok" | "not_configured" | "failed";
 
-export type PushChannelId = "bark" | "ntfy" | "wecom" | "dingtalk";
+export type PushChannelId = "bark" | "ntfy" | "wecom" | "dingtalk" | "feishu";
 
 export interface PushChannelResult {
 	channel: PushChannelId;
@@ -213,6 +213,86 @@ export function dingtalkChannel(options: { webhook?: string | undefined; fetcher
 	};
 }
 
+/**
+ * 飞书即时推送：复用应用 tenant_access_token，用文本消息直接推到你的单聊。
+ * 收件人用登录身份绑定的 open_id（与日汇总同一个，不需额外配置）。
+ * 它和日汇总的区别：不经过批次调度，用户点一下立即发。
+ */
+export function feishuInstantChannel(options: {
+	appId?: string | undefined;
+	appSecret?: string | undefined;
+	/** 已验证的飞书 open_id；未给出时该渠道视为未配置。 */
+	receiveId?: string | undefined;
+	fetcher?: typeof fetch;
+}): PushChannel {
+	const appId = options.appId?.trim() ?? "";
+	const appSecret = options.appSecret?.trim() ?? "";
+	const receiveId = options.receiveId?.trim() ?? "";
+	const fetcher = options.fetcher ?? fetch;
+	// token 缓存：飞书 token 有效期 2 小时，提前 5 分钟刷新。
+	let cached: { value: string; expiresAt: number } | undefined;
+	const accessToken = async (): Promise<string> => {
+		if (cached && cached.expiresAt > Date.now()) return cached.value;
+		const response = await fetcher("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
+			signal: AbortSignal.timeout(10_000),
+		});
+		const payload = (await response.json().catch(() => null)) as
+			| { code?: number; tenant_access_token?: string; expire?: number }
+			| null;
+		if (!payload || payload.code !== 0 || !payload.tenant_access_token)
+			throw new Error(`飞书鉴权失败（code ${payload?.code ?? "unknown"}）`);
+		cached = {
+			value: payload.tenant_access_token,
+			expiresAt: Date.now() + Math.max(60, (payload.expire ?? 7200) - 300) * 1000,
+		};
+		return cached.value;
+	};
+	return {
+		channel: "feishu",
+		label: "飞书单聊",
+		configured: Boolean(appId && appSecret && receiveId),
+		async send(message) {
+			if (!appId || !appSecret)
+				return { channel: "feishu", label: "飞书单聊", status: "not_configured", detail: "未配置 FEISHU_APP_ID / FEISHU_APP_SECRET" };
+			if (!receiveId)
+				return { channel: "feishu", label: "飞书单聊", status: "not_configured", detail: "尚未在订阅页确认飞书单聊地址" };
+			try {
+				const token = await accessToken();
+				const text = message.url ? `${message.title}\n${message.body}\n${message.url}` : `${message.title}\n${message.body}`;
+				const response = await postWithRetry(fetcher, "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id", {
+					method: "POST",
+					headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+					body: JSON.stringify({
+						receive_id: receiveId,
+						msg_type: "text",
+						content: JSON.stringify({ text }),
+					}),
+					signal: AbortSignal.timeout(10_000),
+				});
+				const payload = (await response.json().catch(() => null)) as { code?: number; msg?: string } | null;
+				if (!response.ok || (payload && typeof payload.code === "number" && payload.code !== 0))
+					return {
+						channel: "feishu",
+						label: "飞书单聊",
+						status: "failed",
+						detail: `飞书返回 ${payload?.code ?? response.status}：${payload?.msg ?? ""}`,
+					};
+				return { channel: "feishu", label: "飞书单聊", status: "ok", detail: null };
+			} catch (error) {
+				return {
+					channel: "feishu",
+					label: "飞书单聊",
+					status: "failed",
+					detail: error instanceof Error ? error.message.slice(0, 120) : "飞书请求失败",
+				};
+			}
+		},
+	};
+}
+
 export function pushChannelsFromEnvironment(env: Record<string, string | undefined>): PushChannel[] {
 	// 国内可达的渠道在前（企微/钉钉），境外渠道（ntfy/Bark）作为补充。
 	return [
@@ -226,6 +306,8 @@ export function pushChannelsFromEnvironment(env: Record<string, string | undefin
 /** 渠道配置指引：界面在未配置时展示，避免用户猜环境变量名。 */
 export function pushChannelGuide(channel: PushChannelId): string {
 	switch (channel) {
+		case "feishu":
+			return "在订阅页完成「确认单聊地址」后即可用；与日汇总共用同一个飞书单聊";
 		case "wecom":
 			return "在企业微信群 → 群设置 → 群机器人 → 添加后复制 Webhook，写进 .env 的 WECOM_WEBHOOK（最推荐：国内直连、免注册）";
 		case "dingtalk":

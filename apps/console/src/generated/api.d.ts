@@ -5551,7 +5551,7 @@ export interface operations {
                     "application/json": {
                         items: {
                             /** @enum {string} */
-                            channel: "bark" | "ntfy" | "wecom" | "dingtalk";
+                            channel: "bark" | "ntfy" | "wecom" | "dingtalk" | "feishu";
                             label: string;
                             configured: boolean;
                             guide: string | null;

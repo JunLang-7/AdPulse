@@ -3319,7 +3319,8 @@
                               "bark",
                               "ntfy",
                               "wecom",
-                              "dingtalk"
+                              "dingtalk",
+                              "feishu"
                             ]
                           },
                           "label": {
