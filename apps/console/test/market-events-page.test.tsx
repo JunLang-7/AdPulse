@@ -395,3 +395,14 @@ test("市场事件页：发现线索待审核，接受不修正日期时提交�
 	await waitFor(() => assert.equal(reviews.length, 1));
 	assert.deepEqual(reviews[0]!.body, {}, "不修正日期时提交空对象");
 });
+
+test("市场事件页：添加企业官网是独立分区，表单与主按钮直接可见", async t => {
+	t.after(cleanup);
+	serve(defaults);
+	mount();
+	const heading = await screen.findByRole("heading", { name: "添加企业官网" });
+	assert.equal(heading.tagName, "H2", "不能再缩成说明性小字或被折叠两层");
+	assert.ok(screen.getByLabelText("站点企业名称"));
+	assert.ok(screen.getByLabelText("站点新闻列表页地址"));
+	assert.ok(screen.getByRole("button", { name: "添加并采集" }));
+});
