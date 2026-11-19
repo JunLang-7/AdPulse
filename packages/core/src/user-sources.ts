@@ -578,22 +578,34 @@ export class UserSourceService {
 				try {
 					const map = await fetcher.fetchText(sitemapUrl, FETCH_LIMITS);
 					if (map.status >= 400) continue;
-					let { sitemaps, entries } = parseSitemapXml(map.body, sitemapUrl, host);
+					const { sitemaps, entries } = parseSitemapXml(map.body, sitemapUrl, host);
 					// sitemapindex（实测海尔 cn 地图下有 product/other/business 等子地图）：
-					// 逐个下钻，拿到可用条目就停。
+					// 全部下钻后合并，不提前停——product.xml 里带日期的促销页也能过条目过滤，
+					// 先停就永远到不了 other.xml 里的真新闻。
+					const merged = new Map(entries.map((entry) => [entry.url, entry]));
 					for (const child of sitemaps.slice(0, MAX_SITEMAP_CHILDREN)) {
-						if (entries.length > 0) break;
 						try {
 							const childPage = await fetcher.fetchText(child, FETCH_LIMITS);
 							if (childPage.status >= 400) continue;
-							const fromChild = parseSitemapXml(childPage.body, child, host);
-							if (fromChild.entries.length > 0) ({ entries } = fromChild);
+							for (const entry of parseSitemapXml(childPage.body, child, host).entries)
+								if (!merged.has(entry.url)) merged.set(entry.url, entry);
 						} catch {
 							// 单个子地图失败继续。
 						}
 					}
-					if (entries.length === 0) continue;
-					parsed = await collectSitemapItems(fetcher, host, entries);
+					// 合并后按新闻性排序：URL 含新闻段的排最前（xinwen/news/press），
+					// 其次按 lastmod 倒序；促销/产品页自然沉底。
+					const sorted = [...merged.values()].sort(
+						(left, right) =>
+							Number(/(?:xinwen|xwzx|news|press|media)(?:\/|$)/iu.test(right.url)) -
+								Number(/(?:xinwen|xwzx|news|press|media)(?:\/|$)/iu.test(left.url)) ||
+							(right.lastmod ?? "").localeCompare(left.lastmod ?? ""),
+					);
+					if (sorted.length === 0) continue;
+					// 存在带新闻段（xinwen/news/press…）的条目时就只用它们：促销/产品页即使
+					// 带日期路径也会被排除；站点没有新闻段路径时保持全量（按日期倒序）。
+					const newsy = sorted.filter((entry) => /(?:xinwen|xwzx|news|press|media)(?:\/|$)/iu.test(entry.url));
+					parsed = await collectSitemapItems(fetcher, host, newsy.length > 0 ? newsy : sorted);
 					if (parsed.length > 0) break;
 				} catch {
 					// 单个站点地图失败继续。

@@ -578,7 +578,7 @@ test("sitemap 兜底：robots 声明多语言地图时优先中文地图，并�
   <sitemap><loc>https://www.haier.com/cn/sitemap/other.xml</loc></sitemap>
 </sitemapindex>`;
 	const productMap = `<?xml version="1.0"?><urlset>
-  <url><loc>https://www.haier.com/cn/washers/x1.html</loc></url>
+  <url><loc>https://www.haier.com/cn/promo/20261110/w1.html</loc><lastmod>2026-11-10</lastmod></url>
 </urlset>`;
 	const otherMap = `<?xml version="1.0"?><urlset>
   <url><loc>https://www.haier.com/about_haier/xinwen/20260522_291331.shtml</loc><lastmod>2026-11-19</lastmod></url>
@@ -593,6 +593,7 @@ test("sitemap 兜底：robots 声明多语言地图时优先中文地图，并�
 				"https://www.haier.com/press-events/news/": `<html><a href="/about">关于我们</a></html>`,
 				"https://www.haier.com/cn/sitemap.xml": cnIndex,
 				"https://www.haier.com/cn/sitemap/product.xml": productMap,
+				"https://www.haier.com/cn/promo/20261110/w1.html": `<html><head><title>海尔洗衣机限时促销活动介绍价格参考-海尔官网</title></head></html>`,
 				"https://www.haier.com/cn/sitemap/other.xml": otherMap,
 				"https://www.haier.com/about_haier/xinwen/20260522_291331.shtml": `<html><head><title>海尔官宣全球品牌代言人</title></head></html>`,
 				"https://www.haier.com/about_haier/xinwen/20260520_291300.shtml": `<html><head><title>海尔发布新一代智慧家庭方案</title></head></html>`,
