@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { MAX_ITEMS, articleScore, filterListableItems, isListableItem, isListableTitle } from "./item-quality.js";
 import {
 	collectSitemapItems,
+	findDataListAnchor,
 	parseJsonListPayload,
 	parseSitemapXml,
 	searchFallbackItems,
@@ -253,6 +254,21 @@ export class UserSourceService {
 		let parsed: Array<{ itemKey: string; title: string; itemUrl: string; publishedAt?: string | null }> =
 			parseUserListPage(page.body, listUrl, source.host);
 		if (parsed.length === 0) parsed = parseJsonListPayload(page.body, listUrl, source.host);
+		// 页面本身不是 JSON，但可能指向一个数据接口（实测海信 /cn/zh/newsroom.json）。至多 1 个请求。
+		if (parsed.length === 0) {
+			const dataListUrl = findDataListAnchor(page.body, listUrl, source.host);
+			if (dataListUrl) {
+				try {
+					const dataPage = await fetcher.fetchText(dataListUrl, FETCH_LIMITS);
+					if (dataPage.status < 400) {
+						parsed = parseJsonListPayload(dataPage.body, dataListUrl, source.host);
+						if (parsed.length > 0) listUrl = dataListUrl;
+					}
+				} catch {
+					// 数据接口抓不到就继续后面的兜底。
+				}
+			}
+		}
 		// 列表页可能是 JS 渲染或选错了页面：条目过少也可疑，退回官网首页与常见新闻路径比一比，谁多用谁。
 		if (parsed.length < 3) {
 			const candidates = [`https://${source.host}/`, ...COMMON_NEWS_PATHS.map((path) => `https://${source.host}${path}`)]
@@ -342,7 +358,7 @@ export class UserSourceService {
 		}
 		if (parsed.length === 0)
 			return await failure(
-				"列表页、sitemap 与搜索都没有找到可用条目（可能是 JS 渲染站点或选到了导航/数据页）",
+				"列表页、sitemap 与搜索都没有找到可用条目：该站可能需要 JS 渲染，或没有可访问的 HTML 列表页/JSON 接口；可直接填写具体的新闻列表页地址再试。",
 			);
 
 		const result = await this.storage.transaction(async (tx) => {

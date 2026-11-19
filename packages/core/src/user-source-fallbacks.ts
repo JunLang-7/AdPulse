@@ -1,6 +1,6 @@
 // 用户自加站点的兜底采集：同域 JSON 列表 → sitemap → 搜索。
 // 只取「标题 + 链接」，不读正文；每级都有请求上限，找不到就返回空，由调用方如实失败。
-import { MAX_ITEMS, articleScore, isListableTitle } from "./item-quality.js";
+import { MAX_ITEMS, articleScore, isListableItem, isListableTitle, looksNewsy } from "./item-quality.js";
 import type { SourceFetcher } from "./source-service.js";
 import { normalizeItemUrl } from "./sources.js";
 
@@ -132,7 +132,7 @@ export function parseSitemapXml(
 		rawEntries.push({ url: target, lastmod, title: titleTag });
 	}
 	const entries = rawEntries
-		.filter((entry) => articleScore(entry.url, entry.title ?? "") >= 2)
+		.filter((entry) => articleScore(entry.url, entry.title ?? "") >= 2 && looksNewsy(entry.url, entry.title ?? ""))
 		.sort((a, b) => (b.lastmod ?? "").localeCompare(a.lastmod ?? "") || articleScore(b.url, "") - articleScore(a.url, ""))
 		.slice(0, MAX_ITEMS);
 	return { sitemaps, entries };
@@ -203,10 +203,32 @@ export function searchFallbackItems(hits: Array<{ title: string; url: string }>,
 		const itemUrl = normalizeItemUrl(hit.url, hit.url, [host]);
 		if (!itemUrl || seen.has(itemUrl)) continue;
 		const title = decodeEntities(hit.title).replace(/\s+/gu, " ").trim();
-		if (!isListableTitle(title)) continue;
+		// 搜索结果里常混着首页/关于页：只收文章型地址，不然会把站点首页当线索存下来。
+		if (!isListableItem(title, itemUrl)) continue;
 		seen.add(itemUrl);
 		items.push({ itemKey: itemUrl, title, itemUrl, publishedAt: null });
 		if (items.length >= MAX_ITEMS) break;
 	}
 	return items;
+}
+
+const NEWSISH = /news|press|media|xinwen|资讯|新闻|动态|公告|报道/iu;
+const DATA_URL = /\.(?:json|xml|rss)(?:$|[?#])/iu;
+
+/**
+ * 有些站点把新闻放在数据接口里，页面上只留一个链接（实测海信 `/cn/zh/newsroom.json`）。
+ * 只认「新闻词 + 数据后缀」的锚点，避免把任意接口当地址去抓。
+ */
+export function findDataListAnchor(html: string, baseUrl: string, host: string): string | null {
+	const anchor = /<a\b[^>]*href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/giu;
+	let match: RegExpExecArray | null;
+	while ((match = anchor.exec(html))) {
+		const href = match[2] ?? match[3] ?? match[4] ?? "";
+		const text = (match[5] ?? "").replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim();
+		if (!DATA_URL.test(href)) continue;
+		if (!NEWSISH.test(href) && !NEWSISH.test(text)) continue;
+		const target = normalizeItemUrl(href, baseUrl, [host]);
+		if (target) return target;
+	}
+	return null;
 }

@@ -18,6 +18,8 @@ const URL_NEWS_SEGMENT = /(?:^|\/)(?:news|xinwen|xwzx|xwtt|press|media|article|s
 /** 标题看着像路径/URL（实测 newsroom.json 的条目标题是 /content/…/ifa-2026）。 */
 const PATH_SHAPED_TITLE = /^(?:https?:\/\/|\/)/iu;
 const SLUG_SHAPED_TITLE = /^[\w./-]+$/u;
+/** 新闻/公告类标题词：sitemap、搜索结果里用来区分文章与产品/栏目页。 */
+const NEWS_TITLE = /新闻|资讯|动态|公告|发布|报道|签署|合作|获奖|上线|亮相|推出|启动|announcement|press release/iu;
 /** 纯数字/电话/符号串（实测 400-618-3066 混进了线索）。 */
 const NOISE_TITLE = /^[\d\s()+-_.:,\u00b7/]+$/u;
 
@@ -36,6 +38,17 @@ export function articleScore(itemUrl: string, title: string): number {
 	if (URL_PAGE_EXT.test(path)) score += 1;
 	if (URL_NEWS_SEGMENT.test(path)) score += 1;
 	return score;
+}
+
+/** 地址像新闻区或带日期，或标题带新闻/公告词：用于 sitemap 与搜索结果的取舍。 */
+export function looksNewsy(itemUrl: string, title = ""): boolean {
+	let path = "";
+	try {
+		path = new URL(itemUrl).pathname;
+	} catch {
+		return false;
+	}
+	return URL_NEWS_SEGMENT.test(path) || URL_DATE.test(path) || NEWS_TITLE.test(title);
 }
 
 /** 标题本身是否像可读的新闻标题（不含地址形态判断）。 */

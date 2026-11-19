@@ -273,8 +273,8 @@ test("兜底二级：无新闻入口的站走 sitemap，标题按上限抓文章
 	}, "2026-11-18T00:00:00.000Z");
 	const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset>
-  <url><loc>https://md-example.com/10000/1000000000100511131466.html</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://md-example.com/10000/1000000000100511204281.html</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://md-example.com/news/2026/1112/1.html</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://md-example.com/news/2026/1110/2.html</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://md-example.com/about</loc></url>
 </urlset>`;
 	let articleFetches = 0;
@@ -282,12 +282,12 @@ test("兜底二级：无新闻入口的站走 sitemap，标题按上限抓文章
 		"https://md-example.com/robots.txt": { status: 200, body: "User-agent: *\nAllow: /\nSitemap: https://md-example.com/sitemap.xml\n" },
 		"https://md-example.com/": { status: 200, body: `<html><a href="/about">关于我们</a></html>` },
 		"https://md-example.com/sitemap.xml": { status: 200, body: sitemap },
-		"https://md-example.com/10000/1000000000100511131466.html": { status: 200, body: `<html><head><title>美的发布新一代家庭能源方案</title></head></html>` },
-		"https://md-example.com/10000/1000000000100511204281.html": { status: 200, body: `<html><head><title>美的与多家渠道商达成年度合作</title></head></html>` },
+		"https://md-example.com/news/2026/1112/1.html": { status: 200, body: `<html><head><title>美的发布新一代家庭能源方案</title></head></html>` },
+		"https://md-example.com/news/2026/1110/2.html": { status: 200, body: `<html><head><title>美的与多家渠道商达成年度合作</title></head></html>` },
 	});
 	const counted = {
 		async fetchText(url: string) {
-			if (url.includes("/10000/")) articleFetches += 1;
+			if (url.includes("/news/2026/")) articleFetches += 1;
 			return fetcher.fetchText(url, { maxBytes: 512 * 1024, timeoutMs: 15_000 });
 		},
 	};
@@ -309,7 +309,7 @@ test("兜底二级：sitemap 自带 news:title 时不再抓文章页", async () 
 		subject: { kind: "brand", name: "美的" },
 	}, "2026-11-18T00:00:00.000Z");
 	const sitemap = `<?xml version="1.0"?><urlset xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
-  <url><loc>https://md2-example.com/10000/1000000000100511131466.html</loc>
+  <url><loc>https://md2-example.com/news/2026/1112/1.html</loc>
     <lastmod>2026-11-12</lastmod><news:title>美的发布新一代家庭能源方案</news:title></url>
 </urlset>`;
 	let articleFetches = 0;
@@ -320,7 +320,7 @@ test("兜底二级：sitemap 自带 news:title 时不再抓文章页", async () 
 	});
 	const counted = {
 		async fetchText(url: string) {
-			if (url.includes("/10000/")) articleFetches += 1;
+			if (url.includes("/news/2026/")) articleFetches += 1;
 			return fetcher.fetchText(url, { maxBytes: 512 * 1024, timeoutMs: 15_000 });
 		},
 	};
@@ -371,4 +371,47 @@ test("三级兜底全失败时如实失败，原因写明试过哪些入口", as
 	}), "2026-11-18T00:01:00.000Z", { searchFallback: async () => [] });
 	assert.equal(result.outcome, "failed");
 	assert.match(result.reason ?? "", /sitemap 与搜索/);
+});
+
+test("兜底一级'：页面指向数据接口的新闻链接会被跟随（海信 newsroom.json 形态）", async () => {
+	const storage = new MemoryStorage();
+	const service = new UserSourceService(storage);
+	const source = await service.add("owner-1", {
+		label: "海信集团",
+		listUrl: "https://hs2-example.com/cn/zh",
+		subject: { kind: "brand", name: "海信集团" },
+	}, "2026-11-18T00:00:00.000Z");
+	const payload = JSON.stringify({ data: [
+		{ path: "/cn/zh/company/newsroom/1670", title: "海信与东帝汶签署战略合作，推进数字化与可持续发展", published: "2026-11-10" },
+	] });
+	const result = await service.refresh("owner-1", source.id, fakeFetcher({
+		"https://hs2-example.com/robots.txt": { status: 404, body: "not found" },
+		"https://hs2-example.com/cn/zh": { status: 200, body: `<html><a href="/cn/zh/newsroom.json">/cn/zh/newsroom.json</a></html>` },
+		"https://hs2-example.com/cn/zh/newsroom.json": { status: 200, body: payload },
+	}), "2026-11-18T00:01:00.000Z");
+	assert.equal(result.outcome, "ok");
+	assert.equal(result.created, 1);
+	const [stored] = await service.list("owner-1");
+	assert.equal(stored?.listUrl, "https://hs2-example.com/cn/zh/newsroom.json", "跟随数据接口后写回真实列表地址");
+});
+
+test("兜底三级：搜索结果里的首页/关于页不算条目", async () => {
+	const storage = new MemoryStorage();
+	const service = new UserSourceService(storage);
+	const source = await service.add("owner-1", {
+		label: "某企业",
+		listUrl: "https://hp-example.com/",
+		subject: { kind: "brand", name: "某企业" },
+	}, "2026-11-18T00:00:00.000Z");
+	const result = await service.refresh("owner-1", source.id, fakeFetcher({
+		"https://hp-example.com/robots.txt": { status: 404, body: "not found" },
+		"https://hp-example.com/": { status: 200, body: `<html><a href="/about">关于我们</a></html>` },
+	}), "2026-11-18T00:01:00.000Z", {
+		searchFallback: async () => [
+			{ title: "某企业股份有限公司-官方网站", url: "https://hp-example.com/" },
+			{ title: "某企业发展历程与简介", url: "https://hp-example.com/about" },
+		],
+	});
+	assert.equal(result.outcome, "failed", "首页/关于页不是文章，宁可失败也不入库");
+	assert.equal(result.created, 0);
 });
