@@ -394,6 +394,18 @@ export async function discoverCompanySites(
 						passing.push({ candidate, shape });
 						continue;
 					}
+					// 有些官网首页是英文/跳转页（实测 midea.com.cn → /en），中文品牌名只在目标页。
+					if (home.status < 400) {
+						try {
+							const hit = await fetcher.fetchText(candidate.listUrl, { maxBytes: 512 * 1024, timeoutMs: 20_000 });
+							const hitTitle = /<title[^>]*>([\s\S]{0,200}?)<\/title>/iu.exec(hit.body)?.[1] ?? "";
+							const hitText = `${hitTitle}${hit.body.replace(/<[^>]+>/gu, "")}`.replace(/\s+/gu, "").slice(0, 4000);
+							if (hit.status < 400 && (hitText.includes(brandCompact) || hitText.includes(brandPrefix)))
+								passing.push({ candidate, shape });
+						} catch {
+							// 目标页抓不到就按原结论处理。
+						}
+					}
 					if ([401, 403, 418, 429, 503].includes(home.status))
 						lastError = new Error(`official site ${candidate.host} blocks automated access (WAF/challenge)`);
 					else
@@ -438,11 +450,11 @@ export async function discoverCompanySites(
 	};
 
 	let sites = await resolveCandidates(searchItems, new Set());
-	if (sites.length === 0 || sites.every((site) => site.itemCount === 0)) {
-		const extra = await extraSearch();
-		if (Array.isArray(extra) && extra.length > 0)
-			sites = [...sites, ...(await resolveCandidates(extra, new Set(sites.map((site) => site.host))))];
-	}
+	// 「<企业> 官网」常被商城/招聘/登录子域占满：无论第一遍是否拿到站点，都补一轮「新闻中心」搜索，
+	// 只多消耗一次搜索额度（有额度闸门），换来把真官网/新闻页带进候选。
+	const extra = await extraSearch();
+	if (Array.isArray(extra) && extra.length > 0)
+		sites = [...sites, ...(await resolveCandidates(extra, new Set(sites.map((site) => site.host))))];
 	if (sites.length > 0) {
 		sites.sort((a, b) => (b.itemCount > 0 ? 1 : 0) - (a.itemCount > 0 ? 1 : 0) || b.itemCount - a.itemCount || b.shape - a.shape);
 		return sites.slice(0, MAX_SITES).map(({ host, listUrl, via }) => ({ host, listUrl, via }));
