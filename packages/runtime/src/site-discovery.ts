@@ -542,9 +542,10 @@ export async function discoverCompanySites(
 	// 「<企业> 官网」常被商城/招聘/登录子域占满：第一遍没有能解析出条目的站点时，
 	// 升级一轮「<企业> 新闻中心」搜索并咨询全部源（含付费源）。第一遍找到可用站点就不升级，
 	// 正常企业（免费源就能找到官网）不消耗付费额度。
-	// 质量门：第一遍「没有任何带简中条目的站点」就升级（含全部 0 条目，或只有繁体/英文条目——
-	// 实测美的 pass 1 会先命中台湾站 2 条繁体，不升级就永远找不到 midea.com.cn 的 20 条简体）。
-	if (!sites.some((site) => site.itemCount > 0 && site.simplifiedCount > 0)) {
+	// 质量门：第一遍「没有任何站点带足量（≥3）简中条目」就升级（含全部 0 条目、只有繁体/英文、
+	// 或只解析出 1–2 条零星简中——实测 http 修复后海尔旗下 ces.cn 会以 1–2 条压制升级，
+	// 导致 www.haier.com 永远不被搜到）。pass 1 就有整页简中的正常企业不升级、不花钱。
+	if (!sites.some((site) => site.simplifiedCount >= 3)) {
 		const extra = await extraSearch();
 		if (Array.isArray(extra) && extra.length > 0) {
 			// 只跳过「已解析出条目」的 host：0 条目的 host（代表 URL 被首页/投资者页/文章占位）

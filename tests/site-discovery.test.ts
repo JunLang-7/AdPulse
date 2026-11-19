@@ -465,3 +465,31 @@ test("升级补搜：只有繁体条目也升级，简中站点覆盖排第一",
 	assert.equal(sites[0]?.host, "www.midea.com.cn", "繁体条目触发升级，简中站覆盖排第一");
 	assert.ok(calls.includes("美的 新闻中心"));
 });
+
+test("升级补搜：1–2 条零星简中不足以压制升级（ces.cn 形态）", async () => {
+	const aggregator = {
+		async search(query: string) {
+			if (query.includes("新闻中心"))
+				return {
+					hits: [{ title: "新闻资讯- 海尔集团官网", url: "https://www.haier.com/press-events/news/" }],
+					providers: [{ provider: "serper", label: "Serper", status: "ok", detail: null }],
+				};
+			return {
+				hits: [{ title: "海尔卡奥斯-海尔生态品牌", url: "http://haier.ces.cn/" }],
+				providers: [{ provider: "bing", label: "Bing", status: "ok", detail: null }],
+			};
+		},
+	};
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			const parsed = new URL(url);
+			if (parsed.hostname === "haier.ces.cn")
+				return { status: 200, bytes: 90, body: `<title>海尔卡奥斯</title><a href="/case/20261101/1.html">海尔卡奥斯生态大会召开 2026年11月01日</a>` };
+			if (parsed.pathname === "/")
+				return { status: 200, bytes: 60, body: `<title>海尔-官方网站</title><a href="/press-events/news/">新闻资讯</a>` };
+			return { status: 200, bytes: 130, body: `<html><a href="/press-events/news/20261120/a.shtml">海尔官宣全球品牌代言人 2026年11月20日</a><a href="/press-events/news/20261118/b.shtml">海尔发布智慧家庭方案 2026年11月18日</a><a href="/press-events/news/20261115/c.shtml">海尔空调技术国际领先 2026年11月15日</a></body></html>` };
+		},
+	};
+	const sites = await discoverCompanySites("海尔", fakeBin, { aggregator, fetcher });
+	assert.equal(sites[0]?.host, "www.haier.com", "ces.cn 只有 1 条简中，升级搜索后 haier.com 的整页简中胜出");
+});
