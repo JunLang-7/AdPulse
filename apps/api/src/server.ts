@@ -27,7 +27,7 @@ import {
 	TaskInputValidationError,
 } from "@adpluse/core";
 import type { Runtime } from "@adpluse/runtime";
-import { agentReachReadFallback, discoverCompanySite, providersFromEnvironment, SearchQuotaExhaustedError, UserSiteFetcher } from "@adpluse/runtime";
+import { agentReachReadFallback, providersFromEnvironment, UserSiteFetcher } from "@adpluse/runtime";
 import { ZodError } from "zod";
 import type { IdentityProvider } from "./feishu-auth.js";
 import { HttpError, json, readJson } from "./http.js";
@@ -679,39 +679,35 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 						| undefined;
 					try {
 						const label = String(body?.label ?? "");
-						let listUrl = String(body?.listUrl ?? "");
-						// 鍙粰浼佷笟鍚嶇О鏃讹細鐢?agent-reach 鎼滅储瀹樼綉骞跺畾浣嶆柊闂诲垪琛ㄩ〉銆?
+						const listUrl = String(body?.listUrl ?? "");
+						const subjectInput = {
+							kind: subject?.kind === "competitor" ? "competitor" as const : "brand" as const,
+							name: String(subject?.name ?? ""),
+						};
+						// 只给企业名：不再同步发现（可能 80 秒），登记后交给 worker 查找官网。
 						if (!listUrl.trim()) {
-							try {
-								const found = await discoverCompanySite(label, process.env.AGENT_REACH_BIN, {
-									aggregator: searchAggregator,
-								});
-								listUrl = found.listUrl;
-							} catch (error) {
-								// 额度用完要如实告知，不当作普通“没找到”。
-								if (error instanceof SearchQuotaExhaustedError)
-									throw new HttpError(429, "search_quota_exhausted");
-								throw new HttpError(422, "site_discovery_failed");
-							}
-						}
-						const source = await userSources.add(
+							const source = await userSources.beginDiscovery(
+								session.userId,
+								{ label, subject: subjectInput },
+								new Date().toISOString(),
+							);
+							return json(res, 202, { source });
+						}						const source = await userSources.add(
 							session.userId,
 							{
 								label,
 								listUrl,
-								subject: {
-									kind: subject?.kind === "competitor" ? "competitor" : "brand",
-									name: String(subject?.name ?? ""),
-								},
+								subject: subjectInput,
 							},
 							new Date().toISOString(),
 						);
+						const addedHost = source.host;
 						// 濞ｈ濮為崥搴ｇ彌閸楁娊鍣伴梿鍡曠濞嗏槄绱辨径杈Е娑撳秴濂栭崫宥囨鐠佺増鍨氶崝鐕傜礉閻樿埖鈧礁婀弶锛勬窗娑撳﹤褰茬憴浣碘偓?
 						try {
 							await userSources.refresh(
 								session.userId,
 								source.id,
-								new UserSiteFetcher([source.host]),
+								new UserSiteFetcher([addedHost ?? ""]),
 								new Date().toISOString(),
 								{
 									readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN),
@@ -740,6 +736,8 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 								(s) => s.id === sourceId,
 							);
 							if (!target) throw new HttpError(404, "not_found");
+							if (!target.host || !target.listUrl)
+								throw new HttpError(409, "source_not_ready");
 							const result = await userSources.refresh(
 								session.userId,
 								sourceId,

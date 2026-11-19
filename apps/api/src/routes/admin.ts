@@ -387,6 +387,8 @@ async function sessionForJob(
 	if (job.task.kind === "send_digest") return null;
 	if (job.task.kind === "prepare_hypothesis_verdicts") return null;
 	if (job.task.kind === "prepare_signal_assessments") return null;
+	// 站点官网发现也不属于任何会话。
+	if (job.task.kind === "discover_user_source") return null;
 	const inbox = await tx.inbox.get(job.task.inboxId);
 	const action = inbox && (await tx.actions.get(inbox.command.actionRef));
 	return action
@@ -931,6 +933,7 @@ export async function handleAdmin(
 								? checkIds.has(j.task.checkId)
 								: j.task.kind === "send_digest" || j.task.kind === "prepare_hypothesis_verdicts"
 									|| j.task.kind === "prepare_signal_assessments"
+									|| j.task.kind === "discover_user_source"
 									? false
 									: j.task.alertId === session.investigationAlertId,
 			);

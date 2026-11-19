@@ -729,7 +729,7 @@ bun run sources discover weichai_news campaigns
 
 日期口径：`indexedPublishedAt` 与接受时的 `correctedPublishedAt` 都必须是**真实存在**的 `YYYY-MM-DD`（`2026-02-30` 这类格式合法但不存在的日期会被当成未知或被拒绝），与事件/证据侧校验一致。
 
-用户自加企业站点（`/api/me/user-sources`）：登记后立即采集一次，之后可手动重采。**同一站点 5 分钟内只采集一次**（429 `refresh_too_soon`，失败也计入冷却），避免连点或脚本对第三方站点造成持续压力；一次刷新包含 robots、列表页与若干探测页，最多约 20 个站内请求。**每日每站配额尚未实现**，需在后续增量里补（当前只靠冷却与 robots 约束）。
+用户自加企业站点（`/api/me/user-sources`）：**只填企业名时先登记为 `discovering` 并立即返回 202**，官网查找与首次采集在 worker 里跑（发现可能要几十秒，不再阻塞登记请求）；发现成功转为 `active` 并写回 host/listUrl，失败转 `failed` 并给出原因。填了列表页地址时仍同步采集一次。之后可手动重采。**同一站点 5 分钟内只采集一次**（429 `refresh_too_soon`，失败也计入冷却），避免连点或脚本对第三方站点造成持续压力；一次刷新包含 robots、列表页与若干探测页，最多约 20 个站内请求。**每日每站配额尚未实现**，需在后续增量里补（当前只靠冷却与 robots 约束）。
 
 列表页与条目的取舍（[#180](https://github.com/JunLang-7/AdPulse/issues/180)）：
 

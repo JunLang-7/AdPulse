@@ -149,7 +149,14 @@ export class UserSourceService {
 
 	/** 供 read-source 等扩展点取本人已登记的站点主机。 */
 	async hostsOf(ownerId: string): Promise<string[]> {
-		return (await this.list(ownerId)).map((s) => s.host);
+		return (await this.list(ownerId))
+			.map((s) => s.host)
+			.filter((host): host is string => Boolean(host));
+	}
+
+	/** 取单个站点（发现任务用）；不存在返回 null。 */
+	async get(sourceId: string): Promise<UserSource | null> {
+		return this.storage.transaction((tx) => tx.userSources.get(sourceId));
 	}
 
 	async add(ownerId: string, input: UserSourceInput, now: string): Promise<UserSource> {
@@ -170,6 +177,7 @@ export class UserSourceService {
 				listUrl,
 				subject: { kind, name },
 				createdAt: now,
+				discoveryStartedAt: null,
 				lastRefreshAt: null,
 				lastOutcome: null,
 				lastReason: null,
@@ -177,6 +185,91 @@ export class UserSourceService {
 			};
 			await tx.userSources.put(source);
 			return source;
+		});
+	}
+
+	/**
+	 * 只给企业名：先登记一个 discovering 站点并排队发现 job，立即返回。
+	 * 发现与首次采集都在 worker 里做，登记请求不再被 80 秒的站点探测拖住。
+	 */
+	async beginDiscovery(
+		ownerId: string,
+		input: { label: string; subject: { kind: "brand" | "competitor"; name: string } },
+		now: string,
+	): Promise<UserSource> {
+		const label = clean(input.label, 200);
+		if (!label) throw new UserSourceError(400, "label_required", "请填写企业名称");
+		const name = clean(input.subject.name, 200);
+		if (!name) throw new UserSourceError(400, "name_required", "请填写关注对象名称");
+		const kind = input.subject.kind === "competitor" ? "competitor" : "brand";
+		const source: UserSource = {
+			id: crypto.randomUUID(),
+			ownerId,
+			label,
+			host: null,
+			listUrl: null,
+			subject: { kind, name },
+			createdAt: now,
+			discoveryStartedAt: now,
+			lastRefreshAt: null,
+			lastOutcome: null,
+			lastReason: null,
+			status: "discovering",
+		};
+		return this.storage.transaction(async (tx) => {
+			const ownerSources = await tx.userSources.listByOwner(ownerId);
+			const pending = ownerSources.find((s) => s.label === label && s.status === "discovering");
+			if (pending) throw new UserSourceError(409, "discovery_pending", "这个企业正在查找官网，请稍候");
+			await tx.userSources.put(source);
+			// 幂等 job id：重复入队不会产生第二条发现任务。
+			await tx.jobs.put({
+				id: createHash("sha256").update(JSON.stringify(["discover_user_source", source.id])).digest("hex"),
+				task: { kind: "discover_user_source", sourceId: source.id },
+				status: "pending",
+				runAt: now,
+				attempts: 0,
+			});
+			return source;
+		});
+	}
+
+	/** 发现成功：写回站点身份并把状态置为 active（host 已被本人占用时如实失败）。 */
+	async finishDiscovery(
+		sourceId: string,
+		site: { host: string; listUrl: string },
+		now: string,
+	): Promise<UserSource> {
+		return this.storage.transaction(async (tx) => {
+			const source = await tx.userSources.get(sourceId);
+			if (!source) throw new UserSourceError(404, "not_found", "站点不存在");
+			if (source.status !== "discovering") return source;
+			const ownerSources = await tx.userSources.listByOwner(source.ownerId);
+			if (ownerSources.some((s) => s.id !== source.id && s.host === site.host))
+				throw new UserSourceError(409, "host_exists", "这个网站已经添加过");
+			const next: UserSource = {
+				...source,
+				host: site.host,
+				listUrl: site.listUrl,
+				status: "active",
+				lastReason: null,
+			};
+			await tx.userSources.put(next);
+			return next;
+		});
+	}
+
+	/** 发现失败：留在列表里让用户看到原因，可删除后重试。 */
+	async failDiscovery(sourceId: string, reason: string, now: string): Promise<void> {
+		await this.storage.transaction(async (tx) => {
+			const source = await tx.userSources.get(sourceId);
+			if (!source || source.status !== "discovering") return;
+			await tx.userSources.put({
+				...source,
+				status: "failed",
+				lastRefreshAt: now,
+				lastOutcome: "failed",
+				lastReason: reason,
+			});
 		});
 	}
 
@@ -215,6 +308,10 @@ export class UserSourceService {
 			if (Number.isFinite(elapsed) && elapsed >= 0 && elapsed < REFRESH_COOLDOWN_MS)
 				throw new UserSourceError(429, "refresh_too_soon", "同一站点 5 分钟内只采集一次，请稍后再试");
 		}
+		if (!source.host || !source.listUrl)
+			throw new UserSourceError(409, "source_not_ready", "站点还在查找官网，稍后再试");
+		const host = source.host;
+		const listUrl = source.listUrl;
 		const sourceKey = userSourceKey(sourceId);
 		const failure = async (reason: string): Promise<UserSourceRefreshResult> => {
 			await this.storage.transaction(async (tx) => {
@@ -228,12 +325,12 @@ export class UserSourceService {
 		// robots：2xx 遵从，4xx 视为无限制，5xx/不可达保守放弃。body 留作 sitemap 兜底。
 		let robotsBody = "";
 		try {
-			const robots = await fetcher.fetchText(`https://${source.host}/robots.txt`, FETCH_LIMITS);
+			const robots = await fetcher.fetchText(`https://${host}/robots.txt`, FETCH_LIMITS);
 			if (robots.status >= 500)
 				return await failure("robots 检查不可达，保守跳过本次采集");
 			if (robots.status < 400) {
 				robotsBody = robots.body;
-				const path = new URL(source.listUrl).pathname;
+				const path = new URL(listUrl).pathname;
 				if (!robotsAllows(parseRobots(robots.body), path))
 					return await failure("robots 不允许采集这个列表页");
 			}
@@ -243,26 +340,26 @@ export class UserSourceService {
 
 		let page;
 		try {
-			page = await fetcher.fetchText(source.listUrl, FETCH_LIMITS);
+			page = await fetcher.fetchText(listUrl, FETCH_LIMITS);
 		} catch {
 			return await failure("列表页抓取失败");
 		}
 		if (page.status >= 400) return await failure(`列表页返回 ${page.status}`);
 
-		let listUrl = source.listUrl;
+		let resolvedListUrl = listUrl;
 		// 兜底一级：同域 JSON 列表（实测 newsroom.json 这类数据接口）。零额外请求。
 		let parsed: Array<{ itemKey: string; title: string; itemUrl: string; publishedAt?: string | null }> =
-			parseUserListPage(page.body, listUrl, source.host);
-		if (parsed.length === 0) parsed = parseJsonListPayload(page.body, listUrl, source.host);
+			parseUserListPage(page.body, resolvedListUrl, host);
+		if (parsed.length === 0) parsed = parseJsonListPayload(page.body, resolvedListUrl, host);
 		// 页面本身不是 JSON，但可能指向一个数据接口（实测海信 /cn/zh/newsroom.json）。至多 1 个请求。
 		if (parsed.length === 0) {
-			const dataListUrl = findDataListAnchor(page.body, listUrl, source.host);
+			const dataListUrl = findDataListAnchor(page.body, resolvedListUrl, host);
 			if (dataListUrl) {
 				try {
 					const dataPage = await fetcher.fetchText(dataListUrl, FETCH_LIMITS);
 					if (dataPage.status < 400) {
-						parsed = parseJsonListPayload(dataPage.body, dataListUrl, source.host);
-						if (parsed.length > 0) listUrl = dataListUrl;
+						parsed = parseJsonListPayload(dataPage.body, dataListUrl, host);
+						if (parsed.length > 0) resolvedListUrl = dataListUrl;
 					}
 				} catch {
 					// 数据接口抓不到就继续后面的兜底。
@@ -271,28 +368,28 @@ export class UserSourceService {
 		}
 		// 列表页可能是 JS 渲染或选错了页面：条目过少也可疑，退回官网首页与常见新闻路径比一比，谁多用谁。
 		if (parsed.length < 3) {
-			const candidates = [`https://${source.host}/`, ...COMMON_NEWS_PATHS.map((path) => `https://${source.host}${path}`)]
-				.filter((url) => url.replace(/\/+$/u, "") !== listUrl.replace(/\/+$/u, ""));
+			const candidates = [`https://${host}/`, ...COMMON_NEWS_PATHS.map((path) => `https://${host}${path}`)]
+				.filter((url) => url.replace(/\/+$/u, "") !== resolvedListUrl.replace(/\/+$/u, ""));
 			for (const candidate of candidates) {
 				try {
 					const probe = await fetcher.fetchText(candidate, FETCH_LIMITS);
 					if (probe.status >= 400) continue;
-					const fromProbe = parseUserListPage(probe.body, candidate, source.host);
+					const fromProbe = parseUserListPage(probe.body, candidate, host);
 					if (fromProbe.length > parsed.length) {
 						parsed = fromProbe;
-						listUrl = candidate;
+						resolvedListUrl = candidate;
 						if (parsed.length >= 3) break;
 					}
 					// 官网站内常有“新闻中心”入口：沿着它深入一层再试，比首页更能拿到文章列表。
-					for (const entry of findNewsEntry(probe.body, candidate, source.host)) {
+					for (const entry of findNewsEntry(probe.body, candidate, host)) {
 						if (entry === candidate) continue;
 						try {
 							const listPage = await fetcher.fetchText(entry, FETCH_LIMITS);
 							if (listPage.status >= 400) continue;
-							const fromList = parseUserListPage(listPage.body, entry, source.host);
+							const fromList = parseUserListPage(listPage.body, entry, host);
 							if (fromList.length > parsed.length) {
 								parsed = fromList;
-								listUrl = entry;
+								resolvedListUrl = entry;
 								if (parsed.length >= 3) break;
 							}
 						} catch {
@@ -308,7 +405,7 @@ export class UserSourceService {
 		// 静态手段全部失败：交给注入的渲染读取兑底（jina 可渲染 JS 页），仍不行才报失败。
 		if (parsed.length < 3 && options.readFallback) {
 			try {
-				const fromRead = await options.readFallback(listUrl);
+				const fromRead = await options.readFallback(resolvedListUrl);
 				// 渲染读取同样要过文章规则：否则产品/导航页会被兑底重新拉回 20 条噪音。
 				const filtered = fromRead ? filterListableItems(fromRead) : [];
 				if (filtered.length > parsed.length) parsed = filtered;
@@ -318,7 +415,7 @@ export class UserSourceService {
 		}
 		// 兜底二级：sitemap（实测美的/九阳这类无新闻入口的站）。请求有上限。
 		if (parsed.length === 0) {
-			const origin = new URL(source.listUrl).origin;
+			const origin = new URL(resolvedListUrl).origin;
 			const candidates = [
 				...sitemapUrlsFromRobots(robotsBody, origin),
 				`${origin}/sitemap.xml`,
@@ -327,20 +424,20 @@ export class UserSourceService {
 				try {
 					const map = await fetcher.fetchText(sitemapUrl, FETCH_LIMITS);
 					if (map.status >= 400) continue;
-					let { sitemaps, entries } = parseSitemapXml(map.body, sitemapUrl, source.host);
+					let { sitemaps, entries } = parseSitemapXml(map.body, sitemapUrl, host);
 					for (const child of sitemaps.slice(0, MAX_SITEMAP_CHILDREN)) {
 						if (entries.length > 0) break;
 						try {
 							const childPage = await fetcher.fetchText(child, FETCH_LIMITS);
 							if (childPage.status >= 400) continue;
-							({ entries } = parseSitemapXml(childPage.body, child, source.host));
+							({ entries } = parseSitemapXml(childPage.body, child, host));
 						} catch {
 							// 单个子地图失败继续。
 						}
 					}
 					if (entries.length === 0) continue;
 					// 标题缺失时按上限抓文章 <title>；拿不到就跳过，不编造标题。
-					parsed = await collectSitemapItems(fetcher, source.host, entries);
+					parsed = await collectSitemapItems(fetcher, host, entries);
 					if (parsed.length > 0) break;
 				} catch {
 					// 单个站点地图失败继续。
@@ -351,7 +448,7 @@ export class UserSourceService {
 		if (parsed.length === 0 && options.searchFallback) {
 			try {
 				const hits = await options.searchFallback(`${source.label} 新闻`);
-				parsed = searchFallbackItems(hits, source.host);
+				parsed = searchFallbackItems(hits, host);
 			} catch {
 				// 搜索失败或额度用尽都维持原结论，不冒充成功。
 			}
@@ -404,7 +501,7 @@ export class UserSourceService {
 				await tx.userSources.put({
 					...current,
 					// 探测后选到更好的页面时把纠正结果写回，避免每次刷新重复探测同一批候选。
-					listUrl,
+					listUrl: resolvedListUrl,
 					lastRefreshAt: now,
 					lastOutcome: "ok",
 					lastReason: null,

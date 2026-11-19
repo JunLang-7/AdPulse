@@ -37,6 +37,8 @@ const addStatusText = (error: unknown): string => {
 	// 搜索额度用完与采集冷却都是 429，必须按码区分，不能共用一条文案。
 	if (code === "search_quota_exhausted")
 		return "今日搜索额度已用完：次日 00:00（北京时间）自动恢复。也可以现在直接填写官网新闻列表页地址。";
+	if (code === "discovery_pending") return "这个企业正在查找官网，请稍候（通常 1 分钟内完成）。";
+	if (code === "source_not_ready") return "站点还在查找官网，等它变成「已接入」再采集。";
 	if (status === 409) return "这个网站已经添加过，不需要重复登记。";
 	if (status === 429) return "刚刚采集过这个站点，5 分钟内不重复采集，请稍后再试。";
 	if (status === 400) return "地址或填写内容不合法：列表页必须是 https 的站点地址，企业名称与关注对象名称不能为空。";
@@ -444,7 +446,13 @@ export default function MarketEventsPage() {
 	// 用户自加企业站点：登记即采，失败可见，可手动重采或删除。
 	const [siteForm, setSiteForm] = useState({ label: "", listUrl: "", kind: "brand", name: "" });
 	const [siteError, setSiteError] = useState<string | null>(null);
-	const userSources = useQuery({ queryKey: ["user-sources"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/me/user-sources"); if (!r.data) throw new Error("无法读取站点列表"); return r.data.items; } });
+	const userSources = useQuery({
+		queryKey: ["user-sources"],
+		enabled: !eventId,
+		queryFn: async () => { const r = await consoleClient.GET("/api/me/user-sources"); if (!r.data) throw new Error("无法读取站点列表"); return r.data.items; },
+		// 只给企业名时官网发现是异步的：有站点在 discovering 就短轮询，全部落地后停止。
+		refetchInterval: (query) => ((query.state.data ?? []).some((s) => s.status === "discovering") ? 3000 : false),
+	});
 	// 搜索源额度：付费源用完即停，界面必须提前告知，不要让用户白点。
 	const searchProviders = useQuery({ queryKey: ["search-providers"], enabled: !eventId, queryFn: async () => { const r = await consoleClient.GET("/api/me/search-providers"); if (!r.data) return []; return r.data.items; } });
 	const allQuotaExhausted = (searchProviders.data ?? []).length > 0 && (searchProviders.data ?? []).every((p) => p.exhausted);
@@ -598,17 +606,25 @@ export default function MarketEventsPage() {
 				{(userSources.data ?? []).length > 0 ? (
 					<div className="space-y-2">
 						<p className="text-xs text-muted-foreground">已登记站点</p>
-						{(userSources.data ?? []).map(s => (
-							<div key={s.id} className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-sm">
+						{(userSources.data ?? []).map(s => {
+							const discovering = s.status === "discovering";
+							return <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-sm">
 								<span className="font-medium">{s.label}</span>
-								<span className="text-muted-foreground">{s.host}</span>
-								<span className="text-muted-foreground">{s.lastOutcome === "ok" ? "上次采集成功" : s.lastOutcome === "failed" ? `上次失败：${s.lastReason ?? "未知原因"}` : "还没采集过"}</span>
+								{discovering
+									? <span className="text-muted-foreground">正在按企业名称查找官网…</span>
+									: <span className="text-muted-foreground">{s.host}</span>}
+								{discovering
+									? null
+									: <span className="text-muted-foreground">{s.lastOutcome === "ok" ? "上次采集成功" : s.lastOutcome === "failed" ? `上次失败：${s.lastReason ?? "未知原因"}` : "还没采集过"}</span>}
 								<div className="ml-auto flex items-center gap-2">
-									<Button type="button" variant="outline" size="sm" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => refreshSite.mutate(s.id)}>{refreshSite.variables === s.id && refreshSite.isPending ? "采集中…" : "采集"}</Button>
+									{/* 还没落到具体站点（发现中或发现失败）时不给采集入口，只保留删除。 */}
+									{s.host
+										? <Button type="button" variant="outline" size="sm" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => refreshSite.mutate(s.id)}>{refreshSite.variables === s.id && refreshSite.isPending ? "采集中…" : "采集"}</Button>
+										: null}
 									<Button type="button" variant="outline" size="sm" disabled={refreshSite.isPending || removeSite.isPending} onClick={() => removeSite.mutate(s.id)}>删除</Button>
 								</div>
-							</div>
-						))}
+							</div>;
+						})}
 					</div>
 				) : null}
 				{refreshSite.data ? <p role="status" className="text-sm">本次采集：新增 {refreshSite.data.created} 条，更新 {refreshSite.data.updated} 条{refreshSite.data.reason ? `（${refreshSite.data.reason}）` : ""}</p> : null}

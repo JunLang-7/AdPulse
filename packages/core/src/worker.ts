@@ -61,6 +61,8 @@ export class Worker {
 		private validationChecks?: ValidationCheckService,
 		/** 发现线索重要性/关联初判；未注入时 job 失败并保留原因。 */
 		private signalAssessments?: { prepare: (leadId: string) => Promise<void> },
+		/** 只填企业名的站点：异步查找官网并首次采集；未注入时 job 失败并保留原因。 */
+		private userSourceDiscovery?: { run: (sourceId: string) => Promise<void> },
 	) {}
 
 	/** 上一次日汇总调度的时间戳，用于在没有任务可领时按间隔触发。 */
@@ -144,6 +146,11 @@ export class Worker {
 					if (!this.validationChecks)
 						throw new Error("validation check service is not configured");
 					await this.validationChecks.evaluate(job.task.checkId);
+					break;
+				case "discover_user_source":
+					if (!this.userSourceDiscovery)
+						throw new Error("user source discovery is not configured");
+					await this.userSourceDiscovery.run(job.task.sourceId);
 					break;
 			}
 			await this.storage.transaction(async (tx) => {

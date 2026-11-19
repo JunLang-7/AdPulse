@@ -1591,8 +1591,10 @@ export interface components {
             id: string;
             ownerId: string;
             label: string;
-            host: string;
-            listUrl: string;
+            /** @description 自动发现完成前为空 */
+            host: string | null;
+            /** @description 自动发现完成前为空 */
+            listUrl: string | null;
             subject: components["schemas"]["SourceLeadSubject"];
             /** Format: date-time */
             createdAt: string;
@@ -1602,7 +1604,8 @@ export interface components {
             lastOutcome: "ok" | "failed" | null;
             lastReason: string | null;
             /** @enum {string} */
-            status: "active" | "stopped";
+            status: "discovering" | "active" | "stopped" | "failed";
+            discoveryStartedAt?: string | null;
         };
         SignalAssessment: {
             id: string;
@@ -5441,6 +5444,17 @@ export interface operations {
         responses: {
             /** @description Created */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        source: components["schemas"]["UserSource"];
+                    };
+                };
+            };
+            /** @description 只给企业名时先登记，官网发现与首次采集在后台进行 */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
