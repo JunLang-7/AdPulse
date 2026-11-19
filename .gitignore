@@ -9,3 +9,5 @@ dist/
 docs/acceptance/records/
 *.swp
 .DS_Store
+# 部署目标属于环境信息，只留在本机（示例见 .deploy.example.env）。
+.deploy.local.env
