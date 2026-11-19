@@ -377,50 +377,53 @@ export async function discoverCompanySites(
 				const fetcher = options.fetcher ?? new UserSiteFetcher([candidate.host]);
 				try {
 					// 验证页跟随候选协议（老站可能只有 http）；网络抖动重试一次。
+					// 首页可能整个连不上（实测 www.midea.com.cn/ socket hang up），
+					// 抓不到不算判死：下面还有「列表页判归属」这条兜底。
 					const origin = new URL(candidate.listUrl).origin;
-					let home;
+					let home: { status: number; body: string } | null = null;
 					try {
 						home = await fetcher.fetchText(`${origin}/`, { maxBytes: 512 * 1024, timeoutMs: 20_000 });
 					} catch {
-						home = await fetcher.fetchText(`${origin}/`, { maxBytes: 512 * 1024, timeoutMs: 20_000 });
+						home = await fetcher.fetchText(`${origin}/`, { maxBytes: 512 * 1024, timeoutMs: 20_000 }).catch(() => null);
 					}
-					const title = /<title[^>]*>([\s\S]{0,200}?)<\/title>/iu.exec(home.body)?.[1]?.replace(/<[^>]+>/gu, "").replace(/\s+/gu, " ") ?? "";
-					const head = home.body.replace(/<[^>]+>/gu, "").replace(/\s+/gu, "").slice(0, 2000);
-					const titleCompact = title.replace(/\s+/gu, "");
 					const brandPrefix = brandCompact.replace(/(?:集团|股份|控股|有限公司|公司)$/u, "") || brandCompact;
 					const shape = /^(?:www\.)?[^.]+\.(?:com|cn|com\.cn|net|org)$/iu.test(candidate.host) ? 1 : 0;
-					const strict = titleCompact.includes(brandCompact) || head.includes(brandCompact);
-					// 短域名 + 品牌前缀也算官网：真站标题常写简称（如「浪潮」而非「浪潮集团」）。
-					const relaxed = shape === 1 && (titleCompact.includes(brandPrefix) || head.includes(brandPrefix));
-					if (home.status < 400 && (strict || relaxed)) {
-						passing.push({ candidate, shape });
-						continue;
-					}
-					// 有些官网首页是英文/跳转页（实测 midea.com.cn → /en），品牌名只在新闻页；
-					// 此时用“能解析出的列表页 + 条目标题里有品牌”作为归属判据。
-					if (home.status < 400) {
-						try {
-							const resolved = await resolveNewsListPageDetailed(candidate, fetcher);
-							if (resolved) {
-								const titles = [
-									...parseUserListPage(resolved.body, resolved.listUrl, candidate.host),
-									...parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host),
-								]
-									.map((item) => item.title)
-									.join("");
-								const pageText = `${resolved.listUrl}${titles}${resolved.body.replace(/<[^>]+>/gu, "")}`
-									.replace(/\s+/gu, "")
-									.slice(0, 6000);
-								if (pageText.includes(brandCompact) || pageText.includes(brandPrefix)) {
-									preResolved.set(candidate.host, resolved);
-									passing.push({ candidate, shape });
-								}
-							}
-						} catch {
-							// 目标页抓不到就按原结论处理。
+					if (home && home.status < 400) {
+						const title = /<title[^>]*>([\s\S]{0,200}?)<\/title>/iu.exec(home.body)?.[1]?.replace(/<[^>]+>/gu, "").replace(/\s+/gu, " ") ?? "";
+						const head = home.body.replace(/<[^>]+>/gu, "").replace(/\s+/gu, "").slice(0, 2000);
+						const titleCompact = title.replace(/\s+/gu, "");
+						const strict = titleCompact.includes(brandCompact) || head.includes(brandCompact);
+						// 短域名 + 品牌前缀也算官网：真站标题常写简称（如「浪潮」而非「浪潮集团」）。
+						const relaxed = shape === 1 && (titleCompact.includes(brandPrefix) || head.includes(brandPrefix));
+						if (strict || relaxed) {
+							passing.push({ candidate, shape });
+							continue;
 						}
 					}
-					if ([401, 403, 418, 429, 503].includes(home.status))
+					// 首页抓不到、是英文/跳转页（实测 midea.com.cn → /en）、或没写品牌名时，
+					// 用“能解析出的列表页 + 页面/条目标题里有品牌”作为归属判据。
+					try {
+						const resolved = await resolveNewsListPageDetailed(candidate, fetcher);
+						if (resolved) {
+							const titles = [
+								...parseUserListPage(resolved.body, resolved.listUrl, candidate.host),
+								...parseJsonListPayload(resolved.body, resolved.listUrl, candidate.host),
+							]
+								.map((item) => item.title)
+								.join("");
+							const pageText = `${resolved.listUrl}${titles}${resolved.body.replace(/<[^>]+>/gu, "")}`
+								.replace(/\s+/gu, "")
+								.slice(0, 6000);
+							if (pageText.includes(brandCompact) || pageText.includes(brandPrefix)) {
+								preResolved.set(candidate.host, resolved);
+								passing.push({ candidate, shape });
+								continue;
+							}
+						}
+					} catch {
+						// 目标页抓不到就按原结论处理。
+					}
+					if (home && [401, 403, 418, 429, 503].includes(home.status))
 						lastError = new Error(`official site ${candidate.host} blocks automated access (WAF/challenge)`);
 					else
 						lastError = new Error(`candidate ${candidate.host} homepage does not mention the company`);

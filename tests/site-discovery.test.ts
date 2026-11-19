@@ -346,3 +346,25 @@ test("挑站排序：字典/组词站标题含品牌名不再压过真官网", (
 	assert.ok(pick);
 	assert.equal(pick.host, "www.midea.com.cn", "官网排第一，字典站被重罚、商城站没有新闻信号");
 });
+
+test("discoverCompanySite：官网首页连不上（socket hang up）时仍可用列表页判归属", async () => {
+	// 实测 www.midea.com.cn/ 直连挂掉，但 /zh 与新闻页都正常。
+	const runReach = async () => ({
+		stdout: result([{ title: "美的首页", url: "https://www.midea.com.cn/zh" }]),
+		exitCode: 0,
+	});
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			if (url === "https://www.midea.com.cn/") throw new Error("socket hang up");
+			if (url === "https://www.midea.com.cn/zh")
+				return { status: 200, bytes: 80, body: `<title>美的首页</title><a href="/zh/about-midea/news">新闻</a>` };
+			return {
+				status: 200, bytes: 120,
+				body: `<html><a href="/zh/about-midea/news/news-20220719">美的空调率先发布碳足迹评估报告 2022年7月19日</a></body></html>`,
+			};
+		},
+	};
+	const site = await discoverCompanySite("美的", fakeBin, { runReach, fetcher });
+	assert.equal(site.host, "www.midea.com.cn");
+	assert.equal(site.listUrl, "https://www.midea.com.cn/zh/about-midea/news", "首页挂掉不影响：沿站内新闻入口定位列表页");
+});
