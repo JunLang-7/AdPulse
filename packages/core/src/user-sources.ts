@@ -23,6 +23,16 @@ const FETCH_LIMITS = { maxBytes: 512 * 1024, timeoutMs: 15_000 };
  * 尚未实现“每日每站配额”，此处为当前边界（见开发指南「用户自加来源」）。
  */
 const REFRESH_COOLDOWN_MS = 5 * 60_000;
+/**
+ * 连续失败到这个次数后暂停自动换站。
+ * 换站固定花两次搜索（官网 + 新闻中心），一天四个槽位 × 多次重试会把全站额度吃光。
+ */
+const MAX_SWITCH_FAILURES = 3;
+/**
+ * 换站退避窗口：超过这个时间允许再试一次。
+ * 只靠失败次数会永久锁死——站点修好后永远无法自动恢复。
+ */
+const SWITCH_BACKOFF_MS = 24 * 60 * 60_000;
 /** 自动找列表页的常见路径兑底：单个候选页最多多打 6 个请求。 */
 const COMMON_NEWS_PATHS = [
 	"/news", "/news/index.html", "/xwzx/index.html", "/news/list.shtml",
@@ -319,7 +329,13 @@ export class UserSourceService {
 			await this.storage.transaction(async (tx) => {
 				const current = await tx.userSources.get(sourceId);
 				if (current)
-					await tx.userSources.put({ ...current, lastRefreshAt: now, lastOutcome: "failed", lastReason: reason });
+					await tx.userSources.put({
+						...current,
+						lastRefreshAt: now,
+						lastOutcome: "failed",
+						lastReason: reason,
+						failureCount: (current.failureCount ?? 0) + 1,
+					});
 			});
 			return { outcome: "failed", created: 0, updated: 0, reason };
 		};
@@ -337,8 +353,24 @@ export class UserSourceService {
 
 		// 换站重试：同一家企业常有多个站（集团站/商城站/品牌站）。当前站采不到内容时，
 		// 按发现结果换 1–2 个已验证站点再试；成功就把 host 与 listUrl 一起改过去。
+		//
+		// 换站固定花两次搜索（官网 + 新闻中心），所以连续失败超过阈值就不再换站：
+		// 否则一个坏站每个槽位都会重试，能把全站搜索额度吃干净。
 		const triedAlternates: string[] = [];
-		if (parsed.length === 0 && options.discoverSites && options.fetcherFor) {
+		// 退避：连续失败达阈值后，24 小时内不再换站；窗口过期允许再试一次，避免永久锁死。
+		const failures = source.failureCount ?? 0;
+		const lastSwitchAt = source.lastSwitchAt ? Date.parse(source.lastSwitchAt) : Number.NaN;
+		const switchBackedOff =
+			failures >= MAX_SWITCH_FAILURES &&
+			Number.isFinite(lastSwitchAt) &&
+			Date.parse(now) - lastSwitchAt < SWITCH_BACKOFF_MS;
+		if (parsed.length === 0 && !switchBackedOff && options.discoverSites && options.fetcherFor) {
+			// 先把尝试时刻落盘：即使后续请求超时/进程重启，退避窗口也算数。
+			await this.storage.transaction(async (tx) => {
+				const currentSource = await tx.userSources.get(sourceId);
+				if (currentSource)
+					await tx.userSources.put({ ...currentSource, lastSwitchAt: now });
+			});
 			const alternates = (await options.discoverSites(source.label).catch(() => []))
 				.filter((site) => site.host !== currentHost)
 				.slice(0, 2);
@@ -369,9 +401,12 @@ export class UserSourceService {
 			const base =
 				current.reason ??
 				"列表页、sitemap 与搜索都没有找到可用条目：该站可能需要 JS 渲染，或没有可访问的 HTML 列表页/JSON 接口；可直接填写具体的新闻列表页地址再试。";
-			return await failure(
-				triedAlternates.length > 0 ? `${base}（已尝试备选站点：${triedAlternates.join("、")}）` : base,
-			);
+			const tried = triedAlternates.length > 0 ? `（已尝试备选站点：${triedAlternates.join("、")}）` : "";
+			// 抑制期间如实说明为什么没换站，避免看起来像「忘了换」。
+			const suppressed = switchBackedOff
+				? `（已连续失败 ${failures} 次，24 小时内暂停自动换站以节省搜索额度；检查地址或稍后再试）`
+				: "";
+			return await failure(`${base}${tried}${suppressed}`);
 		}
 
 		const result = await this.storage.transaction(async (tx) => {
@@ -394,6 +429,8 @@ export class UserSourceService {
 							publishedAt: entry.publishedAt ?? extractDate(entry.itemUrl, entry.title) ?? previous.publishedAt,
 							lastSeenAt: now,
 							titleUpdatedAt: previous.title === entry.title ? previous.titleUpdatedAt : now,
+							// 旧条目没有记录站点时补上本次采集站点，保留历史不被丢弃。
+							host: previous.host ?? currentHost,
 						}
 					: {
 							id,
@@ -406,6 +443,8 @@ export class UserSourceService {
 							lastSeenAt: now,
 							titleUpdatedAt: null,
 							contentScope: "title_link_only",
+							// 记下这条条目属于哪个站点：换站后旧条目靠它区分归属。
+							host: currentHost,
 							status: "active",
 						};
 				await tx.sourceItems.put(next);
@@ -422,6 +461,8 @@ export class UserSourceService {
 					lastRefreshAt: now,
 					lastOutcome: "ok",
 					lastReason: null,
+					// 成功即清零：额度保护只针对持续失败的站点。
+					failureCount: 0,
 				});
 			return { outcome: "ok" as const, created, updated, reason: null };
 		});

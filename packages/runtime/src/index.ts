@@ -156,6 +156,9 @@ export function compose(
 	const discoverAlternates = (label: string) =>
 		discoverCompanySites(label, process.env.AGENT_REACH_BIN, { aggregator: userSourceAggregator })
 			.then((sites) => sites.map(({ host, listUrl }) => ({ host, listUrl })));
+	// 站内搜索兑底：只花一次额度。定时采集也用它，避免直接跳到两次搜索的换站。
+	const searchUserSource = async (query: string) =>
+		(await userSourceAggregator.search(query)).hits;
 	const userSourceDiscovery = {
 		run: async (sourceId: string) => {
 			const userSources = new UserSourceService(storage);
@@ -197,6 +200,7 @@ export function compose(
 		channels,
 		decisions,
 		discoverAlternates,
+		searchUserSource,
 		tasks,
 		evidence,
 		marketEvents: new MarketEventService(storage),

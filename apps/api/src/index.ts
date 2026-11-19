@@ -50,6 +50,8 @@ const sourcesLoop =
 					...(process.env.AGENT_REACH_BIN ? { readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN) } : {}),
 					fetcherFor: (host: string) => new UserSiteFetcher([host]),
 					discoverSites: runtime.discoverAlternates,
+					// 便宜的站内搜索优先于换站（一次额度 vs 两次）。
+					searchFallback: runtime.searchUserSource,
 				}),
 			])
 		: Promise.resolve();
