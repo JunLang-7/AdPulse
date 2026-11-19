@@ -136,7 +136,9 @@ export function serperProvider(apiKey: string | undefined, options: { dailyLimit
 				const response = await fetch("https://google.serper.dev/search", {
 					method: "POST",
 					headers: { "X-API-KEY": apiKey, "content-type": "application/json" },
-					body: JSON.stringify({ q: `${query} 官网`, gl: "cn", hl: "zh-cn", num: LIMIT }),
+					// 查询词由调用方决定（品牌名 / 「XX 新闻中心」），原样发给 Google；
+				// 实测强拼「 官网」后缀会让「品牌 官网」返回仿冒站、让新闻类查询劣化。
+				body: JSON.stringify({ q: query, gl: "cn", hl: "zh-cn", num: LIMIT }),
 					signal: AbortSignal.timeout(15_000),
 				});
 				if (response.status === 429) return { status: "rate_limited", hits: [], detail: "Serper 限流" };
@@ -166,7 +168,7 @@ export function braveProvider(apiKey: string | undefined, options: { dailyLimit?
 		async search(query) {
 			try {
 				const response = await fetch(
-					`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(`${query} 官网`)}&count=${LIMIT}&country=cn`,
+					`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${LIMIT}&country=cn`,
 					{ headers: { "X-Subscription-Token": apiKey, accept: "application/json" }, signal: AbortSignal.timeout(15_000) },
 				);
 				if (response.status === 429) return { status: "rate_limited", hits: [], detail: "Brave 限流" };

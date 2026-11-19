@@ -142,8 +142,13 @@ export class SearchAggregator {
 		});
 	}
 
-	async search(query: string): Promise<AggregatedSearch> {
-		const enough = this.options.enoughHits ?? 8;
+	/**
+	 * 搜索并聚合各源结果。`overrides.enoughHits` 可按次提高短路门槛：
+	 * 「找官网」这类质量敏感场景免费源的结果可能是垃圾（实测 Bing 返回 8 条商城/字典站
+	 * 导致付费源永远不被咨询），此时传 Infinity 让全部已配置源都参与，代价是消耗付费额度。
+	 */
+	async search(query: string, overrides: { enoughHits?: number } = {}): Promise<AggregatedSearch> {
+		const enough = overrides.enoughHits ?? this.options.enoughHits ?? 8;
 		const hits = new Map<string, SearchHit>();
 		const outcomes: SearchProviderOutcome[] = [];
 		for (const provider of this.providers) {
