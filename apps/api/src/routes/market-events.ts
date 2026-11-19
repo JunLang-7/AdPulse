@@ -65,10 +65,12 @@ export async function handleMarketEvents(req: IncomingMessage, res: ServerRespon
 	if (path === "/api/market-events/extract" && req.method === "POST") {
 		// 先校验输入再查模型：空材料等错误应得到 400，而不是误导性的 503。
 		const body = extractInput.parse(await readJson(req));
-		const models = runtime.taskDraftModels;
-		if (!models) throw new HttpError(503, "event draft extraction unavailable");
-		const extract = createEventDraftExtractor((systemPrompt, brief, maxTokens) =>
-			models.completeJson(ownerId, systemPrompt, brief, undefined, maxTokens));
+		// 统一模型出口：优先用「模型配置」的默认持久化连接，无需逐处选择。
+		const complete = (systemPrompt: string, brief: string, maxTokens?: number) =>
+			runtime.jsonCompleter
+				? runtime.jsonCompleter(ownerId, systemPrompt, brief, maxTokens)
+				: runtime.taskDraftModels?.completeJson(ownerId, systemPrompt, brief, undefined, maxTokens) ?? Promise.resolve(null);
+		const extract = createEventDraftExtractor(complete);
 		const items = await extract({
 			materials: body.materials,
 			...(body.publisher !== undefined ? { publisher: body.publisher } : {}),

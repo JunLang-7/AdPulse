@@ -40,9 +40,11 @@ import { providersFromEnvironment } from "./search-providers.js";
 import type { TaskDraftExtractor } from "./task-draft-extractor.js";
 import {
 	createPersistedTaskDraftExtractor,
+	createPersistedJsonCaller,
 	createTaskDraftRequestLimit,
 	createUserRequestBudgets,
 	isTaskDraftProtocolWired,
+	resolveDefaultModelRoute,
 	type ModelRouteInput,
 } from "./task-draft-extractor.js";
 import { createTaskDraftModels } from "./task-draft-models.js";
@@ -252,6 +254,11 @@ export type Runtime = ReturnType<typeof compose> & {
 	extractTaskDraft?: TaskDraftExtractor;
 	taskDraftModels?: ReturnType<typeof createTaskDraftModels>;
 	modelConnections?: ReturnType<typeof createModelConnections>;
+	/** 统一 JSON 补全：自动使用「模型配置」的默认持久化连接，失败回退部署路由。 */
+	jsonCompleter?: (
+		ownerId: string, systemPrompt: string, brief: string, maxTokens?: number,
+	) => Promise<string | null>;
+	jsonModelLabel?: (ownerId: string) => Promise<string | null>;
 };
 
 /**
@@ -299,7 +306,7 @@ export function createModelConnections(
 
 export const modelConnectionTestBrief = "产品：连接测试";
 
-export { taskDraftBriefMaxLength, taskDraftStages } from "./task-draft-extractor.js";
+export { taskDraftBriefMaxLength, taskDraftStages, createPersistedJsonCaller, resolveDefaultModelRoute } from "./task-draft-extractor.js";
 export type { TaskDraftSelection } from "./task-draft-models.js";
 export { catalogForClient, findCatalogModel, findCatalogProvider, modelCatalogProviders } from "./model-catalog.js";
 export type { ModelCatalogModel, ModelCatalogProvider } from "./model-catalog.js";
@@ -396,24 +403,59 @@ export async function fromEnvironment(
 	const taskDraftModels = createTaskDraftModels(env);
 	const storage = postgres ?? new MemoryStorage();
 	const modelConnections = createModelConnections(storage, env);
-	// 假设偏差初判：与任务草案共用同一套模型连接与限流；未配置模型时初判跳过。
+
+	/**
+	 * 统一的 JSON 补全出口：优先用「模型配置」里保存的持久化个人连接/偏好；
+	 * 没有持久化连接时回退到部署路由（DEEPSEEK_API_KEY / 兼容网关 / 临时内存连接）。
+	 * 所有 AI 辅助（假设草案与初判、事件整理、线索初判）共用，用户只需配一次。
+	 */
+	const jsonCompleter = async (
+		ownerId: string,
+		systemPrompt: string,
+		brief: string,
+		maxTokens?: number,
+	): Promise<string | null> => {
+		if (modelConnections) {
+			try {
+				const route = await resolveDefaultModelRoute(modelConnections.service, ownerId);
+				if (route) {
+					const caller = createPersistedJsonCaller(route);
+					if (caller) {
+						const text = await caller(systemPrompt, brief, maxTokens);
+						if (text) return text;
+					}
+				}
+			} catch {
+				// 持久化连接不可用（凭据、版本或网络问题）时回退到部署路由，
+				// 不把内部错误细节透露给调用方。
+			}
+		}
+		return taskDraftModels?.completeJson(ownerId, systemPrompt, brief, undefined, maxTokens) ?? null;
+	};
+	const jsonModelLabel = async (ownerId: string): Promise<string | null> => {
+		if (modelConnections) {
+			try {
+				const route = await resolveDefaultModelRoute(modelConnections.service, ownerId);
+				if (route) return `${route.providerId}/${route.modelId}`;
+			} catch {
+				// 同上：回退。
+			}
+		}
+		const selection = taskDraftModels?.list(ownerId).defaultSelection;
+		return selection ? `${selection.provider}/${selection.model}` : null;
+	};
+
+	// 假设偏差初判：与各 AI 辅助共用统一模型出口；未配置模型时初判跳过。
 	const hypothesisVerdicts = createHypothesisVerdictJobHandler(
 		storage,
-		(ownerId, systemPrompt, brief, maxTokens) =>
-			taskDraftModels.completeJson(ownerId, systemPrompt, brief, undefined, maxTokens),
-		(ownerId) => {
-			const selection = taskDraftModels.list(ownerId).defaultSelection;
-			return selection ? `${selection.provider}/${selection.model}` : null;
-		},
+		jsonCompleter,
+		jsonModelLabel,
 	);
-	// 发现线索的初判：与假设偏差共用同一套模型连接与限流。
+	// 发现线索的初判：同上，共用同一套模型连接与限流。
 	const signalAssessments = createSignalAssessmentJobHandler(
 		storage,
-		(ownerId, systemPrompt, brief) => taskDraftModels.completeJson(ownerId, systemPrompt, brief),
-		(ownerId) => {
-			const selection = taskDraftModels.list(ownerId).defaultSelection;
-			return selection ? `${selection.provider}/${selection.model}` : null;
-		},
+		jsonCompleter,
+		jsonModelLabel,
 	);
 	return {
 		...compose(storage, accounts, reviewPolicy, {
@@ -424,6 +466,8 @@ export async function fromEnvironment(
 		}),
 		taskDraftModels,
 		modelConnections,
+		jsonCompleter,
+		jsonModelLabel,
 		close: async () => {
 			await postgres?.close();
 		},

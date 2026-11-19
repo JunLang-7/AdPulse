@@ -56,7 +56,7 @@ export function parseSignalSuggestion(text: string | null, title: string): Signa
 export function createSignalAssessmentJobHandler(
 	storage: Storage,
 	complete: (ownerId: string, prompt: string, brief: string) => Promise<string | null>,
-	modelLabelFor: (ownerId: string) => string | null,
+	modelLabelFor: (ownerId: string) => string | null | Promise<string | null>,
 	now: () => string = () => new Date().toISOString(),
 ) {
 	return {
@@ -71,7 +71,7 @@ export function createSignalAssessmentJobHandler(
 				return { lead, active };
 			});
 			if (!context || !context.active.length) return;
-			const label = modelLabelFor(context.lead.ownerId);
+			const label = await modelLabelFor(context.lead.ownerId);
 			if (!label) return; // 未配置模型：跳过，不编造。
 			const service = new SignalAssessmentService(storage, now);
 			for (const task of context.active) {

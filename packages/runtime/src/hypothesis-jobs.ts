@@ -82,14 +82,14 @@ export function createHypothesisVerdictJobHandler(
 		brief: string,
 		maxTokens?: number,
 	) => Promise<string | null>,
-	modelLabelFor: (ownerId: string) => string | null,
+	modelLabelFor: (ownerId: string) => string | null | Promise<string | null>,
 	now: () => string = () => new Date().toISOString(),
 ) {
 	return {
 		async prepare(source: HypothesisVerdictSource): Promise<void> {
 			const material = await loadMaterial(storage, source);
 			if (!material || !material.taskIds.length) return;
-			const label = modelLabelFor(material.ownerId);
+			const label = await modelLabelFor(material.ownerId);
 			if (!label) return;
 			const service = new HypothesisService(storage, now);
 			const targets = [];

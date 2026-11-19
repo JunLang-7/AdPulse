@@ -623,6 +623,101 @@ export function createTaskDraftRequestLimit(options: {
 	};
 }
 
+/**
+ * 从任意已解析的模型路由（目录或自定义连接）构造 JSON 补全出口。
+ * 与 `createPersistedTaskDraftExtractor` 用同一套协议适配、出网管控与预算；
+ * 区别是它不解析任务草案字段，而是给「假设草案 / 事件整理 / 初判」等
+ * 只要一段 JSON 的功能用。用户只需在「模型配置」里选一次，各功能自动复用。
+ */
+export function createPersistedJsonCaller(
+	input: ModelRouteInput,
+	fetchImpl: typeof fetch = fetch,
+	limit = createTaskDraftRequestLimit(),
+): JsonCaller | undefined {
+	const key = input.apiKey.trim();
+	if (!key || !isTaskDraftProtocolWired(input.protocol)) return;
+	if (isGeminiProtocol(input.protocol)) return;
+	if (input.kind === "catalog") {
+		return createCatalogJsonCaller(input.catalogId ?? input.providerId, input.modelId, key, fetchImpl, limit);
+	}
+	// 自定义连接：保守模型元数据（与 createPersistedTaskDraftExtractor 一致）。
+	const model = {
+		id: input.modelId,
+		name: input.modelId,
+		api: input.protocol,
+		provider: input.providerId,
+		baseUrl: input.baseUrl,
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 8_192,
+		maxTokens: maxOutputTokens,
+		compat: input.protocol === "openai-responses" ? { supportsMaxOutputTokens: true } : {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			supportsUsageInStreaming: false,
+			maxTokensField: "max_tokens",
+		},
+	} satisfies Model<TaskDraftProtocol>;
+	const provider = createProvider({
+		id: input.providerId,
+		name: input.providerId,
+		baseUrl: input.baseUrl,
+		auth: { apiKey: envApiKeyAuth(input.providerId, []) },
+		models: [model],
+		api: protocolApi(input.protocol),
+	});
+	return createJsonCaller(provider, input.modelId, key, fetchImpl, limit);
+}
+
+/**
+ * 解析某用户的默认模型路由：优先用「模型配置」里保存的持久化个人连接与偏好，
+ * 没有时返回 null，由调用方决定是否回退到部署路由。
+ */
+export async function resolveDefaultModelRoute(
+	service: {
+		view(ownerId: string): Promise<{
+			preference: { connectionId: string | null; modelId: string | null };
+			connections: Array<{
+				id: string; status: string; hasCredential: boolean; providerId: string;
+				kind: "catalog" | "custom"; catalogId?: string | null; models: Array<{ id: string }>;
+			}>;
+		}>;
+		resolveCredential(
+			ownerId: string, connectionId: string, modelId: string,
+		): Promise<{
+			connection: {
+				id: string; providerId: string; kind: "catalog" | "custom"; catalogId?: string | null; version: number;
+			};
+			baseUrl: string; protocol: ModelConnectionProtocol; modelId: string; apiKey: string;
+		}>;
+	},
+	ownerId: string,
+): Promise<ModelRouteInput | null> {
+	const { preference, connections } = await service.view(ownerId);
+	let connectionId = preference.connectionId;
+	let modelId = preference.modelId;
+	// 没有显式偏好时，取第一条可用连接（用户已配置但没选默认也能用）。
+	if (!connectionId || !modelId) {
+		const first = connections.find((item) =>
+			item.status === "active" && item.hasCredential && item.models.length > 0);
+		if (!first) return null;
+		connectionId = first.id;
+		modelId = first.models[0]?.id ?? null;
+	}
+	if (!connectionId || !modelId) return null;
+	const resolved = await service.resolveCredential(ownerId, connectionId, modelId);
+	return {
+		providerId: resolved.connection.providerId,
+		kind: resolved.connection.kind,
+		...(resolved.connection.catalogId ? { catalogId: resolved.connection.catalogId } : {}),
+		baseUrl: resolved.baseUrl,
+		protocol: resolved.protocol,
+		modelId: resolved.modelId,
+		apiKey: resolved.apiKey,
+	};
+}
+
 /** 通用 JSON 补全出口：假设草案生成与初判共用同一套连接与限流。 */
 export type JsonCaller = (
 	systemPrompt: string,

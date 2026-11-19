@@ -656,8 +656,11 @@ test("model connections API: default, legacy and explicit personal selection sha
 	const server = await serve(t, runtime);
 	const noChoice = { brief: "产品", stage: "overview" };
 	const route = "/api/task-drafts/extract";
+	// 没有任何连接时必须明确拒绝，不猜模型。
 	assert.equal((await call(server, route, "POST", noChoice)).status, 409);
 	const created = await (await call(server, "/api/me/model-connections", "POST", customInput())).json() as { id: string };
+	// 已有连接即使没设默认偏好，也应自动使用（用户只需配一次）。
+	assert.equal((await call(server, route, "POST", noChoice)).status, 200);
 	const preference = await call(server, "/api/me/model-preferences", "PUT", {
 		expectedVersion: 0, connectionId: created.id, modelId: "mimo-v2-flash",
 	});
@@ -665,8 +668,8 @@ test("model connections API: default, legacy and explicit personal selection sha
 	assert.equal((await call(server, route, "POST", noChoice)).status, 200);
 	assert.equal((await call(server, route, "POST", { ...noChoice, provider: "mimo" })).status, 200);
 	assert.equal((await call(server, route, "POST", { ...noChoice, provider: "deepseek" })).status, 409);
-	// create(1) + 默认(2) + provider(3) 之后，该用户还剩 3 次预算。
-	for (let n = 0; n < 3; n++)
+	// 自动(1) + 默认(2) + provider(3) 之后，该用户还剩 2 次预算（总上限 6，含本次新增的自动调用）。
+	for (let n = 0; n < 2; n++)
 		assert.equal((await call(server, route, "POST", { ...noChoice, connectionId: created.id })).status, 200);
 	assert.equal((await call(server, route, "POST", noChoice)).status, 503);
 	assert.equal(requests.length, 6);
