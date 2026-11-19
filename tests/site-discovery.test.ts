@@ -475,3 +475,35 @@ test("升级补搜：0 条目的 host 不被跳过，第二轮的更好结果覆
 	assert.equal(sites[0]?.listUrl, "https://www.midea.com.cn/zh/about-midea/news", "0 条目的 host 在第二轮被新闻 URL 覆盖");
 	assert.ok(calls.includes("美的 新闻中心+esc"), "第一轮全部 0 条目时升级补搜");
 });
+
+test("升级补搜：第一遍只有繁体/英文条目时也升级，简中站点胜出后覆盖", async () => {
+	const calls: string[] = [];
+	const aggregator = {
+		async search(query: string, overrides?: { enoughHits?: number }) {
+			calls.push(query);
+			if (query.includes("新闻中心"))
+				return {
+					hits: [{ title: "新闻", url: "https://www.midea.com.cn/zh/about-midea/news" }],
+					providers: [{ provider: "serper", label: "Serper", status: "ok", detail: null }],
+				};
+			// 第一轮：台湾站（繁体条目，「可用」但非简中）。
+			return {
+				hits: [{ title: "美的-台湾官方網站", url: "https://www.midea.com/tw/news" }],
+				providers: [{ provider: "bing", label: "Bing", status: "ok", detail: null }],
+			};
+		},
+	};
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			const parsed = new URL(url);
+			if (parsed.hostname === "www.midea.com")
+				return { status: 200, bytes: 150, body: `<title>美的-台湾官方網站</title><a href="/tw/news/2026/0715/a">美的正式成為巴塞隆納足球俱樂部主要合作夥伴 2026/07/15</a>` };
+			if (parsed.pathname === "/")
+				return { status: 200, bytes: 60, body: `<title>美的集团-官方网站</title><a href="/zh/about-midea/news">新闻</a>` };
+			return { status: 200, bytes: 130, body: `<html><a href="/zh/about-midea/news/news-20220719">美的空调率先发布碳足迹评估报告 2022年7月19日</a></body></html>` };
+		},
+	};
+	const sites = await discoverCompanySites("美的", fakeBin, { aggregator, fetcher });
+	assert.equal(sites[0]?.host, "www.midea.com.cn", "繁体条目触发升级，简中站覆盖排第一");
+	assert.ok(calls.includes("美的 新闻中心"), "繁体条目也算「需要升级」");
+});
