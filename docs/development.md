@@ -773,6 +773,8 @@ bun run sources discover weichai_news campaigns
 | Exa 官方 API（付费） | `EXA_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=exa-api:N` |
 | Tavily 搜索（付费） | `TAVILY_API_KEY` 已配 | 100 | `SEARCH_DAILY_LIMITS=tavily:N` |
 
+搜索源的部署配置、额度、验收与排查见 [搜索源部署指南](search-provider-deployment.md)。
+
 搜索短路与质量升级：
 
 - 默认**凑够 8 条就短路**后续源（省付费额度）；对一般搜索正确。
