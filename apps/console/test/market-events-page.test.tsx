@@ -24,7 +24,7 @@ function fillLink() {
 	fireEvent.change(screen.getByLabelText("事件标题"), { target: { value: "样例发布" } });
 	fireEvent.change(screen.getByLabelText("关注对象名称"), { target: { value: "测试品牌" } });
 	fireEvent.change(screen.getByLabelText("来源名称"), { target: { value: "测试来源" } });
-	fireEvent.change(screen.getByLabelText("原文链接（不自动读取）"), { target: { value: "https://example.com/news" } });
+	fireEvent.change(screen.getByLabelText("原文链接（可自动读取原文）"), { target: { value: "https://example.com/news" } });
 }
 test("市场事件页：来源线索只展示标题与链接，转事件预填标题/主体/仅标题来源", async t => {
 	t.after(cleanup);
@@ -57,7 +57,7 @@ test("市场事件页：来源线索只展示标题与链接，转事件预填�
 	assert.equal((screen.getByLabelText("事件标题") as HTMLInputElement).value, "潍柴列表标题");
 	assert.throws(() => screen.getByLabelText(/^事件编号/), "事件编号是内部细节，不该让用户填");
 	assert.equal((screen.getByLabelText("关注对象名称") as HTMLInputElement).value, "测试品牌");
-	assert.equal((screen.getByLabelText("原文链接（不自动读取）") as HTMLInputElement).value, "https://www.weichai.com/news/1.html");
+	assert.equal((screen.getByLabelText("原文链接（可自动读取原文）") as HTMLInputElement).value, "https://www.weichai.com/news/1.html");
 	assert.equal((screen.getByLabelText("内容范围") as HTMLSelectElement).value, "title_only");
 	assert.ok(screen.getByText(/还没有读正文/), "说明用日常说法");
 	// 实际提交：仅标题来源必须带上已取得的标题作为 content，否则领域会拒。
@@ -190,7 +190,7 @@ test("市场事件页：勾选多条线索合并为一条事件（用户用选�
 	fireEvent.click(screen.getByRole("button", { name: "合并为一条事件" }));
 	assert.equal((screen.getByLabelText("事件标题") as HTMLInputElement).value, "潍柴列表标题");
 	assert.deepEqual(
-		screen.getAllByLabelText("原文链接（不自动读取）").map((input) => (input as HTMLInputElement).value),
+		screen.getAllByLabelText("原文链接（可自动读取原文）").map((input) => (input as HTMLInputElement).value),
 		["https://www.weichai.com/news/1.html", "https://www.weichai.com/news/3.html"],
 		"勾选的链接都进了同一条事件的来源列表",
 	);
@@ -222,7 +222,7 @@ test("市场事件页：线索并入已有事件，作为新增来源走修订",
 	mount();
 	fireEvent.click((await screen.findAllByRole("button", { name: "样例发布" }))[0]!, );
 	assert.ok(await screen.findByText(/已把线索「潍柴列表标题」加入下方来源列表/), "并入时自动展开修订表单并说明来意");
-	assert.ok(screen.getAllByLabelText("原文链接（不自动读取）").some(input => (input as HTMLInputElement).value === lead.url), "线索链接已作为新增来源");
+	assert.ok(screen.getAllByLabelText("原文链接（可自动读取原文）").some(input => (input as HTMLInputElement).value === lead.url), "线索链接已作为新增来源");
 	fireEvent.change(screen.getByLabelText("本次修订说明"), { target: { value: "补充转载链接" } });
 	fireEvent.click(screen.getByRole("button", { name: "保存修订" }));
 	await waitFor(() => assert.equal(revisions.length, 1));

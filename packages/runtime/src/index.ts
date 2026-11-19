@@ -54,6 +54,18 @@ import {
 import { createHypothesisReasoning } from "./hypothesis-reasoning.js";
 
 export { createHypothesisReasoning };
+export {
+	createEventDraftExtractor,
+	eventDraftMaterialKey,
+	eventDraftScopes,
+	eventDraftTypes,
+	parseEventDraft,
+	type EventDraftExtractor,
+	type EventDraftItem,
+	type EventDraftRequest,
+	type EventDraftScope,
+	type EventDraftType,
+} from "./event-draft-extractor.js";
 export type {
 	HypothesisDraftRequest,
 	HypothesisDraftSuggestion,

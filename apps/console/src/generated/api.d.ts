@@ -342,6 +342,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/market-events/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 把官方原文或粘贴材料整理成待核对的事件字段建议；不写库、不建事件、不推送。 */
+        post: operations["extractMarketEventDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market-events/read-source": {
         parameters: {
             query?: never;
@@ -1380,6 +1397,28 @@ export interface components {
                 /** @enum {string} */
                 outcome: "accepted" | "rejected" | "revised";
             }[];
+        };
+        MarketEventExtractInput: {
+            /** @description 已爬取的官方原文，或用户粘贴的材料。 */
+            materials: string;
+            /** @description 来源名称，仅作上下文。 */
+            publisher?: string;
+            /** @description 来源链接，仅作上下文。 */
+            url?: string;
+        };
+        MarketEventExtractItem: {
+            /** @enum {string} */
+            field: "title" | "type" | "subjectKind" | "subjectName" | "eventTime" | "conditions" | "scope" | "limitations" | "citationSubject" | "citationEventTime" | "citationConditions";
+            value: string;
+            /**
+             * @description quote = 原文逐字摘录；idea = 模型整理，需用户核对。
+             * @enum {string}
+             */
+            source: "quote" | "idea";
+            evidence?: string;
+        };
+        MarketEventExtractResult: {
+            items: components["schemas"]["MarketEventExtractItem"][];
         };
         MarketEventInput: {
             occurrenceKey: string;
@@ -4424,6 +4463,84 @@ export interface operations {
                 };
             };
             /** @description Temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    extractMarketEventDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarketEventExtractInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketEventExtractResult"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Origin rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description JSON required */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Model unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;
