@@ -713,7 +713,10 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 								source.id,
 								new UserSiteFetcher([source.host]),
 								new Date().toISOString(),
-								{ readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN) },
+								{
+									readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN),
+									searchFallback: async (query) => (await searchAggregator.search(query)).hits,
+								},
 							);
 						} catch {
 							// 閸掗攱鏌婃径杈Е閸欘亣顔囪ぐ鏇炴躬閺夈儲绨稉濠忕幢閻劍鍩涢崣顖涘閸斻劑鍣哥拠鏇樷偓?
@@ -742,7 +745,10 @@ export function createApi(runtime: Runtime, auth: ApiAuthentication) {
 								sourceId,
 								new UserSiteFetcher([target.host]),
 								new Date().toISOString(),
-								{ readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN) },
+								{
+									readFallback: agentReachReadFallback(process.env.AGENT_REACH_BIN),
+									searchFallback: async (query) => (await searchAggregator.search(query)).hits,
+								},
 							);
 							return json(res, 200, result);
 						} catch (error) {
