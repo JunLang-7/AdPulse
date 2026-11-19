@@ -493,3 +493,35 @@ test("升级补搜：1–2 条零星简中不足以压制升级（ces.cn 形态�
 	const sites = await discoverCompanySites("海尔", fakeBin, { aggregator, fetcher });
 	assert.equal(sites[0]?.host, "www.haier.com", "ces.cn 只有 1 条简中，升级搜索后 haier.com 的整页简中胜出");
 });
+
+test("归属判据：代表 URL 是英文新闻页时，用新闻型备选的中文条目作证据（haier 实测形态）", async () => {
+	// 海尔实测：host 代表是 press-events/news（标题全英文 Haier…），中文新闻在 about_haier/xinwen。
+	const runReach = async () => ({
+		stdout: result([
+			{ title: "Media Center", url: "https://www.haier.com/global/press-events/" },
+			{ title: "新闻资讯 - 海尔集团官网", url: "https://www.haier.com/press-events/news/" },
+			{ title: "品牌资讯-海尔官网", url: "https://www.haier.com/about_haier/xinwen/" },
+		]),
+		exitCode: 0,
+	});
+	const fetcher: SourceFetcher = {
+		async fetchText(url: string) {
+			const parsed = new URL(url);
+			if (parsed.pathname === "/")
+				throw new Error("too many redirects"); // 首页跳转循环，只能靠列表页判归属
+			if (parsed.pathname.startsWith("/global") || parsed.pathname.startsWith("/press-events"))
+				return { status: 200, bytes: 90, body: `<title>Haier News</title><a href="/press-events/news/2026/h1">Haier Launches New Series 2026/11/20</a>` };
+			return {
+				status: 200, bytes: 130,
+				body: `<html>
+<a href="/about_haier/xinwen/20260522_291331.shtml">海尔官宣孙颖莎成为全球品牌代言人 2026年05月22日</a>
+<a href="/about_haier/xinwen/20260520_291300.shtml">海尔空调两项技术达到国际领先 2026年05月20日</a>
+<a href="/about_haier/xinwen/20260518_291280.shtml">海尔发布智慧家庭方案 2026年05月18日</a>
+</body></html>`,
+			};
+		},
+	};
+	const sites = await discoverCompanySites("海尔", fakeBin, { runReach, fetcher });
+	assert.equal(sites[0]?.host, "www.haier.com");
+	assert.equal(sites[0]?.listUrl, "https://www.haier.com/about_haier/xinwen/", "英文新闻页做代表时，中文列表页作归属证据并被采用");
+});
