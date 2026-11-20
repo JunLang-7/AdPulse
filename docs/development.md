@@ -813,6 +813,16 @@ node scripts/deploy.mjs --reuse            # 该 sha 已构建过：跳过解包
 
 搜索源的部署配置、额度、验收与排查见 [搜索源部署指南](search-provider-deployment.md)。
 
+### 定时发现与信号初判持续运行（#222）
+
+`DISCOVERY_SCHEDULE_ENABLED=1`（默认关闭）后，API/worker 进程每天 08:00（北京时间）对每个 `active` 且已知 `host` 的本人登记企业站点跑一轮**站内索引**发现：
+
+- 查询词 `site:<官网域名> <企业名> 新闻`，走上面的搜索源聚合器（额度按日计入、用完即停、失败退额）。
+- 新结果走与手动 `sources discover --persist` **同一条管线**：URL 去重 → 未核验线索入库 → 每个活跃任务排 `prepare_signal_assessments` 初判 job → 控制台确认后才进订阅提醒；不自动接受、不自动建事件、不推送未确认结论。
+- 初判需要模型：本人须在控制台配置并通过测试个人模型连接，否则 job 留痕跳过、不编造初判。
+- 水位线 `UserSource.lastDiscoveryRunAt`：空轮/失败轮同样推进，一天只试一次；重启只补当前槽位，不回放历史。
+- 行为测试见 `tests/discovery-runner.test.ts`；生产持续运行验收待部署开启后补记。
+
 搜索短路与质量升级：
 
 - 默认**凑够 8 条就短路**后续源（省付费额度）；对一般搜索正确。
