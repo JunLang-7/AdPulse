@@ -840,6 +840,8 @@ export interface UserSource {
 	failureCount?: number;
 	/** 上一次尝试自动换站的时刻；用于退避窗口，避免永久锁死。 */
 	lastSwitchAt?: string | null;
+	/** 最近一轮定时发现（#222）的水位线；槽位判定用，空轮/失败轮同样推进。 */
+	lastDiscoveryRunAt?: string | null;
 	status: "discovering" | "active" | "stopped" | "failed";
 }
 /** 搜索源每日额度（按北京时间自然日计）；付费源用完即停，次日恢复。 */
@@ -886,7 +888,7 @@ export interface DiscoveryLead {
 	ownerId: string;
 	sourceKey: string;
 	topic: string;
-	provider: "agent-reach/exa" | "agent-reach/xiaohongshu";
+	provider: "agent-reach/exa" | "agent-reach/xiaohongshu" | "scheduled/site-index";
 	/** 原始查询词，保留给审核者理解发现来源。 */
 	query: string;
 	/** 操作人声明的关注对象；发现侧不做标题/域名推断。 */

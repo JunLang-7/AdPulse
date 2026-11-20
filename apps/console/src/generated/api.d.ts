@@ -1636,7 +1636,7 @@ export interface components {
             sourceKey: string;
             topic: string;
             /** @enum {string} */
-            provider: "agent-reach/exa" | "agent-reach/xiaohongshu";
+            provider: "agent-reach/exa" | "agent-reach/xiaohongshu" | "scheduled/site-index";
             query: string;
             subject: components["schemas"]["SourceLeadSubject"] | null;
             title: string;
