@@ -319,7 +319,7 @@ isPublicAddress,} from "./source-fetch.js";
 export { runSources } from "./source-runner.js";
 export { bingProvider, agentReachProvider, serperProvider, braveProvider, providersFromEnvironment, parseDailyLimits, bingQueries } from "./search-providers.js";
 export { runUserSources } from "./user-source-runner.js";
-export { runDiscoveryLeads, runDiscoveryRound } from "./discovery-runner.js";
+export { runDiscoveryLeads, runDiscoveryRound, runDiscoveryStep } from "./discovery-runner.js";
 export type { DiscoveryRoundOutcome, DiscoveryRunnerOptions } from "./discovery-runner.js";
 export { discoverCompanySite, discoverCompanySites, pickCompanySite, resolveNewsListPage, searchBing, readViaAgentReach, parseMarkdownLinks, agentReachReadFallback, AgentReachLimitError, resetDiscoveryThrottle , SearchQuotaExhaustedError } from "./site-discovery.js";
 export { discoverSource } from "./source-discovery.js";

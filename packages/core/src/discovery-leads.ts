@@ -3,7 +3,8 @@
 // 拒绝后同一归一化 URL 不再重复出现。审核审计记录在线索行上，可查询。
 import { createHash } from "node:crypto";
 import { taskActiveIn } from "./lifecycle.js";
-import type { Storage } from "./ports/storage.js";
+import { userSourceKey } from "./user-sources.js";
+import type { Storage, Transaction } from "./ports/storage.js";
 import type { DiscoveryLead, DiscoveryLeadStatus, SourceItem } from "./state/model.js";
 
 export interface DiscoveryCandidateInput {
@@ -82,13 +83,15 @@ export class DiscoveryLeadService {
 	constructor(private readonly storage: Storage) {}
 
 	/**
-	 * 暂存发现候选：URL 归一化后与本人历史线索及现有 source items 比对去重。
+	 * 暂存发现候选：URL 归一化后与本人历史线索及可见 source items 比对去重。
 	 * 已存在（含拒绝过）的 URL 一律跳过，不覆盖、不复活。
 	 */
 	async persist(
 		ownerId: string,
 		input: DiscoveryLeadInput,
 		now: string,
+		/** 与写入同事务执行，抛错即整体回滚（定时发现用来确认站点在搜索期间未被删除/变更）。 */
+		guard?: (tx: Transaction) => Promise<void>,
 	): Promise<PersistDiscoveryResult> {
 		const query = clean(input.query, 2000);
 		const subject = input.subject
@@ -100,11 +103,18 @@ export class DiscoveryLeadService {
 		if (subject && !subject.name) throw new DiscoveryLeadError(400, "subject_required", "关注对象名称不能为空");
 
 		return this.storage.transaction(async (tx) => {
+			if (guard) await guard(tx);
 			const known = new Set(
 				(await tx.discoveryLeads.listByOwner(ownerId)).map((lead) => lead.dedupKey),
 			);
+			// 私有站点条目（user:*）只在本人可见范围内参与去重：A 采集过的链接不能
+			// 抑制 B 对同一官网的独立发现与初判；内置来源是共享 allowlist，保持全局去重。
+			const ownerUserSourceKeys = new Set(
+				(await tx.userSources.listByOwner(ownerId)).map((source) => userSourceKey(source.id)),
+			);
 			const collected = new Set(
 				(await tx.sourceItems.all())
+					.filter((item) => !item.sourceKey.startsWith("user:") || ownerUserSourceKeys.has(item.sourceKey))
 					.map((item) => urlKey(item.itemUrl))
 					.filter((key): key is string => key !== null),
 			);
@@ -142,15 +152,19 @@ export class DiscoveryLeadService {
 				await tx.discoveryLeads.put(lead);
 				known.add(key);
 				created += 1;
-				// 每个活跃任务排一条初判 job（幂等 id）；模型调用在事务外完成。
+				// 每条线索只排一个初判 job（幂等 id）：job 处理时遍历本人全部活跃任务，
+				// 入队若按任务放大，N 个任务会得到 N 个 job、每个又全量遍历，模型调用变成 N²。
+				// 与既有语义一致：本人没有活跃任务就不排 job。
+				let hasActiveTask = false;
 				for (const task of await tx.tasks.listByOwner(ownerId)) {
-					if (!(await taskActiveIn(tx, task, new Date(now)))) continue;
-					await tx.jobs.put({
-						id: createHash("sha256").update(JSON.stringify(["prepare_signal_assessments", lead.id, task.id])).digest("hex"),
-						task: { kind: "prepare_signal_assessments", leadId: lead.id },
-						status: "pending", runAt: now, attempts: 0,
-					});
+					if (await taskActiveIn(tx, task, new Date(now))) { hasActiveTask = true; break; }
 				}
+				if (hasActiveTask)
+					await tx.jobs.put({
+						id: createHash("sha256").update(JSON.stringify(["prepare_signal_assessments", lead.id])).digest("hex"),
+						task: { kind: "prepare_signal_assessments", leadId: lead.id },
+							status: "pending", runAt: now, attempts: 0,
+					});
 			}
 			return { created, skipped };
 		});

@@ -3,8 +3,10 @@ import test from "node:test";
 import {
 	DiscoveryLeadError,
 	DiscoveryLeadService,
+	TaskService,
 	type DiscoveryLeadInput,
 } from "../packages/core/dist/index.js";
+import { taskInput } from "./market-event-fixtures.ts";
 import { MemoryStorage } from "../packages/storage/dist/index.js";
 
 const input = (overrides: Partial<DiscoveryLeadInput> = {}): DiscoveryLeadInput => ({
@@ -116,4 +118,66 @@ test("keep：保留供查后可再次处理；越权/不存在返回 404", async
 		service.reject("owner-2", lead!.id, { operator: "other" }, "2026-01-08T00:00:00.000Z"),
 		(e: DiscoveryLeadError) => e.status === 404,
 	);
+});
+
+test("persist：他人私有站点的已采集链接不抑制本人发现；本人自有条目仍去重（PR #223 review）", async () => {
+	const storage = new MemoryStorage();
+	const service = new DiscoveryLeadService(storage);
+	const sharedUrl = "https://www.shared-brand.com/news/2026/first.shtml";
+
+	// 用户 A 已把该链接采进自己的私有站点条目（sourceKey 为 user:*）。
+	await storage.transaction(async (tx) => {
+		await tx.userSources.put({
+			id: "src-a", ownerId: "owner-a", label: "A 的企业", host: "www.shared-brand.com",
+			listUrl: "https://www.shared-brand.com/news", subject: { kind: "brand", name: "共享品牌" },
+			createdAt: "2026-01-01T00:00:00.000Z", discoveryStartedAt: null, lastRefreshAt: null,
+			lastOutcome: null, lastReason: null, status: "active",
+		});
+		await tx.sourceItems.put({
+			id: "user:src-a:1", sourceKey: "user:src-a",
+			itemKey: "https://www.shared-brand.com/news/2026/first.shtml",
+			title: "A 已采集的条目", itemUrl: "https://www.shared-brand.com/news/2026/first.shtml",
+			publishedAt: null, firstSeenAt: "2026-01-02T00:00:00.000Z", lastSeenAt: "2026-01-02T00:00:00.000Z",
+			titleUpdatedAt: null, contentScope: "title_link_only", status: "active",
+		});
+	});
+
+	// 用户 B 独立登记同一官网并首次搜到该链接：应正常入库，不被 A 的私有条目抑制。
+	const forB = await service.persist("owner-b", input({
+		candidates: [{ title: "B 首次发现", url: sharedUrl, indexedPublishedAt: null }],
+	}), "2026-01-05T00:00:00.000Z");
+	assert.deepEqual(forB, { created: 1, skipped: 0 });
+
+	// A 自己再发现同一链接：仍被本人的可见条目去重。
+	const forA = await service.persist("owner-a", input({
+		candidates: [{ title: "A 重复发现", url: sharedUrl, indexedPublishedAt: null }],
+	}), "2026-01-06T00:00:00.000Z");
+	assert.deepEqual(forA, { created: 0, skipped: 1 });
+});
+
+test("persist：每条线索只排一个初判 job，不随任务数放大（PR #223 review）", async () => {
+	const storage = new MemoryStorage();
+	let seq = 0;
+	const tasks = new TaskService(storage, () => "2026-01-05T00:00:00.000Z", () => `task-${++seq}`);
+	await tasks.create("owner-1", "task-create", taskInput);
+	await tasks.create("owner-1", "task-create", taskInput);
+	const service = new DiscoveryLeadService(storage);
+
+	const result = await service.persist("owner-1", input(), "2026-01-05T00:00:00.000Z");
+	assert.equal(result.created, 2);
+	const jobs = await storage.transaction(async (tx) =>
+		(await tx.jobs.all()).filter((job) => job.task.kind === "prepare_signal_assessments"),
+	);
+	// 两个活跃任务、两条线索：job 数等于线索数，而不是任务数×线索数。
+	assert.equal(jobs.length, 2);
+	assert.ok(jobs.every((job) => job.task.kind === "prepare_signal_assessments"));
+});
+
+test("persist：本人没有活跃任务时不排初判 job（既有语义保持）", async () => {
+	const storage = new MemoryStorage();
+	const service = new DiscoveryLeadService(storage);
+	const result = await service.persist("owner-no-tasks", input(), "2026-01-05T00:00:00.000Z");
+	assert.equal(result.created, 2);
+	const jobs = await storage.transaction(async (tx) => (await tx.jobs.all()));
+	assert.equal(jobs.filter((job) => job.task.kind === "prepare_signal_assessments").length, 0);
 });
