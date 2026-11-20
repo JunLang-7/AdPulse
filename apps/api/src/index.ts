@@ -1,5 +1,5 @@
 import { AuthenticationService } from "@adpluse/core";
-import { agentReachReadFallback, createSourceService, fromEnvironment, runRealTimePushLoop, runSources, runUserSources, runWorker, UserSiteFetcher } from "@adpluse/runtime";
+import { agentReachReadFallback, createSourceService, fromEnvironment, runDiscoveryLeads, runRealTimePushLoop, runSources, runUserSources, runWorker, UserSiteFetcher } from "@adpluse/runtime";
 import { FeishuIdentityProvider } from "./feishu-auth.js";
 import { createApi } from "./server.js";
 
@@ -60,13 +60,23 @@ const realTimePushLoop = runRealTimePushLoop(runtime.storage, controller.signal,
 	env: process.env,
 	...(process.env.REALTIME_PUSH_TICK_MS ? { tickMs: Number(process.env.REALTIME_PUSH_TICK_MS) } : {}),
 });
+// 定时发现（#222）：每天 08:00 对每个已登记企业官网跑一轮站内索引搜索，
+// 新结果进未核验线索并自动排初判 job；默认关闭，DISCOVERY_SCHEDULE_ENABLED=1 才启用。
+const discoveryLoop =
+	process.env.DISCOVERY_SCHEDULE_ENABLED === "1"
+		? runDiscoveryLeads(runtime.storage, controller.signal, {
+				enabled: true,
+				...(process.env.SOURCE_TICK_MS ? { tickMs: Number(process.env.SOURCE_TICK_MS) } : {}),
+				search: runtime.searchUserSource,
+			})
+		: Promise.resolve();
 let stopping = false;
 async function stop() {
 	if (stopping) return;
 	stopping = true;
 	controller.abort();
 	await new Promise<void>((resolve) => server.close(() => resolve()));
-	await Promise.all([loop, sourcesLoop, realTimePushLoop]);
+	await Promise.all([loop, sourcesLoop, realTimePushLoop, discoveryLoop]);
 	await runtime.close();
 }
 process.on("SIGTERM", () => {

@@ -16,7 +16,7 @@ export interface DiscoveryCandidateInput {
 export interface DiscoveryLeadInput {
 	sourceKey: string;
 	topic: string;
-	provider: "agent-reach/exa" | "agent-reach/xiaohongshu";
+	provider: "agent-reach/exa" | "agent-reach/xiaohongshu" | "scheduled/site-index";
 	query: string;
 	subject: { kind: "brand" | "competitor"; name: string } | null;
 	candidates: DiscoveryCandidateInput[];

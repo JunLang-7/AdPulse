@@ -7417,7 +7417,8 @@
             "type": "string",
             "enum": [
               "agent-reach/exa",
-              "agent-reach/xiaohongshu"
+              "agent-reach/xiaohongshu",
+              "scheduled/site-index"
             ]
           },
           "query": {
